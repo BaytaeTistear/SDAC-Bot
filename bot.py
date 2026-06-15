@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import sqlite3
@@ -386,6 +387,19 @@ def make_discord_files(row):
     return files
 
 
+async def send_submission_message(channel, content, row, view):
+    files = make_discord_files(row)
+    try:
+        return await channel.send(
+            content=content,
+            files=files,
+            view=view,
+        )
+    finally:
+        for file in files:
+            file.close()
+
+
 def add_moderation_history(
     connection,
     row,
@@ -456,6 +470,7 @@ bot = commands.Bot(command_prefix="!sdac ", intents=intents)
 tree = bot.tree
 user_cooldowns = {}
 category_cooldowns = {}
+active_submission_sessions = set()
 
 
 async def delete_discord_message(channel_id, message_id):
@@ -619,10 +634,11 @@ class ApprovalView(discord.ui.View):
             return
 
         try:
-            repost = await target_channel.send(
-                content=submission_content(row),
-                files=make_discord_files(row),
-                view=VoteView(),
+            repost = await send_submission_message(
+                target_channel,
+                submission_content(row),
+                row,
+                VoteView(),
             )
         except (discord.HTTPException, OSError) as error:
             await interaction.followup.send(
@@ -1007,77 +1023,44 @@ async def setapproval(
     )
 
 
-@tree.command(name="submit", description="Submit media to SDAC")
-@app_commands.guild_only()
-@app_commands.autocomplete(category=category_autocomplete)
-@app_commands.describe(
-    category="Submission category",
-    media1="Required image, video, or audio file",
-    text="Optional message text",
-    media2="Optional extra media file",
-    media3="Optional extra media file",
-    media4="Optional extra media file",
-    media5="Optional extra media file",
-)
-async def submit(
-    interaction,
-    category: str,
-    media1: discord.Attachment,
-    text: str = "",
-    media2: Optional[discord.Attachment] = None,
-    media3: Optional[discord.Attachment] = None,
-    media4: Optional[discord.Attachment] = None,
-    media5: Optional[discord.Attachment] = None,
-):
-    guild_config = get_guild_config(interaction.guild_id, create=False)
-    submit_channel_id = guild_config.get("submit_channel")
-    if not submit_channel_id:
-        await interaction.response.send_message(
-            "The submit channel is not configured.",
-            ephemeral=True,
-        )
-        return
-    if interaction.channel_id != submit_channel_id:
-        channel = bot.get_channel(submit_channel_id)
-        await interaction.response.send_message(
-            f"Please submit in {channel.mention if channel else 'the configured channel'}.",
-            ephemeral=True,
-        )
-        return
+def submission_cooldown_message(guild_id, user_id, category):
+    now = time.time()
+    user_key = f"{guild_id}:{user_id}"
+    category_key = f"{guild_id}:{category}"
+    last_user = user_cooldowns.get(user_key, 0)
+    if now - last_user < USER_COOLDOWN_SECONDS:
+        remaining = max(1, int(USER_COOLDOWN_SECONDS - (now - last_user)))
+        return f"Wait {remaining}s before submitting again."
 
-    category = clean_category_name(category)
-    categories_config = guild_config.get("categories", {})
-    if category not in categories_config:
-        await interaction.response.send_message(
-            f"Invalid category `{category}`.",
-            ephemeral=True,
+    last_category = category_cooldowns.get(category_key, 0)
+    if now - last_category < CATEGORY_COOLDOWN_SECONDS:
+        remaining = max(
+            1,
+            int(CATEGORY_COOLDOWN_SECONDS - (now - last_category)),
         )
-        return
+        return f"Category `{category}` is cooling down for {remaining}s."
+    return None
 
+
+def validate_submission_message(message):
+    text = message.content.strip()
+    attachments = list(message.attachments)
     limits = config["limits"]
-    if len(text) > limits["max_text_length"]:
-        await interaction.response.send_message(
-            f"Text is limited to {limits['max_text_length']} characters.",
-            ephemeral=True,
-        )
-        return
 
-    attachments = [
-        attachment
-        for attachment in [media1, media2, media3, media4, media5]
-        if attachment is not None
-    ]
+    if not text and not attachments:
+        return "Send text, media, or both."
+    if len(text) > limits["max_text_length"]:
+        return f"Text is limited to {limits['max_text_length']} characters."
+    if len(attachments) > 5:
+        return "A submission can contain at most 5 media files."
+
     bad_files = [
         attachment.filename
         for attachment in attachments
         if not is_allowed_file(attachment.filename)
     ]
     if bad_files:
-        await interaction.response.send_message(
-            "Unsupported file type: " + ", ".join(bad_files),
-            ephemeral=True,
-        )
-        return
+        return "Unsupported file type: " + ", ".join(bad_files)
 
     oversized = [
         attachment.filename
@@ -1085,48 +1068,54 @@ async def submit(
         if attachment.size > limits["max_file_bytes"]
     ]
     if oversized:
-        await interaction.response.send_message(
-            "Files exceed the per-file limit: " + ", ".join(oversized),
-            ephemeral=True,
-        )
-        return
-    if sum(attachment.size for attachment in attachments) > limits["max_total_bytes"]:
-        await interaction.response.send_message(
-            "The combined upload exceeds the total submission limit.",
-            ephemeral=True,
-        )
-        return
+        return "Files exceed the per-file limit: " + ", ".join(oversized)
 
-    now = time.time()
-    user_key = f"{interaction.guild_id}:{interaction.user.id}"
-    category_key = f"{interaction.guild_id}:{category}"
-    last_user = user_cooldowns.get(user_key, 0)
-    if now - last_user < USER_COOLDOWN_SECONDS:
-        remaining = max(1, int(USER_COOLDOWN_SECONDS - (now - last_user)))
-        await interaction.response.send_message(
-            f"Wait {remaining}s before submitting again.",
-            ephemeral=True,
-        )
-        return
-    last_category = category_cooldowns.get(category_key, 0)
-    if now - last_category < CATEGORY_COOLDOWN_SECONDS:
-        remaining = max(
-            1,
-            int(CATEGORY_COOLDOWN_SECONDS - (now - last_category)),
-        )
-        await interaction.response.send_message(
-            f"Category `{category}` is cooling down for {remaining}s.",
-            ephemeral=True,
-        )
-        return
+    total_size = sum(attachment.size for attachment in attachments)
+    if total_size > limits["max_total_bytes"]:
+        return "The combined upload exceeds the total submission limit."
+    return None
 
-    target_channel = bot.get_channel(categories_config[category])
+
+def submission_preview(category, message):
+    text = message.content.strip() or "(no text)"
+    file_lines = [
+        f"- `{attachment.filename}` ({attachment.size / 1024 / 1024:.2f} MB)"
+        for attachment in message.attachments
+    ]
+    files = "\n".join(file_lines) if file_lines else "(no media)"
+    return (
+        "**Step 3 of 3: Confirm your submission**\n"
+        f"Category: `{category}`\n\n"
+        f"Text:\n{text}\n\n"
+        f"Media:\n{files}\n\n"
+        "Choose **Confirm** to submit or **Cancel** to discard it."
+    )
+
+
+def submission_preview_embeds(message):
+    embeds = []
+    for attachment in message.attachments:
+        if get_media_type(attachment.filename) != "image":
+            continue
+        embed = discord.Embed(title=attachment.filename)
+        embed.set_image(url=attachment.url)
+        embeds.append(embed)
+    return embeds
+
+
+async def delete_source_message(message):
+    try:
+        await message.delete()
+    except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+        pass
+
+
+async def create_submission(source_message, category):
+    guild_config = get_guild_config(source_message.guild.id, create=False)
+    categories_config = guild_config.get("categories", {})
+    target_channel = bot.get_channel(categories_config.get(category))
     if target_channel is None:
-        await interaction.response.send_message(
-            "The category channel could not be found.",
-            ephemeral=True,
-        )
-        return
+        return False, "The category channel could not be found."
 
     approval_channel = None
     if guild_config["approval_enabled"]:
@@ -1137,14 +1126,24 @@ async def submit(
             else None
         )
         if approval_channel is None:
-            await interaction.response.send_message(
-                "Approval is enabled, but its channel is unavailable.",
-                ephemeral=True,
-            )
-            return
+            return False, "Approval is enabled, but its channel is unavailable."
 
-    await interaction.response.defer(ephemeral=True, thinking=True)
-    user_folder = MEDIA_DIR / str(interaction.guild_id) / category / str(interaction.user.id)
+    cooldown_message = submission_cooldown_message(
+        source_message.guild.id,
+        source_message.author.id,
+        category,
+    )
+    if cooldown_message:
+        return False, cooldown_message
+
+    text = source_message.content.strip()
+    attachments = list(source_message.attachments)
+    user_folder = (
+        MEDIA_DIR
+        / str(source_message.guild.id)
+        / category
+        / str(source_message.author.id)
+    )
     user_folder.mkdir(parents=True, exist_ok=True)
 
     saved_paths = []
@@ -1156,7 +1155,9 @@ async def submit(
     try:
         for attachment in attachments:
             safe_name = Path(attachment.filename).name.replace("\\", "_")
-            filename = f"{int(time.time())}_{interaction.id}_{safe_name}"
+            filename = (
+                f"{int(time.time())}_{source_message.id}_{safe_name}"
+            )
             path = user_folder / filename
             await attachment.save(path)
             saved_paths.append(str(path))
@@ -1174,11 +1175,11 @@ async def submit(
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?)
             """, (
-                str(interaction.guild_id),
-                str(interaction.id),
+                str(source_message.guild.id),
+                str(source_message.id),
                 str(target_channel.id),
-                str(interaction.user.id),
-                str(interaction.user),
+                str(source_message.author.id),
+                str(source_message.author),
                 category,
                 text,
                 ";".join(saved_paths),
@@ -1196,13 +1197,14 @@ async def submit(
             ).fetchone()
 
         if approval_channel:
-            created_message = await approval_channel.send(
-                content=(
+            created_message = await send_submission_message(
+                approval_channel,
+                (
                     f"Pending submission `{submission_id}`\n\n"
                     + submission_content(row)
                 ),
-                files=make_discord_files(row),
-                view=ApprovalView(),
+                row,
+                ApprovalView(),
             )
             with database() as connection:
                 connection.execute("""
@@ -1214,12 +1216,15 @@ async def submit(
                     str(approval_channel.id),
                     submission_id,
                 ))
-            response_text = f"Submission `{submission_id}` is awaiting approval."
+            response_text = (
+                f"Submission `{submission_id}` is awaiting approval."
+            )
         else:
-            created_message = await target_channel.send(
-                content=submission_content(row),
-                files=make_discord_files(row),
-                view=VoteView(),
+            created_message = await send_submission_message(
+                target_channel,
+                submission_content(row),
+                row,
+                VoteView(),
             )
             with database() as connection:
                 connection.execute("""
@@ -1231,11 +1236,19 @@ async def submit(
                     utc_now_iso(),
                     submission_id,
                 ))
-            response_text = f"Submitted to `{category}` as `{submission_id}`."
+            response_text = (
+                f"Submitted to `{category}` as `{submission_id}`."
+            )
 
-        user_cooldowns[user_key] = now
-        category_cooldowns[category_key] = now
-        await interaction.followup.send(response_text, ephemeral=True)
+        now = time.time()
+        user_cooldowns[
+            f"{source_message.guild.id}:{source_message.author.id}"
+        ] = now
+        category_cooldowns[
+            f"{source_message.guild.id}:{category}"
+        ] = now
+        await delete_source_message(source_message)
+        return True, response_text
     except Exception as error:
         if created_message is not None:
             try:
@@ -1249,10 +1262,190 @@ async def submit(
                     (submission_id,),
                 )
         cleanup_files(saved_paths)
-        await interaction.followup.send(
-            f"Submission failed: `{error}`",
+        return False, f"Submission failed: `{error}`"
+
+
+class SubmissionConfirmView(discord.ui.View):
+    def __init__(self, source_message, category, session_key):
+        super().__init__(timeout=300)
+        self.source_message = source_message
+        self.category = category
+        self.session_key = session_key
+        self.finished = False
+        self.preview_message = None
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id == self.source_message.author.id:
+            return True
+        await interaction.response.send_message(
+            "Only the person who started this submission can use these buttons.",
             ephemeral=True,
         )
+        return False
+
+    async def finish(self, content):
+        active_submission_sessions.discard(self.session_key)
+        self.stop()
+        if self.preview_message is not None:
+            try:
+                await self.preview_message.edit(
+                    content=content,
+                    embeds=[],
+                    view=None,
+                )
+            except discord.HTTPException:
+                pass
+
+    @discord.ui.button(
+        label="Confirm",
+        style=discord.ButtonStyle.success,
+    )
+    async def confirm(self, interaction, button):
+        if self.finished:
+            await interaction.response.send_message(
+                "This submission has already been handled.",
+                ephemeral=True,
+            )
+            return
+        self.finished = True
+        await interaction.response.defer()
+        success, message = await create_submission(
+            self.source_message,
+            self.category,
+        )
+        if not success:
+            self.finished = False
+            await interaction.followup.send(message, ephemeral=True)
+            return
+        await self.finish(f"**Submission complete**\n{message}")
+
+    @discord.ui.button(
+        label="Cancel",
+        style=discord.ButtonStyle.danger,
+    )
+    async def cancel(self, interaction, button):
+        if self.finished:
+            await interaction.response.send_message(
+                "This submission has already been handled.",
+                ephemeral=True,
+            )
+            return
+        self.finished = True
+        await interaction.response.defer()
+        await delete_source_message(self.source_message)
+        await self.finish("Submission cancelled.")
+
+    async def on_timeout(self):
+        if self.finished:
+            return
+        self.finished = True
+        await delete_source_message(self.source_message)
+        await self.finish("Submission timed out. Run `/submit` to start again.")
+
+
+@tree.command(name="submit", description="Start a guided SDAC submission")
+@app_commands.guild_only()
+@app_commands.autocomplete(category=category_autocomplete)
+@app_commands.describe(category="Submission category")
+async def submit(interaction, category: str):
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    submit_channel_id = guild_config.get("submit_channel")
+    if not submit_channel_id:
+        await interaction.response.send_message(
+            "The submit channel is not configured.",
+            ephemeral=True,
+        )
+        return
+    if interaction.channel_id != submit_channel_id:
+        channel = bot.get_channel(submit_channel_id)
+        await interaction.response.send_message(
+            f"Please submit in {channel.mention if channel else 'the configured channel'}.",
+            ephemeral=True,
+        )
+        return
+
+    category = clean_category_name(category)
+    if category not in guild_config.get("categories", {}):
+        await interaction.response.send_message(
+            f"Invalid category `{category}`.",
+            ephemeral=True,
+        )
+        return
+
+    cooldown_message = submission_cooldown_message(
+        interaction.guild_id,
+        interaction.user.id,
+        category,
+    )
+    if cooldown_message:
+        await interaction.response.send_message(
+            cooldown_message,
+            ephemeral=True,
+        )
+        return
+
+    session_key = f"{interaction.guild_id}:{interaction.user.id}"
+    if session_key in active_submission_sessions:
+        await interaction.response.send_message(
+            "You already have an active submission. Finish or cancel it first.",
+            ephemeral=True,
+        )
+        return
+
+    active_submission_sessions.add(session_key)
+    await interaction.response.send_message(
+        "**Step 2 of 3: Send your content**\n"
+        "Send one normal message in this channel containing text, media, "
+        "or both. You can attach up to 5 files.\n\n"
+        "You have 5 minutes.",
+        ephemeral=True,
+    )
+
+    def message_check(message):
+        return (
+            message.guild
+            and message.guild.id == interaction.guild_id
+            and message.channel.id == interaction.channel_id
+            and message.author.id == interaction.user.id
+            and not message.author.bot
+        )
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 300
+    try:
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise asyncio.TimeoutError
+            source_message = await bot.wait_for(
+                "message",
+                timeout=remaining,
+                check=message_check,
+            )
+            validation_error = validate_submission_message(source_message)
+            if not validation_error:
+                break
+            await interaction.edit_original_response(
+                content=(
+                    f"**Step 2 of 3: Try again**\n{validation_error}\n\n"
+                    "Send another message with valid text and/or media."
+                )
+            )
+    except asyncio.TimeoutError:
+        active_submission_sessions.discard(session_key)
+        await interaction.edit_original_response(
+            content="Submission timed out. Run `/submit` to start again.",
+            view=None,
+        )
+        return
+
+    view = SubmissionConfirmView(source_message, category, session_key)
+    preview_message = await interaction.edit_original_response(
+        content=submission_preview(category, source_message),
+        embeds=submission_preview_embeds(source_message),
+        view=view,
+    )
+    view.preview_message = preview_message
 
 
 @tree.command(name="removesubmission", description="Remove a submission")
