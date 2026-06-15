@@ -1047,8 +1047,8 @@ def validate_submission_message(message):
     attachments = list(message.attachments)
     limits = config["limits"]
 
-    if not text and not attachments:
-        return "Send text, media, or both."
+    if not attachments:
+        return "A submission must include at least one image, audio, or video file."
     if len(text) > limits["max_text_length"]:
         return f"Text is limited to {limits['max_text_length']} characters."
     if len(attachments) > 5:
@@ -1106,8 +1106,28 @@ def submission_preview_embeds(message):
 async def delete_source_message(message):
     try:
         await message.delete()
-    except (discord.Forbidden, discord.NotFound, discord.HTTPException):
-        pass
+        return True, ""
+    except discord.NotFound:
+        return True, ""
+    except discord.Forbidden:
+        return (
+            False,
+            "The bot needs the **Manage Messages** permission in the submit channel.",
+        )
+    except discord.HTTPException:
+        try:
+            fresh_message = await message.channel.fetch_message(message.id)
+            await fresh_message.delete()
+            return True, ""
+        except discord.NotFound:
+            return True, ""
+        except discord.Forbidden:
+            return (
+                False,
+                "The bot needs the **Manage Messages** permission in the submit channel.",
+            )
+        except discord.HTTPException as error:
+            return False, f"The source message could not be deleted: {error}"
 
 
 async def create_submission(source_message, category):
@@ -1247,7 +1267,9 @@ async def create_submission(source_message, category):
         category_cooldowns[
             f"{source_message.guild.id}:{category}"
         ] = now
-        await delete_source_message(source_message)
+        deleted, delete_error = await delete_source_message(source_message)
+        if not deleted:
+            raise RuntimeError(delete_error)
         return True, response_text
     except Exception as error:
         if created_message is not None:
@@ -1332,15 +1354,27 @@ class SubmissionConfirmView(discord.ui.View):
             return
         self.finished = True
         await interaction.response.defer()
-        await delete_source_message(self.source_message)
-        await self.finish("Submission cancelled.")
+        deleted, delete_error = await delete_source_message(
+            self.source_message
+        )
+        if deleted:
+            await self.finish("Submission cancelled.")
+        else:
+            await self.finish(
+                f"Submission cancelled, but {delete_error}"
+            )
 
     async def on_timeout(self):
         if self.finished:
             return
         self.finished = True
-        await delete_source_message(self.source_message)
-        await self.finish("Submission timed out. Run `/submit` to start again.")
+        deleted, delete_error = await delete_source_message(
+            self.source_message
+        )
+        message = "Submission timed out. Run `/submit` to start again."
+        if not deleted:
+            message += f"\n{delete_error}"
+        await self.finish(message)
 
 
 @tree.command(name="submit", description="Start a guided SDAC submission")
@@ -1360,6 +1394,14 @@ async def submit(interaction, category: str):
         channel = bot.get_channel(submit_channel_id)
         await interaction.response.send_message(
             f"Please submit in {channel.mention if channel else 'the configured channel'}.",
+            ephemeral=True,
+        )
+        return
+
+    if not interaction.app_permissions.manage_messages:
+        await interaction.response.send_message(
+            "The bot needs the **Manage Messages** permission in this "
+            "channel before guided submissions can be used.",
             ephemeral=True,
         )
         return
@@ -1395,8 +1437,9 @@ async def submit(interaction, category: str):
     active_submission_sessions.add(session_key)
     await interaction.response.send_message(
         "**Step 2 of 3: Send your content**\n"
-        "Send one normal message in this channel containing text, media, "
-        "or both. You can attach up to 5 files.\n\n"
+        "Send one normal message in this channel with at least one image, "
+        "audio, or video attachment. Text is optional. You can attach up "
+        "to 5 files.\n\n"
         "You have 5 minutes.",
         ephemeral=True,
     )
@@ -1425,6 +1468,7 @@ async def submit(interaction, category: str):
             validation_error = validate_submission_message(source_message)
             if not validation_error:
                 break
+            await delete_source_message(source_message)
             await interaction.edit_original_response(
                 content=(
                     f"**Step 2 of 3: Try again**\n{validation_error}\n\n"
