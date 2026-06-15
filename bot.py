@@ -2065,14 +2065,31 @@ async def before_daily_top_scheduler():
     await bot.wait_until_ready()
 
 
+async def sync_slash_commands():
+    synced_global = await tree.sync()
+    command_names = ", ".join(sorted(command.name for command in synced_global))
+    print(f"Synced {len(synced_global)} global slash commands: {command_names}")
+
+    for guild in bot.guilds:
+        discord_guild = discord.Object(id=guild.id)
+        tree.copy_global_to(guild=discord_guild)
+        synced_guild = await tree.sync(guild=discord_guild)
+        guild_command_names = ", ".join(
+            sorted(command.name for command in synced_guild)
+        )
+        print(
+            f"Synced {len(synced_guild)} slash commands to "
+            f"{guild.name} ({guild.id}): {guild_command_names}"
+        )
+
+
 @bot.event
 async def on_ready():
     bot.add_view(VoteView())
     bot.add_view(ApprovalView())
     migrate_legacy_config()
     try:
-        synced = await tree.sync()
-        print(f"Synced {len(synced)} slash commands.")
+        await sync_slash_commands()
     except Exception as error:
         print(f"Slash command sync failed: {error}")
     if not daily_top_scheduler.is_running():
