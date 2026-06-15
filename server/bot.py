@@ -4,7 +4,7 @@ import os
 import sqlite3
 import time
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -35,6 +35,7 @@ DEFAULT_CONFIG = {
         "max_file_bytes": 25 * 1024 * 1024,
         "max_total_bytes": 50 * 1024 * 1024,
         "max_text_length": 1500,
+        "wrong_guess_timeout_seconds": 60,
     },
 }
 
@@ -258,6 +259,58 @@ def initialize_database():
                 PRIMARY KEY (guild_id, run_date)
             )
         """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS guess_games (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                channel_id TEXT,
+                message_id TEXT,
+                starter_user_id TEXT,
+                starter_username TEXT,
+                answer TEXT,
+                answer_display TEXT,
+                prompt_text TEXT,
+                media_path TEXT,
+                media_name TEXT,
+                media_type TEXT,
+                status TEXT DEFAULT 'active',
+                winner_user_id TEXT,
+                winner_username TEXT,
+                started_at TEXT,
+                solved_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS guess_points (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                channel_id TEXT,
+                user_id TEXT,
+                username TEXT,
+                month TEXT,
+                points INTEGER DEFAULT 0,
+                updated_at TEXT,
+                UNIQUE (guild_id, channel_id, user_id, month)
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS guess_cooldowns (
+                guild_id TEXT,
+                channel_id TEXT,
+                user_id TEXT,
+                timeout_until TEXT,
+                PRIMARY KEY (guild_id, channel_id, user_id)
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS monthly_guess_runs (
+                guild_id TEXT,
+                channel_id TEXT,
+                month TEXT,
+                created_at TEXT,
+                PRIMARY KEY (guild_id, channel_id, month)
+            )
+        """)
 
         submission_columns = {
             "guild_id": "TEXT",
@@ -313,6 +366,14 @@ def initialize_database():
             CREATE INDEX IF NOT EXISTS idx_submissions_repost
             ON submissions (repost_message_id)
         """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guess_games_active
+            ON guess_games (guild_id, channel_id, status)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guess_points_month
+            ON guess_points (guild_id, channel_id, month, points)
+        """)
 
 
 initialize_database()
@@ -329,6 +390,21 @@ def utc_now_display():
 
 def clean_category_name(category):
     return category.lower().strip().replace(" ", "")
+
+
+def normalize_guess(value):
+    return " ".join(value.casefold().strip().split())
+
+
+def current_month_key():
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+def previous_month_key(now=None):
+    now = now or datetime.now(timezone.utc)
+    first_of_month = now.replace(day=1)
+    previous_month = first_of_month - timedelta(days=1)
+    return previous_month.strftime("%Y-%m")
 
 
 def is_allowed_file(filename):
@@ -1492,6 +1568,294 @@ async def submit(interaction, category: str):
     view.preview_message = preview_message
 
 
+@tree.command(name="startgame", description="Start a guessing game in a channel")
+@app_commands.guild_only()
+@app_commands.describe(
+    channel="Channel where users will guess",
+    answer="Correct answer for the media",
+    media="Image, video, or audio to guess",
+    text="Optional prompt text",
+)
+async def startgame(
+    interaction,
+    channel: discord.TextChannel,
+    answer: str,
+    media: discord.Attachment,
+    text: str = "",
+):
+    if not await require_admin(interaction):
+        return
+
+    answer = answer.strip()
+    if not answer:
+        await interaction.response.send_message(
+            "The answer cannot be empty.",
+            ephemeral=True,
+        )
+        return
+    if len(text) > config["limits"]["max_text_length"]:
+        await interaction.response.send_message(
+            f"Text is limited to {config['limits']['max_text_length']} characters.",
+            ephemeral=True,
+        )
+        return
+    if not is_allowed_file(media.filename):
+        await interaction.response.send_message(
+            "The game media must be an image, video, or audio file.",
+            ephemeral=True,
+        )
+        return
+    if media.size > config["limits"]["max_file_bytes"]:
+        await interaction.response.send_message(
+            "The game media exceeds the per-file size limit.",
+            ephemeral=True,
+        )
+        return
+
+    permissions = channel.permissions_for(interaction.guild.me)
+    if not (
+        permissions.view_channel
+        and permissions.send_messages
+        and permissions.attach_files
+    ):
+        await interaction.response.send_message(
+            "The bot needs View Channel, Send Messages, and Attach Files "
+            f"in {channel.mention}.",
+            ephemeral=True,
+        )
+        return
+
+    with database() as connection:
+        active_game = connection.execute("""
+            SELECT id
+            FROM guess_games
+            WHERE guild_id = ?
+              AND channel_id = ?
+              AND status = 'active'
+        """, (str(interaction.guild_id), str(channel.id))).fetchone()
+
+    if active_game:
+        await interaction.response.send_message(
+            f"There is already an active guessing game in {channel.mention}.",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    game_folder = (
+        MEDIA_DIR
+        / str(interaction.guild_id)
+        / "guess_games"
+        / str(channel.id)
+    )
+    game_folder.mkdir(parents=True, exist_ok=True)
+    safe_name = Path(media.filename).name.replace("\\", "_")
+    media_path = game_folder / f"{int(time.time())}_{interaction.id}_{safe_name}"
+    discord_file = None
+    game_message = None
+    game_id = None
+
+    try:
+        await media.save(media_path)
+        discord_file = discord.File(media_path, filename=media.filename)
+        game_message = await channel.send(
+            content=(
+                "**Guessing Game Started**\n"
+                f"{text.strip()}\n\n"
+                f"Use `/guess channel:{channel.name} guess:<your guess>`."
+            ).strip(),
+            file=discord_file,
+        )
+
+        with database() as connection:
+            cursor = connection.execute("""
+                INSERT INTO guess_games (
+                    guild_id, channel_id, message_id, starter_user_id,
+                    starter_username, answer, answer_display, prompt_text,
+                    media_path, media_name, media_type, status, started_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+            """, (
+                str(interaction.guild_id),
+                str(channel.id),
+                str(game_message.id),
+                str(interaction.user.id),
+                str(interaction.user),
+                normalize_guess(answer),
+                answer,
+                text.strip(),
+                str(media_path),
+                media.filename,
+                get_media_type(media.filename),
+                utc_now_iso(),
+            ))
+            game_id = cursor.lastrowid
+
+        await interaction.followup.send(
+            f"Guessing game `{game_id}` started in {channel.mention}.",
+            ephemeral=True,
+        )
+    except Exception as error:
+        if game_message is not None:
+            try:
+                await game_message.delete()
+            except discord.HTTPException:
+                pass
+        if game_id is not None:
+            with database() as connection:
+                connection.execute(
+                    "DELETE FROM guess_games WHERE id = ?",
+                    (game_id,),
+                )
+        cleanup_files([str(media_path)])
+        await interaction.followup.send(
+            f"Game start failed: `{error}`",
+            ephemeral=True,
+        )
+    finally:
+        if discord_file is not None:
+            discord_file.close()
+
+
+@tree.command(name="guess", description="Guess the answer for a channel game")
+@app_commands.guild_only()
+@app_commands.describe(
+    channel="Channel with the active game",
+    guess="Your guess",
+)
+async def guess(
+    interaction,
+    channel: discord.TextChannel,
+    guess: str,
+):
+    normalized_guess = normalize_guess(guess)
+    if not normalized_guess:
+        await interaction.response.send_message(
+            "Your guess cannot be empty.",
+            ephemeral=True,
+        )
+        return
+
+    now = datetime.now(timezone.utc)
+    with database() as connection:
+        game = connection.execute("""
+            SELECT *
+            FROM guess_games
+            WHERE guild_id = ?
+              AND channel_id = ?
+              AND status = 'active'
+            ORDER BY started_at DESC, id DESC
+            LIMIT 1
+        """, (str(interaction.guild_id), str(channel.id))).fetchone()
+
+        if not game:
+            await interaction.response.send_message(
+                f"There is no active guessing game in {channel.mention}.",
+                ephemeral=True,
+            )
+            return
+
+        cooldown = connection.execute("""
+            SELECT timeout_until
+            FROM guess_cooldowns
+            WHERE guild_id = ?
+              AND channel_id = ?
+              AND user_id = ?
+        """, (
+            str(interaction.guild_id),
+            str(channel.id),
+            str(interaction.user.id),
+        )).fetchone()
+
+        if cooldown and cooldown["timeout_until"]:
+            timeout_until = datetime.fromisoformat(cooldown["timeout_until"])
+            if timeout_until > now:
+                remaining = int((timeout_until - now).total_seconds()) + 1
+                await interaction.response.send_message(
+                    f"Wrong guess cooldown: try again in {remaining}s.",
+                    ephemeral=True,
+                )
+                return
+
+        if normalized_guess != game["answer"]:
+            seconds = config["limits"].get(
+                "wrong_guess_timeout_seconds",
+                60,
+            )
+            timeout_until = now + timedelta(seconds=seconds)
+            connection.execute("""
+                INSERT INTO guess_cooldowns (
+                    guild_id, channel_id, user_id, timeout_until
+                )
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (guild_id, channel_id, user_id)
+                DO UPDATE SET timeout_until = excluded.timeout_until
+            """, (
+                str(interaction.guild_id),
+                str(channel.id),
+                str(interaction.user.id),
+                timeout_until.isoformat(),
+            ))
+            await interaction.response.send_message(
+                f"Incorrect. You can guess again in {seconds}s.",
+                ephemeral=True,
+            )
+            return
+
+        month = current_month_key()
+        connection.execute("""
+            UPDATE guess_games
+            SET status = 'solved',
+                winner_user_id = ?,
+                winner_username = ?,
+                solved_at = ?
+            WHERE id = ? AND status = 'active'
+        """, (
+            str(interaction.user.id),
+            str(interaction.user),
+            utc_now_iso(),
+            game["id"],
+        ))
+        connection.execute("""
+            INSERT INTO guess_points (
+                guild_id, channel_id, user_id, username,
+                month, points, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+            ON CONFLICT (guild_id, channel_id, user_id, month)
+            DO UPDATE SET
+                points = points + 1,
+                username = excluded.username,
+                updated_at = excluded.updated_at
+        """, (
+            str(interaction.guild_id),
+            str(channel.id),
+            str(interaction.user.id),
+            str(interaction.user),
+            month,
+            utc_now_iso(),
+        ))
+        connection.execute("""
+            DELETE FROM guess_cooldowns
+            WHERE guild_id = ?
+              AND channel_id = ?
+              AND user_id = ?
+        """, (
+            str(interaction.guild_id),
+            str(channel.id),
+            str(interaction.user.id),
+        ))
+
+    await interaction.response.send_message(
+        f"Correct. You gained 1 point for `{month}`.",
+        ephemeral=True,
+    )
+    await channel.send(
+        f"{interaction.user.mention} guessed correctly. "
+        f"The answer was **{game['answer_display']}**."
+    )
+
+
 @tree.command(name="removesubmission", description="Remove a submission")
 @app_commands.guild_only()
 @app_commands.describe(submission_id="Dashboard submission ID", reason="Audit reason")
@@ -1614,6 +1978,70 @@ async def post_daily_top(guild_id, guild_config):
         """, (str(guild_id), today, utc_now_iso()))
 
 
+async def post_monthly_guess_leaderboards():
+    now = datetime.now(timezone.utc)
+    if now.day != 1:
+        return
+
+    month = previous_month_key(now)
+    with database() as connection:
+        channel_rows = connection.execute("""
+            SELECT DISTINCT guild_id, channel_id
+            FROM guess_points
+            WHERE month = ?
+        """, (month,)).fetchall()
+
+    for channel_row in channel_rows:
+        guild_id = channel_row["guild_id"]
+        channel_id = channel_row["channel_id"]
+        with database() as connection:
+            already_posted = connection.execute("""
+                SELECT 1
+                FROM monthly_guess_runs
+                WHERE guild_id = ?
+                  AND channel_id = ?
+                  AND month = ?
+            """, (guild_id, channel_id, month)).fetchone()
+            if already_posted:
+                continue
+            leaders = connection.execute("""
+                SELECT username, points
+                FROM guess_points
+                WHERE guild_id = ?
+                  AND channel_id = ?
+                  AND month = ?
+                ORDER BY points DESC, username ASC
+                LIMIT 3
+            """, (guild_id, channel_id, month)).fetchall()
+
+        if not leaders:
+            continue
+
+        channel = bot.get_channel(int(channel_id))
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(int(channel_id))
+            except discord.HTTPException:
+                channel = None
+        if channel is None:
+            continue
+
+        lines = [f"**Guessing Game Top 3 - {month}**"]
+        for index, leader in enumerate(leaders, start=1):
+            lines.append(
+                f"{index}. {leader['username']} - {leader['points']} point(s)"
+            )
+        await channel.send("\n".join(lines))
+
+        with database() as connection:
+            connection.execute("""
+                INSERT OR IGNORE INTO monthly_guess_runs (
+                    guild_id, channel_id, month, created_at
+                )
+                VALUES (?, ?, ?, ?)
+            """, (guild_id, channel_id, month, utc_now_iso()))
+
+
 @tasks.loop(minutes=1)
 async def daily_top_scheduler():
     now = datetime.now(timezone.utc)
@@ -1621,6 +2049,7 @@ async def daily_top_scheduler():
     for guild_id, guild_config in config.get("guilds", {}).items():
         if guild_config.get("daily_top_time_utc", "00:00") == current_time:
             await post_daily_top(guild_id, guild_config)
+    await post_monthly_guess_leaderboards()
 
 
 @daily_top_scheduler.before_loop
