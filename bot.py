@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -393,7 +394,9 @@ def clean_category_name(category):
 
 
 def normalize_guess(value):
-    return " ".join(value.casefold().strip().split())
+    cleaned = re.sub(r"[^\w\s]", " ", value.casefold())
+    cleaned = re.sub(r"[_\s]+", " ", cleaned)
+    return cleaned.strip()
 
 
 def current_month_key():
