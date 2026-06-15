@@ -515,7 +515,7 @@ async def require_admin(interaction):
     if admin_only(interaction):
         return True
     await interaction.response.send_message(
-        "Administrator permission is required.",
+        "Only admins can use this command.",
         ephemeral=True,
     )
     return False
@@ -1573,7 +1573,6 @@ async def submit(interaction, category: str):
 
 @tree.command(name="startgame", description="Start a guessing game in a channel")
 @app_commands.guild_only()
-@app_commands.default_permissions(administrator=True)
 @app_commands.describe(
     channel="Channel where users will guess",
     answer="Correct answer for the media",
@@ -1676,7 +1675,7 @@ async def startgame(
             content=(
                 "**Guessing Game Started**\n"
                 f"{text.strip()}\n\n"
-                "Use `/guess guess:<your guess>` in this channel."
+                "Use `/guess <guess>` in this channel."
             ).strip(),
             file=discord_file,
         )
