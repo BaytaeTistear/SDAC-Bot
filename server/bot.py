@@ -1573,6 +1573,7 @@ async def submit(interaction, category: str):
 
 @tree.command(name="startgame", description="Start a guessing game in a channel")
 @app_commands.guild_only()
+@app_commands.default_permissions(administrator=True)
 @app_commands.describe(
     channel="Channel where users will guess",
     answer="Correct answer for the media",
@@ -1615,7 +1616,17 @@ async def startgame(
         )
         return
 
-    permissions = channel.permissions_for(interaction.guild.me)
+    bot_member = interaction.guild.me
+    if bot_member is None and bot.user is not None:
+        bot_member = interaction.guild.get_member(bot.user.id)
+    if bot_member is None:
+        await interaction.response.send_message(
+            "The bot could not verify its permissions in that channel.",
+            ephemeral=True,
+        )
+        return
+
+    permissions = channel.permissions_for(bot_member)
     if not (
         permissions.view_channel
         and permissions.send_messages
@@ -1665,7 +1676,7 @@ async def startgame(
             content=(
                 "**Guessing Game Started**\n"
                 f"{text.strip()}\n\n"
-                f"Use `/guess channel:{channel.name} guess:<your guess>`."
+                "Use `/guess guess:<your guess>` in this channel."
             ).strip(),
             file=discord_file,
         )
@@ -1720,17 +1731,10 @@ async def startgame(
             discord_file.close()
 
 
-@tree.command(name="guess", description="Guess the answer for a channel game")
+@tree.command(name="guess", description="Guess the answer for this channel's game")
 @app_commands.guild_only()
-@app_commands.describe(
-    channel="Channel with the active game",
-    guess="Your guess",
-)
-async def guess(
-    interaction,
-    channel: discord.TextChannel,
-    guess: str,
-):
+@app_commands.describe(guess="Your guess")
+async def guess(interaction, guess: str):
     normalized_guess = normalize_guess(guess)
     if not normalized_guess:
         await interaction.response.send_message(
@@ -1740,6 +1744,7 @@ async def guess(
         return
 
     now = datetime.now(timezone.utc)
+    channel = interaction.channel
     with database() as connection:
         game = connection.execute("""
             SELECT *
@@ -1749,11 +1754,11 @@ async def guess(
               AND status = 'active'
             ORDER BY started_at DESC, id DESC
             LIMIT 1
-        """, (str(interaction.guild_id), str(channel.id))).fetchone()
+        """, (str(interaction.guild_id), str(interaction.channel_id))).fetchone()
 
         if not game:
             await interaction.response.send_message(
-                f"There is no active guessing game in {channel.mention}.",
+                "There is no active guessing game in this channel.",
                 ephemeral=True,
             )
             return
@@ -1766,7 +1771,7 @@ async def guess(
               AND user_id = ?
         """, (
             str(interaction.guild_id),
-            str(channel.id),
+            str(interaction.channel_id),
             str(interaction.user.id),
         )).fetchone()
 
@@ -1795,7 +1800,7 @@ async def guess(
                 DO UPDATE SET timeout_until = excluded.timeout_until
             """, (
                 str(interaction.guild_id),
-                str(channel.id),
+                str(interaction.channel_id),
                 str(interaction.user.id),
                 timeout_until.isoformat(),
             ))
@@ -1830,12 +1835,12 @@ async def guess(
                 points = points + 1,
                 username = excluded.username,
                 updated_at = excluded.updated_at
-        """, (
-            str(interaction.guild_id),
-            str(channel.id),
-            str(interaction.user.id),
-            str(interaction.user),
-            month,
+            """, (
+                str(interaction.guild_id),
+                str(interaction.channel_id),
+                str(interaction.user.id),
+                str(interaction.user),
+                month,
             utc_now_iso(),
         ))
         connection.execute("""
@@ -1845,7 +1850,7 @@ async def guess(
               AND user_id = ?
         """, (
             str(interaction.guild_id),
-            str(channel.id),
+            str(interaction.channel_id),
             str(interaction.user.id),
         ))
 
@@ -1853,10 +1858,11 @@ async def guess(
         f"Correct. You gained 1 point for `{month}`.",
         ephemeral=True,
     )
-    await channel.send(
-        f"{interaction.user.mention} guessed correctly. "
-        f"The answer was **{game['answer_display']}**."
-    )
+    if channel is not None:
+        await channel.send(
+            f"{interaction.user.mention} guessed correctly. "
+            f"The answer was **{game['answer_display']}**."
+        )
 
 
 @tree.command(name="removesubmission", description="Remove a submission")
