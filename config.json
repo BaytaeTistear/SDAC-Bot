@@ -1,5 +1,8 @@
 {
-    "submit_channel": null,
-    "daily_top_channel": null,
-    "categories": {}
+    "guilds": {},
+    "limits": {
+        "max_file_bytes": 26214400,
+        "max_total_bytes": 52428800,
+        "max_text_length": 1500
+    }
 }

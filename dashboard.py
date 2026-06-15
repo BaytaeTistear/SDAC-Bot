@@ -1,24 +1,32 @@
+import math
 import os
 import sqlite3
-from contextlib import closing
+from contextlib import closing, contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from flask import Flask, abort, redirect, render_template_string, request, send_from_directory, url_for
+from flask import (
+    Flask,
+    abort,
+    redirect,
+    render_template_string,
+    request,
+    send_from_directory,
+    url_for,
+)
 
-try:
-    from config import TOKEN
-except Exception:
-    TOKEN = os.getenv("DISCORD_TOKEN", "")
+from config import TOKEN
 
 
 app = Flask(__name__)
 
-ADMIN_KEY = "ImTheBestAdmin"
+ADMIN_KEY = os.getenv("SDAC_ADMIN_KEY", "ImTheBestAdmin")
 BASE_DIR = Path(__file__).resolve().parent
 DB_FILE = BASE_DIR / "sdac.db"
 MEDIA_DIR = (BASE_DIR / "media").resolve()
+PAGE_SIZE = 20
 
 
 HTML = """
@@ -37,33 +45,41 @@ HTML = """
             --muted: #a8adb8;
             --accent: #7c9cff;
             --danger: #e45d68;
+            --success: #63c174;
         }
 
         * { box-sizing: border-box; }
-
         body {
-            font-family: Arial, sans-serif;
             background: var(--bg);
             color: #f4f5f7;
+            font-family: Arial, sans-serif;
             margin: 0;
             padding: 24px;
         }
 
         main {
-            width: min(100%, 1000px);
             margin: 0 auto;
+            width: min(100%, 1000px);
         }
 
         h1, h2 { text-align: center; }
         h1 { margin-bottom: 8px; }
+        a { color: var(--accent); }
 
-        .mode {
+        .mode, .empty {
             color: var(--muted);
             text-align: center;
-            margin: 0 0 24px;
         }
 
+        .mode { margin: 0 0 24px; }
         .mode strong { color: var(--accent); }
+
+        .admin-nav {
+            display: flex;
+            gap: 14px;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
 
         .filter {
             display: flex;
@@ -73,16 +89,16 @@ HTML = """
 
         .filter form {
             display: flex;
-            gap: 10px;
             flex-wrap: wrap;
+            gap: 10px;
             justify-content: center;
         }
 
         select, button {
             border: 1px solid var(--border);
             border-radius: 7px;
-            padding: 10px 12px;
             font-size: 16px;
+            padding: 10px 12px;
         }
 
         button {
@@ -93,20 +109,19 @@ HTML = """
         }
 
         .section { margin-bottom: 40px; }
-
-        .post {
+        .post, .audit-row {
             background: var(--panel);
             border: 1px solid var(--border);
             border-radius: 12px;
-            padding: 16px;
             margin: 14px 0;
+            padding: 16px;
         }
 
         .post-header {
-            display: flex;
             align-items: center;
-            justify-content: space-between;
+            display: flex;
             gap: 12px;
+            justify-content: space-between;
         }
 
         .meta {
@@ -119,21 +134,31 @@ HTML = """
             font-weight: bold;
         }
 
+        .status {
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            display: inline-block;
+            margin-left: 6px;
+            padding: 2px 7px;
+        }
+
+        .status-posted { color: var(--success); }
+        .status-pending { color: #ffd75e; }
+
         .message {
             margin-top: 12px;
-            white-space: pre-wrap;
             overflow-wrap: anywhere;
+            white-space: pre-wrap;
         }
 
         .media-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
             gap: 12px;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
             margin-top: 14px;
         }
 
-        .media-grid img,
-        .media-grid video {
+        .media-grid img, .media-grid video {
             background: #090a0c;
             border-radius: 8px;
             display: block;
@@ -143,11 +168,7 @@ HTML = """
         }
 
         .media-grid audio { width: 100%; }
-
-        .download {
-            color: var(--accent);
-            overflow-wrap: anywhere;
-        }
+        .download { overflow-wrap: anywhere; }
 
         .delete-button {
             background: var(--danger);
@@ -166,7 +187,19 @@ HTML = """
         }
 
         .notice.error { border-color: var(--danger); }
-        .empty { color: var(--muted); margin-top: 40px; text-align: center; }
+        .empty { margin-top: 40px; }
+
+        .pagination {
+            align-items: center;
+            display: flex;
+            gap: 18px;
+            justify-content: center;
+            margin: 30px 0;
+        }
+
+        .pagination .disabled {
+            color: var(--muted);
+        }
     </style>
 </head>
 <body>
@@ -179,6 +212,13 @@ HTML = """
             Public gallery
         {% endif %}
     </p>
+
+    {% if is_admin %}
+        <nav class="admin-nav">
+            <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
+            <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
+        </nav>
+    {% endif %}
 
     {% if notice %}
         <div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>
@@ -197,6 +237,16 @@ HTML = """
                     </option>
                 {% endfor %}
             </select>
+            {% if is_admin %}
+                <select name="status" aria-label="Status">
+                    <option value="">All Statuses</option>
+                    {% for status in ("posted", "pending") %}
+                        <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>
+                            {{ status }}
+                        </option>
+                    {% endfor %}
+                </select>
+            {% endif %}
             <button type="submit">Filter</button>
         </form>
     </div>
@@ -209,13 +259,24 @@ HTML = """
                     <article class="post">
                         <div class="post-header">
                             <div class="meta">
-                                {{ post.username }}
+                                ID {{ post.id }}
+                                &middot; {{ post.username }}
                                 &middot; {{ post.category }}
-                                &middot; <span class="stars">{{ post.stars or 0 }} stars</span>
+                                &middot; <span class="stars">{{ post.stars or 0 }} votes</span>
+                                {% if is_admin %}
+                                    <span class="status status-{{ post.status }}">{{ post.status }}</span>
+                                {% endif %}
                             </div>
                             {% if is_admin %}
                                 <form method="post"
-                                      action="{{ url_for('delete_submission', submission_id=post.id, key=admin_key, category=selected_category) }}"
+                                      action="{{ url_for(
+                                          'delete_submission',
+                                          submission_id=post.id,
+                                          key=admin_key,
+                                          category=selected_category,
+                                          status=selected_status,
+                                          page=page
+                                      ) }}"
                                       onsubmit="return confirm('Remove this submission from the website and Discord?');">
                                     <button class="delete-button" type="submit">Remove</button>
                                 </form>
@@ -250,24 +311,193 @@ HTML = """
             </section>
         {% endfor %}
     {% else %}
-        <div class="empty">
-            {% if selected_category %}
-                No posts in this category.
-            {% else %}
-                No SDAC submissions yet.
-            {% endif %}
-        </div>
+        <div class="empty">No matching SDAC submissions.</div>
     {% endif %}
+
+    <nav class="pagination">
+        {% if page > 1 %}
+            <a href="{{ page_url(page - 1) }}">Previous</a>
+        {% else %}
+            <span class="disabled">Previous</span>
+        {% endif %}
+        <span>Page {{ page }} of {{ total_pages }}</span>
+        {% if page < total_pages %}
+            <a href="{{ page_url(page + 1) }}">Next</a>
+        {% else %}
+            <span class="disabled">Next</span>
+        {% endif %}
+    </nav>
 </main>
 </body>
 </html>
 """
 
 
-def get_db():
-    db = sqlite3.connect(DB_FILE, timeout=10)
-    db.row_factory = sqlite3.Row
-    return db
+AUDIT_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Audit Log</title>
+    <style>
+        :root { color-scheme: dark; }
+        body {
+            background: #101114;
+            color: #f4f5f7;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 24px;
+        }
+        main { margin: 0 auto; width: min(100%, 1000px); }
+        h1 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { margin-bottom: 24px; text-align: center; }
+        .audit-row {
+            background: #1b1d22;
+            border: 1px solid #30333b;
+            border-radius: 10px;
+            margin: 12px 0;
+            padding: 14px;
+        }
+        .meta { color: #a8adb8; font-size: 14px; }
+        .pagination {
+            display: flex;
+            gap: 18px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+        .disabled { color: #777; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>SDAC Audit Log</h1>
+    <nav><a href="{{ url_for('index', key=admin_key) }}">Back to submissions</a></nav>
+    {% for row in rows %}
+        <article class="audit-row">
+            <strong>{{ row.action }}</strong>
+            submission {{ row.submission_id or "unknown" }}
+            <div class="meta">
+                {{ row.actor_username or "unknown" }}
+                &middot; {{ row.created_at }}
+                {% if row.guild_id %}&middot; guild {{ row.guild_id }}{% endif %}
+            </div>
+            {% if row.details %}<div>{{ row.details }}</div>{% endif %}
+        </article>
+    {% else %}
+        <p>No moderation events recorded.</p>
+    {% endfor %}
+    <nav class="pagination">
+        {% if page > 1 %}
+            <a href="{{ url_for('audit_log', key=admin_key, page=page - 1) }}">Previous</a>
+        {% else %}
+            <span class="disabled">Previous</span>
+        {% endif %}
+        <span>Page {{ page }} of {{ total_pages }}</span>
+        {% if page < total_pages %}
+            <a href="{{ url_for('audit_log', key=admin_key, page=page + 1) }}">Next</a>
+        {% else %}
+            <span class="disabled">Next</span>
+        {% endif %}
+    </nav>
+</main>
+</body>
+</html>
+"""
+
+
+def utc_now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def connect_db():
+    connection = sqlite3.connect(DB_FILE, timeout=30)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA busy_timeout = 30000")
+    connection.execute("PRAGMA journal_mode = WAL")
+    connection.execute("PRAGMA foreign_keys = ON")
+    return connection
+
+
+@contextmanager
+def database():
+    connection = connect_db()
+    try:
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def initialize_database():
+    with database() as connection:
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS submissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                original_message_id TEXT,
+                repost_message_id TEXT,
+                repost_channel_id TEXT,
+                approval_message_id TEXT,
+                approval_channel_id TEXT,
+                user_id TEXT,
+                username TEXT,
+                category TEXT,
+                message_text TEXT,
+                file_paths TEXT,
+                media_paths TEXT,
+                media_names TEXT,
+                media_types TEXT,
+                stars INTEGER DEFAULT 0,
+                voters TEXT DEFAULT '',
+                status TEXT DEFAULT 'posted',
+                submitted_at TEXT,
+                created_at TEXT,
+                approved_at TEXT,
+                daily_posted_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS moderation_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                submission_id INTEGER,
+                action TEXT,
+                actor_user_id TEXT,
+                actor_username TEXT,
+                details TEXT,
+                created_at TEXT
+            )
+        """)
+        columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(submissions)"
+            ).fetchall()
+        }
+        for column, definition in {
+            "guild_id": "TEXT",
+            "approval_message_id": "TEXT",
+            "approval_channel_id": "TEXT",
+            "status": "TEXT DEFAULT 'posted'",
+            "approved_at": "TEXT",
+        }.items():
+            if column not in columns:
+                connection.execute(
+                    f"ALTER TABLE submissions ADD COLUMN {column} {definition}"
+                )
+        connection.execute("""
+            UPDATE submissions
+            SET status = 'posted'
+            WHERE status IS NULL OR status = ''
+        """)
+
+
+initialize_database()
 
 
 def split_values(raw_value):
@@ -279,21 +509,17 @@ def split_values(raw_value):
 def media_relative_path(stored_path):
     path = Path(stored_path)
     parts = list(path.parts)
-
     if "media" in parts:
         parts = parts[parts.index("media") + 1:]
-
     if not parts:
         return None
 
     relative_path = Path(*parts)
     resolved_path = (MEDIA_DIR / relative_path).resolve()
-
     try:
         resolved_path.relative_to(MEDIA_DIR)
     except ValueError:
         return None
-
     return relative_path.as_posix()
 
 
@@ -308,62 +534,60 @@ def prepare_post(row):
         relative_path = media_relative_path(stored_path)
         if not relative_path:
             continue
-
         media.append({
-            "name": names[index] if index < len(names) else Path(relative_path).name,
+            "name": (
+                names[index]
+                if index < len(names)
+                else Path(relative_path).name
+            ),
             "type": types[index] if index < len(types) else "unknown",
             "url": url_for("serve_media", filename=relative_path),
         })
-
     post["media"] = media
     return post
 
 
-def delete_discord_repost(channel_id, message_id):
+def delete_discord_message(channel_id, message_id):
     if not channel_id or not message_id:
         return True, ""
 
     channel_id = str(channel_id)
     message_id = str(message_id)
     if not channel_id.isdigit() or not message_id.isdigit():
-        return False, "The stored Discord message information is invalid."
+        return False, "Stored Discord message information is invalid."
+    if not TOKEN:
+        return False, "DISCORD_TOKEN is not set for the dashboard service."
 
-    if not TOKEN or TOKEN == "YOUR_NEW_TOKEN_HERE":
-        return False, "The dashboard has no Discord bot token, so the repost was not deleted."
-
-    api_url = f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}"
     api_request = Request(
-        api_url,
+        f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}",
         method="DELETE",
         headers={
             "Authorization": f"Bot {TOKEN}",
-            "User-Agent": "SDAC-Dashboard/1.0",
+            "User-Agent": "SDAC-Dashboard/2.0",
         },
     )
-
     try:
         with urlopen(api_request, timeout=15) as response:
             if response.status == 204:
                 return True, ""
             return False, f"Discord returned status {response.status}."
-    except HTTPError as exc:
-        if exc.code == 404:
+    except HTTPError as error:
+        if error.code == 404:
             return True, ""
-        if exc.code == 403:
-            return False, "Discord refused the deletion. Check the bot's channel permissions."
-        return False, f"Discord returned status {exc.code}."
+        if error.code == 403:
+            return False, "Discord refused the deletion. Check bot permissions."
+        return False, f"Discord returned status {error.code}."
     except (URLError, TimeoutError):
-        return False, "Discord could not be reached. The submission was not removed."
+        return False, "Discord could not be reached. Nothing was removed."
 
 
 def delete_local_media(row):
-    stored_paths = split_values(row["media_paths"] or row["file_paths"])
-
-    for stored_path in stored_paths:
+    for stored_path in split_values(
+        row["media_paths"] or row["file_paths"]
+    ):
         relative_path = media_relative_path(stored_path)
         if not relative_path:
             continue
-
         file_path = (MEDIA_DIR / relative_path).resolve()
         if file_path.is_file():
             try:
@@ -372,43 +596,90 @@ def delete_local_media(row):
                 pass
 
 
+def require_admin_key():
+    if request.args.get("key") != ADMIN_KEY:
+        abort(403)
+
+
+def positive_page(raw_value):
+    try:
+        return max(1, int(raw_value))
+    except (TypeError, ValueError):
+        return 1
+
+
 @app.route("/")
 def index():
     selected_category = request.args.get("category", "").strip()
+    selected_status = request.args.get("status", "").strip()
     is_admin = request.args.get("key") == ADMIN_KEY
     notice = request.args.get("notice", "")
     error = request.args.get("error") == "1"
+    page = positive_page(request.args.get("page"))
 
-    with closing(get_db()) as db:
+    where = []
+    parameters = []
+    if not is_admin:
+        where.append("status = 'posted'")
+    elif selected_status in {"posted", "pending"}:
+        where.append("status = ?")
+        parameters.append(selected_status)
+    if selected_category:
+        where.append("category = ?")
+        parameters.append(selected_category)
+
+    where_sql = " WHERE " + " AND ".join(where) if where else ""
+    with closing(connect_db()) as connection:
+        category_where = "" if is_admin else "WHERE status = 'posted'"
         categories = [
             row["category"]
-            for row in db.execute("""
+            for row in connection.execute(f"""
+                SELECT DISTINCT category
+                FROM submissions
+                {category_where}
+                AND category IS NOT NULL AND category != ''
+                ORDER BY category
+            """ if category_where else """
                 SELECT DISTINCT category
                 FROM submissions
                 WHERE category IS NOT NULL AND category != ''
                 ORDER BY category
             """)
         ]
-
-        if selected_category:
-            rows = db.execute("""
+        total_items = connection.execute(
+            f"SELECT COUNT(*) FROM submissions{where_sql}",
+            parameters,
+        ).fetchone()[0]
+        total_pages = max(1, math.ceil(total_items / PAGE_SIZE))
+        page = min(page, total_pages)
+        rows = connection.execute(
+            f"""
                 SELECT *
                 FROM submissions
-                WHERE category = ?
-                ORDER BY stars DESC, created_at DESC
-            """, (selected_category,)).fetchall()
-        else:
-            rows = db.execute("""
-                SELECT *
-                FROM submissions
-                ORDER BY category ASC, stars DESC, created_at DESC
-            """).fetchall()
+                {where_sql}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ? OFFSET ?
+            """,
+            parameters + [PAGE_SIZE, (page - 1) * PAGE_SIZE],
+        ).fetchall()
 
     grouped_posts = {}
     for row in rows:
         post = prepare_post(row)
-        category = post["category"] or "Uncategorized"
-        grouped_posts.setdefault(category, []).append(post)
+        grouped_posts.setdefault(
+            post["category"] or "Uncategorized",
+            [],
+        ).append(post)
+
+    def page_url(page_number):
+        values = {
+            "category": selected_category,
+            "page": page_number,
+        }
+        if is_admin:
+            values["key"] = ADMIN_KEY
+            values["status"] = selected_status
+        return url_for("index", **values)
 
     return render_template_string(
         HTML,
@@ -418,71 +689,121 @@ def index():
         grouped_posts=grouped_posts,
         is_admin=is_admin,
         notice=notice,
+        page=page,
+        page_url=page_url,
         selected_category=selected_category,
+        selected_status=selected_status,
+        total_pages=total_pages,
+    )
+
+
+@app.route("/audit")
+def audit_log():
+    require_admin_key()
+    page = positive_page(request.args.get("page"))
+    with closing(connect_db()) as connection:
+        total_items = connection.execute(
+            "SELECT COUNT(*) FROM moderation_history"
+        ).fetchone()[0]
+        total_pages = max(1, math.ceil(total_items / PAGE_SIZE))
+        page = min(page, total_pages)
+        rows = connection.execute("""
+            SELECT *
+            FROM moderation_history
+            ORDER BY created_at DESC, id DESC
+            LIMIT ? OFFSET ?
+        """, (PAGE_SIZE, (page - 1) * PAGE_SIZE)).fetchall()
+
+    return render_template_string(
+        AUDIT_HTML,
+        admin_key=ADMIN_KEY,
+        page=page,
+        rows=rows,
+        total_pages=total_pages,
     )
 
 
 @app.route("/media/<path:filename>")
 def serve_media(filename):
     resolved_path = (MEDIA_DIR / filename).resolve()
-
     try:
         resolved_path.relative_to(MEDIA_DIR)
     except ValueError:
         abort(404)
-
     return send_from_directory(MEDIA_DIR, filename)
 
 
 @app.post("/delete/<int:submission_id>")
 def delete_submission(submission_id):
-    if request.args.get("key") != ADMIN_KEY:
-        abort(403)
-
+    require_admin_key()
     selected_category = request.args.get("category", "").strip()
+    selected_status = request.args.get("status", "").strip()
+    page = positive_page(request.args.get("page"))
 
-    db = get_db()
-    try:
-        row = db.execute(
+    with closing(connect_db()) as connection:
+        row = connection.execute(
             "SELECT * FROM submissions WHERE id = ?",
             (submission_id,),
         ).fetchone()
 
-        if not row:
-            return redirect(url_for(
-                "index",
-                key=ADMIN_KEY,
-                category=selected_category,
-                notice="Submission not found.",
-                error=1,
-            ))
+    redirect_values = {
+        "key": ADMIN_KEY,
+        "category": selected_category,
+        "status": selected_status,
+        "page": page,
+    }
+    if not row:
+        return redirect(url_for(
+            "index",
+            notice="Submission not found.",
+            error=1,
+            **redirect_values,
+        ))
 
-        deleted, error_message = delete_discord_repost(
-            row["repost_channel_id"],
-            row["repost_message_id"],
+    for channel_id, message_id in (
+        (row["repost_channel_id"], row["repost_message_id"]),
+        (row["approval_channel_id"], row["approval_message_id"]),
+    ):
+        deleted, error_message = delete_discord_message(
+            channel_id,
+            message_id,
         )
-
         if not deleted:
             return redirect(url_for(
                 "index",
-                key=ADMIN_KEY,
-                category=selected_category,
                 notice=error_message,
                 error=1,
+                **redirect_values,
             ))
 
-        db.execute("DELETE FROM submissions WHERE id = ?", (submission_id,))
-        db.commit()
-        delete_local_media(row)
-
-        return redirect(url_for(
-            "index",
-            key=ADMIN_KEY,
-            category=selected_category,
-            notice="Submission removed from the website and Discord.",
+    actor = f"web-admin@{request.remote_addr or 'unknown'}"
+    with database() as connection:
+        connection.execute("""
+            INSERT INTO moderation_history (
+                guild_id, submission_id, action, actor_user_id,
+                actor_username, details, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            row["guild_id"],
+            row["id"],
+            "remove",
+            request.remote_addr or "unknown",
+            actor,
+            "Removed from dashboard",
+            utc_now_iso(),
         ))
-    finally:
-        db.close()
+        connection.execute(
+            "DELETE FROM submissions WHERE id = ?",
+            (submission_id,),
+        )
+
+    delete_local_media(row)
+    return redirect(url_for(
+        "index",
+        notice="Submission removed from the website and Discord.",
+        **redirect_values,
+    ))
 
 
 if __name__ == "__main__":
