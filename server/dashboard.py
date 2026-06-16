@@ -240,6 +240,14 @@ HTML = """
             {% if is_admin %}
                 <input type="hidden" name="key" value="{{ admin_key }}">
             {% endif %}
+            <select name="guild_id" aria-label="Discord server">
+                <option value="all">All Discord Servers</option>
+                {% for guild in guild_options %}
+                    <option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>
+                        {{ guild.name }}
+                    </option>
+                {% endfor %}
+            </select>
             <select name="category" aria-label="Category">
                 <option value="">All Categories</option>
                 {% for cat in categories %}
@@ -273,6 +281,7 @@ HTML = """
             <button type="submit">Filter</button>
         </form>
     </div>
+    <p class="mode">Viewing: {{ selected_guild_name }}</p>
 
     {% if grouped_posts %}
         {% if selected_month %}
@@ -287,6 +296,9 @@ HTML = """
                             <div class="meta">
                                 ID {{ post.id }}
                                 &middot; {{ post.username }}
+                                {% if post.guild_name %}
+                                    &middot; {{ post.guild_name }}
+                                {% endif %}
                                 &middot; {{ post.category }}
                                 &middot; <span class="stars">{{ post.stars or 0 }} votes</span>
                                 {% if is_admin %}
@@ -300,6 +312,7 @@ HTML = """
                                           submission_id=post.id,
                                           key=admin_key,
                                           category=selected_category,
+                                          guild_id=selected_guild_id or 'all',
                                           status=selected_status,
                                           page=page
                                       ) }}"
@@ -546,6 +559,25 @@ GUESSING_HTML = """
             padding: 10px;
             text-align: left;
         }
+        form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 24px;
+        }
+        select, button {
+            border: 1px solid #30333b;
+            border-radius: 7px;
+            font-size: 16px;
+            padding: 10px 12px;
+        }
+        button {
+            background: #7c9cff;
+            color: #0b1020;
+            cursor: pointer;
+            font-weight: bold;
+        }
         .empty {
             color: #a8adb8;
             text-align: center;
@@ -564,11 +596,62 @@ GUESSING_HTML = """
             <a href="{{ url_for('admin_logout') }}">Log out</a>
         {% endif %}
     </nav>
-    <h2>{{ month }}</h2>
+    <form method="get" action="{{ url_for('guessing_leaderboard') }}">
+        {% if is_admin %}
+            <input type="hidden" name="key" value="{{ admin_key }}">
+        {% endif %}
+        <select name="guild_id" aria-label="Discord server">
+            <option value="all">All Discord Servers</option>
+            {% for guild in guild_options %}
+                <option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>
+                    {{ guild.name }}
+                </option>
+            {% endfor %}
+        </select>
+        <select name="month" aria-label="Month">
+            {% for available_month in months %}
+                <option value="{{ available_month }}" {% if month == available_month %}selected{% endif %}>
+                    {{ available_month }}
+                </option>
+            {% endfor %}
+        </select>
+        <button type="submit">Filter</button>
+    </form>
+    <p class="empty">Viewing: {{ selected_guild_name }}</p>
+
+    <h2>Cross-Server Ranking - {{ month }}</h2>
+    {% if cross_server_scores %}
+        <section class="channel">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>User</th>
+                        <th>Total Points</th>
+                        <th>Servers</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in cross_server_scores %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>{{ row.username }}</td>
+                            <td>{{ row.points }}</td>
+                            <td>{{ row.server_count }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    {% else %}
+        <p class="empty">No cross-server points for this month yet.</p>
+    {% endif %}
+
+    <h2>{{ selected_guild_name }} Channel Rankings - {{ month }}</h2>
     {% if grouped_scores %}
-        {% for channel_id, rows in grouped_scores.items() %}
+        {% for group in grouped_scores %}
             <section class="channel">
-                <h2>Channel {{ channel_id }}</h2>
+                <h2>{{ group.guild_name }} - Channel {{ group.channel_id }}</h2>
                 <table>
                     <thead>
                         <tr>
@@ -578,7 +661,7 @@ GUESSING_HTML = """
                         </tr>
                     </thead>
                     <tbody>
-                        {% for row in rows %}
+                        {% for row in group.rows %}
                             <tr>
                                 <td>{{ loop.index }}</td>
                                 <td>{{ row.username }}</td>
@@ -709,7 +792,7 @@ SETTINGS_HTML = """
     <section class="panel">
         <h2>Guild Settings</h2>
         {% for guild in guilds %}
-            <h3>Guild {{ guild.id }}</h3>
+            <h3>{{ guild.name }} ({{ guild.id }})</h3>
             <table>
                 <tbody>
                     <tr><th>Timezone</th><td><code>{{ guild.timezone }}</code></td></tr>
@@ -811,6 +894,46 @@ def load_config():
         return json.load(file)
 
 
+def guild_options(config_data=None):
+    config_data = config_data or load_config()
+    options = []
+    for guild_id, guild_config in sorted(
+        (config_data.get("guilds") or {}).items(),
+        key=lambda item: (
+            item[1].get("guild_name") or item[0]
+        ).casefold(),
+    ):
+        options.append({
+            "id": guild_id,
+            "name": guild_config.get("guild_name") or f"Discord {guild_id}",
+        })
+    return options
+
+
+def guild_name_map(config_data=None):
+    return {
+        option["id"]: option["name"]
+        for option in guild_options(config_data)
+    }
+
+
+def selected_guild_id(options):
+    valid_ids = {option["id"] for option in options}
+    requested = request.values.get("guild_id", "").strip()
+    if requested == "all":
+        session.pop("sdac_guild_id", None)
+        return ""
+    if requested in valid_ids:
+        session["sdac_guild_id"] = requested
+        return requested
+
+    stored = session.get("sdac_guild_id", "")
+    if stored in valid_ids:
+        return stored
+    session.pop("sdac_guild_id", None)
+    return ""
+
+
 def safe_backup_label(label):
     return "".join(
         character if character.isalnum() or character in "_.-" else "-"
@@ -883,26 +1006,55 @@ def add_admin_audit_log(
     ))
 
 
-def available_submission_months(connection):
+def available_submission_months(connection, guild_id=""):
+    submission_where = """
+            WHERE COALESCE(created_at, submitted_at) IS NOT NULL
+              AND COALESCE(created_at, submitted_at) != ''
+    """
+    submission_parameters = []
+    snapshot_where = ""
+    snapshot_parameters = []
+    if guild_id:
+        submission_where += " AND guild_id = ?"
+        submission_parameters.append(guild_id)
+        snapshot_where = "WHERE guild_id = ?"
+        snapshot_parameters.append(guild_id)
+
     months = {
         row["month"]
         for row in connection.execute("""
             SELECT DISTINCT substr(COALESCE(created_at, submitted_at), 1, 7) AS month
             FROM submissions
-            WHERE COALESCE(created_at, submitted_at) IS NOT NULL
-              AND COALESCE(created_at, submitted_at) != ''
-        """)
+            """ + submission_where, submission_parameters)
         if row["month"]
     }
     months.update(
         row["month"]
-        for row in connection.execute("""
+        for row in connection.execute(f"""
             SELECT DISTINCT month
             FROM monthly_submission_top
-        """)
+            {snapshot_where}
+        """, snapshot_parameters)
         if row["month"]
     )
     return sorted(months, reverse=True)
+
+
+def available_guess_months(connection):
+    months = [
+        row["month"]
+        for row in connection.execute("""
+            SELECT DISTINCT month
+            FROM guess_points
+            WHERE month IS NOT NULL AND month != ''
+            ORDER BY month DESC
+        """)
+        if row["month"]
+    ]
+    current_month = current_month_key()
+    if current_month not in months:
+        months.insert(0, current_month)
+    return months
 
 
 def preserve_monthly_submission_top(connection, month):
@@ -1161,6 +1313,14 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_monthly_submission_top_month
             ON monthly_submission_top (month, category, rank)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submissions_gallery
+            ON submissions (guild_id, status, category, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guess_points_global_month
+            ON guess_points (month, user_id, points)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
@@ -1451,6 +1611,7 @@ def admin_settings():
     ):
         guilds.append({
             "id": guild_id,
+            "name": guild_config.get("guild_name") or f"Discord {guild_id}",
             "submit_channel": guild_config.get("submit_channel"),
             "daily_top_channel": guild_config.get("daily_top_channel"),
             "daily_top_time_utc": guild_config.get(
@@ -1508,6 +1669,15 @@ def admin_settings():
 
 @app.route("/")
 def index():
+    config_data = load_config()
+    server_options = guild_options(config_data)
+    guild_names = guild_name_map(config_data)
+    selected_server_id = selected_guild_id(server_options)
+    selected_server_name = (
+        guild_names.get(selected_server_id, "Selected Server")
+        if selected_server_id
+        else "All Discord Servers"
+    )
     selected_category = request.args.get("category", "").strip()
     selected_status = request.args.get("status", "").strip()
     selected_sort = request.args.get("sort", "newest").strip()
@@ -1528,22 +1698,23 @@ def index():
         ))
 
     with closing(connect_db()) as connection:
-        months = available_submission_months(connection)
-        category_where = "" if is_admin else "WHERE status = 'posted'"
+        months = available_submission_months(connection, selected_server_id)
+        category_conditions = ["category IS NOT NULL", "category != ''"]
+        category_parameters = []
+        if not is_admin:
+            category_conditions.append("status = 'posted'")
+        if selected_server_id:
+            category_conditions.append("guild_id = ?")
+            category_parameters.append(selected_server_id)
+        category_where = " WHERE " + " AND ".join(category_conditions)
         categories = [
             row["category"]
             for row in connection.execute(f"""
                 SELECT DISTINCT category
                 FROM submissions
                 {category_where}
-                AND category IS NOT NULL AND category != ''
                 ORDER BY category
-            """ if category_where else """
-                SELECT DISTINCT category
-                FROM submissions
-                WHERE category IS NOT NULL AND category != ''
-                ORDER BY category
-            """)
+            """, category_parameters)
         ]
 
         if selected_month:
@@ -1551,6 +1722,9 @@ def index():
             connection.commit()
             where = ["month = ?"]
             parameters = [selected_month]
+            if selected_server_id:
+                where.append("guild_id = ?")
+                parameters.append(selected_server_id)
             if selected_category:
                 where.append("category = ?")
                 parameters.append(selected_category)
@@ -1601,6 +1775,9 @@ def index():
             elif selected_status in {"posted", "pending"}:
                 where.append("status = ?")
                 parameters.append(selected_status)
+            if selected_server_id:
+                where.append("guild_id = ?")
+                parameters.append(selected_server_id)
             if selected_category:
                 where.append("category = ?")
                 parameters.append(selected_category)
@@ -1631,6 +1808,10 @@ def index():
     grouped_posts = {}
     for row in rows:
         post = prepare_post(row)
+        post["guild_name"] = guild_names.get(
+            post.get("guild_id"),
+            f"Discord {post.get('guild_id')}" if post.get("guild_id") else "",
+        )
         grouped_posts.setdefault(
             post["category"] or "Uncategorized",
             [],
@@ -1642,6 +1823,7 @@ def index():
             "month": selected_month,
             "page": page_number,
             "sort": selected_sort,
+            "guild_id": selected_server_id or "all",
         }
         if is_admin:
             values["key"] = ADMIN_KEY
@@ -1654,12 +1836,15 @@ def index():
         categories=categories,
         error=error,
         grouped_posts=grouped_posts,
+        guild_options=server_options,
         is_admin=is_admin,
         months=months,
         notice=notice,
         page=page,
         page_url=page_url,
         selected_category=selected_category,
+        selected_guild_name=selected_server_name,
+        selected_guild_id=selected_server_id,
         selected_month=selected_month,
         selected_sort=selected_sort,
         selected_status=selected_status,
@@ -1724,6 +1909,10 @@ def audit_log():
 
 @app.route("/guessing")
 def guessing_leaderboard():
+    config_data = load_config()
+    server_options = guild_options(config_data)
+    guild_names = guild_name_map(config_data)
+    selected_server_id = selected_guild_id(server_options)
     has_key = request.args.get("key") == ADMIN_KEY
     is_admin = has_key and is_admin_logged_in()
     if has_key and not is_admin:
@@ -1733,26 +1922,69 @@ def guessing_leaderboard():
             next=request.full_path,
         ))
 
-    month = request.args.get("month", "").strip() or current_month_key()
+    month = request.args.get("month", "").strip()
 
     with closing(connect_db()) as connection:
-        rows = connection.execute("""
-            SELECT channel_id, username, points
+        months = available_guess_months(connection)
+        if not month:
+            month = months[0] if months else current_month_key()
+        cross_server_scores = connection.execute("""
+            SELECT
+                COALESCE(MAX(NULLIF(username, '')), user_id) AS username,
+                SUM(points) AS points,
+                COUNT(DISTINCT guild_id) AS server_count
             FROM guess_points
             WHERE month = ?
-            ORDER BY channel_id ASC, points DESC, username ASC
+            GROUP BY user_id
+            ORDER BY points DESC, username ASC
+            LIMIT 50
         """, (month,)).fetchall()
 
-    grouped_scores = {}
+        where = ["month = ?"]
+        parameters = [month]
+        if selected_server_id:
+            where.append("guild_id = ?")
+            parameters.append(selected_server_id)
+        rows = connection.execute(f"""
+            SELECT guild_id, channel_id, username, points
+            FROM guess_points
+            WHERE {" AND ".join(where)}
+            ORDER BY guild_id ASC, channel_id ASC, points DESC, username ASC
+        """, parameters).fetchall()
+
+    grouped_lookup = {}
     for row in rows:
-        grouped_scores.setdefault(row["channel_id"], []).append(row)
+        key = (row["guild_id"], row["channel_id"])
+        if key not in grouped_lookup:
+            grouped_lookup[key] = {
+                "guild_id": row["guild_id"],
+                "guild_name": guild_names.get(
+                    row["guild_id"],
+                    f"Discord {row['guild_id']}",
+                ),
+                "channel_id": row["channel_id"],
+                "rows": [],
+            }
+        grouped_lookup[key]["rows"].append(row)
+    grouped_scores = list(grouped_lookup.values())
+
+    selected_guild_name = (
+        guild_names.get(selected_server_id, "Selected Server")
+        if selected_server_id
+        else "All Servers"
+    )
 
     return render_template_string(
         GUESSING_HTML,
         admin_key=ADMIN_KEY,
+        cross_server_scores=cross_server_scores,
         grouped_scores=grouped_scores,
+        guild_options=server_options,
         is_admin=is_admin,
         month=month,
+        months=months,
+        selected_guild_id=selected_server_id,
+        selected_guild_name=selected_guild_name,
     )
 
 
@@ -1774,6 +2006,7 @@ def delete_submission(submission_id):
 
     selected_category = request.args.get("category", "").strip()
     selected_status = request.args.get("status", "").strip()
+    selected_server_id = request.args.get("guild_id", "all").strip()
     page = positive_page(request.args.get("page"))
 
     with closing(connect_db()) as connection:
@@ -1785,6 +2018,7 @@ def delete_submission(submission_id):
     redirect_values = {
         "key": ADMIN_KEY,
         "category": selected_category,
+        "guild_id": selected_server_id or "all",
         "status": selected_status,
         "page": page,
     }

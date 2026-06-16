@@ -57,6 +57,7 @@ DEFAULT_CONFIG = {
 }
 
 DEFAULT_GUILD_CONFIG = {
+    "guild_name": "",
     "submit_channel": None,
     "daily_top_channel": None,
     "daily_top_time_utc": "00:00",
@@ -92,6 +93,7 @@ def load_config():
                 "daily_top_time_utc",
                 "00:00",
             ),
+            "guild_name": data.get("guild_name", ""),
             "weekly_top_day": data.get("weekly_top_day", "sunday"),
             "approval_enabled": data.get("approval_enabled", False),
             "approval_channel": data.get("approval_channel"),
@@ -139,6 +141,7 @@ def migrate_legacy_config():
     guild_config.update(legacy_config)
     config.pop("legacy_guild_config", None)
     for key in (
+        "guild_name",
         "submit_channel",
         "daily_top_channel",
         "daily_top_time_utc",
@@ -443,6 +446,10 @@ def initialize_database():
             ON submissions (guild_id, category, status)
         """)
         connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submissions_gallery
+            ON submissions (guild_id, status, category, created_at)
+        """)
+        connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_submissions_repost
             ON submissions (repost_message_id)
         """)
@@ -453,6 +460,10 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_guess_points_month
             ON guess_points (guild_id, channel_id, month, points)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guess_points_global_month
+            ON guess_points (month, user_id, points)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_monthly_submission_top_month
@@ -925,6 +936,22 @@ tree = bot.tree
 user_cooldowns = {}
 category_cooldowns = {}
 active_submission_sessions = set()
+slash_commands_synced = False
+persistent_views_registered = False
+last_backup_date = None
+last_guess_summary_check = None
+last_monthly_leaderboard_check = None
+
+
+def refresh_known_guilds():
+    changed = False
+    for guild in bot.guilds:
+        guild_config = get_guild_config(guild.id)
+        if guild_config.get("guild_name") != guild.name:
+            guild_config["guild_name"] = guild.name
+            changed = True
+    if changed:
+        save_config(config)
 
 
 async def delete_discord_message(channel_id, message_id):
@@ -2995,7 +3022,16 @@ async def post_daily_guess_summaries():
 
 @tasks.loop(minutes=1)
 async def weekly_top_scheduler():
-    create_daily_database_backup()
+    global last_backup_date
+    global last_guess_summary_check
+    global last_monthly_leaderboard_check
+
+    now_utc = datetime.now(timezone.utc)
+    backup_date = now_utc.date().isoformat()
+    if last_backup_date != backup_date:
+        create_daily_database_backup()
+        last_backup_date = backup_date
+
     for guild_id, guild_config in config.get("guilds", {}).items():
         now = guild_now(guild_config)
         current_time = now.strftime("%H:%M")
@@ -3003,8 +3039,20 @@ async def weekly_top_scheduler():
             continue
         if guild_config.get("daily_top_time_utc", "00:00") == current_time:
             await post_weekly_top(guild_id, guild_config, now)
-    await post_daily_guess_summaries()
-    await post_monthly_guess_leaderboards()
+
+    if (
+        last_guess_summary_check is None
+        or now_utc - last_guess_summary_check >= timedelta(minutes=10)
+    ):
+        await post_daily_guess_summaries()
+        last_guess_summary_check = now_utc
+
+    if (
+        last_monthly_leaderboard_check is None
+        or now_utc - last_monthly_leaderboard_check >= timedelta(hours=1)
+    ):
+        await post_monthly_guess_leaderboards()
+        last_monthly_leaderboard_check = now_utc
 
 
 @weekly_top_scheduler.before_loop
@@ -3013,6 +3061,11 @@ async def before_weekly_top_scheduler():
 
 
 async def sync_slash_commands():
+    global slash_commands_synced
+    if slash_commands_synced:
+        print("Slash commands already synced for this process.", flush=True)
+        return
+
     local_names = ", ".join(sorted(command.name for command in tree.get_commands()))
     print(f"Local slash commands registered: {local_names}", flush=True)
 
@@ -3035,14 +3088,19 @@ async def sync_slash_commands():
             f"{guild.name} ({guild.id}): {guild_command_names}",
             flush=True,
         )
+    slash_commands_synced = True
 
 
 @bot.event
 async def on_ready():
+    global persistent_views_registered
     print(f"on_ready fired for {bot.user}. Starting slash command sync.", flush=True)
-    bot.add_view(VoteView())
-    bot.add_view(ApprovalView())
+    if not persistent_views_registered:
+        bot.add_view(VoteView())
+        bot.add_view(ApprovalView())
+        persistent_views_registered = True
     migrate_legacy_config()
+    refresh_known_guilds()
     try:
         await sync_slash_commands()
     except Exception as error:
@@ -3052,6 +3110,13 @@ async def on_ready():
     print(f"Logged in as {bot.user}", flush=True)
     print(f"Using database: {DB_FILE}", flush=True)
     print(f"Using config: {CONFIG_FILE}", flush=True)
+
+
+@bot.event
+async def on_guild_join(guild):
+    guild_config = get_guild_config(guild.id)
+    guild_config["guild_name"] = guild.name
+    save_config(config)
 
 
 def main():
