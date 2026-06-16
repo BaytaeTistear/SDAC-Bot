@@ -714,8 +714,9 @@ SETTINGS_HTML = """
                 <tbody>
                     <tr><th>Timezone</th><td><code>{{ guild.timezone }}</code></td></tr>
                     <tr><th>Submit channel</th><td>{{ guild.submit_channel or "Not set" }}</td></tr>
-                    <tr><th>Daily channel</th><td>{{ guild.daily_top_channel or "Not set" }}</td></tr>
-                    <tr><th>Daily time</th><td>{{ guild.daily_top_time_utc }} {{ guild.timezone }}</td></tr>
+                    <tr><th>Weekly channel</th><td>{{ guild.daily_top_channel or "Not set" }}</td></tr>
+                    <tr><th>Weekly day</th><td>{{ guild.weekly_top_day }}</td></tr>
+                    <tr><th>Weekly time</th><td>{{ guild.daily_top_time_utc }} {{ guild.timezone }}</td></tr>
                     <tr><th>Approval</th><td>{{ "Enabled" if guild.approval_enabled else "Disabled" }}</td></tr>
                     <tr><th>Approval channel</th><td>{{ guild.approval_channel or "Not set" }}</td></tr>
                     <tr><th>Categories</th><td>
@@ -1456,6 +1457,7 @@ def admin_settings():
                 "daily_top_time_utc",
                 "00:00",
             ),
+            "weekly_top_day": guild_config.get("weekly_top_day", "sunday").title(),
             "timezone": guild_config.get("timezone", "UTC"),
             "approval_enabled": guild_config.get("approval_enabled", False),
             "approval_channel": guild_config.get("approval_channel"),

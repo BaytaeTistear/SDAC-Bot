@@ -32,6 +32,19 @@ ALLOWED_EXTENSIONS = {
 
 USER_COOLDOWN_SECONDS = 30
 CATEGORY_COOLDOWN_SECONDS = 5
+WEEKDAY_NAMES = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
+WEEKDAY_CHOICES = [
+    app_commands.Choice(name=name.title(), value=name)
+    for name in WEEKDAY_NAMES
+]
 
 DEFAULT_CONFIG = {
     "guilds": {},
@@ -47,6 +60,7 @@ DEFAULT_GUILD_CONFIG = {
     "submit_channel": None,
     "daily_top_channel": None,
     "daily_top_time_utc": "00:00",
+    "weekly_top_day": "sunday",
     "timezone": "UTC",
     "approval_enabled": False,
     "approval_channel": None,
@@ -78,6 +92,7 @@ def load_config():
                 "daily_top_time_utc",
                 "00:00",
             ),
+            "weekly_top_day": data.get("weekly_top_day", "sunday"),
             "approval_enabled": data.get("approval_enabled", False),
             "approval_channel": data.get("approval_channel"),
             "categories": data.get("categories") or {},
@@ -127,6 +142,7 @@ def migrate_legacy_config():
         "submit_channel",
         "daily_top_channel",
         "daily_top_time_utc",
+        "weekly_top_day",
         "timezone",
         "approval_enabled",
         "approval_channel",
@@ -512,6 +528,24 @@ def previous_month_key(now=None):
     return previous_month.strftime("%Y-%m")
 
 
+def normalize_weekday(value):
+    value = (value or "").casefold().strip()
+    if value in WEEKDAY_NAMES:
+        return value
+    return None
+
+
+def weekly_top_day_index(guild_config):
+    day = normalize_weekday(guild_config.get("weekly_top_day"))
+    if day is None:
+        day = DEFAULT_GUILD_CONFIG["weekly_top_day"]
+    return WEEKDAY_NAMES.index(day)
+
+
+def weekly_run_key(now):
+    return f"weekly:{now.strftime('%G-W%V')}"
+
+
 def safe_backup_label(label):
     return re.sub(r"[^A-Za-z0-9_.-]+", "-", label).strip("-") or "backup"
 
@@ -846,11 +880,16 @@ def settings_lines(guild_config):
     timezone_name = guild_config.get("timezone", DEFAULT_GUILD_CONFIG["timezone"])
     timeout_seconds = config["limits"].get("wrong_guess_timeout_seconds", 600)
     timeout_minutes = max(1, round(timeout_seconds / 60))
+    weekly_day = guild_config.get(
+        "weekly_top_day",
+        DEFAULT_GUILD_CONFIG["weekly_top_day"],
+    ).title()
     lines = [
         "**SDAC Settings**",
         f"Submit channel: {channel_display(guild_config.get('submit_channel'))}",
-        f"Daily top channel: {channel_display(guild_config.get('daily_top_channel'))}",
-        f"Daily top time: `{guild_config['daily_top_time_utc']}` `{timezone_name}`",
+        f"Weekly top channel: {channel_display(guild_config.get('daily_top_channel'))}",
+        f"Weekly top day: `{weekly_day}`",
+        f"Weekly top time: `{guild_config['daily_top_time_utc']}` `{timezone_name}`",
         f"Timezone: `{timezone_name}`",
         f"Approval: {'Enabled' if guild_config['approval_enabled'] else 'Disabled'}",
         f"Approval channel: {channel_display(guild_config.get('approval_channel'))}",
@@ -1520,7 +1559,8 @@ async def categories(interaction):
         "**SDAC Configuration**",
         f"Submit channel: {submit_channel.mention if submit_channel else 'Not set'}",
         f"Timezone: `{timezone_name}`",
-        f"Daily time: {guild_config['daily_top_time_utc']} {timezone_name}",
+        f"Weekly day: {guild_config.get('weekly_top_day', 'sunday').title()}",
+        f"Weekly time: {guild_config['daily_top_time_utc']} {timezone_name}",
         f"Approval: {'Enabled' if guild_config['approval_enabled'] else 'Disabled'}",
         "",
     ]
@@ -1556,9 +1596,9 @@ async def settings(interaction):
     )
 
 
-@tree.command(name="setdailychannel", description="Set daily top channel")
+@tree.command(name="setweeklychannel", description="Set weekly top channel")
 @app_commands.guild_only()
-async def setdailychannel(
+async def setweeklychannel(
     interaction,
     channel: discord.TextChannel,
 ):
@@ -1569,20 +1609,20 @@ async def setdailychannel(
     save_config(config)
     audit_interaction(
         interaction,
-        "set_daily_channel",
+        "set_weekly_channel",
         "channel",
         channel.id,
-        f"Daily top channel set to {channel.id}.",
+        f"Weekly top channel set to {channel.id}.",
     )
     await interaction.response.send_message(
-        f"Daily top channel set to {channel.mention}.",
+        f"Weekly top channel set to {channel.mention}.",
         ephemeral=True,
     )
 
 
-@tree.command(name="cleardailychannel", description="Clear daily top channel")
+@tree.command(name="clearweeklychannel", description="Clear weekly top channel")
 @app_commands.guild_only()
-async def cleardailychannel(interaction):
+async def clearweeklychannel(interaction):
     if not await require_admin(interaction):
         return
     guild_config = get_guild_config(interaction.guild_id)
@@ -1590,24 +1630,24 @@ async def cleardailychannel(interaction):
     save_config(config)
     audit_interaction(
         interaction,
-        "clear_daily_channel",
+        "clear_weekly_channel",
         "channel",
         "",
-        "Daily top channel cleared.",
+        "Weekly top channel cleared.",
     )
     await interaction.response.send_message(
-        "Daily top channel cleared.",
+        "Weekly top channel cleared.",
         ephemeral=True,
     )
 
 
-@tree.command(name="setdailytime", description="Set daily top posting time")
+@tree.command(name="setweeklytime", description="Set weekly top posting time")
 @app_commands.guild_only()
 @app_commands.describe(
     hour="Hour from 0 to 23 in the configured timezone",
     minute="Minute from 0 to 59 in the configured timezone",
 )
-async def setdailytime(interaction, hour: app_commands.Range[int, 0, 23], minute: app_commands.Range[int, 0, 59] = 0):
+async def setweeklytime(interaction, hour: app_commands.Range[int, 0, 23], minute: app_commands.Range[int, 0, 59] = 0):
     if not await require_admin(interaction):
         return
     value = f"{hour:02d}:{minute:02d}"
@@ -1617,13 +1657,44 @@ async def setdailytime(interaction, hour: app_commands.Range[int, 0, 23], minute
     timezone_name = guild_config.get("timezone", DEFAULT_GUILD_CONFIG["timezone"])
     audit_interaction(
         interaction,
-        "set_daily_time",
+        "set_weekly_time",
         "schedule",
         value,
-        f"Daily top time set in {timezone_name}.",
+        f"Weekly top time set in {timezone_name}.",
     )
     await interaction.response.send_message(
-        f"Daily top time set to `{value}` in `{timezone_name}`.",
+        f"Weekly top time set to `{value}` in `{timezone_name}`.",
+        ephemeral=True,
+    )
+
+
+@tree.command(name="setweeklyday", description="Set weekly top posting day")
+@app_commands.guild_only()
+@app_commands.choices(day=WEEKDAY_CHOICES)
+@app_commands.describe(day="Day of the week for weekly top posts")
+async def setweeklyday(interaction, day: str):
+    if not await require_admin(interaction):
+        return
+    day = normalize_weekday(day)
+    if day is None:
+        await interaction.response.send_message(
+            "Choose a valid weekday.",
+            ephemeral=True,
+        )
+        return
+
+    guild_config = get_guild_config(interaction.guild_id)
+    guild_config["weekly_top_day"] = day
+    save_config(config)
+    audit_interaction(
+        interaction,
+        "set_weekly_day",
+        "schedule",
+        day,
+        f"Weekly top day set to {day}.",
+    )
+    await interaction.response.send_message(
+        f"Weekly top day set to `{day.title()}`.",
         ephemeral=True,
     )
 
@@ -2730,7 +2801,7 @@ async def submissioninfo(interaction, submission_id: int):
     )
 
 
-async def post_daily_top(guild_id, guild_config):
+async def post_weekly_top(guild_id, guild_config, now):
     channel_id = guild_config.get("daily_top_channel")
     if not channel_id:
         return
@@ -2738,12 +2809,12 @@ async def post_daily_top(guild_id, guild_config):
     if channel is None:
         return
 
-    today = guild_now(guild_config).date().isoformat()
+    week_key = weekly_run_key(now)
     with database() as connection:
         already_ran = connection.execute("""
             SELECT 1 FROM daily_runs
             WHERE guild_id = ? AND run_date = ?
-        """, (str(guild_id), today)).fetchone()
+        """, (str(guild_id), week_key)).fetchone()
         if already_ran:
             return
 
@@ -2763,7 +2834,7 @@ async def post_daily_top(guild_id, guild_config):
                 rows.append(row)
 
     if rows:
-        lines = ["**SDAC Daily Top Posts**"]
+        lines = ["**SDAC Weekly Top Posts**"]
         for row in rows:
             link = (
                 f"https://discord.com/channels/{guild_id}/"
@@ -2785,7 +2856,7 @@ async def post_daily_top(guild_id, guild_config):
         connection.execute("""
             INSERT OR IGNORE INTO daily_runs (guild_id, run_date, created_at)
             VALUES (?, ?, ?)
-        """, (str(guild_id), today, utc_now_iso()))
+        """, (str(guild_id), week_key, utc_now_iso()))
 
 
 async def post_monthly_guess_leaderboards():
@@ -2923,19 +2994,21 @@ async def post_daily_guess_summaries():
 
 
 @tasks.loop(minutes=1)
-async def daily_top_scheduler():
+async def weekly_top_scheduler():
     create_daily_database_backup()
     for guild_id, guild_config in config.get("guilds", {}).items():
         now = guild_now(guild_config)
         current_time = now.strftime("%H:%M")
+        if now.weekday() != weekly_top_day_index(guild_config):
+            continue
         if guild_config.get("daily_top_time_utc", "00:00") == current_time:
-            await post_daily_top(guild_id, guild_config)
+            await post_weekly_top(guild_id, guild_config, now)
     await post_daily_guess_summaries()
     await post_monthly_guess_leaderboards()
 
 
-@daily_top_scheduler.before_loop
-async def before_daily_top_scheduler():
+@weekly_top_scheduler.before_loop
+async def before_weekly_top_scheduler():
     await bot.wait_until_ready()
 
 
@@ -2974,8 +3047,8 @@ async def on_ready():
         await sync_slash_commands()
     except Exception as error:
         print(f"Slash command sync failed: {error}", flush=True)
-    if not daily_top_scheduler.is_running():
-        daily_top_scheduler.start()
+    if not weekly_top_scheduler.is_running():
+        weekly_top_scheduler.start()
     print(f"Logged in as {bot.user}", flush=True)
     print(f"Using database: {DB_FILE}", flush=True)
     print(f"Using config: {CONFIG_FILE}", flush=True)

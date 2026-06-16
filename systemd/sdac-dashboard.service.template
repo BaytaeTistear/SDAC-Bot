@@ -1,0 +1,16 @@
+[Unit]
+Description=SDAC Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__APP_USER__
+WorkingDirectory=__APP_DIR__
+EnvironmentFile=__APP_DIR__/.env
+ExecStart=__APP_DIR__/venv/bin/gunicorn --workers 2 --bind __DASHBOARD_BIND__ dashboard:app
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

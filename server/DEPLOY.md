@@ -1,5 +1,12 @@
 # SDAC Deploy Checklist
 
+For a new Ubuntu host, use [HOSTING.md](HOSTING.md) and run:
+
+```bash
+cd /home/ubuntu/discord-screenshot-bot
+bash scripts/install_ubuntu.sh
+```
+
 Server path:
 
 ```bash
@@ -34,11 +41,7 @@ After uploading Python files:
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-python3 -m py_compile bot.py dashboard.py
-sudo systemctl restart sdac-bot
-sudo systemctl restart sdac-dashboard
-journalctl -u sdac-bot -n 60 --no-pager
-journalctl -u sdac-dashboard -n 60 --no-pager
+bash scripts/update_ubuntu.sh
 ```
 
 Discord slash commands sync when `sdac-bot` starts. If a new command does not appear immediately, wait a few minutes and check the bot logs for the synced command list.
