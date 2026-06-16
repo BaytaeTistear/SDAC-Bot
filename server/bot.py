@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import discord
 from discord import app_commands
@@ -44,6 +45,7 @@ DEFAULT_GUILD_CONFIG = {
     "submit_channel": None,
     "daily_top_channel": None,
     "daily_top_time_utc": "00:00",
+    "timezone": "UTC",
     "approval_enabled": False,
     "approval_channel": None,
     "categories": {},
@@ -123,6 +125,7 @@ def migrate_legacy_config():
         "submit_channel",
         "daily_top_channel",
         "daily_top_time_utc",
+        "timezone",
         "approval_enabled",
         "approval_channel",
         "categories",
@@ -448,8 +451,35 @@ def normalize_guess(value):
     return cleaned.strip()
 
 
-def current_month_key():
-    return datetime.now(timezone.utc).strftime("%Y-%m")
+def get_guild_timezone(guild_config):
+    timezone_name = (
+        (guild_config or {}).get("timezone")
+        or DEFAULT_GUILD_CONFIG["timezone"]
+    )
+    try:
+        return ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo(DEFAULT_GUILD_CONFIG["timezone"])
+
+
+def guild_now(guild_config):
+    return datetime.now(get_guild_timezone(guild_config))
+
+
+def parse_database_datetime(value):
+    if not value:
+        return datetime.now(timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return datetime.now(timezone.utc)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def current_month_key(guild_config=None):
+    return guild_now(guild_config).strftime("%Y-%m")
 
 
 def previous_month_key(now=None):
@@ -737,6 +767,7 @@ def guess_leaderboard_lines(connection, guild_id, channel_id, month, limit=10):
 
 
 async def announce_guess_summary(channel, game, reason):
+    guild_config = get_guild_config(game["guild_id"], create=False)
     with database() as connection:
         correct_rows = connection.execute("""
             SELECT username
@@ -748,7 +779,7 @@ async def announce_guess_summary(channel, game, reason):
             connection,
             game["guild_id"],
             game["channel_id"],
-            current_month_key(),
+            current_month_key(guild_config),
             limit=10,
         )
 
@@ -1194,10 +1225,12 @@ async def categories(interaction):
     submit_channel = (
         bot.get_channel(submit_channel_id) if submit_channel_id else None
     )
+    timezone_name = guild_config.get("timezone", DEFAULT_GUILD_CONFIG["timezone"])
     lines = [
         "**SDAC Configuration**",
         f"Submit channel: {submit_channel.mention if submit_channel else 'Not set'}",
-        f"Daily time: {guild_config['daily_top_time_utc']} UTC",
+        f"Timezone: `{timezone_name}`",
+        f"Daily time: {guild_config['daily_top_time_utc']} {timezone_name}",
         f"Approval: {'Enabled' if guild_config['approval_enabled'] else 'Disabled'}",
         "",
     ]
@@ -1252,9 +1285,12 @@ async def cleardailychannel(interaction):
     )
 
 
-@tree.command(name="setdailytime", description="Set daily top posting time in UTC")
+@tree.command(name="setdailytime", description="Set daily top posting time")
 @app_commands.guild_only()
-@app_commands.describe(hour="UTC hour from 0 to 23", minute="UTC minute from 0 to 59")
+@app_commands.describe(
+    hour="Hour from 0 to 23 in the configured timezone",
+    minute="Minute from 0 to 59 in the configured timezone",
+)
 async def setdailytime(interaction, hour: app_commands.Range[int, 0, 23], minute: app_commands.Range[int, 0, 59] = 0):
     if not await require_admin(interaction):
         return
@@ -1262,8 +1298,40 @@ async def setdailytime(interaction, hour: app_commands.Range[int, 0, 23], minute
     guild_config = get_guild_config(interaction.guild_id)
     guild_config["daily_top_time_utc"] = value
     save_config(config)
+    timezone_name = guild_config.get("timezone", DEFAULT_GUILD_CONFIG["timezone"])
     await interaction.response.send_message(
-        f"Daily top time set to `{value} UTC`.",
+        f"Daily top time set to `{value}` in `{timezone_name}`.",
+        ephemeral=True,
+    )
+
+
+@tree.command(name="settimezone", description="Set the SDAC server timezone")
+@app_commands.guild_only()
+@app_commands.describe(
+    timezone_name="IANA timezone name, for example America/New_York",
+)
+async def settimezone(interaction, timezone_name: str):
+    if not await require_admin(interaction):
+        return
+
+    timezone_name = timezone_name.strip()
+    try:
+        selected_timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        await interaction.response.send_message(
+            "That timezone was not found. Use an IANA name like "
+            "`America/Los_Angeles`, `America/New_York`, or `UTC`.",
+            ephemeral=True,
+        )
+        return
+
+    guild_config = get_guild_config(interaction.guild_id)
+    guild_config["timezone"] = timezone_name
+    save_config(config)
+    current_time = datetime.now(selected_timezone).strftime("%Y-%m-%d %H:%M")
+    await interaction.response.send_message(
+        f"Timezone set to `{timezone_name}`. Current server time there is "
+        f"`{current_time}`.",
         ephemeral=True,
     )
 
@@ -1932,6 +2000,7 @@ async def guess(interaction, guess: str):
 
     now = datetime.now(timezone.utc)
     channel = interaction.channel
+    guild_config = get_guild_config(interaction.guild_id, create=False)
     with database() as connection:
         game = connection.execute("""
             SELECT *
@@ -1997,7 +2066,7 @@ async def guess(interaction, guess: str):
             )
             return
 
-        month = current_month_key()
+        month = current_month_key(guild_config)
         existing_correct = connection.execute("""
             SELECT 1
             FROM guess_correct_guesses
@@ -2188,7 +2257,7 @@ async def post_daily_top(guild_id, guild_config):
     if channel is None:
         return
 
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = guild_now(guild_config).date().isoformat()
     with database() as connection:
         already_ran = connection.execute("""
             SELECT 1 FROM daily_runs
@@ -2239,84 +2308,97 @@ async def post_daily_top(guild_id, guild_config):
 
 
 async def post_monthly_guess_leaderboards():
-    now = datetime.now(timezone.utc)
-    if now.day != 1:
-        return
-
-    month = previous_month_key(now)
     with database() as connection:
-        preserve_monthly_submission_top(connection, month)
-
-    with database() as connection:
-        channel_rows = connection.execute("""
-            SELECT DISTINCT guild_id, channel_id
+        guild_rows = connection.execute("""
+            SELECT DISTINCT guild_id
             FROM guess_points
-            WHERE month = ?
-        """, (month,)).fetchall()
+            WHERE guild_id IS NOT NULL AND guild_id != ''
+        """).fetchall()
 
-    for channel_row in channel_rows:
-        guild_id = channel_row["guild_id"]
-        channel_id = channel_row["channel_id"]
+    for guild_row in guild_rows:
+        guild_id = guild_row["guild_id"]
+        guild_config = get_guild_config(guild_id, create=False)
+        now = guild_now(guild_config)
+        if now.day != 1:
+            continue
+
+        month = previous_month_key(now)
         with database() as connection:
-            already_posted = connection.execute("""
-                SELECT 1
-                FROM monthly_guess_runs
-                WHERE guild_id = ?
-                  AND channel_id = ?
-                  AND month = ?
-            """, (guild_id, channel_id, month)).fetchone()
-            if already_posted:
-                continue
-            leaders = connection.execute("""
-                SELECT username, points
+            preserve_monthly_submission_top(connection, month)
+            channel_rows = connection.execute("""
+                SELECT DISTINCT guild_id, channel_id
                 FROM guess_points
                 WHERE guild_id = ?
-                  AND channel_id = ?
                   AND month = ?
-                ORDER BY points DESC, username ASC
-                LIMIT 3
-            """, (guild_id, channel_id, month)).fetchall()
+            """, (guild_id, month)).fetchall()
 
-        if not leaders:
-            continue
+        for channel_row in channel_rows:
+            channel_id = channel_row["channel_id"]
+            with database() as connection:
+                already_posted = connection.execute("""
+                    SELECT 1
+                    FROM monthly_guess_runs
+                    WHERE guild_id = ?
+                      AND channel_id = ?
+                      AND month = ?
+                """, (guild_id, channel_id, month)).fetchone()
+                if already_posted:
+                    continue
+                leaders = connection.execute("""
+                    SELECT username, points
+                    FROM guess_points
+                    WHERE guild_id = ?
+                      AND channel_id = ?
+                      AND month = ?
+                    ORDER BY points DESC, username ASC
+                    LIMIT 3
+                """, (guild_id, channel_id, month)).fetchall()
 
-        channel = bot.get_channel(int(channel_id))
-        if channel is None:
-            try:
-                channel = await bot.fetch_channel(int(channel_id))
-            except discord.HTTPException:
-                channel = None
-        if channel is None:
-            continue
+            if not leaders:
+                continue
 
-        lines = [f"**Guessing Game Top 3 - {month}**"]
-        for index, leader in enumerate(leaders, start=1):
-            lines.append(
-                f"{index}. {leader['username']} - {leader['points']} point(s)"
-            )
-        await channel.send("\n".join(lines))
+            channel = bot.get_channel(int(channel_id))
+            if channel is None:
+                try:
+                    channel = await bot.fetch_channel(int(channel_id))
+                except discord.HTTPException:
+                    channel = None
+            if channel is None:
+                continue
 
-        with database() as connection:
-            connection.execute("""
-                INSERT OR IGNORE INTO monthly_guess_runs (
-                    guild_id, channel_id, month, created_at
+            lines = [f"**Guessing Game Top 3 - {month}**"]
+            for index, leader in enumerate(leaders, start=1):
+                lines.append(
+                    f"{index}. {leader['username']} - {leader['points']} point(s)"
                 )
-                VALUES (?, ?, ?, ?)
-            """, (guild_id, channel_id, month, utc_now_iso()))
+            await channel.send("\n".join(lines))
+
+            with database() as connection:
+                connection.execute("""
+                    INSERT OR IGNORE INTO monthly_guess_runs (
+                        guild_id, channel_id, month, created_at
+                    )
+                    VALUES (?, ?, ?, ?)
+                """, (guild_id, channel_id, month, utc_now_iso()))
 
 
 async def post_daily_guess_summaries():
-    now = datetime.now(timezone.utc)
-    today = now.date().isoformat()
     with database() as connection:
         games = connection.execute("""
             SELECT *
             FROM guess_games
             WHERE status = 'active'
-              AND date(COALESCE(started_at, 'now')) < date('now')
         """).fetchall()
 
     for game in games:
+        guild_config = get_guild_config(game["guild_id"], create=False)
+        timezone_info = get_guild_timezone(guild_config)
+        now = datetime.now(timezone_info)
+        today = now.date().isoformat()
+        started_at = parse_database_datetime(game["started_at"])
+        if started_at.astimezone(timezone_info).date() >= now.date():
+            continue
+
         with database() as connection:
             already_posted = connection.execute("""
                 SELECT 1
@@ -2361,9 +2443,9 @@ async def post_daily_guess_summaries():
 
 @tasks.loop(minutes=1)
 async def daily_top_scheduler():
-    now = datetime.now(timezone.utc)
-    current_time = now.strftime("%H:%M")
     for guild_id, guild_config in config.get("guilds", {}).items():
+        now = guild_now(guild_config)
+        current_time = now.strftime("%H:%M")
         if guild_config.get("daily_top_time_utc", "00:00") == current_time:
             await post_daily_top(guild_id, guild_config)
     await post_daily_guess_summaries()
