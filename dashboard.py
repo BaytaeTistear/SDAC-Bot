@@ -243,6 +243,18 @@ HTML = """
                     </option>
                 {% endfor %}
             </select>
+            <select name="sort" aria-label="Sort">
+                <option value="newest" {% if selected_sort == "newest" %}selected{% endif %}>Newest</option>
+                <option value="votes" {% if selected_sort == "votes" %}selected{% endif %}>Most Votes</option>
+            </select>
+            <select name="month" aria-label="Month">
+                <option value="">All Months</option>
+                {% for month in months %}
+                    <option value="{{ month }}" {% if selected_month == month %}selected{% endif %}>
+                        {{ month }}
+                    </option>
+                {% endfor %}
+            </select>
             {% if is_admin %}
                 <select name="status" aria-label="Status">
                     <option value="">All Statuses</option>
@@ -258,6 +270,9 @@ HTML = """
     </div>
 
     {% if grouped_posts %}
+        {% if selected_month %}
+            <p class="mode">Showing preserved top 10 snapshots for {{ selected_month }}.</p>
+        {% endif %}
         {% for category, category_posts in grouped_posts.items() %}
             <section class="section">
                 <h2>{{ category }}</h2>
@@ -582,6 +597,87 @@ def current_month_key():
     return datetime.now(timezone.utc).strftime("%Y-%m")
 
 
+def available_submission_months(connection):
+    months = {
+        row["month"]
+        for row in connection.execute("""
+            SELECT DISTINCT substr(COALESCE(created_at, submitted_at), 1, 7) AS month
+            FROM submissions
+            WHERE COALESCE(created_at, submitted_at) IS NOT NULL
+              AND COALESCE(created_at, submitted_at) != ''
+        """)
+        if row["month"]
+    }
+    months.update(
+        row["month"]
+        for row in connection.execute("""
+            SELECT DISTINCT month
+            FROM monthly_submission_top
+        """)
+        if row["month"]
+    )
+    return sorted(months, reverse=True)
+
+
+def preserve_monthly_submission_top(connection, month):
+    existing = connection.execute("""
+        SELECT 1
+        FROM monthly_submission_top
+        WHERE month = ?
+        LIMIT 1
+    """, (month,)).fetchone()
+    if existing:
+        return
+
+    rows = connection.execute("""
+        SELECT *
+        FROM submissions
+        WHERE status = 'posted'
+          AND substr(COALESCE(created_at, submitted_at), 1, 7) = ?
+        ORDER BY category ASC, stars DESC, created_at DESC, id DESC
+    """, (month,)).fetchall()
+
+    ranks_by_category = {}
+    captured_at = utc_now_iso()
+    for row in rows:
+        category = row["category"] or "Uncategorized"
+        rank = ranks_by_category.get(category, 0) + 1
+        if rank > 10:
+            continue
+        ranks_by_category[category] = rank
+        connection.execute("""
+            INSERT OR IGNORE INTO monthly_submission_top (
+                month, category, rank, submission_id, guild_id,
+                original_message_id, repost_message_id, repost_channel_id,
+                user_id, username, message_text, file_paths, media_paths,
+                media_names, media_types, stars, voters, submitted_at,
+                created_at, captured_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            month,
+            category,
+            rank,
+            row["id"],
+            row["guild_id"],
+            row["original_message_id"],
+            row["repost_message_id"],
+            row["repost_channel_id"],
+            row["user_id"],
+            row["username"],
+            row["message_text"],
+            row["file_paths"],
+            row["media_paths"],
+            row["media_names"],
+            row["media_types"],
+            row["stars"] or 0,
+            row["voters"],
+            row["submitted_at"],
+            row["created_at"],
+            captured_at,
+        ))
+
+
 def connect_db():
     connection = sqlite3.connect(DB_FILE, timeout=30)
     connection.row_factory = sqlite3.Row
@@ -696,6 +792,31 @@ def initialize_database():
                 PRIMARY KEY (guild_id, channel_id, month)
             )
         """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS monthly_submission_top (
+                month TEXT,
+                category TEXT,
+                rank INTEGER,
+                submission_id INTEGER,
+                guild_id TEXT,
+                original_message_id TEXT,
+                repost_message_id TEXT,
+                repost_channel_id TEXT,
+                user_id TEXT,
+                username TEXT,
+                message_text TEXT,
+                file_paths TEXT,
+                media_paths TEXT,
+                media_names TEXT,
+                media_types TEXT,
+                stars INTEGER DEFAULT 0,
+                voters TEXT DEFAULT '',
+                submitted_at TEXT,
+                created_at TEXT,
+                captured_at TEXT,
+                PRIMARY KEY (month, category, rank)
+            )
+        """)
         columns = {
             row["name"]
             for row in connection.execute(
@@ -717,6 +838,10 @@ def initialize_database():
             UPDATE submissions
             SET status = 'posted'
             WHERE status IS NULL OR status = ''
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_monthly_submission_top_month
+            ON monthly_submission_top (month, category, rank)
         """)
 
 
@@ -894,11 +1019,15 @@ def admin_logout():
 def index():
     selected_category = request.args.get("category", "").strip()
     selected_status = request.args.get("status", "").strip()
+    selected_sort = request.args.get("sort", "newest").strip()
+    selected_month = request.args.get("month", "").strip()
     has_key = request.args.get("key") == ADMIN_KEY
     is_admin = has_key and is_admin_logged_in()
     notice = request.args.get("notice", "")
     error = request.args.get("error") == "1"
     page = positive_page(request.args.get("page"))
+    if selected_sort not in {"newest", "votes"}:
+        selected_sort = "newest"
 
     if has_key and not is_admin:
         return redirect(url_for(
@@ -907,19 +1036,8 @@ def index():
             next=request.full_path,
         ))
 
-    where = []
-    parameters = []
-    if not is_admin:
-        where.append("status = 'posted'")
-    elif selected_status in {"posted", "pending"}:
-        where.append("status = ?")
-        parameters.append(selected_status)
-    if selected_category:
-        where.append("category = ?")
-        parameters.append(selected_category)
-
-    where_sql = " WHERE " + " AND ".join(where) if where else ""
     with closing(connect_db()) as connection:
+        months = available_submission_months(connection)
         category_where = "" if is_admin else "WHERE status = 'posted'"
         categories = [
             row["category"]
@@ -936,22 +1054,88 @@ def index():
                 ORDER BY category
             """)
         ]
-        total_items = connection.execute(
-            f"SELECT COUNT(*) FROM submissions{where_sql}",
-            parameters,
-        ).fetchone()[0]
-        total_pages = max(1, math.ceil(total_items / PAGE_SIZE))
-        page = min(page, total_pages)
-        rows = connection.execute(
-            f"""
-                SELECT *
-                FROM submissions
-                {where_sql}
-                ORDER BY created_at DESC, id DESC
-                LIMIT ? OFFSET ?
-            """,
-            parameters + [PAGE_SIZE, (page - 1) * PAGE_SIZE],
-        ).fetchall()
+
+        if selected_month:
+            preserve_monthly_submission_top(connection, selected_month)
+            connection.commit()
+            where = ["month = ?"]
+            parameters = [selected_month]
+            if selected_category:
+                where.append("category = ?")
+                parameters.append(selected_category)
+            where_sql = " WHERE " + " AND ".join(where)
+            total_items = connection.execute(
+                f"SELECT COUNT(*) FROM monthly_submission_top{where_sql}",
+                parameters,
+            ).fetchone()[0]
+            total_pages = max(1, math.ceil(total_items / PAGE_SIZE))
+            page = min(page, total_pages)
+            rows = connection.execute(
+                f"""
+                    SELECT
+                        submission_id AS id,
+                        guild_id,
+                        original_message_id,
+                        repost_message_id,
+                        repost_channel_id,
+                        NULL AS approval_message_id,
+                        NULL AS approval_channel_id,
+                        user_id,
+                        username,
+                        category,
+                        message_text,
+                        file_paths,
+                        media_paths,
+                        media_names,
+                        media_types,
+                        stars,
+                        voters,
+                        'posted' AS status,
+                        submitted_at,
+                        created_at,
+                        NULL AS approved_at,
+                        NULL AS daily_posted_at
+                    FROM monthly_submission_top
+                    {where_sql}
+                    ORDER BY category ASC, rank ASC
+                    LIMIT ? OFFSET ?
+                """,
+                parameters + [PAGE_SIZE, (page - 1) * PAGE_SIZE],
+            ).fetchall()
+        else:
+            where = []
+            parameters = []
+            if not is_admin:
+                where.append("status = 'posted'")
+            elif selected_status in {"posted", "pending"}:
+                where.append("status = ?")
+                parameters.append(selected_status)
+            if selected_category:
+                where.append("category = ?")
+                parameters.append(selected_category)
+
+            where_sql = " WHERE " + " AND ".join(where) if where else ""
+            order_sql = (
+                "stars DESC, created_at DESC, id DESC"
+                if selected_sort == "votes"
+                else "created_at DESC, id DESC"
+            )
+            total_items = connection.execute(
+                f"SELECT COUNT(*) FROM submissions{where_sql}",
+                parameters,
+            ).fetchone()[0]
+            total_pages = max(1, math.ceil(total_items / PAGE_SIZE))
+            page = min(page, total_pages)
+            rows = connection.execute(
+                f"""
+                    SELECT *
+                    FROM submissions
+                    {where_sql}
+                    ORDER BY {order_sql}
+                    LIMIT ? OFFSET ?
+                """,
+                parameters + [PAGE_SIZE, (page - 1) * PAGE_SIZE],
+            ).fetchall()
 
     grouped_posts = {}
     for row in rows:
@@ -964,7 +1148,9 @@ def index():
     def page_url(page_number):
         values = {
             "category": selected_category,
+            "month": selected_month,
             "page": page_number,
+            "sort": selected_sort,
         }
         if is_admin:
             values["key"] = ADMIN_KEY
@@ -978,10 +1164,13 @@ def index():
         error=error,
         grouped_posts=grouped_posts,
         is_admin=is_admin,
+        months=months,
         notice=notice,
         page=page,
         page_url=page_url,
         selected_category=selected_category,
+        selected_month=selected_month,
+        selected_sort=selected_sort,
         selected_status=selected_status,
         total_pages=total_pages,
     )

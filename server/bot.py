@@ -312,6 +312,31 @@ def initialize_database():
                 PRIMARY KEY (guild_id, channel_id, month)
             )
         """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS monthly_submission_top (
+                month TEXT,
+                category TEXT,
+                rank INTEGER,
+                submission_id INTEGER,
+                guild_id TEXT,
+                original_message_id TEXT,
+                repost_message_id TEXT,
+                repost_channel_id TEXT,
+                user_id TEXT,
+                username TEXT,
+                message_text TEXT,
+                file_paths TEXT,
+                media_paths TEXT,
+                media_names TEXT,
+                media_types TEXT,
+                stars INTEGER DEFAULT 0,
+                voters TEXT DEFAULT '',
+                submitted_at TEXT,
+                created_at TEXT,
+                captured_at TEXT,
+                PRIMARY KEY (month, category, rank)
+            )
+        """)
 
         submission_columns = {
             "guild_id": "TEXT",
@@ -375,6 +400,10 @@ def initialize_database():
             CREATE INDEX IF NOT EXISTS idx_guess_points_month
             ON guess_points (guild_id, channel_id, month, points)
         """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_monthly_submission_top_month
+            ON monthly_submission_top (month, category, rank)
+        """)
 
 
 initialize_database()
@@ -408,6 +437,65 @@ def previous_month_key(now=None):
     first_of_month = now.replace(day=1)
     previous_month = first_of_month - timedelta(days=1)
     return previous_month.strftime("%Y-%m")
+
+
+def preserve_monthly_submission_top(connection, month):
+    existing = connection.execute("""
+        SELECT 1
+        FROM monthly_submission_top
+        WHERE month = ?
+        LIMIT 1
+    """, (month,)).fetchone()
+    if existing:
+        return
+
+    rows = connection.execute("""
+        SELECT *
+        FROM submissions
+        WHERE status = 'posted'
+          AND substr(COALESCE(created_at, submitted_at), 1, 7) = ?
+        ORDER BY category ASC, stars DESC, created_at DESC, id DESC
+    """, (month,)).fetchall()
+
+    ranks_by_category = {}
+    captured_at = utc_now_iso()
+    for row in rows:
+        category = row["category"] or "Uncategorized"
+        rank = ranks_by_category.get(category, 0) + 1
+        if rank > 10:
+            continue
+        ranks_by_category[category] = rank
+        connection.execute("""
+            INSERT OR IGNORE INTO monthly_submission_top (
+                month, category, rank, submission_id, guild_id,
+                original_message_id, repost_message_id, repost_channel_id,
+                user_id, username, message_text, file_paths, media_paths,
+                media_names, media_types, stars, voters, submitted_at,
+                created_at, captured_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            month,
+            category,
+            rank,
+            row["id"],
+            row["guild_id"],
+            row["original_message_id"],
+            row["repost_message_id"],
+            row["repost_channel_id"],
+            row["user_id"],
+            row["username"],
+            row["message_text"],
+            row["file_paths"],
+            row["media_paths"],
+            row["media_names"],
+            row["media_types"],
+            row["stars"] or 0,
+            row["voters"],
+            row["submitted_at"],
+            row["created_at"],
+            captured_at,
+        ))
 
 
 def is_allowed_file(filename):
@@ -1992,6 +2080,9 @@ async def post_monthly_guess_leaderboards():
         return
 
     month = previous_month_key(now)
+    with database() as connection:
+        preserve_monthly_submission_top(connection, month)
+
     with database() as connection:
         channel_rows = connection.execute("""
             SELECT DISTINCT guild_id, channel_id
