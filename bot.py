@@ -2066,9 +2066,15 @@ async def before_daily_top_scheduler():
 
 
 async def sync_slash_commands():
+    local_names = ", ".join(sorted(command.name for command in tree.get_commands()))
+    print(f"Local slash commands registered: {local_names}", flush=True)
+
     synced_global = await tree.sync()
     command_names = ", ".join(sorted(command.name for command in synced_global))
-    print(f"Synced {len(synced_global)} global slash commands: {command_names}")
+    print(
+        f"Synced {len(synced_global)} global slash commands: {command_names}",
+        flush=True,
+    )
 
     for guild in bot.guilds:
         discord_guild = discord.Object(id=guild.id)
@@ -2079,24 +2085,26 @@ async def sync_slash_commands():
         )
         print(
             f"Synced {len(synced_guild)} slash commands to "
-            f"{guild.name} ({guild.id}): {guild_command_names}"
+            f"{guild.name} ({guild.id}): {guild_command_names}",
+            flush=True,
         )
 
 
 @bot.event
 async def on_ready():
+    print(f"on_ready fired for {bot.user}. Starting slash command sync.", flush=True)
     bot.add_view(VoteView())
     bot.add_view(ApprovalView())
     migrate_legacy_config()
     try:
         await sync_slash_commands()
     except Exception as error:
-        print(f"Slash command sync failed: {error}")
+        print(f"Slash command sync failed: {error}", flush=True)
     if not daily_top_scheduler.is_running():
         daily_top_scheduler.start()
-    print(f"Logged in as {bot.user}")
-    print(f"Using database: {DB_FILE}")
-    print(f"Using config: {CONFIG_FILE}")
+    print(f"Logged in as {bot.user}", flush=True)
+    print(f"Using database: {DB_FILE}", flush=True)
+    print(f"Using config: {CONFIG_FILE}", flush=True)
 
 
 def main():
