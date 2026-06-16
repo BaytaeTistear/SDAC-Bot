@@ -36,7 +36,7 @@ DEFAULT_CONFIG = {
         "max_file_bytes": 25 * 1024 * 1024,
         "max_total_bytes": 50 * 1024 * 1024,
         "max_text_length": 1500,
-        "wrong_guess_timeout_seconds": 60,
+        "wrong_guess_timeout_seconds": 600,
     },
 }
 
@@ -295,6 +295,17 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS guess_correct_guesses (
+                game_id INTEGER,
+                guild_id TEXT,
+                channel_id TEXT,
+                user_id TEXT,
+                username TEXT,
+                guessed_at TEXT,
+                PRIMARY KEY (game_id, user_id)
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS guess_cooldowns (
                 guild_id TEXT,
                 channel_id TEXT,
@@ -310,6 +321,15 @@ def initialize_database():
                 month TEXT,
                 created_at TEXT,
                 PRIMARY KEY (guild_id, channel_id, month)
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS daily_guess_runs (
+                guild_id TEXT,
+                channel_id TEXT,
+                run_date TEXT,
+                created_at TEXT,
+                PRIMARY KEY (guild_id, channel_id, run_date)
             )
         """)
         connection.execute("""
@@ -656,6 +676,94 @@ async def delete_discord_message(channel_id, message_id):
         return False, "The bot does not have permission to delete the Discord message."
     except discord.HTTPException as error:
         return False, f"Discord deletion failed: {error}"
+
+
+async def delete_guess_game_message(row):
+    deleted, message = await delete_discord_message(
+        row["channel_id"],
+        row["message_id"],
+    )
+    if not deleted:
+        print(f"Could not delete old guessing game message: {message}", flush=True)
+    cleanup_files([row["media_path"]])
+
+
+async def close_active_guess_game(guild_id, channel_id, status):
+    with database() as connection:
+        row = connection.execute("""
+            SELECT *
+            FROM guess_games
+            WHERE guild_id = ?
+              AND channel_id = ?
+              AND status = 'active'
+            ORDER BY started_at DESC, id DESC
+            LIMIT 1
+        """, (str(guild_id), str(channel_id))).fetchone()
+        if row:
+            connection.execute("""
+                UPDATE guess_games
+                SET status = ?,
+                    solved_at = COALESCE(solved_at, ?)
+                WHERE id = ?
+            """, (status, utc_now_iso(), row["id"]))
+            connection.execute("""
+                DELETE FROM guess_cooldowns
+                WHERE guild_id = ? AND channel_id = ?
+            """, (str(guild_id), str(channel_id)))
+
+    if row:
+        await delete_guess_game_message(row)
+    return row
+
+
+def guess_leaderboard_lines(connection, guild_id, channel_id, month, limit=10):
+    rows = connection.execute("""
+        SELECT username, points
+        FROM guess_points
+        WHERE guild_id = ?
+          AND channel_id = ?
+          AND month = ?
+        ORDER BY points DESC, username ASC
+        LIMIT ?
+    """, (str(guild_id), str(channel_id), month, limit)).fetchall()
+
+    if not rows:
+        return ["No points yet."]
+
+    return [
+        f"{index}. {row['username']} - {row['points']} point(s)"
+        for index, row in enumerate(rows, start=1)
+    ]
+
+
+async def announce_guess_summary(channel, game, reason):
+    with database() as connection:
+        correct_rows = connection.execute("""
+            SELECT username
+            FROM guess_correct_guesses
+            WHERE game_id = ?
+            ORDER BY guessed_at ASC
+        """, (game["id"],)).fetchall()
+        leaderboard = guess_leaderboard_lines(
+            connection,
+            game["guild_id"],
+            game["channel_id"],
+            current_month_key(),
+            limit=10,
+        )
+
+    correct_names = (
+        ", ".join(row["username"] for row in correct_rows)
+        if correct_rows
+        else "Nobody"
+    )
+    await channel.send(
+        f"**Guessing Game Summary ({reason})**\n"
+        f"Answer: **{game['answer_display']}**\n"
+        f"Correct guessers: {correct_names}\n\n"
+        "**Top 10 This Month**\n"
+        + "\n".join(leaderboard)
+    )
 
 
 async def remove_submission_record(
@@ -1726,23 +1834,12 @@ async def startgame(
         )
         return
 
-    with database() as connection:
-        active_game = connection.execute("""
-            SELECT id
-            FROM guess_games
-            WHERE guild_id = ?
-              AND channel_id = ?
-              AND status = 'active'
-        """, (str(interaction.guild_id), str(channel.id))).fetchone()
-
-    if active_game:
-        await interaction.response.send_message(
-            f"There is already an active guessing game in {channel.mention}.",
-            ephemeral=True,
-        )
-        return
-
     await interaction.response.defer(ephemeral=True, thinking=True)
+    replaced_game = await close_active_guess_game(
+        interaction.guild_id,
+        channel.id,
+        "replaced",
+    )
     game_folder = (
         MEDIA_DIR
         / str(interaction.guild_id)
@@ -1793,7 +1890,10 @@ async def startgame(
             game_id = cursor.lastrowid
 
         await interaction.followup.send(
-            f"Guessing game `{game_id}` started in {channel.mention}.",
+            (
+                f"Guessing game `{game_id}` started in {channel.mention}."
+                + (" Previous active game was removed." if replaced_game else "")
+            ),
             ephemeral=True,
         )
     except Exception as error:
@@ -1875,7 +1975,7 @@ async def guess(interaction, guess: str):
         if normalized_guess != game["answer"]:
             seconds = config["limits"].get(
                 "wrong_guess_timeout_seconds",
-                60,
+                600,
             )
             timeout_until = now + timedelta(seconds=seconds)
             connection.execute("""
@@ -1898,17 +1998,39 @@ async def guess(interaction, guess: str):
             return
 
         month = current_month_key()
+        existing_correct = connection.execute("""
+            SELECT 1
+            FROM guess_correct_guesses
+            WHERE game_id = ? AND user_id = ?
+        """, (game["id"], str(interaction.user.id))).fetchone()
+        if existing_correct:
+            await interaction.response.send_message(
+                "You already guessed this one correctly.",
+                ephemeral=True,
+            )
+            return
+
+        connection.execute("""
+            INSERT INTO guess_correct_guesses (
+                game_id, guild_id, channel_id, user_id, username, guessed_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            game["id"],
+            str(interaction.guild_id),
+            str(interaction.channel_id),
+            str(interaction.user.id),
+            str(interaction.user),
+            utc_now_iso(),
+        ))
         connection.execute("""
             UPDATE guess_games
-            SET status = 'solved',
-                winner_user_id = ?,
-                winner_username = ?,
-                solved_at = ?
+            SET winner_user_id = COALESCE(winner_user_id, ?),
+                winner_username = COALESCE(winner_username, ?)
             WHERE id = ? AND status = 'active'
         """, (
             str(interaction.user.id),
             str(interaction.user),
-            utc_now_iso(),
             game["id"],
         ))
         connection.execute("""
@@ -1922,12 +2044,12 @@ async def guess(interaction, guess: str):
                 points = points + 1,
                 username = excluded.username,
                 updated_at = excluded.updated_at
-            """, (
-                str(interaction.guild_id),
-                str(interaction.channel_id),
-                str(interaction.user.id),
-                str(interaction.user),
-                month,
+        """, (
+            str(interaction.guild_id),
+            str(interaction.channel_id),
+            str(interaction.user.id),
+            str(interaction.user),
+            month,
             utc_now_iso(),
         ))
         connection.execute("""
@@ -1947,9 +2069,51 @@ async def guess(interaction, guess: str):
     )
     if channel is not None:
         await channel.send(
-            f"{interaction.user.mention} guessed correctly. "
-            f"The answer was **{game['answer_display']}**."
+            f"{interaction.user.mention} guessed correctly."
         )
+
+
+@tree.command(name="correct", description="Reveal and close this channel's guessing game")
+@app_commands.guild_only()
+async def correct(interaction):
+    if not await require_admin(interaction):
+        return
+
+    with database() as connection:
+        game = connection.execute("""
+            SELECT *
+            FROM guess_games
+            WHERE guild_id = ?
+              AND channel_id = ?
+              AND status = 'active'
+            ORDER BY started_at DESC, id DESC
+            LIMIT 1
+        """, (str(interaction.guild_id), str(interaction.channel_id))).fetchone()
+
+    if not game:
+        await interaction.response.send_message(
+            "There is no active guessing game in this channel.",
+            ephemeral=True,
+        )
+        return
+
+    with database() as connection:
+        connection.execute("""
+            UPDATE guess_games
+            SET status = 'closed',
+                solved_at = ?
+            WHERE id = ? AND status = 'active'
+        """, (utc_now_iso(), game["id"]))
+        connection.execute("""
+            DELETE FROM guess_cooldowns
+            WHERE guild_id = ? AND channel_id = ?
+        """, (str(interaction.guild_id), str(interaction.channel_id)))
+
+    await interaction.response.send_message(
+        "Closing the current guessing game.",
+        ephemeral=True,
+    )
+    await announce_guess_summary(interaction.channel, game, "manual close")
 
 
 @tree.command(name="removesubmission", description="Remove a submission")
@@ -2141,6 +2305,60 @@ async def post_monthly_guess_leaderboards():
             """, (guild_id, channel_id, month, utc_now_iso()))
 
 
+async def post_daily_guess_summaries():
+    now = datetime.now(timezone.utc)
+    today = now.date().isoformat()
+    with database() as connection:
+        games = connection.execute("""
+            SELECT *
+            FROM guess_games
+            WHERE status = 'active'
+              AND date(COALESCE(started_at, 'now')) < date('now')
+        """).fetchall()
+
+    for game in games:
+        with database() as connection:
+            already_posted = connection.execute("""
+                SELECT 1
+                FROM daily_guess_runs
+                WHERE guild_id = ?
+                  AND channel_id = ?
+                  AND run_date = ?
+            """, (game["guild_id"], game["channel_id"], today)).fetchone()
+            if already_posted:
+                continue
+            connection.execute("""
+                UPDATE guess_games
+                SET status = 'closed',
+                    solved_at = ?
+                WHERE id = ? AND status = 'active'
+            """, (utc_now_iso(), game["id"]))
+            connection.execute("""
+                DELETE FROM guess_cooldowns
+                WHERE guild_id = ? AND channel_id = ?
+            """, (game["guild_id"], game["channel_id"]))
+            connection.execute("""
+                INSERT OR IGNORE INTO daily_guess_runs (
+                    guild_id, channel_id, run_date, created_at
+                )
+                VALUES (?, ?, ?, ?)
+            """, (
+                game["guild_id"],
+                game["channel_id"],
+                today,
+                utc_now_iso(),
+            ))
+
+        channel = bot.get_channel(int(game["channel_id"]))
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(int(game["channel_id"]))
+            except discord.HTTPException:
+                channel = None
+        if channel is not None:
+            await announce_guess_summary(channel, game, "end of day")
+
+
 @tasks.loop(minutes=1)
 async def daily_top_scheduler():
     now = datetime.now(timezone.utc)
@@ -2148,6 +2366,7 @@ async def daily_top_scheduler():
     for guild_id, guild_config in config.get("guilds", {}).items():
         if guild_config.get("daily_top_time_utc", "00:00") == current_time:
             await post_daily_top(guild_id, guild_config)
+    await post_daily_guess_summaries()
     await post_monthly_guess_leaderboards()
 
 

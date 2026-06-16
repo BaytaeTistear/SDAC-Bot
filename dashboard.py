@@ -775,6 +775,17 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS guess_correct_guesses (
+                game_id INTEGER,
+                guild_id TEXT,
+                channel_id TEXT,
+                user_id TEXT,
+                username TEXT,
+                guessed_at TEXT,
+                PRIMARY KEY (game_id, user_id)
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS guess_cooldowns (
                 guild_id TEXT,
                 channel_id TEXT,
@@ -790,6 +801,15 @@ def initialize_database():
                 month TEXT,
                 created_at TEXT,
                 PRIMARY KEY (guild_id, channel_id, month)
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS daily_guess_runs (
+                guild_id TEXT,
+                channel_id TEXT,
+                run_date TEXT,
+                created_at TEXT,
+                PRIMARY KEY (guild_id, channel_id, run_date)
             )
         """)
         connection.execute("""
