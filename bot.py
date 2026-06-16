@@ -21,6 +21,8 @@ BASE_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = BASE_DIR / "config.json"
 DB_FILE = BASE_DIR / "sdac.db"
 MEDIA_DIR = BASE_DIR / "media"
+BACKUP_DIR = BASE_DIR / "backups"
+BACKUP_KEEP_COUNT = 30
 
 ALLOWED_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp",
@@ -256,6 +258,19 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS admin_audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                action TEXT,
+                actor_user_id TEXT,
+                actor_username TEXT,
+                target_type TEXT,
+                target_id TEXT,
+                details TEXT,
+                created_at TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS daily_runs (
                 guild_id TEXT,
                 run_date TEXT,
@@ -427,6 +442,14 @@ def initialize_database():
             CREATE INDEX IF NOT EXISTS idx_monthly_submission_top_month
             ON monthly_submission_top (month, category, rank)
         """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
+            ON admin_audit_log (created_at, id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_admin_audit_log_action
+            ON admin_audit_log (action, guild_id)
+        """)
 
 
 initialize_database()
@@ -487,6 +510,69 @@ def previous_month_key(now=None):
     first_of_month = now.replace(day=1)
     previous_month = first_of_month - timedelta(days=1)
     return previous_month.strftime("%Y-%m")
+
+
+def safe_backup_label(label):
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", label).strip("-") or "backup"
+
+
+def cleanup_old_database_backups():
+    if not BACKUP_DIR.exists():
+        return
+    backups = sorted(
+        BACKUP_DIR.glob("sdac-*.db"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for backup_path in backups[BACKUP_KEEP_COUNT:]:
+        try:
+            backup_path.unlink()
+        except OSError:
+            pass
+
+
+def create_database_backup(label):
+    if not DB_FILE.exists():
+        return None, False, "Database file does not exist."
+
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    backup_path = BACKUP_DIR / f"sdac-{safe_backup_label(label)}.db"
+    if backup_path.exists():
+        return backup_path, False, "Backup already exists."
+
+    source = sqlite3.connect(DB_FILE)
+    destination = sqlite3.connect(backup_path)
+    try:
+        with destination:
+            source.backup(destination)
+    finally:
+        destination.close()
+        source.close()
+
+    cleanup_old_database_backups()
+    return backup_path, True, "Backup created."
+
+
+def create_daily_database_backup():
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    try:
+        backup_path, created, message = create_database_backup(f"daily-{today}")
+    except (OSError, sqlite3.Error) as error:
+        print(f"Daily database backup failed: {error}", flush=True)
+        return None, False, str(error)
+    if created:
+        with database() as connection:
+            add_admin_audit_log(
+                connection,
+                None,
+                "database_backup_daily",
+                "system",
+                "system",
+                "backup",
+                backup_path.name,
+                message,
+            )
+    return backup_path, created, message
 
 
 def preserve_monthly_submission_top(connection, month):
@@ -617,6 +703,74 @@ async def send_submission_message(channel, content, row, view):
             file.close()
 
 
+def add_admin_audit_log(
+    connection,
+    guild_id,
+    action,
+    actor_user_id,
+    actor_username,
+    target_type="",
+    target_id="",
+    details="",
+):
+    connection.execute("""
+        INSERT INTO admin_audit_log (
+            guild_id, action, actor_user_id, actor_username,
+            target_type, target_id, details, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        str(guild_id) if guild_id is not None else None,
+        action,
+        str(actor_user_id) if actor_user_id is not None else "",
+        str(actor_username) if actor_username is not None else "",
+        target_type,
+        str(target_id) if target_id is not None else "",
+        details,
+        utc_now_iso(),
+    ))
+
+
+def log_admin_action(
+    guild_id,
+    action,
+    actor_user_id,
+    actor_username,
+    target_type="",
+    target_id="",
+    details="",
+):
+    with database() as connection:
+        add_admin_audit_log(
+            connection,
+            guild_id,
+            action,
+            actor_user_id,
+            actor_username,
+            target_type,
+            target_id,
+            details,
+        )
+
+
+def audit_interaction(
+    interaction,
+    action,
+    target_type="",
+    target_id="",
+    details="",
+):
+    log_admin_action(
+        interaction.guild_id,
+        action,
+        interaction.user.id,
+        interaction.user,
+        target_type,
+        target_id,
+        details,
+    )
+
+
 def add_moderation_history(
     connection,
     row,
@@ -652,6 +806,20 @@ def admin_only(interaction):
 async def require_admin(interaction):
     if admin_only(interaction):
         return True
+    command_name = (
+        interaction.command.name
+        if getattr(interaction, "command", None)
+        else "unknown"
+    )
+    log_admin_action(
+        interaction.guild_id,
+        "admin_command_denied",
+        interaction.user.id,
+        interaction.user,
+        "command",
+        command_name,
+        "Non-admin attempted an admin-only command.",
+    )
     await interaction.response.send_message(
         "Only admins can use this command.",
         ephemeral=True,
@@ -668,6 +836,36 @@ async def category_autocomplete(interaction, current):
         for name in sorted(categories)
         if current in name
     ][:25]
+
+
+def channel_display(channel_id):
+    return f"<#{channel_id}>" if channel_id else "Not set"
+
+
+def settings_lines(guild_config):
+    timezone_name = guild_config.get("timezone", DEFAULT_GUILD_CONFIG["timezone"])
+    timeout_seconds = config["limits"].get("wrong_guess_timeout_seconds", 600)
+    timeout_minutes = max(1, round(timeout_seconds / 60))
+    lines = [
+        "**SDAC Settings**",
+        f"Submit channel: {channel_display(guild_config.get('submit_channel'))}",
+        f"Daily top channel: {channel_display(guild_config.get('daily_top_channel'))}",
+        f"Daily top time: `{guild_config['daily_top_time_utc']}` `{timezone_name}`",
+        f"Timezone: `{timezone_name}`",
+        f"Approval: {'Enabled' if guild_config['approval_enabled'] else 'Disabled'}",
+        f"Approval channel: {channel_display(guild_config.get('approval_channel'))}",
+        f"Wrong guess timeout: `{timeout_minutes}` minute(s)",
+        f"Categories: `{len(guild_config.get('categories', {}))}`",
+        "",
+    ]
+    categories = guild_config.get("categories", {})
+    if not categories:
+        lines.append("No categories are set.")
+    else:
+        lines.append("**Categories:**")
+        for category, channel_id in sorted(categories.items()):
+            lines.append(f"- `{category}` -> {channel_display(channel_id)}")
+    return lines
 
 
 def submission_content(row):
@@ -833,6 +1031,16 @@ async def remove_submission_record(
             actor_username,
             reason,
         )
+        add_admin_audit_log(
+            connection,
+            row["guild_id"],
+            "remove_submission",
+            actor_user_id,
+            actor_username,
+            "submission",
+            row["id"],
+            reason,
+        )
         connection.execute(
             "DELETE FROM submissions WHERE id = ?",
             (submission_id,),
@@ -909,6 +1117,15 @@ class ApprovalView(discord.ui.View):
     )
     async def approve(self, interaction, button):
         if not admin_only(interaction):
+            log_admin_action(
+                interaction.guild_id,
+                "admin_button_denied",
+                interaction.user.id,
+                interaction.user,
+                "button",
+                "approve_submission",
+                "Non-admin attempted to approve a submission.",
+            )
             await interaction.response.send_message(
                 "Administrator permission is required.",
                 ephemeral=True,
@@ -974,6 +1191,16 @@ class ApprovalView(discord.ui.View):
                 interaction.user.id,
                 interaction.user,
             )
+            add_admin_audit_log(
+                connection,
+                row["guild_id"],
+                "approve_submission",
+                interaction.user.id,
+                interaction.user,
+                "submission",
+                row["id"],
+                f"Posted to channel {target_channel.id}.",
+            )
 
         await interaction.message.edit(
             content=interaction.message.content + "\n\nApproved.",
@@ -991,6 +1218,15 @@ class ApprovalView(discord.ui.View):
     )
     async def reject(self, interaction, button):
         if not admin_only(interaction):
+            log_admin_action(
+                interaction.guild_id,
+                "admin_button_denied",
+                interaction.user.id,
+                interaction.user,
+                "button",
+                "reject_submission",
+                "Non-admin attempted to reject a submission.",
+            )
             await interaction.response.send_message(
                 "Administrator permission is required.",
                 ephemeral=True,
@@ -1012,6 +1248,16 @@ class ApprovalView(discord.ui.View):
                 "reject",
                 interaction.user.id,
                 interaction.user,
+            )
+            add_admin_audit_log(
+                connection,
+                row["guild_id"],
+                "reject_submission",
+                interaction.user.id,
+                interaction.user,
+                "submission",
+                row["id"],
+                "Rejected from approval queue.",
             )
             connection.execute(
                 "DELETE FROM submissions WHERE id = ?",
@@ -1039,6 +1285,13 @@ async def setsubmit(interaction, channel: discord.TextChannel):
     guild_config = get_guild_config(interaction.guild_id)
     guild_config["submit_channel"] = channel.id
     save_config(config)
+    audit_interaction(
+        interaction,
+        "set_submit_channel",
+        "channel",
+        channel.id,
+        f"Submit channel set to {channel.id}.",
+    )
     await interaction.response.send_message(
         f"Submit channel set to {channel.mention}.",
         ephemeral=True,
@@ -1053,6 +1306,13 @@ async def clearsubmit(interaction):
     guild_config = get_guild_config(interaction.guild_id)
     guild_config["submit_channel"] = None
     save_config(config)
+    audit_interaction(
+        interaction,
+        "clear_submit_channel",
+        "channel",
+        "",
+        "Submit channel cleared.",
+    )
     await interaction.response.send_message(
         "Submit channel cleared.",
         ephemeral=True,
@@ -1097,6 +1357,16 @@ async def setcategory(
             str(interaction.user),
             utc_now_iso(),
         ))
+        add_admin_audit_log(
+            connection,
+            interaction.guild_id,
+            "set_category",
+            interaction.user.id,
+            interaction.user,
+            "category",
+            category,
+            f"Channel {channel.id}.",
+        )
 
     await interaction.response.send_message(
         f"Category `{category}` set to {channel.mention}.",
@@ -1170,6 +1440,16 @@ async def editcategory(
             str(interaction.user),
             utc_now_iso(),
         ))
+        add_admin_audit_log(
+            connection,
+            interaction.guild_id,
+            "edit_category",
+            interaction.user.id,
+            interaction.user,
+            "category",
+            new_name,
+            f"Renamed from {category}; channel {channel_id}.",
+        )
 
     await interaction.response.send_message(
         f"Category `{category}` changed to `{new_name}`.",
@@ -1210,6 +1490,16 @@ async def deletecategory(interaction, category: str):
             str(interaction.user),
             utc_now_iso(),
         ))
+        add_admin_audit_log(
+            connection,
+            interaction.guild_id,
+            "delete_category",
+            interaction.user.id,
+            interaction.user,
+            "category",
+            category,
+            f"Removed channel {old_channel_id}.",
+        )
 
     await interaction.response.send_message(
         f"Deleted category `{category}`. Existing submissions remain.",
@@ -1254,6 +1544,18 @@ async def categories(interaction):
     )
 
 
+@tree.command(name="settings", description="Show SDAC bot settings")
+@app_commands.guild_only()
+async def settings(interaction):
+    if not await require_admin(interaction):
+        return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    await interaction.response.send_message(
+        "\n".join(settings_lines(guild_config)),
+        ephemeral=True,
+    )
+
+
 @tree.command(name="setdailychannel", description="Set daily top channel")
 @app_commands.guild_only()
 async def setdailychannel(
@@ -1265,6 +1567,13 @@ async def setdailychannel(
     guild_config = get_guild_config(interaction.guild_id)
     guild_config["daily_top_channel"] = channel.id
     save_config(config)
+    audit_interaction(
+        interaction,
+        "set_daily_channel",
+        "channel",
+        channel.id,
+        f"Daily top channel set to {channel.id}.",
+    )
     await interaction.response.send_message(
         f"Daily top channel set to {channel.mention}.",
         ephemeral=True,
@@ -1279,6 +1588,13 @@ async def cleardailychannel(interaction):
     guild_config = get_guild_config(interaction.guild_id)
     guild_config["daily_top_channel"] = None
     save_config(config)
+    audit_interaction(
+        interaction,
+        "clear_daily_channel",
+        "channel",
+        "",
+        "Daily top channel cleared.",
+    )
     await interaction.response.send_message(
         "Daily top channel cleared.",
         ephemeral=True,
@@ -1299,6 +1615,13 @@ async def setdailytime(interaction, hour: app_commands.Range[int, 0, 23], minute
     guild_config["daily_top_time_utc"] = value
     save_config(config)
     timezone_name = guild_config.get("timezone", DEFAULT_GUILD_CONFIG["timezone"])
+    audit_interaction(
+        interaction,
+        "set_daily_time",
+        "schedule",
+        value,
+        f"Daily top time set in {timezone_name}.",
+    )
     await interaction.response.send_message(
         f"Daily top time set to `{value}` in `{timezone_name}`.",
         ephemeral=True,
@@ -1329,9 +1652,41 @@ async def settimezone(interaction, timezone_name: str):
     guild_config["timezone"] = timezone_name
     save_config(config)
     current_time = datetime.now(selected_timezone).strftime("%Y-%m-%d %H:%M")
+    audit_interaction(
+        interaction,
+        "set_timezone",
+        "timezone",
+        timezone_name,
+        f"Current configured local time was {current_time}.",
+    )
     await interaction.response.send_message(
         f"Timezone set to `{timezone_name}`. Current server time there is "
         f"`{current_time}`.",
+        ephemeral=True,
+    )
+
+
+@tree.command(name="setguesstimeout", description="Set wrong-guess cooldown")
+@app_commands.guild_only()
+@app_commands.describe(minutes="Cooldown minutes after a wrong guess")
+async def setguesstimeout(
+    interaction,
+    minutes: app_commands.Range[int, 1, 1440],
+):
+    if not await require_admin(interaction):
+        return
+    seconds = int(minutes) * 60
+    config["limits"]["wrong_guess_timeout_seconds"] = seconds
+    save_config(config)
+    audit_interaction(
+        interaction,
+        "set_guess_timeout",
+        "limit",
+        "wrong_guess_timeout_seconds",
+        f"Set to {minutes} minute(s).",
+    )
+    await interaction.response.send_message(
+        f"Wrong-guess cooldown set to `{minutes}` minute(s).",
         ephemeral=True,
     )
 
@@ -1360,6 +1715,17 @@ async def setapproval(
     if channel is not None:
         guild_config["approval_channel"] = channel.id
     save_config(config)
+    audit_interaction(
+        interaction,
+        "set_approval",
+        "approval",
+        "enabled" if enabled else "disabled",
+        (
+            f"Approval channel {channel.id}."
+            if channel is not None
+            else "Approval channel unchanged."
+        ),
+    )
     await interaction.response.send_message(
         f"Approval is now {'enabled' if enabled else 'disabled'}.",
         ephemeral=True,
@@ -1956,6 +2322,19 @@ async def startgame(
                 utc_now_iso(),
             ))
             game_id = cursor.lastrowid
+            add_admin_audit_log(
+                connection,
+                interaction.guild_id,
+                "start_guess_game",
+                interaction.user.id,
+                interaction.user,
+                "game",
+                game_id,
+                (
+                    f"Channel {channel.id}; media {media.filename}; "
+                    f"replaced={bool(replaced_game)}."
+                ),
+            )
 
         await interaction.followup.send(
             (
@@ -1984,6 +2363,98 @@ async def startgame(
     finally:
         if discord_file is not None:
             discord_file.close()
+
+
+@tree.command(name="activegame", description="Show this channel's active guessing game")
+@app_commands.guild_only()
+async def activegame(interaction):
+    if not await require_admin(interaction):
+        return
+
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    timezone_info = get_guild_timezone(guild_config)
+    with database() as connection:
+        game = connection.execute("""
+            SELECT *
+            FROM guess_games
+            WHERE guild_id = ?
+              AND channel_id = ?
+              AND status = 'active'
+            ORDER BY started_at DESC, id DESC
+            LIMIT 1
+        """, (str(interaction.guild_id), str(interaction.channel_id))).fetchone()
+        correct_rows = []
+        if game:
+            correct_rows = connection.execute("""
+                SELECT username, guessed_at
+                FROM guess_correct_guesses
+                WHERE game_id = ?
+                ORDER BY guessed_at ASC
+            """, (game["id"],)).fetchall()
+
+    if not game:
+        await interaction.response.send_message(
+            "There is no active guessing game in this channel.",
+            ephemeral=True,
+        )
+        return
+
+    started_at = parse_database_datetime(game["started_at"])
+    started_display = started_at.astimezone(timezone_info).strftime(
+        "%Y-%m-%d %H:%M"
+    )
+    correct_names = [row["username"] for row in correct_rows]
+    correct_display = ", ".join(correct_names[:20]) if correct_names else "Nobody"
+    if len(correct_names) > 20:
+        correct_display += f" and {len(correct_names) - 20} more"
+
+    await interaction.response.send_message(
+        "\n".join([
+            f"**Active Guessing Game {game['id']}**",
+            f"Channel: {channel_display(game['channel_id'])}",
+            f"Started by: {game['starter_username']}",
+            f"Started: `{started_display}` `{guild_config.get('timezone', 'UTC')}`",
+            f"Answer: `{game['answer_display']}`",
+            f"Prompt: {game['prompt_text'] or '(none)'}",
+            f"Media: `{game['media_name']}` ({game['media_type']})",
+            f"Correct guessers: {correct_display}",
+        ]),
+        ephemeral=True,
+    )
+
+
+@tree.command(name="cancelgame", description="Cancel this channel's active guessing game")
+@app_commands.guild_only()
+async def cancelgame(interaction):
+    if not await require_admin(interaction):
+        return
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    game = await close_active_guess_game(
+        interaction.guild_id,
+        interaction.channel_id,
+        "cancelled",
+    )
+    if not game:
+        await interaction.followup.send(
+            "There is no active guessing game in this channel.",
+            ephemeral=True,
+        )
+        return
+
+    audit_interaction(
+        interaction,
+        "cancel_guess_game",
+        "game",
+        game["id"],
+        f"Cancelled in channel {interaction.channel_id}.",
+    )
+    await interaction.followup.send(
+        f"Cancelled guessing game `{game['id']}` without revealing the answer.",
+        ephemeral=True,
+    )
+    if interaction.channel is not None:
+        await interaction.channel.send("The current guessing game was cancelled.")
 
 
 @tree.command(name="guess", description="Guess the answer for this channel's game")
@@ -2177,6 +2648,16 @@ async def correct(interaction):
             DELETE FROM guess_cooldowns
             WHERE guild_id = ? AND channel_id = ?
         """, (str(interaction.guild_id), str(interaction.channel_id)))
+        add_admin_audit_log(
+            connection,
+            interaction.guild_id,
+            "correct_guess_game",
+            interaction.user.id,
+            interaction.user,
+            "game",
+            game["id"],
+            f"Closed and revealed in channel {interaction.channel_id}.",
+        )
 
     await interaction.response.send_message(
         "Closing the current guessing game.",
@@ -2443,6 +2924,7 @@ async def post_daily_guess_summaries():
 
 @tasks.loop(minutes=1)
 async def daily_top_scheduler():
+    create_daily_database_backup()
     for guild_id, guild_config in config.get("guilds", {}).items():
         now = guild_now(guild_config)
         current_time = now.strftime("%H:%M")
