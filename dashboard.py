@@ -1,8 +1,12 @@
+import csv
+import io
 import math
 import os
 import json
+import re
 import sqlite3
 import secrets
+import time
 from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,9 +16,11 @@ from urllib.request import Request, urlopen
 from flask import (
     Flask,
     abort,
+    jsonify,
     redirect,
     render_template_string,
     request,
+    Response,
     send_from_directory,
     session,
     url_for,
@@ -35,6 +41,17 @@ MEDIA_DIR = (BASE_DIR / "media").resolve()
 BACKUP_DIR = BASE_DIR / "backups"
 BACKUP_KEEP_COUNT = 30
 PAGE_SIZE = 20
+CACHE_TTL_SECONDS = 45
+PUBLIC_PAGE_CACHE = {}
+WEEKDAYS = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
 
 
 HTML = """
@@ -102,7 +119,7 @@ HTML = """
             justify-content: center;
         }
 
-        select, button {
+        select, input, button {
             border: 1px solid var(--border);
             border-radius: 7px;
             font-size: 16px;
@@ -223,7 +240,9 @@ HTML = """
 
     <nav class="admin-nav">
         <a href="{{ url_for('index', key=admin_key if is_admin else None) }}">Submissions</a>
+        <a href="{{ url_for('servers') }}">Servers</a>
         <a href="{{ url_for('guessing_leaderboard', key=admin_key if is_admin else None) }}">Guessing leaderboard</a>
+        <a href="{{ url_for('achievements', key=admin_key if is_admin else None) }}">Achievements</a>
         {% if is_admin %}
             <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
             <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
@@ -278,6 +297,7 @@ HTML = """
                     {% endfor %}
                 </select>
             {% endif %}
+            <input name="q" value="{{ search_query }}" placeholder="Search text, user, ID">
             <button type="submit">Filter</button>
         </form>
     </div>
@@ -313,6 +333,7 @@ HTML = """
                                           key=admin_key,
                                           category=selected_category,
                                           guild_id=selected_guild_id or 'all',
+                                          q=search_query,
                                           status=selected_status,
                                           page=page
                                       ) }}"
@@ -589,7 +610,9 @@ GUESSING_HTML = """
     <h1>Guessing Leaderboard</h1>
     <nav>
         <a href="{{ url_for('index', key=admin_key if is_admin else None) }}">Submissions</a>
+        <a href="{{ url_for('servers') }}">Servers</a>
         <a href="{{ url_for('guessing_leaderboard', key=admin_key if is_admin else None) }}">Guessing leaderboard</a>
+        <a href="{{ url_for('achievements', key=admin_key if is_admin else None) }}">Achievements</a>
         {% if is_admin %}
             <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
             <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
@@ -646,6 +669,15 @@ GUESSING_HTML = """
     {% else %}
         <p class="empty">No cross-server points for this month yet.</p>
     {% endif %}
+    <nav>
+        {% if page > 1 %}
+            <a href="{{ page_url(page - 1) }}">Previous</a>
+        {% endif %}
+        <span>Page {{ page }} of {{ total_pages }}</span>
+        {% if page < total_pages %}
+            <a href="{{ page_url(page + 1) }}">Next</a>
+        {% endif %}
+    </nav>
 
     <h2>{{ selected_guild_name }} Channel Rankings - {{ month }}</h2>
     {% if grouped_scores %}
@@ -675,6 +707,243 @@ GUESSING_HTML = """
     {% else %}
         <p class="empty">No guessing points for this month yet.</p>
     {% endif %}
+</main>
+</body>
+</html>
+"""
+
+
+SERVERS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Servers</title>
+    <style>
+        :root { color-scheme: dark; }
+        body {
+            background: #101114;
+            color: #f4f5f7;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 24px;
+        }
+        main { margin: 0 auto; width: min(100%, 900px); }
+        h1 { text-align: center; }
+        a { color: #7c9cff; }
+        nav {
+            display: flex;
+            gap: 14px;
+            justify-content: center;
+            margin-bottom: 24px;
+        }
+        .server {
+            background: #1b1d22;
+            border: 1px solid #30333b;
+            border-radius: 12px;
+            margin: 14px 0;
+            padding: 16px;
+        }
+        .meta { color: #a8adb8; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>SDAC Servers</h1>
+    <nav>
+        <a href="{{ url_for('index') }}">Submissions</a>
+        <a href="{{ url_for('guessing_leaderboard') }}">Guessing leaderboard</a>
+        <a href="{{ url_for('achievements') }}">Achievements</a>
+    </nav>
+    {% for server in servers %}
+        <article class="server">
+            <h2><a href="{{ url_for('server_profile', guild_id=server.id) }}">{{ server.name }}</a></h2>
+            <p class="meta">
+                {{ server.submissions }} submission(s)
+                &middot; {{ server.guess_points }} guessing point(s)
+                &middot; {{ server.categories }} categor{{ "y" if server.categories == 1 else "ies" }}
+            </p>
+            <p>
+                <a href="{{ url_for('index', guild_id=server.id) }}">Gallery</a>
+                &middot;
+                <a href="{{ url_for('guessing_leaderboard', guild_id=server.id) }}">Leaderboard</a>
+            </p>
+        </article>
+    {% else %}
+        <p>No Discord servers are configured yet.</p>
+    {% endfor %}
+</main>
+</body>
+</html>
+"""
+
+
+SERVER_PROFILE_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ server.name }} - SDAC</title>
+    <style>
+        :root { color-scheme: dark; }
+        body {
+            background: #101114;
+            color: #f4f5f7;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 24px;
+        }
+        main { margin: 0 auto; width: min(100%, 900px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav {
+            display: flex;
+            gap: 14px;
+            justify-content: center;
+            margin-bottom: 24px;
+        }
+        .panel {
+            background: #1b1d22;
+            border: 1px solid #30333b;
+            border-radius: 12px;
+            margin: 14px 0;
+            padding: 16px;
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>{{ server.name }}</h1>
+    <nav>
+        <a href="{{ url_for('servers') }}">All servers</a>
+        <a href="{{ url_for('index', guild_id=server.id) }}">Gallery</a>
+        <a href="{{ url_for('guessing_leaderboard', guild_id=server.id) }}">Leaderboard</a>
+        <a href="{{ url_for('achievements', guild_id=server.id) }}">Achievements</a>
+    </nav>
+    <section class="panel">
+        <h2>Stats</h2>
+        <p>Submissions: {{ stats.submissions }}</p>
+        <p>Guessing points: {{ stats.guess_points }}</p>
+        <p>Categories: {{ stats.categories }}</p>
+    </section>
+    <section class="panel">
+        <h2>Top Submissions</h2>
+        {% for post in top_posts %}
+            <p><strong>{{ post.category }}</strong> - {{ post.username }} - {{ post.stars or 0 }} vote(s)</p>
+        {% else %}
+            <p>No submissions yet.</p>
+        {% endfor %}
+    </section>
+    <section class="panel">
+        <h2>Top Guessers</h2>
+        {% for row in top_guessers %}
+            <p>{{ loop.index }}. {{ row.username }} - {{ row.points }} point(s)</p>
+        {% else %}
+            <p>No guessing points yet.</p>
+        {% endfor %}
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+ACHIEVEMENTS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Achievements</title>
+    <style>
+        :root { color-scheme: dark; }
+        body {
+            background: #101114;
+            color: #f4f5f7;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 24px;
+        }
+        main { margin: 0 auto; width: min(100%, 900px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav, form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            justify-content: center;
+            margin-bottom: 24px;
+        }
+        select, button {
+            border: 1px solid #30333b;
+            border-radius: 7px;
+            font-size: 16px;
+            padding: 10px 12px;
+        }
+        button {
+            background: #7c9cff;
+            color: #0b1020;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .panel {
+            background: #1b1d22;
+            border: 1px solid #30333b;
+            border-radius: 12px;
+            margin: 14px 0;
+            padding: 16px;
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Achievements</h1>
+    <nav>
+        <a href="{{ url_for('index', key=admin_key if is_admin else None) }}">Submissions</a>
+        <a href="{{ url_for('servers') }}">Servers</a>
+        <a href="{{ url_for('guessing_leaderboard', key=admin_key if is_admin else None) }}">Guessing leaderboard</a>
+    </nav>
+    <form method="get" action="{{ url_for('achievements') }}">
+        {% if is_admin %}<input type="hidden" name="key" value="{{ admin_key }}">{% endif %}
+        <select name="guild_id">
+            <option value="all">All Discord Servers</option>
+            {% for guild in guild_options %}
+                <option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>{{ guild.name }}</option>
+            {% endfor %}
+        </select>
+        <select name="month">
+            {% for available_month in months %}
+                <option value="{{ available_month }}" {% if month == available_month %}selected{% endif %}>{{ available_month }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit">Filter</button>
+    </form>
+    <section class="panel">
+        <h2>Monthly Guessing Winner</h2>
+        {% if top_guesser %}
+            <p>{{ top_guesser.username }} - {{ top_guesser.points }} point(s)</p>
+        {% else %}
+            <p>No guessing points for this month.</p>
+        {% endif %}
+    </section>
+    <section class="panel">
+        <h2>Most Voted Submission</h2>
+        {% if top_submission %}
+            <p>{{ top_submission.username }} - {{ top_submission.category }} - {{ top_submission.stars or 0 }} vote(s)</p>
+        {% else %}
+            <p>No submissions for this month.</p>
+        {% endif %}
+    </section>
+    <section class="panel">
+        <h2>Top Submitter</h2>
+        {% if top_submitter %}
+            <p>{{ top_submitter.username }} - {{ top_submitter.submission_count }} submission(s)</p>
+        {% else %}
+            <p>No submitter stats for this month.</p>
+        {% endif %}
+    </section>
 </main>
 </body>
 </html>
@@ -723,14 +992,17 @@ SETTINGS_HTML = """
             text-align: left;
             vertical-align: top;
         }
-        button {
-            background: #7c9cff;
+        input, select, button {
             border: 1px solid #30333b;
             border-radius: 7px;
+            font-size: 15px;
+            padding: 9px 10px;
+        }
+        button {
+            background: #7c9cff;
             color: #0b1020;
             cursor: pointer;
             font-weight: bold;
-            padding: 10px 12px;
         }
         .notice {
             border: 1px solid #30333b;
@@ -751,6 +1023,7 @@ SETTINGS_HTML = """
         <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
         <a href="{{ url_for('guessing_leaderboard', key=admin_key) }}">Guessing leaderboard</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
+        <a href="{{ url_for('health', key=admin_key) }}">Health</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
     </nav>
 
@@ -767,6 +1040,7 @@ SETTINGS_HTML = """
                 <tr><th>Submissions</th><td>{{ stats.submissions }}</td></tr>
                 <tr><th>Active games</th><td>{{ stats.active_games }}</td></tr>
                 <tr><th>Audit entries</th><td>{{ stats.audit_entries }}</td></tr>
+                <tr><th>Media size</th><td>{{ stats.media_size }}</td></tr>
             </tbody>
         </table>
         <form method="post">
@@ -774,10 +1048,36 @@ SETTINGS_HTML = """
             <input type="hidden" name="action" value="backup_now">
             <button type="submit">Create Backup Now</button>
         </form>
+        <p>
+            Export:
+            <a href="{{ url_for('export_submissions', key=admin_key) }}">Submissions CSV</a>
+            &middot;
+            <a href="{{ url_for('export_guessing', key=admin_key) }}">Guessing CSV</a>
+            &middot;
+            <a href="{{ url_for('export_audit', key=admin_key) }}">Audit CSV</a>
+        </p>
     </section>
 
     <section class="panel">
         <h2>Bot Limits</h2>
+        <form method="post">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="action" value="update_limits">
+            <table>
+                <tbody>
+                    <tr><th>Wrong guess timeout seconds</th><td><input name="wrong_guess_timeout_seconds" value="{{ limits.get('wrong_guess_timeout_seconds', 600) }}"></td></tr>
+                    <tr><th>Audit retention days</th><td><input name="audit_retention_days" value="{{ limits.get('audit_retention_days', 365) }}"></td></tr>
+                    <tr><th>Pending submission retention hours</th><td><input name="pending_submission_retention_hours" value="{{ limits.get('pending_submission_retention_hours', 48) }}"></td></tr>
+                    <tr><th>Orphan media cleanup</th><td>
+                        <select name="orphan_media_cleanup_enabled">
+                            <option value="1" {% if limits.get('orphan_media_cleanup_enabled', True) %}selected{% endif %}>Enabled</option>
+                            <option value="0" {% if not limits.get('orphan_media_cleanup_enabled', True) %}selected{% endif %}>Disabled</option>
+                        </select>
+                    </td></tr>
+                </tbody>
+            </table>
+            <button type="submit">Save Limits</button>
+        </form>
         <table>
             <tbody>
                 {% for key, value in limits.items() %}
@@ -793,6 +1093,45 @@ SETTINGS_HTML = """
         <h2>Guild Settings</h2>
         {% for guild in guilds %}
             <h3>{{ guild.name }} ({{ guild.id }})</h3>
+            <form method="post">
+                <input type="hidden" name="key" value="{{ admin_key }}">
+                <input type="hidden" name="action" value="update_guild">
+                <input type="hidden" name="guild_id" value="{{ guild.id }}">
+                <table>
+                    <tbody>
+                        <tr><th>Timezone</th><td><input name="timezone" value="{{ guild.timezone }}"></td></tr>
+                        <tr><th>Submit channel ID</th><td><input name="submit_channel" value="{{ guild.submit_channel or '' }}"></td></tr>
+                        <tr><th>Weekly channel ID</th><td><input name="weekly_channel" value="{{ guild.daily_top_channel or '' }}"></td></tr>
+                        <tr><th>Weekly day</th><td>
+                            <select name="weekly_top_day">
+                                {% for day in weekdays %}
+                                    <option value="{{ day }}" {% if guild.weekly_top_day_lower == day %}selected{% endif %}>{{ day.title() }}</option>
+                                {% endfor %}
+                            </select>
+                        </td></tr>
+                        <tr><th>Weekly time</th><td><input name="weekly_time" value="{{ guild.daily_top_time_utc }}" placeholder="HH:MM"></td></tr>
+                        <tr><th>Approval</th><td>
+                            <select name="approval_enabled">
+                                <option value="0" {% if not guild.approval_enabled %}selected{% endif %}>Disabled</option>
+                                <option value="1" {% if guild.approval_enabled %}selected{% endif %}>Enabled</option>
+                            </select>
+                        </td></tr>
+                        <tr><th>Approval channel ID</th><td><input name="approval_channel" value="{{ guild.approval_channel or '' }}"></td></tr>
+                        <tr><th>Game summary channel ID</th><td><input name="game_summary_channel" value="{{ guild.game_summary_channel or '' }}"></td></tr>
+                        <tr><th>Error channel ID</th><td><input name="error_channel" value="{{ guild.error_channel or '' }}"></td></tr>
+                        <tr><th>Admin role IDs</th><td><input name="admin_role_ids" value="{{ guild.admin_role_ids }}"></td></tr>
+                    </tbody>
+                </table>
+                <button type="submit">Save Guild Settings</button>
+            </form>
+            <form method="post">
+                <input type="hidden" name="key" value="{{ admin_key }}">
+                <input type="hidden" name="action" value="save_category">
+                <input type="hidden" name="guild_id" value="{{ guild.id }}">
+                <input name="category" placeholder="category">
+                <input name="channel_id" placeholder="channel ID">
+                <button type="submit">Add / Update Category</button>
+            </form>
             <table>
                 <tbody>
                     <tr><th>Timezone</th><td><code>{{ guild.timezone }}</code></td></tr>
@@ -804,7 +1143,14 @@ SETTINGS_HTML = """
                     <tr><th>Approval channel</th><td>{{ guild.approval_channel or "Not set" }}</td></tr>
                     <tr><th>Categories</th><td>
                         {% for category, channel_id in guild.categories %}
-                            <code>{{ category }}</code> -> {{ channel_id }}<br>
+                            <form method="post">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="action" value="delete_category">
+                                <input type="hidden" name="guild_id" value="{{ guild.id }}">
+                                <input type="hidden" name="category" value="{{ category }}">
+                                <code>{{ category }}</code> -> {{ channel_id }}
+                                <button type="submit">Delete</button>
+                            </form>
                         {% else %}
                             <span class="muted">No categories set.</span>
                         {% endfor %}
@@ -892,6 +1238,107 @@ def load_config():
         return {"guilds": {}, "limits": {}}
     with CONFIG_FILE.open("r", encoding="utf-8") as file:
         return json.load(file)
+
+
+def save_config(data):
+    with CONFIG_FILE.open("w", encoding="utf-8", newline="\n") as file:
+        json.dump(data, file, indent=4)
+        file.write("\n")
+    PUBLIC_PAGE_CACHE.clear()
+
+
+def cache_key(name, *parts):
+    return ":".join([name] + [str(part) for part in parts])
+
+
+def cached_public_page(key):
+    cached = PUBLIC_PAGE_CACHE.get(key)
+    if not cached:
+        return None
+    expires_at, body = cached
+    if expires_at < time.time():
+        PUBLIC_PAGE_CACHE.pop(key, None)
+        return None
+    return body
+
+
+def store_public_page(key, body):
+    PUBLIC_PAGE_CACHE[key] = (time.time() + CACHE_TTL_SECONDS, body)
+    if len(PUBLIC_PAGE_CACHE) > 128:
+        oldest_key = min(
+            PUBLIC_PAGE_CACHE,
+            key=lambda item: PUBLIC_PAGE_CACHE[item][0],
+        )
+        PUBLIC_PAGE_CACHE.pop(oldest_key, None)
+    return body
+
+
+def media_directory_size():
+    total = 0
+    if not MEDIA_DIR.exists():
+        return total
+    for path in MEDIA_DIR.rglob("*"):
+        if path.is_file():
+            try:
+                total += path.stat().st_size
+            except OSError:
+                pass
+    return total
+
+
+def csv_response(filename, rows, columns):
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(columns)
+    for row in rows:
+        writer.writerow([row[column] for column in columns])
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+        },
+    )
+
+
+def nullable_channel_id(raw_value):
+    value = str(raw_value or "").strip()
+    if not value:
+        return None
+    if not value.isdigit():
+        raise ValueError("Channel IDs must be numbers.")
+    return int(value)
+
+
+def role_id_list(raw_value):
+    role_ids = []
+    for value in re_split_ids(raw_value):
+        if not value.isdigit():
+            raise ValueError("Role IDs must be numbers.")
+        role_ids.append(value)
+    return sorted(set(role_ids))
+
+
+def re_split_ids(raw_value):
+    return [
+        value
+        for value in str(raw_value or "").replace(",", " ").split()
+        if value.strip()
+    ]
+
+
+def clean_category_name(category):
+    return category.lower().strip().replace(" ", "")
+
+
+def validate_time(value):
+    value = str(value or "").strip()
+    if not re.match(r"^\d{2}:\d{2}$", value):
+        raise ValueError("Time must be HH:MM.")
+    hour, minute = [int(part) for part in value.split(":")]
+    if hour > 23 or minute > 59:
+        raise ValueError("Time must be between 00:00 and 23:59.")
+    return value
 
 
 def guild_options(config_data=None):
@@ -1319,6 +1766,10 @@ def initialize_database():
             ON submissions (guild_id, status, category, created_at)
         """)
         connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submissions_search
+            ON submissions (guild_id, status, username, message_text, category)
+        """)
+        connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_guess_points_global_month
             ON guess_points (month, user_id, points)
         """)
@@ -1602,6 +2053,130 @@ def admin_settings():
                 notice=message,
                 error=0 if created else 1,
             ))
+        if action == "update_limits":
+            config_data = load_config()
+            limits = config_data.setdefault("limits", {})
+            try:
+                for field in (
+                    "wrong_guess_timeout_seconds",
+                    "audit_retention_days",
+                    "pending_submission_retention_hours",
+                ):
+                    value = int(request.form.get(field, "0"))
+                    if value < 0:
+                        raise ValueError("Limits cannot be negative.")
+                    limits[field] = value
+                limits["orphan_media_cleanup_enabled"] = (
+                    request.form.get("orphan_media_cleanup_enabled") == "1"
+                )
+            except ValueError as form_error:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice=str(form_error),
+                    error=1,
+                ))
+            save_config(config_data)
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    "dashboard_update_limits",
+                    actor_id,
+                    actor_name,
+                    "limits",
+                    "",
+                    "Updated bot limits from dashboard.",
+                )
+            return redirect(url_for(
+                "admin_settings",
+                key=ADMIN_KEY,
+                notice="Bot limits saved.",
+            ))
+        if action in {"update_guild", "save_category", "delete_category"}:
+            config_data = load_config()
+            guild_id = request.form.get("guild_id", "").strip()
+            guild_config = (config_data.get("guilds") or {}).get(guild_id)
+            if not guild_config:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice="Unknown guild.",
+                    error=1,
+                ))
+            try:
+                if action == "update_guild":
+                    guild_config["timezone"] = request.form.get(
+                        "timezone",
+                        "UTC",
+                    ).strip() or "UTC"
+                    guild_config["submit_channel"] = nullable_channel_id(
+                        request.form.get("submit_channel")
+                    )
+                    guild_config["daily_top_channel"] = nullable_channel_id(
+                        request.form.get("weekly_channel")
+                    )
+                    guild_config["daily_top_time_utc"] = validate_time(
+                        request.form.get("weekly_time")
+                    )
+                    weekday = request.form.get("weekly_top_day", "sunday")
+                    if weekday not in WEEKDAYS:
+                        raise ValueError("Invalid weekly day.")
+                    guild_config["weekly_top_day"] = weekday
+                    guild_config["approval_enabled"] = (
+                        request.form.get("approval_enabled") == "1"
+                    )
+                    guild_config["approval_channel"] = nullable_channel_id(
+                        request.form.get("approval_channel")
+                    )
+                    guild_config["game_summary_channel"] = nullable_channel_id(
+                        request.form.get("game_summary_channel")
+                    )
+                    guild_config["error_channel"] = nullable_channel_id(
+                        request.form.get("error_channel")
+                    )
+                    guild_config["admin_role_ids"] = role_id_list(
+                        request.form.get("admin_role_ids")
+                    )
+                    message = "Guild settings saved."
+                elif action == "save_category":
+                    category = clean_category_name(request.form.get("category"))
+                    channel_id = nullable_channel_id(
+                        request.form.get("channel_id")
+                    )
+                    if not category or channel_id is None:
+                        raise ValueError("Category and channel ID are required.")
+                    guild_config.setdefault("categories", {})[category] = channel_id
+                    message = f"Category {category} saved."
+                else:
+                    category = clean_category_name(request.form.get("category"))
+                    guild_config.setdefault("categories", {}).pop(category, None)
+                    message = f"Category {category} deleted."
+            except ValueError as form_error:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice=str(form_error),
+                    error=1,
+                ))
+
+            save_config(config_data)
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    guild_id,
+                    f"dashboard_{action}",
+                    actor_id,
+                    actor_name,
+                    "guild",
+                    guild_id,
+                    message,
+                )
+            return redirect(url_for(
+                "admin_settings",
+                key=ADMIN_KEY,
+                notice=message,
+            ))
 
     config_data = load_config()
     limits = config_data.get("limits", {})
@@ -1619,9 +2194,16 @@ def admin_settings():
                 "00:00",
             ),
             "weekly_top_day": guild_config.get("weekly_top_day", "sunday").title(),
+            "weekly_top_day_lower": guild_config.get("weekly_top_day", "sunday"),
             "timezone": guild_config.get("timezone", "UTC"),
             "approval_enabled": guild_config.get("approval_enabled", False),
             "approval_channel": guild_config.get("approval_channel"),
+            "game_summary_channel": guild_config.get("game_summary_channel"),
+            "error_channel": guild_config.get("error_channel"),
+            "admin_role_ids": " ".join(
+                str(role_id)
+                for role_id in guild_config.get("admin_role_ids", [])
+            ),
             "categories": sorted(
                 (guild_config.get("categories") or {}).items()
             ),
@@ -1642,6 +2224,7 @@ def admin_settings():
                     (SELECT COUNT(*) FROM admin_audit_log)
                     + (SELECT COUNT(*) FROM moderation_history)
             """).fetchone()[0],
+            "media_size": format_bytes(media_directory_size()),
         }
         active_games = connection.execute("""
             SELECT id, guild_id, channel_id, starter_username,
@@ -1664,6 +2247,7 @@ def admin_settings():
         limits=limits,
         notice=notice,
         stats=stats,
+        weekdays=WEEKDAYS,
     )
 
 
@@ -1682,6 +2266,7 @@ def index():
     selected_status = request.args.get("status", "").strip()
     selected_sort = request.args.get("sort", "newest").strip()
     selected_month = request.args.get("month", "").strip()
+    search_query = request.args.get("q", "").strip()
     has_key = request.args.get("key") == ADMIN_KEY
     is_admin = has_key and is_admin_logged_in()
     notice = request.args.get("notice", "")
@@ -1696,6 +2281,21 @@ def index():
             key=ADMIN_KEY,
             next=request.full_path,
         ))
+
+    public_cache_key = None
+    if not is_admin and not notice and not error and request.method == "GET":
+        public_cache_key = cache_key(
+            "index",
+            selected_server_id or "all",
+            selected_category,
+            selected_sort,
+            selected_month,
+            search_query,
+            page,
+        )
+        cached = cached_public_page(public_cache_key)
+        if cached is not None:
+            return cached
 
     with closing(connect_db()) as connection:
         months = available_submission_months(connection, selected_server_id)
@@ -1728,6 +2328,22 @@ def index():
             if selected_category:
                 where.append("category = ?")
                 parameters.append(selected_category)
+            if search_query:
+                where.append("""
+                    (
+                        CAST(submission_id AS TEXT) = ?
+                        OR username LIKE ?
+                        OR category LIKE ?
+                        OR message_text LIKE ?
+                    )
+                """)
+                like_query = f"%{search_query}%"
+                parameters.extend([
+                    search_query,
+                    like_query,
+                    like_query,
+                    like_query,
+                ])
             where_sql = " WHERE " + " AND ".join(where)
             total_items = connection.execute(
                 f"SELECT COUNT(*) FROM monthly_submission_top{where_sql}",
@@ -1781,6 +2397,22 @@ def index():
             if selected_category:
                 where.append("category = ?")
                 parameters.append(selected_category)
+            if search_query:
+                where.append("""
+                    (
+                        CAST(id AS TEXT) = ?
+                        OR username LIKE ?
+                        OR category LIKE ?
+                        OR message_text LIKE ?
+                    )
+                """)
+                like_query = f"%{search_query}%"
+                parameters.extend([
+                    search_query,
+                    like_query,
+                    like_query,
+                    like_query,
+                ])
 
             where_sql = " WHERE " + " AND ".join(where) if where else ""
             order_sql = (
@@ -1822,6 +2454,7 @@ def index():
             "category": selected_category,
             "month": selected_month,
             "page": page_number,
+            "q": search_query,
             "sort": selected_sort,
             "guild_id": selected_server_id or "all",
         }
@@ -1830,7 +2463,7 @@ def index():
             values["status"] = selected_status
         return url_for("index", **values)
 
-    return render_template_string(
+    rendered = render_template_string(
         HTML,
         admin_key=ADMIN_KEY,
         categories=categories,
@@ -1846,10 +2479,14 @@ def index():
         selected_guild_name=selected_server_name,
         selected_guild_id=selected_server_id,
         selected_month=selected_month,
+        search_query=search_query,
         selected_sort=selected_sort,
         selected_status=selected_status,
         total_pages=total_pages,
     )
+    if public_cache_key:
+        return store_public_page(public_cache_key, rendered)
+    return rendered
 
 
 @app.route("/audit")
@@ -1923,11 +2560,35 @@ def guessing_leaderboard():
         ))
 
     month = request.args.get("month", "").strip()
+    page = positive_page(request.args.get("page"))
+
+    public_cache_key = None
+    if not is_admin and request.method == "GET":
+        public_cache_key = cache_key(
+            "guessing",
+            selected_server_id or "all",
+            month or current_month_key(),
+            page,
+        )
+        cached = cached_public_page(public_cache_key)
+        if cached is not None:
+            return cached
 
     with closing(connect_db()) as connection:
         months = available_guess_months(connection)
         if not month:
             month = months[0] if months else current_month_key()
+        total_cross = connection.execute("""
+            SELECT COUNT(*)
+            FROM (
+                SELECT user_id
+                FROM guess_points
+                WHERE month = ?
+                GROUP BY user_id
+            )
+        """, (month,)).fetchone()[0]
+        total_pages = max(1, math.ceil(total_cross / PAGE_SIZE))
+        page = min(page, total_pages)
         cross_server_scores = connection.execute("""
             SELECT
                 COALESCE(MAX(NULLIF(username, '')), user_id) AS username,
@@ -1937,8 +2598,8 @@ def guessing_leaderboard():
             WHERE month = ?
             GROUP BY user_id
             ORDER BY points DESC, username ASC
-            LIMIT 50
-        """, (month,)).fetchall()
+            LIMIT ? OFFSET ?
+        """, (month, PAGE_SIZE, (page - 1) * PAGE_SIZE)).fetchall()
 
         where = ["month = ?"]
         parameters = [month]
@@ -1974,7 +2635,17 @@ def guessing_leaderboard():
         else "All Servers"
     )
 
-    return render_template_string(
+    def page_url(page_number):
+        values = {
+            "guild_id": selected_server_id or "all",
+            "month": month,
+            "page": page_number,
+        }
+        if is_admin:
+            values["key"] = ADMIN_KEY
+        return url_for("guessing_leaderboard", **values)
+
+    rendered = render_template_string(
         GUESSING_HTML,
         admin_key=ADMIN_KEY,
         cross_server_scores=cross_server_scores,
@@ -1983,8 +2654,243 @@ def guessing_leaderboard():
         is_admin=is_admin,
         month=month,
         months=months,
+        page=page,
+        page_url=page_url,
         selected_guild_id=selected_server_id,
         selected_guild_name=selected_guild_name,
+        total_pages=total_pages,
+    )
+    if public_cache_key:
+        return store_public_page(public_cache_key, rendered)
+    return rendered
+
+
+@app.route("/servers")
+def servers():
+    config_data = load_config()
+    options = guild_options(config_data)
+    with closing(connect_db()) as connection:
+        rows = []
+        for option in options:
+            submissions = connection.execute("""
+                SELECT COUNT(*)
+                FROM submissions
+                WHERE guild_id = ? AND status = 'posted'
+            """, (option["id"],)).fetchone()[0]
+            guess_points = connection.execute("""
+                SELECT COALESCE(SUM(points), 0)
+                FROM guess_points
+                WHERE guild_id = ?
+            """, (option["id"],)).fetchone()[0]
+            categories = len(
+                (config_data.get("guilds") or {})
+                .get(option["id"], {})
+                .get("categories", {})
+            )
+            rows.append({
+                "id": option["id"],
+                "name": option["name"],
+                "submissions": submissions,
+                "guess_points": guess_points,
+                "categories": categories,
+            })
+    return render_template_string(SERVERS_HTML, servers=rows)
+
+
+@app.route("/server/<guild_id>")
+def server_profile(guild_id):
+    config_data = load_config()
+    names = guild_name_map(config_data)
+    if guild_id not in names:
+        abort(404)
+    with closing(connect_db()) as connection:
+        stats = {
+            "submissions": connection.execute("""
+                SELECT COUNT(*)
+                FROM submissions
+                WHERE guild_id = ? AND status = 'posted'
+            """, (guild_id,)).fetchone()[0],
+            "guess_points": connection.execute("""
+                SELECT COALESCE(SUM(points), 0)
+                FROM guess_points
+                WHERE guild_id = ?
+            """, (guild_id,)).fetchone()[0],
+            "categories": len(
+                (config_data.get("guilds") or {})
+                .get(guild_id, {})
+                .get("categories", {})
+            ),
+        }
+        top_posts = connection.execute("""
+            SELECT username, category, stars
+            FROM submissions
+            WHERE guild_id = ? AND status = 'posted'
+            ORDER BY stars DESC, created_at DESC
+            LIMIT 5
+        """, (guild_id,)).fetchall()
+        top_guessers = connection.execute("""
+            SELECT username, SUM(points) AS points
+            FROM guess_points
+            WHERE guild_id = ?
+            GROUP BY user_id
+            ORDER BY points DESC, username ASC
+            LIMIT 5
+        """, (guild_id,)).fetchall()
+    return render_template_string(
+        SERVER_PROFILE_HTML,
+        server={"id": guild_id, "name": names[guild_id]},
+        stats=stats,
+        top_guessers=top_guessers,
+        top_posts=top_posts,
+    )
+
+
+@app.route("/achievements")
+def achievements():
+    config_data = load_config()
+    server_options = guild_options(config_data)
+    selected_server_id = selected_guild_id(server_options)
+    has_key = request.args.get("key") == ADMIN_KEY
+    is_admin = has_key and is_admin_logged_in()
+    month = request.args.get("month", "").strip()
+
+    with closing(connect_db()) as connection:
+        months = available_guess_months(connection)
+        for submission_month in available_submission_months(
+            connection,
+            selected_server_id,
+        ):
+            if submission_month not in months:
+                months.append(submission_month)
+        months = sorted(months, reverse=True)
+        if not month:
+            month = months[0] if months else current_month_key()
+
+        guess_where = ["month = ?"]
+        guess_params = [month]
+        submission_where = [
+            "status = 'posted'",
+            "substr(COALESCE(created_at, submitted_at), 1, 7) = ?",
+        ]
+        submission_params = [month]
+        if selected_server_id:
+            guess_where.append("guild_id = ?")
+            guess_params.append(selected_server_id)
+            submission_where.append("guild_id = ?")
+            submission_params.append(selected_server_id)
+
+        top_guesser = connection.execute(f"""
+            SELECT username, SUM(points) AS points
+            FROM guess_points
+            WHERE {" AND ".join(guess_where)}
+            GROUP BY user_id
+            ORDER BY points DESC, username ASC
+            LIMIT 1
+        """, guess_params).fetchone()
+        top_submission = connection.execute(f"""
+            SELECT username, category, stars
+            FROM submissions
+            WHERE {" AND ".join(submission_where)}
+            ORDER BY stars DESC, created_at DESC
+            LIMIT 1
+        """, submission_params).fetchone()
+        top_submitter = connection.execute(f"""
+            SELECT username, COUNT(*) AS submission_count
+            FROM submissions
+            WHERE {" AND ".join(submission_where)}
+            GROUP BY user_id
+            ORDER BY submission_count DESC, username ASC
+            LIMIT 1
+        """, submission_params).fetchone()
+
+    return render_template_string(
+        ACHIEVEMENTS_HTML,
+        admin_key=ADMIN_KEY,
+        guild_options=server_options,
+        is_admin=is_admin,
+        month=month,
+        months=months,
+        selected_guild_id=selected_server_id,
+        top_guesser=top_guesser,
+        top_submission=top_submission,
+        top_submitter=top_submitter,
+    )
+
+
+@app.route("/health")
+def health():
+    with closing(connect_db()) as connection:
+        payload = {
+            "ok": True,
+            "db_size_bytes": DB_FILE.stat().st_size if DB_FILE.exists() else 0,
+            "media_size_bytes": media_directory_size(),
+            "submissions": connection.execute(
+                "SELECT COUNT(*) FROM submissions"
+            ).fetchone()[0],
+            "active_games": connection.execute("""
+                SELECT COUNT(*)
+                FROM guess_games
+                WHERE status = 'active'
+            """).fetchone()[0],
+            "cache_entries": len(PUBLIC_PAGE_CACHE),
+        }
+    return jsonify(payload)
+
+
+@app.route("/export/submissions.csv")
+def export_submissions():
+    login_response = require_admin_login()
+    if login_response:
+        return login_response
+    with closing(connect_db()) as connection:
+        rows = connection.execute("""
+            SELECT id, guild_id, user_id, username, category, stars,
+                   status, created_at, submitted_at
+            FROM submissions
+            ORDER BY created_at DESC, id DESC
+        """).fetchall()
+    return csv_response(
+        "sdac-submissions.csv",
+        rows,
+        ["id", "guild_id", "user_id", "username", "category", "stars", "status", "created_at", "submitted_at"],
+    )
+
+
+@app.route("/export/guessing.csv")
+def export_guessing():
+    login_response = require_admin_login()
+    if login_response:
+        return login_response
+    with closing(connect_db()) as connection:
+        rows = connection.execute("""
+            SELECT guild_id, channel_id, user_id, username, month, points,
+                   updated_at
+            FROM guess_points
+            ORDER BY month DESC, points DESC
+        """).fetchall()
+    return csv_response(
+        "sdac-guessing.csv",
+        rows,
+        ["guild_id", "channel_id", "user_id", "username", "month", "points", "updated_at"],
+    )
+
+
+@app.route("/export/audit.csv")
+def export_audit():
+    login_response = require_admin_login()
+    if login_response:
+        return login_response
+    with closing(connect_db()) as connection:
+        rows = connection.execute("""
+            SELECT guild_id, action, actor_user_id, actor_username,
+                   target_type, target_id, details, created_at
+            FROM admin_audit_log
+            ORDER BY created_at DESC, id DESC
+        """).fetchall()
+    return csv_response(
+        "sdac-audit.csv",
+        rows,
+        ["guild_id", "action", "actor_user_id", "actor_username", "target_type", "target_id", "details", "created_at"],
     )
 
 
@@ -2079,6 +2985,7 @@ def delete_submission(submission_id):
         )
 
     delete_local_media(row)
+    PUBLIC_PAGE_CACHE.clear()
     return redirect(url_for(
         "index",
         notice="Submission removed from the website and Discord.",
