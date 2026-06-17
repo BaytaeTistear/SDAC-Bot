@@ -40,9 +40,14 @@ CONFIG_FILE = BASE_DIR / "config.json"
 MEDIA_DIR = (BASE_DIR / "media").resolve()
 BACKUP_DIR = BASE_DIR / "backups"
 BACKUP_KEEP_COUNT = 30
+SCHEMA_VERSION = 2
 PAGE_SIZE = 20
 CACHE_TTL_SECONDS = 45
 PUBLIC_PAGE_CACHE = {}
+LOGIN_ATTEMPTS = {}
+LOGIN_WINDOW_SECONDS = 300
+LOGIN_MAX_ATTEMPTS = 5
+APP_STARTED_AT = datetime.now(timezone.utc)
 WEEKDAYS = (
     "monday",
     "tuesday",
@@ -338,6 +343,7 @@ HTML = """
                                           page=page
                                       ) }}"
                                       onsubmit="return confirm('Remove this submission from the website and Discord?');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <button class="delete-button" type="submit">Remove</button>
                                 </form>
                             {% endif %}
@@ -451,6 +457,7 @@ LOGIN_HTML = """
     <form method="post">
         <input type="hidden" name="key" value="{{ admin_key }}">
         <input type="hidden" name="next" value="{{ next_url }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <label for="password">Admin password</label>
         <input id="password" name="password" type="password" required autofocus>
         <button type="submit">Log In</button>
@@ -1023,12 +1030,21 @@ SETTINGS_HTML = """
         <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
         <a href="{{ url_for('guessing_leaderboard', key=admin_key) }}">Guessing leaderboard</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
-        <a href="{{ url_for('health', key=admin_key) }}">Health</a>
+        <a href="{{ url_for('admin_health', key=admin_key) }}">Health</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
     </nav>
 
     {% if notice %}
         <div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>
+    {% endif %}
+
+    {% if security_warnings %}
+        <section class="panel">
+            <h2>Security Warnings</h2>
+            {% for warning in security_warnings %}
+                <p class="notice error">{{ warning }}</p>
+            {% endfor %}
+        </section>
     {% endif %}
 
     <section class="panel">
@@ -1046,6 +1062,7 @@ SETTINGS_HTML = """
         <form method="post">
             <input type="hidden" name="key" value="{{ admin_key }}">
             <input type="hidden" name="action" value="backup_now">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button type="submit">Create Backup Now</button>
         </form>
         <p>
@@ -1063,6 +1080,7 @@ SETTINGS_HTML = """
         <form method="post">
             <input type="hidden" name="key" value="{{ admin_key }}">
             <input type="hidden" name="action" value="update_limits">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <table>
                 <tbody>
                     <tr><th>Wrong guess timeout seconds</th><td><input name="wrong_guess_timeout_seconds" value="{{ limits.get('wrong_guess_timeout_seconds', 600) }}"></td></tr>
@@ -1097,6 +1115,7 @@ SETTINGS_HTML = """
                 <input type="hidden" name="key" value="{{ admin_key }}">
                 <input type="hidden" name="action" value="update_guild">
                 <input type="hidden" name="guild_id" value="{{ guild.id }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <table>
                     <tbody>
                         <tr><th>Timezone</th><td><input name="timezone" value="{{ guild.timezone }}"></td></tr>
@@ -1128,6 +1147,7 @@ SETTINGS_HTML = """
                 <input type="hidden" name="key" value="{{ admin_key }}">
                 <input type="hidden" name="action" value="save_category">
                 <input type="hidden" name="guild_id" value="{{ guild.id }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input name="category" placeholder="category">
                 <input name="channel_id" placeholder="channel ID">
                 <button type="submit">Add / Update Category</button>
@@ -1148,6 +1168,7 @@ SETTINGS_HTML = """
                                 <input type="hidden" name="action" value="delete_category">
                                 <input type="hidden" name="guild_id" value="{{ guild.id }}">
                                 <input type="hidden" name="category" value="{{ category }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <code>{{ category }}</code> -> {{ channel_id }}
                                 <button type="submit">Delete</button>
                             </form>
@@ -1273,16 +1294,47 @@ def store_public_page(key, body):
     return body
 
 
-def media_directory_size():
+def media_directory_stats():
     total = 0
+    files = 0
     if not MEDIA_DIR.exists():
-        return total
+        return {"bytes": total, "files": files}
     for path in MEDIA_DIR.rglob("*"):
         if path.is_file():
             try:
                 total += path.stat().st_size
+                files += 1
             except OSError:
                 pass
+    return {"bytes": total, "files": files}
+
+
+def media_directory_size():
+    return media_directory_stats()["bytes"]
+
+
+def security_warnings():
+    warnings = []
+    if ADMIN_PASSWORD == ADMIN_KEY:
+        warnings.append(
+            "SDAC_ADMIN_PASSWORD matches SDAC_ADMIN_KEY. Use a separate "
+            "password for the admin login."
+        )
+    if ADMIN_KEY == "ImTheBestAdmin":
+        warnings.append(
+            "SDAC_ADMIN_KEY is still using the development default."
+        )
+    if not os.getenv("SDAC_SECRET_KEY"):
+        warnings.append(
+            "SDAC_SECRET_KEY is not set. Sessions will reset on dashboard "
+            "restart and are not production-stable."
+        )
+    if not os.getenv("SDAC_ADMIN_PASSWORD"):
+        warnings.append(
+            "SDAC_ADMIN_PASSWORD is not set. The dashboard falls back to the "
+            "admin key as the password."
+        )
+    return warnings
     return total
 
 
@@ -1735,6 +1787,13 @@ def initialize_database():
                 PRIMARY KEY (month, category, rank)
             )
         """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS schema_version (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                version INTEGER NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
         columns = {
             row["name"]
             for row in connection.execute(
@@ -1751,6 +1810,20 @@ def initialize_database():
             if column not in columns:
                 connection.execute(
                     f"ALTER TABLE submissions ADD COLUMN {column} {definition}"
+                )
+        guess_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(guess_games)"
+            ).fetchall()
+        }
+        for column, definition in {
+            "hint_text": "TEXT",
+            "hint_revealed_at": "TEXT",
+        }.items():
+            if column not in guess_columns:
+                connection.execute(
+                    f"ALTER TABLE guess_games ADD COLUMN {column} {definition}"
                 )
         connection.execute("""
             UPDATE submissions
@@ -1781,6 +1854,13 @@ def initialize_database():
             CREATE INDEX IF NOT EXISTS idx_admin_audit_log_action
             ON admin_audit_log (action, guild_id)
         """)
+        connection.execute("""
+            INSERT INTO schema_version (id, version, updated_at)
+            VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                version = excluded.version,
+                updated_at = excluded.updated_at
+        """, (SCHEMA_VERSION, datetime.now(timezone.utc).isoformat()))
 
 
 initialize_database()
@@ -1889,6 +1969,53 @@ def has_valid_key():
     )
 
 
+def get_csrf_token():
+    token = session.get("csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["csrf_token"] = token
+    return token
+
+
+def require_csrf_token():
+    expected = session.get("csrf_token", "")
+    provided = request.form.get("csrf_token", "")
+    if not expected or not secrets.compare_digest(provided, expected):
+        abort(400)
+
+
+def login_remote_key():
+    return request.remote_addr or "unknown"
+
+
+def prune_login_attempts(remote_key):
+    cutoff = time.time() - LOGIN_WINDOW_SECONDS
+    attempts = [
+        attempt
+        for attempt in LOGIN_ATTEMPTS.get(remote_key, [])
+        if attempt >= cutoff
+    ]
+    if attempts:
+        LOGIN_ATTEMPTS[remote_key] = attempts
+    else:
+        LOGIN_ATTEMPTS.pop(remote_key, None)
+    return attempts
+
+
+def login_rate_limited(remote_key):
+    return len(prune_login_attempts(remote_key)) >= LOGIN_MAX_ATTEMPTS
+
+
+def record_login_failure(remote_key):
+    attempts = prune_login_attempts(remote_key)
+    attempts.append(time.time())
+    LOGIN_ATTEMPTS[remote_key] = attempts
+
+
+def clear_login_failures(remote_key):
+    LOGIN_ATTEMPTS.pop(remote_key, None)
+
+
 def is_admin_logged_in():
     return bool(session.get("sdac_admin"))
 
@@ -1960,9 +2087,25 @@ def admin_login():
     error = ""
 
     if request.method == "POST":
+        require_csrf_token()
         password = request.form.get("password", "")
         actor_id, actor_name = web_actor()
-        if secrets.compare_digest(password, ADMIN_PASSWORD):
+        remote_key = login_remote_key()
+        if login_rate_limited(remote_key):
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    "dashboard_login_rate_limited",
+                    actor_id,
+                    actor_name,
+                    "dashboard",
+                    "admin_login",
+                    "Too many failed admin login attempts.",
+                )
+            error = "Too many failed login attempts. Try again in a few minutes."
+        elif secrets.compare_digest(password, ADMIN_PASSWORD):
+            clear_login_failures(remote_key)
             session["sdac_admin"] = True
             with database() as connection:
                 add_admin_audit_log(
@@ -1976,22 +2119,25 @@ def admin_login():
                     "Admin login succeeded.",
                 )
             return redirect(next_url)
-        with database() as connection:
-            add_admin_audit_log(
-                connection,
-                None,
-                "dashboard_login_failed",
-                actor_id,
-                actor_name,
-                "dashboard",
-                "admin_login",
-                "Invalid admin password.",
-            )
-        error = "Invalid admin password."
+        else:
+            record_login_failure(remote_key)
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    "dashboard_login_failed",
+                    actor_id,
+                    actor_name,
+                    "dashboard",
+                    "admin_login",
+                    "Invalid admin password.",
+                )
+            error = "Invalid admin password."
 
     return render_template_string(
         LOGIN_HTML,
         admin_key=ADMIN_KEY,
+        csrf_token=get_csrf_token(),
         error=error,
         next_url=next_url,
     )
@@ -2026,6 +2172,7 @@ def admin_settings():
     error = request.args.get("error") == "1"
 
     if request.method == "POST":
+        require_csrf_token()
         action = request.form.get("action", "")
         actor_id, actor_name = web_actor()
         if action == "backup_now":
@@ -2240,12 +2387,14 @@ def admin_settings():
         active_games=active_games,
         admin_key=ADMIN_KEY,
         backups=recent_database_backups(),
+        csrf_token=get_csrf_token(),
         db_file=DB_FILE,
         db_size=db_size,
         error=error,
         guilds=guilds,
         limits=limits,
         notice=notice,
+        security_warnings=security_warnings(),
         stats=stats,
         weekdays=WEEKDAYS,
     )
@@ -2469,6 +2618,7 @@ def index():
         categories=categories,
         error=error,
         grouped_posts=grouped_posts,
+        csrf_token=get_csrf_token() if is_admin else "",
         guild_options=server_options,
         is_admin=is_admin,
         months=months,
@@ -2819,11 +2969,37 @@ def achievements():
 
 @app.route("/health")
 def health():
+    return jsonify({
+        "ok": True,
+        "service": "sdac-dashboard",
+    })
+
+
+@app.route("/admin/health")
+def admin_health():
+    login_response = require_admin_login()
+    if login_response:
+        return login_response
+
+    media_stats = media_directory_stats()
     with closing(connect_db()) as connection:
+        schema_row = connection.execute("""
+            SELECT version, updated_at
+            FROM schema_version
+            WHERE id = 1
+        """).fetchone()
         payload = {
             "ok": True,
+            "service": "sdac-dashboard",
+            "schema_version": schema_row["version"] if schema_row else None,
+            "schema_updated_at": schema_row["updated_at"] if schema_row else None,
+            "expected_schema_version": SCHEMA_VERSION,
+            "uptime_seconds": int(
+                (datetime.now(timezone.utc) - APP_STARTED_AT).total_seconds()
+            ),
             "db_size_bytes": DB_FILE.stat().st_size if DB_FILE.exists() else 0,
-            "media_size_bytes": media_directory_size(),
+            "media_size_bytes": media_stats["bytes"],
+            "media_file_count": media_stats["files"],
             "submissions": connection.execute(
                 "SELECT COUNT(*) FROM submissions"
             ).fetchone()[0],
@@ -2833,6 +3009,7 @@ def health():
                 WHERE status = 'active'
             """).fetchone()[0],
             "cache_entries": len(PUBLIC_PAGE_CACHE),
+            "login_rate_limit_entries": len(LOGIN_ATTEMPTS),
         }
     return jsonify(payload)
 
@@ -2901,6 +3078,8 @@ def serve_media(filename):
         resolved_path.relative_to(MEDIA_DIR)
     except ValueError:
         abort(404)
+    if not resolved_path.is_file():
+        abort(404)
     return send_from_directory(MEDIA_DIR, filename)
 
 
@@ -2909,6 +3088,7 @@ def delete_submission(submission_id):
     login_response = require_admin_login()
     if login_response:
         return login_response
+    require_csrf_token()
 
     selected_category = request.args.get("category", "").strip()
     selected_status = request.args.get("status", "").strip()

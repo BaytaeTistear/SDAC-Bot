@@ -4,6 +4,7 @@ import os
 import re
 import sqlite3
 import time
+import traceback
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,6 +24,7 @@ DB_FILE = BASE_DIR / "sdac.db"
 MEDIA_DIR = BASE_DIR / "media"
 BACKUP_DIR = BASE_DIR / "backups"
 BACKUP_KEEP_COUNT = 30
+SCHEMA_VERSION = 2
 
 ALLOWED_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp",
@@ -73,6 +75,22 @@ DEFAULT_GUILD_CONFIG = {
     "approval_enabled": False,
     "approval_channel": None,
     "categories": {},
+}
+
+REQUIRED_TABLES = {
+    "submissions",
+    "category_history",
+    "moderation_history",
+    "admin_audit_log",
+    "daily_runs",
+    "guess_games",
+    "guess_points",
+    "guess_correct_guesses",
+    "guess_cooldowns",
+    "monthly_guess_runs",
+    "daily_guess_runs",
+    "monthly_submission_top",
+    "schema_version",
 }
 
 
@@ -409,6 +427,13 @@ def initialize_database():
                 PRIMARY KEY (month, category, rank)
             )
         """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS schema_version (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                version INTEGER NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
 
         submission_columns = {
             "guild_id": "TEXT",
@@ -524,10 +549,82 @@ def initialize_database():
             CREATE INDEX IF NOT EXISTS idx_admin_audit_log_action
             ON admin_audit_log (action, guild_id)
         """)
+        connection.execute("""
+            INSERT INTO schema_version (id, version, updated_at)
+            VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                version = excluded.version,
+                updated_at = excluded.updated_at
+        """, (SCHEMA_VERSION, datetime.now(timezone.utc).isoformat()))
 
 
 initialize_database()
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def ensure_directory_writable(path):
+    path.mkdir(parents=True, exist_ok=True)
+    probe_path = path / ".sdac-write-test"
+    probe_path.write_text("ok", encoding="utf-8")
+    try:
+        probe_path.unlink()
+    except OSError:
+        pass
+
+
+def startup_health_check():
+    issues = []
+
+    if not TOKEN:
+        issues.append("DISCORD_TOKEN is missing.")
+    if not CONFIG_FILE.is_file():
+        issues.append(f"{CONFIG_FILE} is missing.")
+
+    for directory in (MEDIA_DIR, BACKUP_DIR):
+        try:
+            ensure_directory_writable(directory)
+        except OSError as error:
+            issues.append(f"{directory} is not writable: {error}")
+
+    try:
+        with database() as connection:
+            table_names = {
+                row["name"]
+                for row in connection.execute("""
+                    SELECT name
+                    FROM sqlite_master
+                    WHERE type = 'table'
+                """).fetchall()
+            }
+            missing_tables = sorted(REQUIRED_TABLES - table_names)
+            if missing_tables:
+                issues.append(
+                    "Database is missing tables: "
+                    + ", ".join(missing_tables)
+                )
+            version_row = connection.execute("""
+                SELECT version
+                FROM schema_version
+                WHERE id = 1
+            """).fetchone()
+            if not version_row or version_row["version"] < SCHEMA_VERSION:
+                issues.append(
+                    f"Database schema version is below {SCHEMA_VERSION}."
+                )
+    except sqlite3.Error as error:
+        issues.append(f"Database check failed: {error}")
+
+    if issues:
+        raise RuntimeError(
+            "Startup health check failed: " + " ".join(issues)
+        )
+
+    print(
+        "Startup health check passed: "
+        f"schema v{SCHEMA_VERSION}, database={DB_FILE}, media={MEDIA_DIR}",
+        flush=True,
+    )
 
 
 def utc_now_iso():
@@ -1221,6 +1318,22 @@ async def send_error_notification(guild_id, message):
             await channel.send(f"**SDAC Error**\n{message}")
         except discord.HTTPException:
             pass
+
+
+async def send_system_error_notification(message):
+    sent_guilds = set()
+    for guild_id in config.get("guilds", {}):
+        if guild_id in sent_guilds:
+            continue
+        sent_guilds.add(guild_id)
+        await send_error_notification(guild_id, message)
+
+
+async def report_background_error(name, error):
+    print(f"{name} failed: {error}", flush=True)
+    await send_system_error_notification(
+        f"`{name}` failed: `{error}`"
+    )
 
 
 async def announce_guess_summary(channel, game, reason):
@@ -3455,13 +3568,16 @@ async def post_daily_guess_summaries():
 
 @tasks.loop(minutes=1)
 async def weekly_top_scheduler():
-    for guild_id, guild_config in config.get("guilds", {}).items():
-        now = guild_now(guild_config)
-        current_time = now.strftime("%H:%M")
-        if now.weekday() != weekly_top_day_index(guild_config):
-            continue
-        if guild_config.get("daily_top_time_utc", "00:00") == current_time:
-            await post_weekly_top(guild_id, guild_config, now)
+    try:
+        for guild_id, guild_config in config.get("guilds", {}).items():
+            now = guild_now(guild_config)
+            current_time = now.strftime("%H:%M")
+            if now.weekday() != weekly_top_day_index(guild_config):
+                continue
+            if guild_config.get("daily_top_time_utc", "00:00") == current_time:
+                await post_weekly_top(guild_id, guild_config, now)
+    except Exception as error:
+        await report_background_error("weekly_top_scheduler", error)
 
 
 @weekly_top_scheduler.before_loop
@@ -3472,10 +3588,13 @@ async def before_weekly_top_scheduler():
 @tasks.loop(hours=1)
 async def backup_scheduler():
     global last_backup_date
-    backup_date = datetime.now(timezone.utc).date().isoformat()
-    if last_backup_date != backup_date:
-        create_daily_database_backup()
-        last_backup_date = backup_date
+    try:
+        backup_date = datetime.now(timezone.utc).date().isoformat()
+        if last_backup_date != backup_date:
+            create_daily_database_backup()
+            last_backup_date = backup_date
+    except Exception as error:
+        await report_background_error("backup_scheduler", error)
 
 
 @backup_scheduler.before_loop
@@ -3485,7 +3604,10 @@ async def before_backup_scheduler():
 
 @tasks.loop(minutes=10)
 async def guess_summary_scheduler():
-    await post_daily_guess_summaries()
+    try:
+        await post_daily_guess_summaries()
+    except Exception as error:
+        await report_background_error("guess_summary_scheduler", error)
 
 
 @guess_summary_scheduler.before_loop
@@ -3495,7 +3617,10 @@ async def before_guess_summary_scheduler():
 
 @tasks.loop(hours=1)
 async def monthly_leaderboard_scheduler():
-    await post_monthly_guess_leaderboards()
+    try:
+        await post_monthly_guess_leaderboards()
+    except Exception as error:
+        await report_background_error("monthly_leaderboard_scheduler", error)
 
 
 @monthly_leaderboard_scheduler.before_loop
@@ -3505,7 +3630,10 @@ async def before_monthly_leaderboard_scheduler():
 
 @tasks.loop(minutes=60)
 async def cleanup_scheduler():
-    cleanup_background_data()
+    try:
+        cleanup_background_data()
+    except Exception as error:
+        await report_background_error("cleanup_scheduler", error)
 
 
 @cleanup_scheduler.before_loop
@@ -3576,6 +3704,16 @@ async def on_ready():
 
 
 @bot.event
+async def on_error(event_method, *args, **kwargs):
+    formatted = traceback.format_exc().strip()
+    message = formatted[-1500:] if formatted else "Unknown bot event error."
+    print(f"Unhandled event error in {event_method}: {message}", flush=True)
+    await send_system_error_notification(
+        f"Unhandled event error in `{event_method}`:\n```{message}```"
+    )
+
+
+@bot.event
 async def on_guild_join(guild):
     guild_config = get_guild_config(guild.id)
     guild_config["guild_name"] = guild.name
@@ -3583,10 +3721,7 @@ async def on_guild_join(guild):
 
 
 def main():
-    if not TOKEN:
-        raise RuntimeError(
-            "Set DISCORD_TOKEN in the Ubuntu service environment."
-        )
+    startup_health_check()
     bot.run(TOKEN)
 
 
