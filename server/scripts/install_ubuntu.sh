@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 APP_DIR="${SDAC_APP_DIR:-$(pwd)}"
 APP_USER="${SDAC_APP_USER:-$(id -un)}"
-DASHBOARD_BIND="${SDAC_DASHBOARD_BIND:-0.0.0.0:5000}"
+DASHBOARD_BIND="${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}"
 ENV_DIR="${SDAC_ENV_DIR:-/etc/sdac-bot}"
 ENV_FILE="${SDAC_ENV_FILE:-$ENV_DIR/sdac.env}"
 
@@ -128,6 +128,7 @@ sudo systemctl enable --now sdac-bot sdac-dashboard
 echo
 echo "SDAC install complete."
 echo "Environment file: $ENV_FILE"
+echo "Dashboard bind: $DASHBOARD_BIND"
 echo "Check status:"
 echo "  sudo systemctl status sdac-bot --no-pager"
 echo "  sudo systemctl status sdac-dashboard --no-pager"

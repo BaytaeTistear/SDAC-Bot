@@ -21,6 +21,7 @@ function Copy-PayloadFiles {
         "HOSTING.md",
         "DISCORD_PERMISSIONS.md",
         "PRODUCTION_NEXT.md",
+        "MONITORING.md",
         "bot.py",
         "dashboard.py",
         "config.py",
@@ -29,9 +30,14 @@ function Copy-PayloadFiles {
         "scripts\update_ubuntu.sh",
         "scripts\rollback_ubuntu.sh",
         "scripts\install_journal_limits.sh",
+        "scripts\install_nginx_site.sh",
+        "scripts\standardize_env_file.sh",
+        "scripts\backup_offsite.sh",
+        "scripts\check_production.sh",
         "systemd\sdac-bot.service.template",
         "systemd\sdac-dashboard.service.template",
-        "systemd\sdac-journald.conf"
+        "systemd\sdac-journald.conf",
+        "nginx\sdac-dashboard.conf.template"
     )
 
     foreach ($file in $files) {
@@ -95,14 +101,14 @@ set -Eeuo pipefail
 #   SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot
 #   SDAC_APP_USER=ubuntu
 #   SDAC_ENV_FILE=/etc/sdac-bot/sdac.env
-#   SDAC_DASHBOARD_BIND=0.0.0.0:5000
+#   SDAC_DASHBOARD_BIND=127.0.0.1:5000
 #   SDAC_SKIP_SERVICES=1            # extract and compile only
 #   SDAC_INSTALL_JOURNAL_LIMITS=1   # install journald retention limits
 
 APP_DIR="`${SDAC_APP_DIR:-/home/ubuntu/discord-screenshot-bot}"
 APP_USER="`${SDAC_APP_USER:-`$(id -un)}"
 ENV_FILE="`${SDAC_ENV_FILE:-/etc/sdac-bot/sdac.env}"
-DASHBOARD_BIND="`${SDAC_DASHBOARD_BIND:-0.0.0.0:5000}"
+DASHBOARD_BIND="`${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}"
 SKIP_SERVICES="`${SDAC_SKIP_SERVICES:-0}"
 INSTALL_JOURNAL_LIMITS="`${SDAC_INSTALL_JOURNAL_LIMITS:-0}"
 PAYLOAD_SHA256="$payloadSha"
@@ -170,13 +176,14 @@ if [[ -f "`$APP_DIR/bot.py" || -f "`$APP_DIR/dashboard.py" ]]; then
         HOSTING.md \
         DEPLOY.md \
         PRODUCTION_NEXT.md \
+        MONITORING.md \
         DISCORD_PERMISSIONS.md
     do
         if [[ -e "`$APP_DIR/`$file" ]]; then
             cp -a "`$APP_DIR/`$file" "`$DEPLOY_BACKUP_DIR/"
         fi
     done
-    for directory in scripts systemd; do
+    for directory in scripts systemd nginx; do
         if [[ -d "`$APP_DIR/`$directory" ]]; then
             mkdir -p "`$DEPLOY_BACKUP_DIR/`$directory"
             cp -a "`$APP_DIR/`$directory/." "`$DEPLOY_BACKUP_DIR/`$directory/"
@@ -253,7 +260,7 @@ echo "Logs:"
 echo "  journalctl -u sdac-bot -n 80 --no-pager"
 echo "  journalctl -u sdac-dashboard -n 80 --no-pager"
 echo "Health:"
-echo "  curl http://SERVER-IP:5000/health"
+echo "  curl http://127.0.0.1:5000/health"
 
 exit 0
 
@@ -419,7 +426,7 @@ $chunkLiteral
         {
             "bot.py", "dashboard.py", "config.py", "requirements.txt",
             "README.md", "HOSTING.md", "DEPLOY.md", "PRODUCTION_NEXT.md",
-            "DISCORD_PERMISSIONS.md", ".env"
+            "MONITORING.md", "DISCORD_PERMISSIONS.md", ".env"
         };
         foreach (string file in files)
         {
@@ -431,6 +438,7 @@ $chunkLiteral
         }
         CopyDirectoryIfExists(Path.Combine(appDir, "scripts"), Path.Combine(backupDir, "scripts"));
         CopyDirectoryIfExists(Path.Combine(appDir, "systemd"), Path.Combine(backupDir, "systemd"));
+        CopyDirectoryIfExists(Path.Combine(appDir, "nginx"), Path.Combine(backupDir, "nginx"));
 
         string dbPath = Path.Combine(appDir, "sdac.db");
         if (File.Exists(dbPath))

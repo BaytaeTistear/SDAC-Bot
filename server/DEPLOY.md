@@ -13,16 +13,12 @@ Server path:
 /home/ubuntu/discord-screenshot-bot
 ```
 
-Systemd services:
+## Upload Rules
 
-```bash
-sudo systemctl restart sdac-bot
-sudo systemctl restart sdac-dashboard
-sudo systemctl status sdac-bot --no-pager
-sudo systemctl status sdac-dashboard --no-pager
-```
+Upload the files from the local `server/` folder for the current update. That
+folder should contain only files that need to be sent to the Ubuntu server.
 
-Upload the files from the local `server/` folder for the current update. Do not upload:
+Do not upload:
 
 - `__pycache__/`
 - `.db` files unless you are intentionally replacing server data
@@ -31,20 +27,35 @@ Upload the files from the local `server/` folder for the current update. Do not 
 - `deploy-backups/`
 - `venv/`
 - `.env`
+- `media/` unless you are intentionally restoring media
 
 Keep these on the Ubuntu server:
 
 - `sdac.db`
 - `media/`
 - `config.json`
-- `/etc/sdac-bot/sdac.env` with `DISCORD_TOKEN`, `SDAC_ADMIN_KEY`, `SDAC_ADMIN_PASSWORD`, and `SDAC_SECRET_KEY`
+- `/etc/sdac-bot/sdac.env`
 
-After uploading Python files:
+## Update
+
+After uploading changed files:
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
 bash scripts/update_ubuntu.sh
 ```
+
+The update script now also re-renders the systemd service files, so service
+hardening and dashboard bind changes are applied during updates.
+
+If an older service still points to `/etc/sdac.env`, run:
+
+```bash
+cd /home/ubuntu/discord-screenshot-bot
+bash scripts/standardize_env_file.sh
+```
+
+## Rollback
 
 If the update fails after a previous deploy snapshot exists:
 
@@ -53,10 +64,48 @@ cd /home/ubuntu/discord-screenshot-bot
 bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backups/SNAPSHOT-NAME
 ```
 
-Public health check:
+## Services
 
 ```bash
-curl http://SERVER-IP:5000/health
+sudo systemctl restart sdac-bot
+sudo systemctl restart sdac-dashboard
+sudo systemctl status sdac-bot --no-pager
+sudo systemctl status sdac-dashboard --no-pager
+```
+
+## Nginx And HTTPS
+
+Install or refresh the Nginx site:
+
+```bash
+cd /home/ubuntu/discord-screenshot-bot
+SDAC_DOMAIN=freethefishies.us.to bash scripts/install_nginx_site.sh
+```
+
+Issue or renew the Let's Encrypt certificate:
+
+```bash
+sudo certbot --nginx -d freethefishies.us.to --cert-name freethefishies.us.to --key-type rsa
+```
+
+Test renewal:
+
+```bash
+sudo certbot renew --dry-run
+```
+
+## Health Checks
+
+Public health check:
+
+```text
+https://freethefishies.us.to/health
+```
+
+Local health check:
+
+```bash
+curl http://127.0.0.1:5000/health
 ```
 
 Detailed health is available in the dashboard after admin login at:
@@ -65,11 +114,13 @@ Detailed health is available in the dashboard after admin login at:
 /admin/health?key=ImTheBestAdmin
 ```
 
-Discord slash commands sync when `sdac-bot` starts. If a new command does not appear immediately, wait a few minutes and check the bot logs for the synced command list.
+Run the bundled production check:
 
-Saved for the next production pass:
+```bash
+cd /home/ubuntu/discord-screenshot-bot
+SDAC_DOMAIN=freethefishies.us.to bash scripts/check_production.sh
+```
 
-- HTTPS behind Nginx / Let's Encrypt
-- real domain name
-- Gunicorn bound to localhost behind Nginx
-- off-server backups
+Discord slash commands sync when `sdac-bot` starts. If a new command does not
+appear immediately, wait a few minutes and check the bot logs for the synced
+command list.
