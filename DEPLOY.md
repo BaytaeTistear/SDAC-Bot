@@ -37,7 +37,7 @@ Keep these on the Ubuntu server:
 - `sdac.db`
 - `media/`
 - `config.json`
-- systemd environment values such as `DISCORD_TOKEN`, `SDAC_ADMIN_KEY`, `SDAC_ADMIN_PASSWORD`, and `SDAC_SECRET_KEY`
+- `/etc/sdac-bot/sdac.env` with `DISCORD_TOKEN`, `SDAC_ADMIN_KEY`, `SDAC_ADMIN_PASSWORD`, and `SDAC_SECRET_KEY`
 
 After uploading Python files:
 

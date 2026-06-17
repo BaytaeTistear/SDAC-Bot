@@ -4,7 +4,8 @@ set -Eeuo pipefail
 APP_DIR="${SDAC_APP_DIR:-$(pwd)}"
 APP_USER="${SDAC_APP_USER:-$(id -un)}"
 DASHBOARD_BIND="${SDAC_DASHBOARD_BIND:-0.0.0.0:5000}"
-ENV_FILE="$APP_DIR/.env"
+ENV_DIR="${SDAC_ENV_DIR:-/etc/sdac-bot}"
+ENV_FILE="${SDAC_ENV_FILE:-$ENV_DIR/sdac.env}"
 
 if [[ ! -f "$APP_DIR/bot.py" || ! -f "$APP_DIR/dashboard.py" ]]; then
     echo "Run this script from the SDAC bot folder, or set SDAC_APP_DIR." >&2
@@ -22,6 +23,7 @@ if ! python3 -m venv --help >/dev/null 2>&1; then
 fi
 
 echo "Setting up SDAC in $APP_DIR as user $APP_USER"
+echo "Using environment file $ENV_FILE"
 
 mkdir -p "$APP_DIR/media" "$APP_DIR/backups"
 
@@ -44,28 +46,51 @@ fi
 
 if [[ ! -f "$ENV_FILE" ]]; then
     echo "Creating $ENV_FILE"
-    read -r -p "Discord bot token: " DISCORD_TOKEN_INPUT
-    read -r -p "Dashboard admin key [ImTheBestAdmin]: " ADMIN_KEY_INPUT
+    DISCORD_TOKEN_INPUT="${SDAC_DISCORD_TOKEN:-}"
+    ADMIN_KEY_INPUT="${SDAC_ADMIN_KEY_INPUT:-}"
+    ADMIN_PASSWORD_INPUT="${SDAC_ADMIN_PASSWORD_INPUT:-}"
+    SECRET_KEY_INPUT="${SDAC_SECRET_KEY_INPUT:-}"
+
+    if [[ -z "$DISCORD_TOKEN_INPUT" ]]; then
+        read -r -p "Discord bot token: " DISCORD_TOKEN_INPUT
+    fi
+    if [[ -z "$DISCORD_TOKEN_INPUT" ]]; then
+        echo "Discord bot token cannot be blank." >&2
+        exit 1
+    fi
+
+    if [[ -z "$ADMIN_KEY_INPUT" ]]; then
+        read -r -p "Dashboard admin key [ImTheBestAdmin]: " ADMIN_KEY_INPUT
+    fi
     ADMIN_KEY_INPUT="${ADMIN_KEY_INPUT:-ImTheBestAdmin}"
-    read -r -s -p "Dashboard admin password: " ADMIN_PASSWORD_INPUT
-    echo
+
+    if [[ -z "$ADMIN_PASSWORD_INPUT" ]]; then
+        read -r -s -p "Dashboard admin password: " ADMIN_PASSWORD_INPUT
+        echo
+    fi
     if [[ -z "$ADMIN_PASSWORD_INPUT" ]]; then
         echo "Admin password cannot be blank." >&2
         exit 1
     fi
-    SECRET_KEY_INPUT="$(python3 - <<'PY'
+    if [[ -z "$SECRET_KEY_INPUT" ]]; then
+        SECRET_KEY_INPUT="$(python3 - <<'PY'
 import secrets
 print(secrets.token_urlsafe(48))
 PY
 )"
-    cat > "$ENV_FILE" <<EOF
+    fi
+
+    ENV_TMP="$(mktemp)"
+    cat > "$ENV_TMP" <<EOF
 DISCORD_TOKEN=$DISCORD_TOKEN_INPUT
 SDAC_ADMIN_KEY=$ADMIN_KEY_INPUT
 SDAC_ADMIN_PASSWORD=$ADMIN_PASSWORD_INPUT
 SDAC_SECRET_KEY=$SECRET_KEY_INPUT
 PYTHONUNBUFFERED=1
 EOF
-    chmod 600 "$ENV_FILE"
+    sudo mkdir -p "$ENV_DIR"
+    sudo install -m 600 -o root -g root "$ENV_TMP" "$ENV_FILE"
+    rm -f "$ENV_TMP"
 else
     echo "Keeping existing $ENV_FILE"
 fi
@@ -85,6 +110,7 @@ render_service() {
     sed \
         -e "s#__APP_DIR__#$APP_DIR#g" \
         -e "s#__APP_USER__#$APP_USER#g" \
+        -e "s#__ENV_FILE__#$ENV_FILE#g" \
         -e "s#__DASHBOARD_BIND__#$DASHBOARD_BIND#g" \
         "$template" | sudo tee "$target" >/dev/null
 }
@@ -101,6 +127,7 @@ sudo systemctl enable --now sdac-bot sdac-dashboard
 
 echo
 echo "SDAC install complete."
+echo "Environment file: $ENV_FILE"
 echo "Check status:"
 echo "  sudo systemctl status sdac-bot --no-pager"
 echo "  sudo systemctl status sdac-dashboard --no-pager"

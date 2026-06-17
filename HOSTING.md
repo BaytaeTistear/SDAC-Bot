@@ -30,7 +30,7 @@ The installer will:
 
 - create `media/` and `backups/`
 - create `config.json` if it is missing
-- create `.env` and ask for the Discord token and dashboard admin password
+- create `/etc/sdac-bot/sdac.env` and ask for the Discord token and dashboard admin password
 - create `venv/`
 - install Python dependencies
 - install `sdac-bot` and `sdac-dashboard` systemd services
@@ -89,10 +89,11 @@ http://SERVER-IP:5000/admin/health?key=ImTheBestAdmin
 
 ## Environment Settings
 
-The installer writes `.env`. You can edit it later:
+The installer writes the production environment file to `/etc/sdac-bot/sdac.env`.
+You can edit it later:
 
 ```bash
-nano /home/ubuntu/discord-screenshot-bot/.env
+sudo nano /etc/sdac-bot/sdac.env
 sudo systemctl restart sdac-bot sdac-dashboard
 ```
 
