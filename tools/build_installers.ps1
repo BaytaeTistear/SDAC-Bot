@@ -56,6 +56,35 @@ function Copy-PayloadFiles {
     }
 }
 
+function Convert-PayloadTextFilesToLf {
+    param([string]$PayloadRoot)
+
+    $textExtensions = @(
+        ".conf",
+        ".example",
+        ".json",
+        ".md",
+        ".py",
+        ".sh",
+        ".template",
+        ".txt",
+        ".yml",
+        ".yaml"
+    )
+
+    Get-ChildItem -LiteralPath $PayloadRoot -Recurse -File |
+        Where-Object { $textExtensions -contains $_.Extension.ToLowerInvariant() } |
+        ForEach-Object {
+            $content = [IO.File]::ReadAllText($_.FullName)
+            $content = $content -replace "`r`n", "`n" -replace "`r", "`n"
+            [IO.File]::WriteAllText(
+                $_.FullName,
+                $content,
+                [Text.UTF8Encoding]::new($false)
+            )
+        }
+}
+
 function Split-Base64 {
     param([string]$Value, [int]$Width = 76)
 
@@ -274,9 +303,13 @@ exit 0
 __SDAC_PAYLOAD_BELOW__
 "@
 
+    $scriptContent = ($header + "`n" + $payloadBase64) `
+        -replace "`r`n", "`n" `
+        -replace "`r", "`n"
+
     [IO.File]::WriteAllText(
         $OutputPath,
-        $header + "`n" + $payloadBase64,
+        $scriptContent,
         [Text.UTF8Encoding]::new($false)
     )
     Remove-Item -LiteralPath $archive -Force
@@ -742,6 +775,7 @@ pause
 New-Item -ItemType Directory -Force -Path $Dist | Out-Null
 $payloadRoot = Join-Path $Dist "payload-root"
 Copy-PayloadFiles -PayloadRoot $payloadRoot
+Convert-PayloadTextFilesToLf -PayloadRoot $payloadRoot
 
 New-LinuxInstaller `
     -PayloadRoot $payloadRoot `
