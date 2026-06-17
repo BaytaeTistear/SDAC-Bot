@@ -87,6 +87,11 @@ SDAC_ADMIN_KEY=$ADMIN_KEY_INPUT
 SDAC_ADMIN_PASSWORD=$ADMIN_PASSWORD_INPUT
 SDAC_SECRET_KEY=$SECRET_KEY_INPUT
 PYTHONUNBUFFERED=1
+SENTRY_DSN=
+SENTRY_ENVIRONMENT=production
+SENTRY_TRACES_SAMPLE_RATE=0
+SDAC_RELEASE=
+SDAC_SERVER_NAME=
 EOF
     sudo mkdir -p "$ENV_DIR"
     sudo install -m 600 -o root -g root "$ENV_TMP" "$ENV_FILE"
@@ -103,6 +108,7 @@ else
     "$APP_DIR/venv/bin/python" -m pip install "discord.py>=2.3.2" "Flask>=3.0.0" "gunicorn>=22.0.0"
 fi
 "$APP_DIR/venv/bin/python" -m py_compile "$APP_DIR/bot.py" "$APP_DIR/dashboard.py"
+"$APP_DIR/venv/bin/python" -m py_compile "$APP_DIR/config.py" "$APP_DIR/database_migrations.py" "$APP_DIR/observability.py"
 
 render_service() {
     local template="$1"

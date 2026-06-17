@@ -1,0 +1,103 @@
+name: Build And Release
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "version-*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create or update, such as v1.1.0"
+        required: true
+      title:
+        description: "Release title"
+        required: false
+        default: "SDAC Bot Release"
+
+permissions:
+  contents: write
+
+jobs:
+  python-check:
+    name: Python Compile Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile Python files
+        run: |
+          python -m py_compile \
+            bot.py \
+            dashboard.py \
+            config.py \
+            database_migrations.py \
+            observability.py \
+            scripts/migrate_database.py
+
+  build-installers:
+    name: Build Installers
+    runs-on: windows-latest
+    needs: python-check
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build single-file installers
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\build_installers.ps1
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdac-installers
+          path: |
+            dist/SDAC-Bot-Linux-Installer.sh
+            dist/SDAC-Bot-Windows-Installer.exe
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: build-installers
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdac-installers
+          path: artifacts
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_TITLE: ${{ inputs.title }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            TAG="$INPUT_TAG"
+            TITLE="${INPUT_TITLE:-SDAC Bot Release}"
+            if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              git tag "$TAG"
+              git push origin "$TAG"
+            fi
+          else
+            TAG="$REF_NAME"
+            TITLE="$REF_NAME"
+          fi
+
+          NOTES_FILE="RELEASE.md"
+          if [[ ! -f "$NOTES_FILE" ]]; then
+            NOTES_FILE="$(mktemp)"
+            echo "Automated SDAC Bot release." > "$NOTES_FILE"
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" artifacts/* --clobber
+          else
+            gh release create "$TAG" artifacts/* --title "$TITLE" --notes-file "$NOTES_FILE"
+          fi

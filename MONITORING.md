@@ -49,6 +49,24 @@ Clear it if needed:
 /clearerrorchannel
 ```
 
+## Sentry
+
+For real error reporting, add a Sentry DSN to `/etc/sdac-bot/sdac.env`:
+
+```bash
+SENTRY_DSN=https://examplePublicKey@o0.ingest.sentry.io/0
+SENTRY_ENVIRONMENT=production
+SENTRY_TRACES_SAMPLE_RATE=0
+SDAC_RELEASE=v1.1.0
+SDAC_SERVER_NAME=all-minecraft-servers
+```
+
+Then restart:
+
+```bash
+sudo systemctl restart sdac-bot sdac-dashboard
+```
+
 ## Off-Server Backups
 
 Install and configure `rclone` on the Ubuntu server:
@@ -83,4 +101,13 @@ remote storage is secure and you intentionally want it included, add:
 
 ```bash
 SDAC_BACKUP_INCLUDE_ENV=1
+```
+
+## Restore Tests
+
+After backups are running, test a restore regularly:
+
+```bash
+cd /home/ubuntu/discord-screenshot-bot
+bash scripts/test_restore.sh
 ```

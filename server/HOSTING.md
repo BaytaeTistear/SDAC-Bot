@@ -128,7 +128,47 @@ cd /home/ubuntu/discord-screenshot-bot
 SDAC_DOMAIN=freethefishies.us.to SDAC_RUN_CERTBOT_DRY_RUN=1 bash scripts/check_production.sh
 ```
 
-## 8. Health Checks
+## 8. Database Migrations And Restore Tests
+
+Apply migrations manually when needed:
+
+```bash
+cd /home/ubuntu/discord-screenshot-bot
+venv/bin/python scripts/migrate_database.py --db sdac.db
+```
+
+Test the newest local backup without touching production:
+
+```bash
+cd /home/ubuntu/discord-screenshot-bot
+bash scripts/test_restore.sh
+```
+
+Test a specific backup:
+
+```bash
+bash scripts/test_restore.sh /home/ubuntu/discord-screenshot-bot/backups/sdac-BACKUP.db
+```
+
+## 9. Optional Sentry Error Reporting
+
+Set these in `/etc/sdac-bot/sdac.env` to enable production error reporting:
+
+```bash
+SENTRY_DSN=https://examplePublicKey@o0.ingest.sentry.io/0
+SENTRY_ENVIRONMENT=production
+SENTRY_TRACES_SAMPLE_RATE=0
+SDAC_RELEASE=v1.1.0
+SDAC_SERVER_NAME=all-minecraft-servers
+```
+
+Restart both services after editing:
+
+```bash
+sudo systemctl restart sdac-bot sdac-dashboard
+```
+
+## 10. Health Checks
 
 Public uptime check:
 
@@ -148,7 +188,7 @@ Admin-only detailed health check after logging in through the dashboard:
 https://freethefishies.us.to/admin/health?key=ImTheBestAdmin
 ```
 
-## 9. Future Updates
+## 11. Future Updates
 
 Upload the changed files, then run:
 
@@ -162,6 +202,8 @@ installs Python dependencies, compiles the Python files, re-renders the systemd
 services, restarts both services, checks that both services are active, and
 prints a rollback command when a previous deploy snapshot exists.
 
+The update script also applies database migrations before restarting services.
+
 Rollback example:
 
 ```bash
@@ -169,7 +211,7 @@ cd /home/ubuntu/discord-screenshot-bot
 bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backups/OLDER-SNAPSHOT
 ```
 
-## 10. Environment Settings
+## 12. Environment Settings
 
 The production environment file is:
 
@@ -191,7 +233,15 @@ Required values:
 - `SDAC_ADMIN_PASSWORD`
 - `SDAC_SECRET_KEY`
 
-## 11. Discord Setup
+Optional values:
+
+- `SENTRY_DSN`
+- `SENTRY_ENVIRONMENT`
+- `SENTRY_TRACES_SAMPLE_RATE`
+- `SDAC_RELEASE`
+- `SDAC_SERVER_NAME`
+
+## 13. Discord Setup
 
 A server owner still needs to invite the bot to Discord with the right
 permissions. The Ubuntu installer cannot do that part.
@@ -217,7 +267,13 @@ Set a private staff channel for bot error notices:
 /seterrorchannel #sdac-errors
 ```
 
-## 12. Off-Server Backups
+Admins can check new-server setup progress at:
+
+```text
+https://freethefishies.us.to/admin/onboarding?key=ImTheBestAdmin
+```
+
+## 14. Off-Server Backups
 
 See [MONITORING.md](MONITORING.md) for `rclone` backup setup and uptime
 monitoring.

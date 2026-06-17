@@ -46,7 +46,8 @@ bash scripts/update_ubuntu.sh
 ```
 
 The update script now also re-renders the systemd service files, so service
-hardening and dashboard bind changes are applied during updates.
+hardening and dashboard bind changes are applied during updates. It also runs
+database migrations when `sdac.db` exists.
 
 If an older service still points to `/etc/sdac.env`, run:
 
@@ -120,6 +121,29 @@ Run the bundled production check:
 cd /home/ubuntu/discord-screenshot-bot
 SDAC_DOMAIN=freethefishies.us.to bash scripts/check_production.sh
 ```
+
+## Restore Test
+
+Test the latest local database backup without modifying production:
+
+```bash
+cd /home/ubuntu/discord-screenshot-bot
+bash scripts/test_restore.sh
+```
+
+## Admin Onboarding
+
+Use this page to see what each Discord server still needs configured:
+
+```text
+https://freethefishies.us.to/admin/onboarding?key=ImTheBestAdmin
+```
+
+## GitHub Releases
+
+The GitHub Actions workflow in `.github/workflows/release.yml` builds both
+single-file installers. Push a tag like `v1.1.0`, or run the workflow manually
+from GitHub Actions and provide a tag.
 
 Discord slash commands sync when `sdac-bot` starts. If a new command does not
 appear immediately, wait a few minutes and check the bot logs for the synced

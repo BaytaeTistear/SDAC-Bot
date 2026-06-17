@@ -25,6 +25,8 @@ function Copy-PayloadFiles {
         "bot.py",
         "dashboard.py",
         "config.py",
+        "database_migrations.py",
+        "observability.py",
         "requirements.txt",
         "scripts\install_ubuntu.sh",
         "scripts\update_ubuntu.sh",
@@ -34,6 +36,8 @@ function Copy-PayloadFiles {
         "scripts\standardize_env_file.sh",
         "scripts\backup_offsite.sh",
         "scripts\check_production.sh",
+        "scripts\migrate_database.py",
+        "scripts\test_restore.sh",
         "systemd\sdac-bot.service.template",
         "systemd\sdac-dashboard.service.template",
         "systemd\sdac-journald.conf",
@@ -171,6 +175,8 @@ if [[ -f "`$APP_DIR/bot.py" || -f "`$APP_DIR/dashboard.py" ]]; then
         bot.py \
         dashboard.py \
         config.py \
+        database_migrations.py \
+        observability.py \
         requirements.txt \
         README.md \
         HOSTING.md \
@@ -237,6 +243,7 @@ mkdir -p "`$APP_DIR/media" "`$APP_DIR/backups"
 if [[ "`$SKIP_SERVICES" == "1" ]]; then
     say "Compiling Python files without installing services"
     python3 -m py_compile "`$APP_DIR/bot.py" "`$APP_DIR/dashboard.py" "`$APP_DIR/config.py"
+    python3 -m py_compile "`$APP_DIR/database_migrations.py" "`$APP_DIR/observability.py" "`$APP_DIR/scripts/migrate_database.py"
     echo "SDAC files extracted to `$APP_DIR"
     exit 0
 fi
@@ -425,6 +432,7 @@ $chunkLiteral
         string[] files = new string[]
         {
             "bot.py", "dashboard.py", "config.py", "requirements.txt",
+            "database_migrations.py", "observability.py",
             "README.md", "HOSTING.md", "DEPLOY.md", "PRODUCTION_NEXT.md",
             "MONITORING.md", "DISCORD_PERMISSIONS.md", ".env"
         };
@@ -600,7 +608,7 @@ if not exist ""venv\Scripts\python.exe"" (
     exit /b 1
 )
 ""%~dp0venv\Scripts\python.exe"" -m pip install --upgrade pip
-""%~dp0venv\Scripts\python.exe"" -m pip install ""discord.py>=2.3.2"" ""Flask>=3.0.0""
+""%~dp0venv\Scripts\python.exe"" -m pip install ""discord.py>=2.3.2"" ""Flask>=3.0.0"" ""sentry-sdk>=2.0.0""
 ""%~dp0venv\Scripts\python.exe"" -m py_compile bot.py dashboard.py config.py
 pause
 ", new UTF8Encoding(false));
@@ -618,8 +626,8 @@ pause
         string venvPython = Path.Combine(appDir, "venv", "Scripts", "python.exe");
         Run(pythonCommand, "-m venv \"" + Path.Combine(appDir, "venv") + "\"", appDir, true);
         Run(venvPython, "-m pip install --upgrade pip", appDir, false);
-        Run(venvPython, "-m pip install \"discord.py>=2.3.2\" \"Flask>=3.0.0\"", appDir, false);
-        Run(venvPython, "-m py_compile bot.py dashboard.py config.py", appDir, false);
+        Run(venvPython, "-m pip install \"discord.py>=2.3.2\" \"Flask>=3.0.0\" \"sentry-sdk>=2.0.0\"", appDir, false);
+        Run(venvPython, "-m py_compile bot.py dashboard.py config.py database_migrations.py observability.py scripts\\migrate_database.py", appDir, false);
     }
 
     static string FindPythonCommand()

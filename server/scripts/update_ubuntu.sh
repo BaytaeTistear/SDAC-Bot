@@ -49,6 +49,8 @@ for file in \
     bot.py \
     dashboard.py \
     config.py \
+    database_migrations.py \
+    observability.py \
     requirements.txt \
     HOSTING.md \
     DEPLOY.md \
@@ -99,7 +101,13 @@ fi
 "$PYTHON" -m py_compile \
     "$APP_DIR/bot.py" \
     "$APP_DIR/dashboard.py" \
-    "$APP_DIR/config.py"
+    "$APP_DIR/config.py" \
+    "$APP_DIR/database_migrations.py" \
+    "$APP_DIR/observability.py"
+
+if [[ -f "$APP_DIR/sdac.db" ]]; then
+    "$PYTHON" "$APP_DIR/scripts/migrate_database.py" --db "$APP_DIR/sdac.db"
+fi
 
 render_service() {
     local template="$1"

@@ -4,6 +4,14 @@
         "max_file_bytes": 26214400,
         "max_total_bytes": 52428800,
         "max_text_length": 1500,
-        "wrong_guess_timeout_seconds": 600
+        "wrong_guess_timeout_seconds": 600,
+        "submission_user_cooldown_seconds": 30,
+        "submission_category_cooldown_seconds": 5,
+        "guess_command_cooldown_seconds": 2,
+        "admin_action_cooldown_seconds": 1,
+        "rate_limit_retention_days": 30,
+        "orphan_media_cleanup_enabled": true,
+        "audit_retention_days": 365,
+        "pending_submission_retention_hours": 48
     }
 }

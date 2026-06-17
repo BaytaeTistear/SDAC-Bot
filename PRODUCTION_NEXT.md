@@ -9,6 +9,13 @@ The previous production pass covered:
 - service hardening
 - monitoring and health-check helpers
 - Discord error channel documentation
+- GitHub Actions release workflow
+- database migration tooling
+- restore-test script
+- server onboarding checklist
+- configurable rate-limit controls
+- media metadata display
+- optional Sentry error reporting
 
 Useful follow-ups for later:
 
@@ -16,5 +23,5 @@ Useful follow-ups for later:
   with a dedicated `sdac` Linux user
 - add a managed database option such as PostgreSQL for larger multi-server use
 - add structured log shipping if the bot grows beyond one host
-- add automated restore testing for backups
+- add automated scheduled restore testing for backups
 - add release versioning after each production bundle
