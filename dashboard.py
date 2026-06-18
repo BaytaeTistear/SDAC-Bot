@@ -4,6 +4,7 @@ import math
 import os
 import json
 import re
+import shlex
 import shutil
 import sqlite3
 import secrets
@@ -80,6 +81,31 @@ DEFAULT_LIMITS = {
     "restore_test_enabled": True,
     "restore_test_weekday": "sunday",
     "restore_test_time_utc": "03:30",
+}
+
+DEFAULT_FEATURES = {
+    "submissions": True,
+    "approval_queue": True,
+    "guessing_games": True,
+    "weekly_posts": True,
+    "public_gallery": True,
+    "cross_server_leaderboard": True,
+}
+
+FEATURE_LABELS = {
+    "submissions": "Submissions",
+    "approval_queue": "Approval Queue",
+    "guessing_games": "Guessing Games",
+    "weekly_posts": "Weekly Posts",
+    "public_gallery": "Public Gallery",
+    "cross_server_leaderboard": "Cross-Server Leaderboard",
+}
+
+RELEASE_REPO = os.getenv("SDAC_GITHUB_REPO", "eatyba12/SDAC-Bot")
+UPDATE_ENV_FILE = Path(os.getenv("SDAC_UPDATE_CONFIG", "/etc/sdac-bot/update.env"))
+RELEASE_CACHE = {
+    "expires_at": 0,
+    "status": None,
 }
 
 
@@ -363,7 +389,8 @@ HTML = """
                         <div class="post-header">
                             <div class="meta">
                                 ID {{ post.id }}
-                                &middot; {{ post.username }}
+                                &middot;
+                                <a href="{{ url_for('user_profile', user_id=post.user_id, guild_id=post.guild_id or 'all', key=admin_key if is_admin else None) }}">{{ post.username }}</a>
                                 {% if post.guild_name %}
                                     &middot; {{ post.guild_name }}
                                 {% endif %}
@@ -422,6 +449,9 @@ HTML = """
                                 {% endfor %}
                             </div>
                         {% endif %}
+                        <p class="meta">
+                            <a href="{{ url_for('report_submission', submission_id=post.id) }}">Report this submission</a>
+                        </p>
                     </article>
                 {% endfor %}
             </section>
@@ -518,6 +548,124 @@ LOGIN_HTML = """
 """
 
 
+REPORT_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Report Submission</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 40px auto; padding: 24px; width: min(100%, 640px); }
+        a { color: #7c9cff; }
+        label { display: block; font-weight: bold; margin: 16px 0 6px; }
+        input, textarea, button { border: 1px solid #30333b; border-radius: 7px; font-size: 16px; padding: 10px 12px; width: 100%; }
+        textarea { min-height: 130px; resize: vertical; }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; margin-top: 16px; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 16px; padding: 12px; }
+        .error { border-color: #e45d68; }
+        .muted { color: #a8adb8; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Report Submission {{ submission.id }}</h1>
+    <p class="muted">
+        {{ submission.username }} &middot; {{ submission.category }}
+        {% if submission.guild_name %}&middot; {{ submission.guild_name }}{% endif %}
+    </p>
+    {% if notice %}
+        <div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>
+    {% endif %}
+    <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="reporter_name">Your name or Discord username</label>
+        <input id="reporter_name" name="reporter_name" maxlength="120" placeholder="Optional">
+        <label for="reason">What should admins review?</label>
+        <textarea id="reason" name="reason" maxlength="1000" required></textarea>
+        <button type="submit">Send Report</button>
+    </form>
+    <p><a href="{{ url_for('index', guild_id=submission.guild_id or 'all') }}">Back to submissions</a></p>
+</main>
+</body>
+</html>
+"""
+
+
+USER_PROFILE_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ profile.username }} - SDAC Profile</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 900px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; }
+        .muted { color: #a8adb8; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>{{ profile.username }}</h1>
+    <nav>
+        <a href="{{ url_for('index', key=admin_key if is_admin else None, guild_id=selected_guild_id or 'all') }}">Submissions</a>
+        <a href="{{ url_for('guessing_leaderboard', key=admin_key if is_admin else None, guild_id=selected_guild_id or 'all') }}">Guessing leaderboard</a>
+    </nav>
+    <section class="panel">
+        <h2>Stats</h2>
+        <p>Submissions: {{ profile.submissions }}</p>
+        <p>Total votes: {{ profile.total_votes }}</p>
+        <p>Guessing points: {{ profile.guess_points }}</p>
+        <p>Correct guesses: {{ profile.correct_guesses }}</p>
+    </section>
+    <section class="panel">
+        <h2>Recent Submissions</h2>
+        <table>
+            <thead><tr><th>ID</th><th>Server</th><th>Category</th><th>Votes</th><th>Created</th></tr></thead>
+            <tbody>
+                {% for post in posts %}
+                    <tr>
+                        <td><a href="{{ url_for('index', q=post.id, guild_id=post.guild_id or 'all', key=admin_key if is_admin else None) }}">{{ post.id }}</a></td>
+                        <td>{{ guild_names.get(post.guild_id, post.guild_id) }}</td>
+                        <td>{{ post.category }}</td>
+                        <td>{{ post.stars or 0 }}</td>
+                        <td>{{ post.created_at or post.submitted_at }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="muted">No public submissions yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    <section class="panel">
+        <h2>Guessing Points By Month</h2>
+        <table>
+            <thead><tr><th>Month</th><th>Points</th></tr></thead>
+            <tbody>
+                {% for row in monthly_points %}
+                    <tr><td>{{ row.month }}</td><td>{{ row.points }}</td></tr>
+                {% else %}
+                    <tr><td colspan="2" class="muted">No points yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
 AUDIT_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -598,6 +746,9 @@ AUDIT_HTML = """
                 {% endfor %}
             </select>
             <input name="q" value="{{ search_query }}" placeholder="Search audit text">
+            <input name="actor" value="{{ actor_filter }}" placeholder="Actor user/name">
+            <input type="date" name="date_from" value="{{ date_from }}">
+            <input type="date" name="date_to" value="{{ date_to }}">
             <button type="submit">Filter</button>
         </form>
     </section>
@@ -619,13 +770,13 @@ AUDIT_HTML = """
     {% endfor %}
     <nav class="pagination">
         {% if page > 1 %}
-            <a href="{{ url_for('audit_log', key=admin_key, page=page - 1, guild_id=selected_guild_id or 'all', action=action_filter, q=search_query) }}">Previous</a>
+            <a href="{{ url_for('audit_log', key=admin_key, page=page - 1, guild_id=selected_guild_id or 'all', action=action_filter, q=search_query, actor=actor_filter, date_from=date_from, date_to=date_to) }}">Previous</a>
         {% else %}
             <span class="disabled">Previous</span>
         {% endif %}
         <span>Page {{ page }} of {{ total_pages }}</span>
         {% if page < total_pages %}
-            <a href="{{ url_for('audit_log', key=admin_key, page=page + 1, guild_id=selected_guild_id or 'all', action=action_filter, q=search_query) }}">Next</a>
+            <a href="{{ url_for('audit_log', key=admin_key, page=page + 1, guild_id=selected_guild_id or 'all', action=action_filter, q=search_query, actor=actor_filter, date_from=date_from, date_to=date_to) }}">Next</a>
         {% else %}
             <span class="disabled">Next</span>
         {% endif %}
@@ -1254,6 +1405,14 @@ SETTINGS_HTML = """
                         <tr><th>Game summary channel ID</th><td><input name="game_summary_channel" value="{{ guild.game_summary_channel or '' }}"></td></tr>
                         <tr><th>Error channel ID</th><td><input name="error_channel" value="{{ guild.error_channel or '' }}"></td></tr>
                         <tr><th>Admin role IDs</th><td><input name="admin_role_ids" value="{{ guild.admin_role_ids }}"></td></tr>
+                        {% for feature in guild.features %}
+                            <tr><th>{{ feature.label }}</th><td>
+                                <select name="feature_{{ feature.key }}">
+                                    <option value="1" {% if feature.enabled %}selected{% endif %}>Enabled</option>
+                                    <option value="0" {% if not feature.enabled %}selected{% endif %}>Disabled</option>
+                                </select>
+                            </td></tr>
+                        {% endfor %}
                     </tbody>
                 </table>
                 <button type="submit">Save Guild Settings</button>
@@ -1276,6 +1435,11 @@ SETTINGS_HTML = """
                     <tr><th>Weekly time</th><td>{{ guild.daily_top_time_utc }} {{ guild.timezone }}</td></tr>
                     <tr><th>Approval</th><td>{{ "Enabled" if guild.approval_enabled else "Disabled" }}</td></tr>
                     <tr><th>Approval channel</th><td>{{ guild.approval_channel or "Not set" }}</td></tr>
+                    <tr><th>Features</th><td>
+                        {% for feature in guild.features %}
+                            <div>{{ feature.label }}: <code>{{ "Enabled" if feature.enabled else "Disabled" }}</code></div>
+                        {% endfor %}
+                    </td></tr>
                     <tr><th>Categories</th><td>
                         {% for category, channel_id in guild.categories %}
                             <form method="post">
@@ -1332,7 +1496,7 @@ SETTINGS_HTML = """
         <h2>Recent Backups</h2>
         <table>
             <thead>
-                <tr><th>File</th><th>Size</th><th>Modified</th></tr>
+                <tr><th>File</th><th>Size</th><th>Modified</th><th>Download</th></tr>
             </thead>
             <tbody>
                 {% for backup in backups %}
@@ -1340,9 +1504,10 @@ SETTINGS_HTML = """
                         <td><code>{{ backup.name }}</code></td>
                         <td>{{ backup.size }}</td>
                         <td>{{ backup.modified }}</td>
+                        <td><a href="{{ url_for('download_backup', name=backup.name, key=admin_key) }}">Download</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="3" class="muted">No backups found yet.</td></tr>
+                    <tr><td colspan="4" class="muted">No backups found yet.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -1410,6 +1575,11 @@ MAINTENANCE_HTML = """
         <table>
             <tbody>
                 <tr><th>Release</th><td>{{ release }}</td></tr>
+                <tr><th>Update repo</th><td><code>{{ release_status.repo }}</code></td></tr>
+                <tr><th>Configured update tag</th><td><code>{{ release_status.configured_tag }}</code></td></tr>
+                <tr><th>Latest official</th><td><code>{{ release_status.official.tag }}</code>{% if release_status.official.published_at %} ({{ release_status.official.published_at }}){% endif %}</td></tr>
+                <tr><th>Latest experimental</th><td><code>{{ release_status.experimental.tag }}</code>{% if release_status.experimental.published_at %} ({{ release_status.experimental.published_at }}){% endif %}</td></tr>
+                {% if release_status.error %}<tr><th>Release check</th><td>{{ release_status.error }}</td></tr>{% endif %}
                 <tr><th>Server name</th><td>{{ server_name }}</td></tr>
                 <tr><th>Started</th><td>{{ started_at }}</td></tr>
                 <tr><th>Uptime</th><td>{{ uptime }}</td></tr>
@@ -1455,12 +1625,17 @@ MAINTENANCE_HTML = """
     <section class="panel">
         <h2>Recent Backups</h2>
         <table>
-            <thead><tr><th>File</th><th>Size</th><th>Modified</th></tr></thead>
+            <thead><tr><th>File</th><th>Size</th><th>Modified</th><th>Download</th></tr></thead>
             <tbody>
                 {% for backup in backups %}
-                    <tr><td><code>{{ backup.name }}</code></td><td>{{ backup.size }}</td><td>{{ backup.modified }}</td></tr>
+                    <tr>
+                        <td><code>{{ backup.name }}</code></td>
+                        <td>{{ backup.size }}</td>
+                        <td>{{ backup.modified }}</td>
+                        <td><a href="{{ url_for('download_backup', name=backup.name, key=admin_key) }}">Download</a></td>
+                    </tr>
                 {% else %}
-                    <tr><td colspan="3" class="muted">No backups found yet.</td></tr>
+                    <tr><td colspan="4" class="muted">No backups found yet.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -1488,6 +1663,9 @@ MODERATION_HTML = """
         .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        input, button { border: 1px solid #30333b; border-radius: 7px; padding: 8px 10px; }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin: 0 auto 20px; padding: 12px; text-align: center; }
         .muted { color: #a8adb8; }
         code { color: #cdd7ff; }
         img, video { max-height: 110px; max-width: 180px; }
@@ -1503,6 +1681,41 @@ MODERATION_HTML = """
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
     </nav>
+
+    {% if notice %}
+        <div class="notice">{{ notice }}</div>
+    {% endif %}
+
+    <section class="panel">
+        <h2>Open Submission Reports</h2>
+        <table>
+            <thead><tr><th>Report</th><th>Submission</th><th>Server</th><th>Reporter</th><th>Reason</th><th>Created</th><th>Action</th></tr></thead>
+            <tbody>
+                {% for report in reports %}
+                    <tr>
+                        <td>{{ report.id }}</td>
+                        <td><a href="{{ url_for('index', key=admin_key, q=report.submission_id, guild_id=report.guild_id or 'all') }}">{{ report.submission_id }}</a></td>
+                        <td>{{ guild_names.get(report.guild_id, report.guild_id) }}</td>
+                        <td>{{ report.reporter_name }}</td>
+                        <td>{{ report.reason }}</td>
+                        <td>{{ report.created_at }}</td>
+                        <td>
+                            <form method="post">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="resolve_report">
+                                <input type="hidden" name="report_id" value="{{ report.id }}">
+                                <input name="admin_notes" placeholder="Notes">
+                                <button type="submit">Mark Reviewed</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="7" class="muted">No open reports.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
 
     <section class="panel">
         <h2>Pending Queue</h2>
@@ -1629,7 +1842,11 @@ ONBOARDING_HTML = """
     {% for server in servers %}
         <article class="server">
             <h2>{{ server.name }} <span class="muted">({{ server.id }})</span></h2>
-            <p>{{ server.complete_count }} of {{ server.total_count }} required item(s) complete.</p>
+            <p>
+                Setup health: <strong>{{ server.health_score }}%</strong>
+                &middot; {{ server.complete_count }} of {{ server.total_count }} required item(s) complete
+                &middot; {{ server.optional_complete_count }} of {{ server.optional_total_count }} recommended item(s) complete
+            </p>
             <table>
                 <thead>
                     <tr>
@@ -1648,6 +1865,12 @@ ONBOARDING_HTML = """
                     {% endfor %}
                 </tbody>
             </table>
+            <h3>Quick Setup Wizard</h3>
+            <ol>
+                {% for command in server.command_steps %}
+                    <li><code>{{ command }}</code></li>
+                {% endfor %}
+            </ol>
         </article>
     {% else %}
         <p>No Discord servers are configured yet. Invite the bot and let it start once, then refresh this page.</p>
@@ -1685,6 +1908,12 @@ def load_config():
         if key not in limits:
             limits[key] = value
             changed = True
+    for guild_config in (data.get("guilds") or {}).values():
+        features = guild_config.setdefault("features", {})
+        for key, value in DEFAULT_FEATURES.items():
+            if key not in features:
+                features[key] = value
+                changed = True
     if changed:
         save_config(data)
     return data
@@ -1930,7 +2159,28 @@ def validate_time(value):
     return value
 
 
-def guild_options(config_data=None):
+def feature_enabled(guild_config, feature):
+    features = (guild_config or {}).get("features") or {}
+    return bool(features.get(feature, DEFAULT_FEATURES.get(feature, True)))
+
+
+def feature_guild_ids(config_data, feature):
+    return {
+        guild_id
+        for guild_id, guild_config in (config_data.get("guilds") or {}).items()
+        if feature_enabled(guild_config, feature)
+    }
+
+
+def guild_id_filter(column, guild_ids):
+    guild_ids = sorted(str(guild_id) for guild_id in (guild_ids or set()))
+    if not guild_ids:
+        return "1 = 0", []
+    placeholders = ", ".join("?" for _ in guild_ids)
+    return f"{column} IN ({placeholders})", guild_ids
+
+
+def guild_options(config_data=None, public_only=False):
     config_data = config_data or load_config()
     options = []
     for guild_id, guild_config in sorted(
@@ -1939,6 +2189,8 @@ def guild_options(config_data=None):
             item[1].get("guild_name") or item[0]
         ).casefold(),
     ):
+        if public_only and not feature_enabled(guild_config, "public_gallery"):
+            continue
         options.append({
             "id": guild_id,
             "name": guild_config.get("guild_name") or f"Discord {guild_id}",
@@ -2019,12 +2271,35 @@ def build_onboarding_rows(config_data):
             ),
         ]
         required_items = [item for item in items if not item["optional"]]
+        optional_items = [item for item in items if item["optional"]]
+        weighted_total = len(required_items) * 2 + len(optional_items)
+        weighted_complete = (
+            sum(1 for item in required_items if item["ok"]) * 2
+            + sum(1 for item in optional_items if item["ok"])
+        )
+        health_score = (
+            round((weighted_complete / weighted_total) * 100)
+            if weighted_total
+            else 100
+        )
         rows.append({
             "id": guild_id,
             "name": guild_config.get("guild_name") or f"Discord {guild_id}",
+            "command_steps": [
+                "/setadminrole @SDAC-Admin",
+                "/setsubmit #submit-media",
+                "/setcategory screenshots #screenshots",
+                "/settimezone America/New_York",
+                "/settings",
+            ],
             "items": items,
             "complete_count": sum(1 for item in required_items if item["ok"]),
             "total_count": len(required_items),
+            "optional_complete_count": sum(
+                1 for item in optional_items if item["ok"]
+            ),
+            "optional_total_count": len(optional_items),
+            "health_score": health_score,
         })
     return rows
 
@@ -2118,7 +2393,7 @@ def add_admin_audit_log(
     ))
 
 
-def available_submission_months(connection, guild_id=""):
+def available_submission_months(connection, guild_id="", guild_ids=None):
     submission_where = """
             WHERE COALESCE(created_at, submitted_at) IS NOT NULL
               AND COALESCE(created_at, submitted_at) != ''
@@ -2131,6 +2406,17 @@ def available_submission_months(connection, guild_id=""):
         submission_parameters.append(guild_id)
         snapshot_where = "WHERE guild_id = ?"
         snapshot_parameters.append(guild_id)
+    elif guild_ids is not None:
+        submission_filter, submission_parameters = guild_id_filter(
+            "guild_id",
+            guild_ids,
+        )
+        submission_where += " AND " + submission_filter
+        snapshot_filter, snapshot_parameters = guild_id_filter(
+            "guild_id",
+            guild_ids,
+        )
+        snapshot_where = "WHERE " + snapshot_filter
 
     months = {
         row["month"]
@@ -2152,15 +2438,20 @@ def available_submission_months(connection, guild_id=""):
     return sorted(months, reverse=True)
 
 
-def available_guess_months(connection):
+def available_guess_months(connection, guild_ids=None):
+    where = "WHERE month IS NOT NULL AND month != ''"
+    parameters = []
+    if guild_ids is not None:
+        guild_filter, parameters = guild_id_filter("guild_id", guild_ids)
+        where += " AND " + guild_filter
     months = [
         row["month"]
-        for row in connection.execute("""
+        for row in connection.execute(f"""
             SELECT DISTINCT month
             FROM guess_points
-            WHERE month IS NOT NULL AND month != ''
+            {where}
             ORDER BY month DESC
-        """)
+        """, parameters)
         if row["month"]
     ]
     current_month = current_month_key()
@@ -2332,6 +2623,14 @@ def initialize_database():
                 media_type TEXT,
                 media_size INTEGER DEFAULT 0,
                 media_metadata_json TEXT,
+                hint_text TEXT,
+                hint_revealed_at TEXT,
+                answer_aliases_json TEXT,
+                hints_json TEXT,
+                hint_level INTEGER DEFAULT 0,
+                next_hint_at TEXT,
+                auto_hint_minutes INTEGER DEFAULT 0,
+                hint_category TEXT,
                 status TEXT DEFAULT 'active',
                 winner_user_id TEXT,
                 winner_username TEXT,
@@ -2418,6 +2717,19 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS submission_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                submission_id INTEGER,
+                guild_id TEXT,
+                reporter_name TEXT,
+                reason TEXT,
+                status TEXT DEFAULT 'open',
+                admin_notes TEXT,
+                created_at TEXT,
+                resolved_at TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS schema_version (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 version INTEGER NOT NULL,
@@ -2454,6 +2766,12 @@ def initialize_database():
             "hint_revealed_at": "TEXT",
             "media_size": "INTEGER DEFAULT 0",
             "media_metadata_json": "TEXT",
+            "answer_aliases_json": "TEXT",
+            "hints_json": "TEXT",
+            "hint_level": "INTEGER DEFAULT 0",
+            "next_hint_at": "TEXT",
+            "auto_hint_minutes": "INTEGER DEFAULT 0",
+            "hint_category": "TEXT",
         }.items():
             if column not in guess_columns:
                 connection.execute(
@@ -2491,6 +2809,14 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_restore_test_runs_created
             ON restore_test_runs (created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submission_reports_status
+            ON submission_reports (status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submission_reports_submission
+            ON submission_reports (submission_id)
         """)
         apply_database_migrations(connection)
 
@@ -2755,6 +3081,79 @@ def recent_database_backups():
     return rows
 
 
+def read_update_config():
+    values = {}
+    try:
+        if not UPDATE_ENV_FILE.is_file():
+            return values
+        with UPDATE_ENV_FILE.open("r", encoding="utf-8") as file:
+            for line in file:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, raw_value = line.split("=", 1)
+                key = key.strip()
+                raw_value = raw_value.strip()
+                try:
+                    parsed = shlex.split(raw_value)
+                    values[key] = parsed[0] if parsed else ""
+                except ValueError:
+                    values[key] = raw_value.strip("'\"")
+    except OSError:
+        return values
+    return values
+
+
+def fetch_github_release(tag):
+    token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "SDAC-Dashboard/2.4",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    api_request = Request(
+        f"https://api.github.com/repos/{RELEASE_REPO}/releases/tags/{tag}",
+        headers=headers,
+    )
+    with urlopen(api_request, timeout=8) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    return {
+        "tag": payload.get("tag_name") or tag,
+        "name": payload.get("name") or "",
+        "published_at": payload.get("published_at") or "",
+    }
+
+
+def release_status():
+    cached = RELEASE_CACHE.get("status")
+    if cached and RELEASE_CACHE.get("expires_at", 0) > time.time():
+        return cached
+
+    update_config = read_update_config()
+    status = {
+        "repo": RELEASE_REPO,
+        "installed": os.getenv("SDAC_RELEASE") or "development",
+        "configured_tag": (
+            os.getenv("SDAC_RELEASE_TAG")
+            or update_config.get("SDAC_RELEASE_TAG")
+            or "latest-official"
+        ),
+        "official": {"tag": "unknown", "published_at": ""},
+        "experimental": {"tag": "unknown", "published_at": ""},
+        "error": "",
+    }
+    try:
+        status["official"] = fetch_github_release("latest-official")
+        status["experimental"] = fetch_github_release("latest-experimental")
+    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as error:
+        status["error"] = str(error)
+
+    RELEASE_CACHE["status"] = status
+    RELEASE_CACHE["expires_at"] = time.time() + 600
+    return status
+
+
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
     if not has_valid_key():
@@ -2985,6 +3384,11 @@ def admin_settings():
                     guild_config["admin_role_ids"] = role_id_list(
                         request.form.get("admin_role_ids")
                     )
+                    features = guild_config.setdefault("features", {})
+                    for feature_key in DEFAULT_FEATURES:
+                        features[feature_key] = (
+                            request.form.get(f"feature_{feature_key}") == "1"
+                        )
                     message = "Guild settings saved."
                 elif action == "save_category":
                     category = clean_category_name(request.form.get("category"))
@@ -3032,6 +3436,7 @@ def admin_settings():
     for guild_id, guild_config in sorted(
         (config_data.get("guilds") or {}).items()
     ):
+        features = guild_config.get("features") or {}
         guilds.append({
             "id": guild_id,
             "name": guild_config.get("guild_name") or f"Discord {guild_id}",
@@ -3055,6 +3460,14 @@ def admin_settings():
             "categories": sorted(
                 (guild_config.get("categories") or {}).items()
             ),
+            "features": [
+                {
+                    "key": key,
+                    "label": label,
+                    "enabled": features.get(key, DEFAULT_FEATURES[key]),
+                }
+                for key, label in FEATURE_LABELS.items()
+            ],
         })
 
     with closing(connect_db()) as connection:
@@ -3198,6 +3611,7 @@ def admin_maintenance():
         media_size=format_bytes(media_stats["bytes"]),
         notice=notice,
         release=os.getenv("SDAC_RELEASE") or "development",
+        release_status=release_status(),
         restore_runs=restore_runs,
         server_name=os.getenv("SDAC_SERVER_NAME") or "local",
         started_at=APP_STARTED_AT.strftime("%Y-%m-%d %H:%M UTC"),
@@ -3206,15 +3620,65 @@ def admin_maintenance():
     )
 
 
-@app.route("/admin/moderation")
+@app.route("/admin/moderation", methods=["GET", "POST"])
 def admin_moderation():
     login_response = require_admin_login()
     if login_response:
         return login_response
 
+    notice = request.args.get("notice", "")
     config_data = load_config()
     guild_names = guild_name_map(config_data)
+    if request.method == "POST":
+        require_csrf_token()
+        action = request.form.get("action", "")
+        actor_id, actor_name = web_actor()
+        if action == "resolve_report":
+            report_id = request.form.get("report_id", "").strip()
+            admin_notes = request.form.get("admin_notes", "").strip()[:500]
+            with database() as connection:
+                report = connection.execute("""
+                    SELECT *
+                    FROM submission_reports
+                    WHERE id = ?
+                """, (report_id,)).fetchone()
+                if report:
+                    connection.execute("""
+                        UPDATE submission_reports
+                        SET status = 'resolved',
+                            admin_notes = ?,
+                            resolved_at = ?
+                        WHERE id = ?
+                    """, (admin_notes, utc_now_iso(), report["id"]))
+                    add_admin_audit_log(
+                        connection,
+                        report["guild_id"],
+                        "submission_report_resolved",
+                        actor_id,
+                        actor_name,
+                        "submission_report",
+                        report["id"],
+                        admin_notes or "Marked reviewed.",
+                    )
+                    notice = "Report marked reviewed."
+                else:
+                    notice = "Report not found."
+            PUBLIC_PAGE_CACHE.clear()
+            return redirect(url_for(
+                "admin_moderation",
+                key=ADMIN_KEY,
+                notice=notice,
+            ))
+
     with closing(connect_db()) as connection:
+        reports = connection.execute("""
+            SELECT reports.id, reports.submission_id, reports.guild_id,
+                   reports.reporter_name, reports.reason, reports.created_at
+            FROM submission_reports AS reports
+            WHERE reports.status = 'open'
+            ORDER BY reports.created_at DESC, reports.id DESC
+            LIMIT 50
+        """).fetchall()
         pending_rows = connection.execute("""
             SELECT *
             FROM submissions
@@ -3233,9 +3697,12 @@ def admin_moderation():
     return render_template_string(
         MODERATION_HTML,
         admin_key=ADMIN_KEY,
+        csrf_token=get_csrf_token(),
         guild_names=guild_names,
         history=history,
+        notice=notice,
         pending_posts=pending_posts,
+        reports=reports,
     )
 
 
@@ -3256,8 +3723,18 @@ def admin_onboarding():
 @app.route("/")
 def index():
     config_data = load_config()
-    server_options = guild_options(config_data)
+    has_key = request.args.get("key") == ADMIN_KEY
+    is_admin = has_key and is_admin_logged_in()
+    if has_key and not is_admin:
+        return redirect(url_for(
+            "admin_login",
+            key=ADMIN_KEY,
+            next=request.full_path,
+        ))
+
+    server_options = guild_options(config_data, public_only=not is_admin)
     guild_names = guild_name_map(config_data)
+    visible_guild_ids = {option["id"] for option in server_options}
     selected_server_id = selected_guild_id(server_options)
     selected_server_name = (
         guild_names.get(selected_server_id, "Selected Server")
@@ -3269,20 +3746,11 @@ def index():
     selected_sort = request.args.get("sort", "newest").strip()
     selected_month = request.args.get("month", "").strip()
     search_query = request.args.get("q", "").strip()
-    has_key = request.args.get("key") == ADMIN_KEY
-    is_admin = has_key and is_admin_logged_in()
     notice = request.args.get("notice", "")
     error = request.args.get("error") == "1"
     page = positive_page(request.args.get("page"))
     if selected_sort not in {"newest", "votes"}:
         selected_sort = "newest"
-
-    if has_key and not is_admin:
-        return redirect(url_for(
-            "admin_login",
-            key=ADMIN_KEY,
-            next=request.full_path,
-        ))
 
     public_cache_key = None
     if not is_admin and not notice and not error and request.method == "GET":
@@ -3300,7 +3768,11 @@ def index():
             return cached
 
     with closing(connect_db()) as connection:
-        months = available_submission_months(connection, selected_server_id)
+        months = available_submission_months(
+            connection,
+            selected_server_id,
+            guild_ids=visible_guild_ids if not is_admin and not selected_server_id else None,
+        )
         category_conditions = ["category IS NOT NULL", "category != ''"]
         category_parameters = []
         if not is_admin:
@@ -3308,6 +3780,13 @@ def index():
         if selected_server_id:
             category_conditions.append("guild_id = ?")
             category_parameters.append(selected_server_id)
+        elif not is_admin:
+            visible_filter, visible_params = guild_id_filter(
+                "guild_id",
+                visible_guild_ids,
+            )
+            category_conditions.append(visible_filter)
+            category_parameters.extend(visible_params)
         category_where = " WHERE " + " AND ".join(category_conditions)
         categories = [
             row["category"]
@@ -3327,6 +3806,13 @@ def index():
             if selected_server_id:
                 where.append("guild_id = ?")
                 parameters.append(selected_server_id)
+            elif not is_admin:
+                visible_filter, visible_params = guild_id_filter(
+                    "guild_id",
+                    visible_guild_ids,
+                )
+                where.append(visible_filter)
+                parameters.extend(visible_params)
             if selected_category:
                 where.append("category = ?")
                 parameters.append(selected_category)
@@ -3398,6 +3884,13 @@ def index():
             if selected_server_id:
                 where.append("guild_id = ?")
                 parameters.append(selected_server_id)
+            elif not is_admin:
+                visible_filter, visible_params = guild_id_filter(
+                    "guild_id",
+                    visible_guild_ids,
+                )
+                where.append(visible_filter)
+                parameters.extend(visible_params)
             if selected_category:
                 where.append("category = ?")
                 parameters.append(selected_category)
@@ -3494,6 +3987,186 @@ def index():
     return rendered
 
 
+@app.route("/report/<int:submission_id>", methods=["GET", "POST"])
+def report_submission(submission_id):
+    config_data = load_config()
+    guild_names = guild_name_map(config_data)
+    with closing(connect_db()) as connection:
+        row = connection.execute("""
+            SELECT *
+            FROM submissions
+            WHERE id = ?
+              AND status = 'posted'
+        """, (submission_id,)).fetchone()
+
+    if not row:
+        abort(404)
+
+    guild_config = (config_data.get("guilds") or {}).get(row["guild_id"], {})
+    if not feature_enabled(guild_config, "public_gallery"):
+        abort(404)
+
+    notice = ""
+    error = False
+    if request.method == "POST":
+        require_csrf_token()
+        reporter_name = request.form.get("reporter_name", "").strip()[:120]
+        reason = request.form.get("reason", "").strip()[:1000]
+        if not reason:
+            notice = "Please include a reason so admins know what to review."
+            error = True
+        else:
+            actor_id = request.remote_addr or "public"
+            actor_name = reporter_name or f"public-report@{actor_id}"
+            with database() as connection:
+                connection.execute("""
+                    INSERT INTO submission_reports (
+                        submission_id, guild_id, reporter_name,
+                        reason, status, created_at
+                    )
+                    VALUES (?, ?, ?, ?, 'open', ?)
+                """, (
+                    row["id"],
+                    row["guild_id"],
+                    actor_name,
+                    reason,
+                    utc_now_iso(),
+                ))
+                add_admin_audit_log(
+                    connection,
+                    row["guild_id"],
+                    "submission_report_created",
+                    actor_id,
+                    actor_name,
+                    "submission",
+                    row["id"],
+                    reason,
+                )
+            PUBLIC_PAGE_CACHE.clear()
+            notice = "Report sent. Thank you."
+
+    submission = dict(row)
+    submission["guild_name"] = guild_names.get(
+        submission.get("guild_id"),
+        f"Discord {submission.get('guild_id')}" if submission.get("guild_id") else "",
+    )
+    return render_template_string(
+        REPORT_HTML,
+        csrf_token=get_csrf_token(),
+        error=error,
+        notice=notice,
+        submission=submission,
+    )
+
+
+@app.route("/user/<user_id>")
+def user_profile(user_id):
+    user_id = str(user_id or "").strip()
+    if not user_id:
+        abort(404)
+
+    config_data = load_config()
+    has_key = request.args.get("key") == ADMIN_KEY
+    is_admin = has_key and is_admin_logged_in()
+    if has_key and not is_admin:
+        return redirect(url_for(
+            "admin_login",
+            key=ADMIN_KEY,
+            next=request.full_path,
+        ))
+
+    server_options = guild_options(config_data, public_only=not is_admin)
+    guild_names = guild_name_map(config_data)
+    selected_server_id = selected_guild_id(server_options)
+    visible_guild_ids = {option["id"] for option in server_options}
+
+    submission_where = ["user_id = ?", "status = 'posted'"]
+    submission_params = [user_id]
+    guess_where = ["user_id = ?"]
+    guess_params = [user_id]
+    correct_where = ["user_id = ?"]
+    correct_params = [user_id]
+    if selected_server_id:
+        submission_where.append("guild_id = ?")
+        submission_params.append(selected_server_id)
+        guess_where.append("guild_id = ?")
+        guess_params.append(selected_server_id)
+        correct_where.append("guild_id = ?")
+        correct_params.append(selected_server_id)
+    elif not is_admin:
+        visible_filter, visible_params = guild_id_filter(
+            "guild_id",
+            visible_guild_ids,
+        )
+        submission_where.append(visible_filter)
+        submission_params.extend(visible_params)
+        guess_where.append(visible_filter)
+        guess_params.extend(visible_params)
+        correct_where.append(visible_filter)
+        correct_params.extend(visible_params)
+
+    with closing(connect_db()) as connection:
+        stats = connection.execute(f"""
+            SELECT
+                COALESCE(MAX(NULLIF(username, '')), ?) AS username,
+                COUNT(*) AS submissions,
+                COALESCE(SUM(stars), 0) AS total_votes
+            FROM submissions
+            WHERE {" AND ".join(submission_where)}
+        """, [user_id] + submission_params).fetchone()
+        guess_stats = connection.execute(f"""
+            SELECT
+                COALESCE(MAX(NULLIF(username, '')), ?) AS username,
+                COALESCE(SUM(points), 0) AS points
+            FROM guess_points
+            WHERE {" AND ".join(guess_where)}
+        """, [stats["username"] or user_id] + guess_params).fetchone()
+        correct_count = connection.execute(f"""
+            SELECT COUNT(*)
+            FROM guess_correct_guesses
+            WHERE {" AND ".join(correct_where)}
+        """, correct_params).fetchone()[0]
+        posts = connection.execute(f"""
+            SELECT id, guild_id, username, category, stars,
+                   created_at, submitted_at
+            FROM submissions
+            WHERE {" AND ".join(submission_where)}
+            ORDER BY created_at DESC, id DESC
+            LIMIT 25
+        """, submission_params).fetchall()
+        monthly_points = connection.execute(f"""
+            SELECT month, SUM(points) AS points
+            FROM guess_points
+            WHERE {" AND ".join(guess_where)}
+            GROUP BY month
+            ORDER BY month DESC
+            LIMIT 12
+        """, guess_params).fetchall()
+
+    username = (
+        guess_stats["username"]
+        or stats["username"]
+        or f"Discord user {user_id}"
+    )
+    profile = {
+        "username": username,
+        "submissions": stats["submissions"] or 0,
+        "total_votes": stats["total_votes"] or 0,
+        "guess_points": guess_stats["points"] or 0,
+        "correct_guesses": correct_count,
+    }
+    return render_template_string(
+        USER_PROFILE_HTML,
+        admin_key=ADMIN_KEY,
+        guild_names=guild_names,
+        is_admin=is_admin,
+        monthly_points=monthly_points,
+        posts=posts,
+        profile=profile,
+        selected_guild_id=selected_server_id,
+    )
+
+
 @app.route("/audit")
 def audit_log():
     login_response = require_admin_login()
@@ -3511,6 +4184,13 @@ def audit_log():
         selected_server_id = ""
     action_filter = request.args.get("action", "").strip()
     search_query = request.args.get("q", "").strip()
+    actor_filter = request.args.get("actor", "").strip()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", date_from):
+        date_from = ""
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", date_to):
+        date_to = ""
 
     base_query = """
         SELECT *
@@ -3572,6 +4252,21 @@ def audit_log():
         """)
         like_query = f"%{search_query}%"
         parameters.extend([like_query] * 5)
+    if actor_filter:
+        where.append("""
+            (
+                actor_user_id LIKE ?
+                OR actor_username LIKE ?
+            )
+        """)
+        like_actor = f"%{actor_filter}%"
+        parameters.extend([like_actor, like_actor])
+    if date_from:
+        where.append("created_at >= ?")
+        parameters.append(f"{date_from}T00:00:00")
+    if date_to:
+        where.append("created_at <= ?")
+        parameters.append(f"{date_to}T23:59:59")
     where_sql = " WHERE " + " AND ".join(where) if where else ""
 
     with closing(connect_db()) as connection:
@@ -3599,9 +4294,12 @@ def audit_log():
 
     return render_template_string(
         AUDIT_HTML,
+        actor_filter=actor_filter,
         action_filter=action_filter,
         action_options=action_options,
         admin_key=ADMIN_KEY,
+        date_from=date_from,
+        date_to=date_to,
         guild_options=server_options,
         page=page,
         rows=rows,
@@ -3614,9 +4312,6 @@ def audit_log():
 @app.route("/guessing")
 def guessing_leaderboard():
     config_data = load_config()
-    server_options = guild_options(config_data)
-    guild_names = guild_name_map(config_data)
-    selected_server_id = selected_guild_id(server_options)
     has_key = request.args.get("key") == ADMIN_KEY
     is_admin = has_key and is_admin_logged_in()
     if has_key and not is_admin:
@@ -3625,6 +4320,20 @@ def guessing_leaderboard():
             key=ADMIN_KEY,
             next=request.full_path,
         ))
+    all_server_options = guild_options(config_data, public_only=not is_admin)
+    guild_configs = config_data.get("guilds") or {}
+    server_options = [
+        option
+        for option in all_server_options
+        if feature_enabled(guild_configs.get(option["id"], {}), "guessing_games")
+    ]
+    visible_guess_ids = {option["id"] for option in server_options}
+    cross_server_ids = visible_guess_ids & feature_guild_ids(
+        config_data,
+        "cross_server_leaderboard",
+    )
+    guild_names = guild_name_map(config_data)
+    selected_server_id = selected_guild_id(server_options)
 
     month = request.args.get("month", "").strip()
     page = positive_page(request.args.get("page"))
@@ -3642,18 +4351,23 @@ def guessing_leaderboard():
             return cached
 
     with closing(connect_db()) as connection:
-        months = available_guess_months(connection)
+        months = available_guess_months(connection, visible_guess_ids)
         if not month:
             month = months[0] if months else current_month_key()
+        cross_filter, cross_filter_params = guild_id_filter(
+            "guild_id",
+            cross_server_ids,
+        )
         total_cross = connection.execute("""
             SELECT COUNT(*)
             FROM (
                 SELECT user_id
                 FROM guess_points
                 WHERE month = ?
+                  AND """ + cross_filter + """
                 GROUP BY user_id
             )
-        """, (month,)).fetchone()[0]
+        """, [month] + cross_filter_params).fetchone()[0]
         total_pages = max(1, math.ceil(total_cross / PAGE_SIZE))
         page = min(page, total_pages)
         cross_server_scores = connection.execute("""
@@ -3663,16 +4377,27 @@ def guessing_leaderboard():
                 COUNT(DISTINCT guild_id) AS server_count
             FROM guess_points
             WHERE month = ?
+              AND """ + cross_filter + """
             GROUP BY user_id
             ORDER BY points DESC, username ASC
             LIMIT ? OFFSET ?
-        """, (month, PAGE_SIZE, (page - 1) * PAGE_SIZE)).fetchall()
+        """, [month] + cross_filter_params + [
+            PAGE_SIZE,
+            (page - 1) * PAGE_SIZE,
+        ]).fetchall()
 
         where = ["month = ?"]
         parameters = [month]
         if selected_server_id:
             where.append("guild_id = ?")
             parameters.append(selected_server_id)
+        else:
+            visible_filter, visible_params = guild_id_filter(
+                "guild_id",
+                visible_guess_ids,
+            )
+            where.append(visible_filter)
+            parameters.extend(visible_params)
         rows = connection.execute(f"""
             SELECT guild_id, channel_id, username, points
             FROM guess_points
@@ -3735,7 +4460,7 @@ def guessing_leaderboard():
 @app.route("/servers")
 def servers():
     config_data = load_config()
-    options = guild_options(config_data)
+    options = guild_options(config_data, public_only=True)
     with closing(connect_db()) as connection:
         rows = []
         for option in options:
@@ -3769,6 +4494,9 @@ def server_profile(guild_id):
     config_data = load_config()
     names = guild_name_map(config_data)
     if guild_id not in names:
+        abort(404)
+    guild_config = (config_data.get("guilds") or {}).get(guild_id, {})
+    if not feature_enabled(guild_config, "public_gallery"):
         abort(404)
     with closing(connect_db()) as connection:
         stats = {
@@ -3815,17 +4543,33 @@ def server_profile(guild_id):
 @app.route("/achievements")
 def achievements():
     config_data = load_config()
-    server_options = guild_options(config_data)
-    selected_server_id = selected_guild_id(server_options)
     has_key = request.args.get("key") == ADMIN_KEY
     is_admin = has_key and is_admin_logged_in()
+    if has_key and not is_admin:
+        return redirect(url_for(
+            "admin_login",
+            key=ADMIN_KEY,
+            next=request.full_path,
+        ))
+    server_options = guild_options(config_data, public_only=not is_admin)
+    visible_guild_ids = {option["id"] for option in server_options}
+    selected_server_id = selected_guild_id(server_options)
     month = request.args.get("month", "").strip()
 
     with closing(connect_db()) as connection:
-        months = available_guess_months(connection)
+        month_guild_ids = (
+            {selected_server_id}
+            if selected_server_id
+            else visible_guild_ids
+        )
+        months = available_guess_months(
+            connection,
+            month_guild_ids,
+        )
         for submission_month in available_submission_months(
             connection,
             selected_server_id,
+            guild_ids=visible_guild_ids if not selected_server_id else None,
         ):
             if submission_month not in months:
                 months.append(submission_month)
@@ -3845,6 +4589,15 @@ def achievements():
             guess_params.append(selected_server_id)
             submission_where.append("guild_id = ?")
             submission_params.append(selected_server_id)
+        else:
+            visible_filter, visible_params = guild_id_filter(
+                "guild_id",
+                visible_guild_ids,
+            )
+            guess_where.append(visible_filter)
+            guess_params.extend(visible_params)
+            submission_where.append(visible_filter)
+            submission_params.extend(visible_params)
 
         top_guesser = connection.execute(f"""
             SELECT username, SUM(points) AS points
@@ -3899,6 +4652,7 @@ def admin_health():
         return login_response
 
     media_stats = media_directory_stats()
+    setup_rows = build_onboarding_rows(load_config())
     with closing(connect_db()) as connection:
         schema_row = connection.execute("""
             SELECT version, updated_at
@@ -3917,6 +4671,10 @@ def admin_health():
             "db_size_bytes": DB_FILE.stat().st_size if DB_FILE.exists() else 0,
             "media_size_bytes": media_stats["bytes"],
             "media_file_count": media_stats["files"],
+            "setup_health": {
+                row["id"]: row["health_score"]
+                for row in setup_rows
+            },
             "submissions": connection.execute(
                 "SELECT COUNT(*) FROM submissions"
             ).fetchone()[0],
@@ -4020,6 +4778,43 @@ def export_audit():
         "sdac-audit.csv",
         rows,
         ["guild_id", "action", "actor_user_id", "actor_username", "target_type", "target_id", "details", "created_at"],
+    )
+
+
+@app.route("/admin/backup/<path:name>")
+def download_backup(name):
+    login_response = require_admin_login()
+    if login_response:
+        return login_response
+
+    backup_name = Path(name).name
+    if backup_name != name or not re.match(r"^sdac-[A-Za-z0-9_.-]+\.db$", backup_name):
+        abort(404)
+    backup_path = (BACKUP_DIR / backup_name).resolve()
+    try:
+        backup_path.relative_to(BACKUP_DIR.resolve())
+    except ValueError:
+        abort(404)
+    if not backup_path.is_file():
+        abort(404)
+
+    actor_id, actor_name = web_actor()
+    with database() as connection:
+        add_admin_audit_log(
+            connection,
+            None,
+            "database_backup_download",
+            actor_id,
+            actor_name,
+            "backup",
+            backup_name,
+            "Backup downloaded from dashboard.",
+        )
+    return send_from_directory(
+        BACKUP_DIR,
+        backup_name,
+        as_attachment=True,
+        download_name=backup_name,
     )
 
 

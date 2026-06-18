@@ -40,7 +40,7 @@ Usage:
 Examples:
   sdac-update "Version 2"
   sdac-update 2
-  sdac-update 2.4.2
+  sdac-update 2.4.3
   sdac-update latest-official
   sdac-update latest-experimental
   sdac-update latest-expirimental

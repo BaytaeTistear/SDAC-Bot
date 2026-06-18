@@ -205,7 +205,7 @@ echo
 echo "Future GitHub updates:"
 echo "  sdac-update \"Version 2\""
 echo "  sdac-update latest-experimental"
-echo "  sdac-update 2.4.2"
+echo "  sdac-update 2.4.3"
 echo
 echo "View logs:"
 echo "  journalctl -u sdac-bot -n 80 --no-pager"

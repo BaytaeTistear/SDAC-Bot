@@ -79,6 +79,15 @@ DEFAULT_CONFIG = {
     },
 }
 
+DEFAULT_FEATURES = {
+    "submissions": True,
+    "approval_queue": True,
+    "guessing_games": True,
+    "weekly_posts": True,
+    "public_gallery": True,
+    "cross_server_leaderboard": True,
+}
+
 DEFAULT_GUILD_CONFIG = {
     "guild_name": "",
     "admin_role_ids": [],
@@ -92,7 +101,22 @@ DEFAULT_GUILD_CONFIG = {
     "approval_enabled": False,
     "approval_channel": None,
     "categories": {},
+    "features": DEFAULT_FEATURES,
 }
+
+FEATURE_LABELS = {
+    "submissions": "Submissions",
+    "approval_queue": "Approval Queue",
+    "guessing_games": "Guessing Games",
+    "weekly_posts": "Weekly Posts",
+    "public_gallery": "Public Gallery",
+    "cross_server_leaderboard": "Cross-Server Leaderboard",
+}
+
+FEATURE_CHOICES = [
+    app_commands.Choice(name=label, value=key)
+    for key, label in FEATURE_LABELS.items()
+]
 
 REQUIRED_TABLES = {
     "submissions",
@@ -110,6 +134,7 @@ REQUIRED_TABLES = {
     "schema_version",
     "rate_limit_events",
     "restore_test_runs",
+    "submission_reports",
 }
 
 
@@ -235,6 +260,11 @@ def get_guild_config(guild_id, create=True):
     for setting, default in DEFAULT_GUILD_CONFIG.items():
         if setting not in guild_config:
             guild_config[setting] = json.loads(json.dumps(default))
+            changed = True
+    features = guild_config.setdefault("features", {})
+    for feature, default in DEFAULT_FEATURES.items():
+        if feature not in features:
+            features[feature] = default
             changed = True
     if changed:
         save_config(config)
@@ -376,6 +406,12 @@ def initialize_database():
                 media_metadata_json TEXT,
                 hint_text TEXT,
                 hint_revealed_at TEXT,
+                answer_aliases_json TEXT,
+                hints_json TEXT,
+                hint_level INTEGER DEFAULT 0,
+                next_hint_at TEXT,
+                auto_hint_minutes INTEGER DEFAULT 0,
+                hint_category TEXT,
                 status TEXT DEFAULT 'active',
                 winner_user_id TEXT,
                 winner_username TEXT,
@@ -462,6 +498,19 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS submission_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                submission_id INTEGER,
+                guild_id TEXT,
+                reporter_name TEXT,
+                reason TEXT,
+                status TEXT DEFAULT 'open',
+                admin_notes TEXT,
+                created_at TEXT,
+                resolved_at TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS schema_version (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 version INTEGER NOT NULL,
@@ -528,6 +577,12 @@ def initialize_database():
             "media_metadata_json": "TEXT",
             "hint_text": "TEXT",
             "hint_revealed_at": "TEXT",
+            "answer_aliases_json": "TEXT",
+            "hints_json": "TEXT",
+            "hint_level": "INTEGER DEFAULT 0",
+            "next_hint_at": "TEXT",
+            "auto_hint_minutes": "INTEGER DEFAULT 0",
+            "hint_category": "TEXT",
             "status": "TEXT DEFAULT 'active'",
             "winner_user_id": "TEXT",
             "winner_username": "TEXT",
@@ -590,6 +645,14 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_restore_test_runs_created
             ON restore_test_runs (created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submission_reports_status
+            ON submission_reports (status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submission_reports_submission
+            ON submission_reports (submission_id)
         """)
         apply_database_migrations(connection)
 
@@ -679,6 +742,133 @@ def normalize_guess(value):
     cleaned = re.sub(r"[^\w\s]", " ", value.casefold())
     cleaned = re.sub(r"[_\s]+", " ", cleaned)
     return cleaned.strip()
+
+
+def feature_enabled(guild_config, feature):
+    features = (guild_config or {}).get("features") or {}
+    return bool(features.get(feature, DEFAULT_FEATURES.get(feature, True)))
+
+
+def parse_answer_aliases(answer):
+    aliases = []
+    seen = set()
+    for part in str(answer or "").split("|"):
+        display = part.strip()
+        normalized = normalize_guess(display)
+        if not display or not normalized or normalized in seen:
+            continue
+        aliases.append({
+            "display": display,
+            "normalized": normalized,
+        })
+        seen.add(normalized)
+    return aliases
+
+
+def answer_alias_matches(game, normalized_guess):
+    aliases = []
+    try:
+        aliases = json.loads(game["answer_aliases_json"] or "[]")
+    except (TypeError, json.JSONDecodeError):
+        aliases = []
+    valid_answers = {
+        alias.get("normalized", "")
+        for alias in aliases
+        if alias.get("normalized")
+    }
+    if game["answer"]:
+        valid_answers.add(game["answer"])
+    return normalized_guess in valid_answers
+
+
+def answer_words(answer):
+    return re.findall(r"[\w]+", answer or "")
+
+
+def first_answer_letter(answer):
+    for character in answer or "":
+        if character.isalnum():
+            return character.upper()
+    return "?"
+
+
+def build_game_hints(answer, category="", custom_hint=""):
+    hints = []
+    category = (category or "").strip()
+    if category:
+        hints.append(f"Category: {category}")
+    words = answer_words(answer)
+    if words:
+        hints.append(f"Word count: {len(words)}")
+    hints.append(f"First letter: {first_answer_letter(answer)}")
+    custom_hint = (custom_hint or "").strip()
+    if custom_hint:
+        hints.append(f"Admin hint: {custom_hint}")
+
+    deduped = []
+    seen = set()
+    for hint in hints:
+        key = hint.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(hint)
+    return deduped
+
+
+def next_hint_time(minutes):
+    try:
+        minutes = int(minutes or 0)
+    except (TypeError, ValueError):
+        minutes = 0
+    if minutes <= 0:
+        return None
+    return (datetime.now(timezone.utc) + timedelta(minutes=minutes)).isoformat()
+
+
+def append_hint_text(existing_text, hint):
+    existing_text = (existing_text or "").strip()
+    if not existing_text:
+        return hint
+    return existing_text + "\n" + hint
+
+
+def reveal_next_hint_for_game(connection, game):
+    try:
+        hints = json.loads(game["hints_json"] or "[]")
+    except (TypeError, json.JSONDecodeError):
+        hints = []
+    hint_level = int(game["hint_level"] or 0)
+    if hint_level >= len(hints):
+        return None
+
+    hint = str(hints[hint_level]).strip()
+    if not hint:
+        return None
+
+    new_level = hint_level + 1
+    auto_minutes = int(game["auto_hint_minutes"] or 0)
+    next_at = None
+    if auto_minutes > 0 and new_level < len(hints):
+        next_at = (
+            datetime.now(timezone.utc) + timedelta(minutes=auto_minutes)
+        ).isoformat()
+
+    connection.execute("""
+        UPDATE guess_games
+        SET hint_text = ?,
+            hint_revealed_at = COALESCE(hint_revealed_at, ?),
+            hint_level = ?,
+            next_hint_at = ?
+        WHERE id = ?
+    """, (
+        append_hint_text(game["hint_text"], hint),
+        utc_now_iso(),
+        new_level,
+        next_at,
+        game["id"],
+    ))
+    return hint
 
 
 def get_guild_timezone(guild_config):
@@ -1468,7 +1658,13 @@ def settings_lines(guild_config):
         f"Wrong guess timeout: `{timeout_minutes}` minute(s)",
         f"Categories: `{len(guild_config.get('categories', {}))}`",
         "",
+        "**Features:**",
     ]
+    features = guild_config.get("features") or {}
+    for feature, label in FEATURE_LABELS.items():
+        enabled = features.get(feature, DEFAULT_FEATURES[feature])
+        lines.append(f"- {label}: `{'Enabled' if enabled else 'Disabled'}`")
+    lines.append("")
     categories = guild_config.get("categories", {})
     if not categories:
         lines.append("No categories are set.")
@@ -2313,6 +2509,36 @@ async def settings(interaction):
     )
 
 
+@tree.command(name="setfeature", description="Enable or disable an SDAC feature")
+@app_commands.guild_only()
+@app_commands.choices(feature=FEATURE_CHOICES)
+@app_commands.describe(
+    feature="Feature to change for this Discord server",
+    enabled="Whether the feature should be enabled",
+)
+async def setfeature(
+    interaction,
+    feature: app_commands.Choice[str],
+    enabled: bool,
+):
+    if not await require_admin(interaction):
+        return
+    guild_config = get_guild_config(interaction.guild_id)
+    guild_config.setdefault("features", {})[feature.value] = enabled
+    save_config(config)
+    audit_interaction(
+        interaction,
+        "set_feature",
+        "feature",
+        feature.value,
+        f"{feature.name} set to {'enabled' if enabled else 'disabled'}.",
+    )
+    await interaction.response.send_message(
+        f"{feature.name} is now {'enabled' if enabled else 'disabled'}.",
+        ephemeral=True,
+    )
+
+
 @tree.command(name="checkpermissions", description="Check SDAC bot channel permissions")
 @app_commands.guild_only()
 @app_commands.describe(channel="Optional channel to check")
@@ -2837,7 +3063,10 @@ async def create_submission(source_message, category):
         return False, "The category channel could not be found."
 
     approval_channel = None
-    if guild_config["approval_enabled"]:
+    if guild_config["approval_enabled"] and feature_enabled(
+        guild_config,
+        "approval_queue",
+    ):
         approval_channel_id = guild_config.get("approval_channel")
         approval_channel = (
             bot.get_channel(approval_channel_id)
@@ -3099,6 +3328,12 @@ class SubmissionConfirmView(discord.ui.View):
 @app_commands.describe(category="Submission category")
 async def submit(interaction, category: str):
     guild_config = get_guild_config(interaction.guild_id, create=False)
+    if not feature_enabled(guild_config, "submissions"):
+        await interaction.response.send_message(
+            "Submissions are currently disabled for this server.",
+            ephemeral=True,
+        )
+        return
     submit_channel_id = guild_config.get("submit_channel")
     if not submit_channel_id:
         await interaction.response.send_message(
@@ -3221,9 +3456,12 @@ async def submit(interaction, category: str):
 @app_commands.guild_only()
 @app_commands.describe(
     channel="Channel where users will guess",
-    answer="Correct answer for the media",
+    answer="Correct answer for the media. Use | to add aliases.",
     media="Image, video, or audio to guess",
     text="Optional prompt text",
+    category="Optional hidden category for generated hints",
+    hint="Optional custom hint to include with generated hints",
+    auto_hint_minutes="Minutes between automatic hints. Use 0 to disable.",
 )
 async def startgame(
     interaction,
@@ -3231,20 +3469,51 @@ async def startgame(
     answer: str,
     media: discord.Attachment,
     text: str = "",
+    category: str = "",
+    hint: str = "",
+    auto_hint_minutes: int = 0,
 ):
     if not await require_admin(interaction):
         return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    if not feature_enabled(guild_config, "guessing_games"):
+        await interaction.response.send_message(
+            "Guessing games are currently disabled for this server.",
+            ephemeral=True,
+        )
+        return
 
     answer = answer.strip()
-    if not answer:
+    answer_aliases = parse_answer_aliases(answer)
+    if not answer_aliases:
         await interaction.response.send_message(
             "The answer cannot be empty.",
+            ephemeral=True,
+        )
+        return
+    answer_display = answer_aliases[0]["display"]
+    normalized_answer = answer_aliases[0]["normalized"]
+    category = category.strip()
+    hint = hint.strip()
+    try:
+        auto_hint_minutes = int(auto_hint_minutes or 0)
+    except (TypeError, ValueError):
+        auto_hint_minutes = 0
+    if auto_hint_minutes < 0 or auto_hint_minutes > 1440:
+        await interaction.response.send_message(
+            "Automatic hint minutes must be between 0 and 1440.",
             ephemeral=True,
         )
         return
     if len(text) > config["limits"]["max_text_length"]:
         await interaction.response.send_message(
             f"Text is limited to {config['limits']['max_text_length']} characters.",
+            ephemeral=True,
+        )
+        return
+    if len(hint) > 500:
+        await interaction.response.send_message(
+            "Hints are limited to 500 characters.",
             ephemeral=True,
         )
         return
@@ -3307,12 +3576,18 @@ async def startgame(
         await media.save(media_path)
         media_metadata = attachment_metadata(media, media_path)
         discord_file = discord.File(media_path, filename=media.filename)
+        game_lines = ["**Guessing Game Started**"]
+        prompt_text = text.strip()
+        if prompt_text:
+            game_lines.append(prompt_text)
+        if auto_hint_minutes > 0:
+            game_lines.append(
+                f"Automatic hints are enabled every {auto_hint_minutes} minute(s)."
+            )
+        game_lines.append("Use `/guess <guess>` in this channel.")
+        generated_hints = build_game_hints(answer_display, category, hint)
         game_message = await channel.send(
-            content=(
-                "**Guessing Game Started**\n"
-                f"{text.strip()}\n\n"
-                "Use `/guess <guess>` in this channel."
-            ).strip(),
+            content="\n\n".join(game_lines),
             file=discord_file,
         )
 
@@ -3322,23 +3597,30 @@ async def startgame(
                     guild_id, channel_id, message_id, starter_user_id,
                     starter_username, answer, answer_display, prompt_text,
                     media_path, media_name, media_type, media_size,
-                    media_metadata_json, status, started_at
+                    media_metadata_json, answer_aliases_json, hints_json,
+                    hint_level, next_hint_at, auto_hint_minutes,
+                    hint_category, status, started_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'active', ?)
             """, (
                 str(interaction.guild_id),
                 str(channel.id),
                 str(game_message.id),
                 str(interaction.user.id),
                 str(interaction.user),
-                normalize_guess(answer),
-                answer,
-                text.strip(),
+                normalized_answer,
+                answer_display,
+                prompt_text,
                 str(media_path),
                 media.filename,
                 get_media_type(media.filename),
                 int(media.size or 0),
                 json.dumps(media_metadata, separators=(",", ":")),
+                json.dumps(answer_aliases, separators=(",", ":")),
+                json.dumps(generated_hints, separators=(",", ":")),
+                next_hint_time(auto_hint_minutes),
+                auto_hint_minutes,
+                category,
                 utc_now_iso(),
             ))
             game_id = cursor.lastrowid
@@ -3352,6 +3634,8 @@ async def startgame(
                 game_id,
                 (
                     f"Channel {channel.id}; media {media.filename}; "
+                    f"aliases={len(answer_aliases)}; "
+                    f"auto_hint_minutes={auto_hint_minutes}; "
                     f"replaced={bool(replaced_game)}."
                 ),
             )
@@ -3393,6 +3677,12 @@ async def activegame(interaction):
         return
 
     guild_config = get_guild_config(interaction.guild_id, create=False)
+    if not feature_enabled(guild_config, "guessing_games"):
+        await interaction.response.send_message(
+            "Guessing games are currently disabled for this server.",
+            ephemeral=True,
+        )
+        return
     timezone_info = get_guild_timezone(guild_config)
     with database() as connection:
         game = connection.execute("""
@@ -3428,6 +3718,20 @@ async def activegame(interaction):
     correct_display = ", ".join(correct_names[:20]) if correct_names else "Nobody"
     if len(correct_names) > 20:
         correct_display += f" and {len(correct_names) - 20} more"
+    try:
+        aliases = json.loads(game["answer_aliases_json"] or "[]")
+    except (TypeError, json.JSONDecodeError):
+        aliases = []
+    alias_display = ", ".join(
+        alias.get("display", "")
+        for alias in aliases[1:]
+        if alias.get("display")
+    ) or "(none)"
+    try:
+        hints = json.loads(game["hints_json"] or "[]")
+    except (TypeError, json.JSONDecodeError):
+        hints = []
+    hint_level = int(game["hint_level"] or 0)
 
     await interaction.response.send_message(
         "\n".join([
@@ -3436,9 +3740,12 @@ async def activegame(interaction):
             f"Started by: {game['starter_username']}",
             f"Started: `{started_display}` `{guild_config.get('timezone', 'UTC')}`",
             f"Answer: `{game['answer_display']}`",
+            f"Aliases: {alias_display}",
             f"Prompt: {game['prompt_text'] or '(none)'}",
+            f"Hint category: {game['hint_category'] or '(none)'}",
             f"Hint: {game['hint_text'] or '(none)'}",
-            f"Hint revealed: {'Yes' if game['hint_revealed_at'] else 'No'}",
+            f"Hints revealed: `{hint_level}` of `{len(hints)}`",
+            f"Next auto hint: `{game['next_hint_at'] or 'disabled'}`",
             f"Media: `{game['media_name']}` ({game['media_type']})",
             f"Correct guessers: {correct_display}",
         ]),
@@ -3450,6 +3757,13 @@ async def activegame(interaction):
 @app_commands.guild_only()
 async def cancelgame(interaction):
     if not await require_admin(interaction):
+        return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    if not feature_enabled(guild_config, "guessing_games"):
+        await interaction.response.send_message(
+            "Guessing games are currently disabled for this server.",
+            ephemeral=True,
+        )
         return
 
     await interaction.response.defer(ephemeral=True, thinking=True)
@@ -3486,6 +3800,13 @@ async def cancelgame(interaction):
 async def sethint(interaction, hint: str):
     if not await require_admin(interaction):
         return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    if not feature_enabled(guild_config, "guessing_games"):
+        await interaction.response.send_message(
+            "Guessing games are currently disabled for this server.",
+            ephemeral=True,
+        )
+        return
     hint = hint.strip()
     if not hint:
         await interaction.response.send_message(
@@ -3510,12 +3831,13 @@ async def sethint(interaction, hint: str):
                 ephemeral=True,
             )
             return
+        new_hint_text = append_hint_text(game["hint_text"], hint)
         connection.execute("""
             UPDATE guess_games
             SET hint_text = ?,
                 hint_revealed_at = COALESCE(hint_revealed_at, ?)
             WHERE id = ?
-        """, (hint, utc_now_iso(), game["id"]))
+        """, (new_hint_text, utc_now_iso(), game["id"]))
         add_admin_audit_log(
             connection,
             interaction.guild_id,
@@ -3537,9 +3859,70 @@ async def sethint(interaction, hint: str):
     )
 
 
+@tree.command(name="revealhint", description="Reveal the next generated hint")
+@app_commands.guild_only()
+async def revealhint(interaction):
+    if not await require_admin(interaction):
+        return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    if not feature_enabled(guild_config, "guessing_games"):
+        await interaction.response.send_message(
+            "Guessing games are currently disabled for this server.",
+            ephemeral=True,
+        )
+        return
+
+    with database() as connection:
+        game = connection.execute("""
+            SELECT *
+            FROM guess_games
+            WHERE guild_id = ?
+              AND channel_id = ?
+              AND status = 'active'
+            ORDER BY started_at DESC, id DESC
+            LIMIT 1
+        """, (str(interaction.guild_id), str(interaction.channel_id))).fetchone()
+        if not game:
+            await interaction.response.send_message(
+                "There is no active guessing game in this channel.",
+                ephemeral=True,
+            )
+            return
+        hint_text = reveal_next_hint_for_game(connection, game)
+        if not hint_text:
+            await interaction.response.send_message(
+                "There are no generated hints left for this game.",
+                ephemeral=True,
+            )
+            return
+        add_admin_audit_log(
+            connection,
+            interaction.guild_id,
+            "reveal_guess_hint",
+            interaction.user.id,
+            interaction.user,
+            "game",
+            game["id"],
+            "Generated hint revealed for active guessing game.",
+        )
+
+    await interaction.response.send_message("Generated hint revealed.", ephemeral=True)
+    await interaction.channel.send(
+        f"**Guessing Game Hint**\n{hint_text}\n\n"
+        "Correct guesses after a hint do not add leaderboard points."
+    )
+
+
 @tree.command(name="hint", description="Show this channel's game hint")
 @app_commands.guild_only()
 async def hint(interaction):
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    if not feature_enabled(guild_config, "guessing_games"):
+        await interaction.response.send_message(
+            "Guessing games are currently disabled for this server.",
+            ephemeral=True,
+        )
+        return
     with database() as connection:
         game = connection.execute("""
             SELECT hint_text, hint_revealed_at
@@ -3573,6 +3956,13 @@ async def hint(interaction):
 @app_commands.guild_only()
 @app_commands.describe(guess="Your guess")
 async def guess(interaction, guess: str):
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    if not feature_enabled(guild_config, "guessing_games"):
+        await interaction.response.send_message(
+            "Guessing games are currently disabled for this server.",
+            ephemeral=True,
+        )
+        return
     normalized_guess = normalize_guess(guess)
     if not normalized_guess:
         await interaction.response.send_message(
@@ -3602,7 +3992,6 @@ async def guess(interaction, guess: str):
 
     now = datetime.now(timezone.utc)
     channel = interaction.channel
-    guild_config = get_guild_config(interaction.guild_id, create=False)
     with database() as connection:
         game = connection.execute("""
             SELECT *
@@ -3643,7 +4032,7 @@ async def guess(interaction, guess: str):
                 )
                 return
 
-        if normalized_guess != game["answer"]:
+        if not answer_alias_matches(game, normalized_guess):
             seconds = config["limits"].get(
                 "wrong_guess_timeout_seconds",
                 600,
@@ -3772,6 +4161,13 @@ async def guess(interaction, guess: str):
 async def correct(interaction):
     if not await require_admin(interaction):
         return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    if not feature_enabled(guild_config, "guessing_games"):
+        await interaction.response.send_message(
+            "Guessing games are currently disabled for this server.",
+            ephemeral=True,
+        )
+        return
 
     with database() as connection:
         game = connection.execute("""
@@ -3885,6 +4281,8 @@ async def submissioninfo(interaction, submission_id: int):
 
 
 async def post_weekly_top(guild_id, guild_config, now):
+    if not feature_enabled(guild_config, "weekly_posts"):
+        return
     channel_id = guild_config.get("daily_top_channel")
     if not channel_id:
         return
@@ -3953,6 +4351,8 @@ async def post_monthly_guess_leaderboards():
     for guild_row in guild_rows:
         guild_id = guild_row["guild_id"]
         guild_config = get_guild_config(guild_id, create=False)
+        if not feature_enabled(guild_config, "guessing_games"):
+            continue
         now = guild_now(guild_config)
         if now.day != 1:
             continue
@@ -4027,6 +4427,8 @@ async def post_daily_guess_summaries():
 
     for game in games:
         guild_config = get_guild_config(game["guild_id"], create=False)
+        if not feature_enabled(guild_config, "guessing_games"):
+            continue
         timezone_info = get_guild_timezone(guild_config)
         now = datetime.now(timezone_info)
         today = now.date().isoformat()
@@ -4074,6 +4476,59 @@ async def post_daily_guess_summaries():
                 channel = None
         if channel is not None:
             await announce_guess_summary(channel, game, "end of day")
+
+
+async def post_due_guess_hints():
+    now = utc_now_iso()
+    with database() as connection:
+        games = connection.execute("""
+            SELECT *
+            FROM guess_games
+            WHERE status = 'active'
+              AND next_hint_at IS NOT NULL
+              AND next_hint_at != ''
+              AND next_hint_at <= ?
+            ORDER BY next_hint_at ASC, id ASC
+            LIMIT 25
+        """, (now,)).fetchall()
+
+    for game in games:
+        guild_config = get_guild_config(game["guild_id"], create=False)
+        if not feature_enabled(guild_config, "guessing_games"):
+            continue
+
+        with database() as connection:
+            fresh_game = connection.execute("""
+                SELECT *
+                FROM guess_games
+                WHERE id = ?
+                  AND status = 'active'
+                  AND next_hint_at IS NOT NULL
+                  AND next_hint_at != ''
+                  AND next_hint_at <= ?
+            """, (game["id"], now)).fetchone()
+            if not fresh_game:
+                continue
+            hint_text = reveal_next_hint_for_game(connection, fresh_game)
+            if not hint_text:
+                connection.execute("""
+                    UPDATE guess_games
+                    SET next_hint_at = NULL
+                    WHERE id = ?
+                """, (game["id"],))
+                continue
+
+        channel = bot.get_channel(int(game["channel_id"]))
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(int(game["channel_id"]))
+            except discord.HTTPException:
+                channel = None
+        if channel is not None:
+            await channel.send(
+                f"**Guessing Game Hint**\n{hint_text}\n\n"
+                "Correct guesses after a hint do not add leaderboard points."
+            )
 
 
 @tasks.loop(minutes=1)
@@ -4176,6 +4631,19 @@ async def guess_summary_scheduler():
 
 @guess_summary_scheduler.before_loop
 async def before_guess_summary_scheduler():
+    await bot.wait_until_ready()
+
+
+@tasks.loop(minutes=1)
+async def guess_hint_scheduler():
+    try:
+        await post_due_guess_hints()
+    except Exception as error:
+        await report_background_error("guess_hint_scheduler", error)
+
+
+@guess_hint_scheduler.before_loop
+async def before_guess_hint_scheduler():
     await bot.wait_until_ready()
 
 
@@ -4283,6 +4751,8 @@ async def on_ready():
         restore_test_scheduler.start()
     if not guess_summary_scheduler.is_running():
         guess_summary_scheduler.start()
+    if not guess_hint_scheduler.is_running():
+        guess_hint_scheduler.start()
     if not monthly_leaderboard_scheduler.is_running():
         monthly_leaderboard_scheduler.start()
     if not cleanup_scheduler.is_running():

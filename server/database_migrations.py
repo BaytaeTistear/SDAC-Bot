@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import sqlite3
 
 
-DATABASE_SCHEMA_VERSION = 4
+DATABASE_SCHEMA_VERSION = 5
 
 
 def utc_now_iso():
@@ -120,9 +120,41 @@ def migration_4_restore_test_runs(connection):
     """)
 
 
+def migration_5_reports_aliases_and_hints(connection):
+    ensure_column(connection, "guess_games", "answer_aliases_json", "TEXT")
+    ensure_column(connection, "guess_games", "hints_json", "TEXT")
+    ensure_column(connection, "guess_games", "hint_level", "INTEGER DEFAULT 0")
+    ensure_column(connection, "guess_games", "next_hint_at", "TEXT")
+    ensure_column(connection, "guess_games", "auto_hint_minutes", "INTEGER DEFAULT 0")
+    ensure_column(connection, "guess_games", "hint_category", "TEXT")
+
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS submission_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            submission_id INTEGER,
+            guild_id TEXT,
+            reporter_name TEXT,
+            reason TEXT,
+            status TEXT DEFAULT 'open',
+            admin_notes TEXT,
+            created_at TEXT,
+            resolved_at TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_submission_reports_status
+        ON submission_reports (status, created_at)
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_submission_reports_submission
+        ON submission_reports (submission_id)
+    """)
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
+    (5, migration_5_reports_aliases_and_hints),
 )
 
 

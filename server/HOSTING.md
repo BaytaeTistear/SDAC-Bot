@@ -267,12 +267,12 @@ sdac-update latest-experimental
 Explicit numbered releases also work:
 
 ```bash
-sdac-update 2.4.2
+sdac-update 2.4.3
 ```
 
 The updater also accepts `latest-expirimental` as a typo-compatible alias.
 `Version 2`, `2`, `v2`, and `version-2` always resolve to the latest official
-Version 2 release. Exact versions like `2.0` or `2.4.2` resolve to that
+Version 2 release. Exact versions like `2.0` or `2.4.3` resolve to that
 specific `version-*` release.
 
 If an older install says `/etc/sdac-bot/update.env: Permission denied`, fix the

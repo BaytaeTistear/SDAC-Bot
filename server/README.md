@@ -10,11 +10,17 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - Public web gallery with sorting by newest, votes, and month
 - Preserved monthly top 10 submission snapshots
 - Guessing games started by admins with `/startgame`
-- `/guess` scoring, wrong-guess cooldowns, and monthly leaderboards
+- Answer aliases, generated hints, automatic hints, `/guess` scoring,
+  wrong-guess cooldowns, and monthly leaderboards
 - Cross-server dashboard filtering and cross-server guessing rankings
+- Per-server feature toggles for submissions, approval queues, guessing games,
+  weekly posts, public gallery visibility, and cross-server rankings
 - Dashboard admin login on top of the admin key
-- Maintenance page for backups, restore tests, storage warnings, and health
-- Moderation page for pending submissions and recent decisions
+- Public user profiles and submission reports
+- Maintenance page for backups, backup downloads, release status, restore tests,
+  storage warnings, and health
+- Moderation page for pending submissions, public reports, and recent decisions
+- Onboarding page with setup health scores and quick setup commands
 - Ubuntu systemd service templates and Nginx helper scripts
 - Linux and Windows single-file installers from GitHub Releases
 
@@ -77,7 +83,7 @@ sdac-update latest-experimental
 Explicit numbered release:
 
 ```bash
-sdac-update 2.4.2
+sdac-update 2.4.3
 ```
 
 Optional checks:
@@ -89,7 +95,7 @@ SDAC_RUN_RESTORE_TEST=1 SDAC_RUN_PRODUCTION_CHECK=1 sdac-update latest-official
 The updater also accepts `latest`, `official`, `2`, `v2`, `version-2`,
 `experimental`, `expirimental`, and `latest-expirimental` as aliases. `Version
 2` always resolves to the latest official Version 2 release. Exact versions like
-`2.0` or `2.4.2` resolve to that specific `version-*` release.
+`2.0` or `2.4.3` resolve to that specific `version-*` release.
 
 If an older install says `/etc/sdac-bot/update.env: Permission denied`, fix the
 updater defaults file once:
@@ -217,6 +223,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /deletecategory category
 /categories
 /settings
+/setfeature submissions true
 /checkpermissions
 /setapproval enabled #channel
 /setadminrole @role
@@ -228,11 +235,13 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /setguesstimeout 10
 /setgamesummarychannel #channel
 /seterrorchannel #channel
-/startgame answer media text
+/startgame #channel answer media text category hint auto_hint_minutes
+/activegame
 /guess guess
 /correct
 /cancelgame
 /sethint hint
+/revealhint
 /hint
 /removesubmission id
 /submissioninfo id
@@ -272,7 +281,7 @@ Windows accepts the same channel and version names:
 
 ```bat
 update-sdac.bat "Version 2"
-update-sdac.bat 2.4.2
+update-sdac.bat 2.4.3
 update-sdac.bat latest-experimental
 ```
 
