@@ -226,10 +226,10 @@ https://freethefishies.us.to/admin/moderation?key=ImTheBestAdmin
 
 ## 11. Future Updates
 
-Recommended one-command GitHub update after Version 2.3:
+Recommended one-command GitHub update after Version 2.4:
 
 ```bash
-sdac-update version-2.3
+sdac-update latest-official
 ```
 
 If `sdac-update` has not been installed yet:
@@ -237,7 +237,7 @@ If `sdac-update` has not been installed yet:
 ```bash
 cd /tmp
 rm -f SDAC-Bot-Ubuntu-Update.sh
-gh release download version-2.3 \
+gh release download version-2.4 \
   --repo eatyba12/SDAC-Bot \
   --pattern SDAC-Bot-Ubuntu-Update.sh \
   --dir /tmp
@@ -249,8 +249,16 @@ SDAC_ENV_FILE=/etc/sdac-bot/sdac.env \
 SDAC_DOMAIN=freethefishies.us.to \
 ./SDAC-Bot-Ubuntu-Update.sh --install-command
 
-sdac-update version-2.3
+sdac-update latest-official
 ```
+
+Use the test channel with:
+
+```bash
+sdac-update latest-experimental
+```
+
+The updater also accepts `latest-expirimental` as a typo-compatible alias.
 
 The updater downloads the selected release, runs the Linux installer, reloads
 systemd, restarts `sdac-bot` and `sdac-dashboard`, reloads Nginx when it is

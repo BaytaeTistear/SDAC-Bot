@@ -38,10 +38,10 @@ Keep these on the Ubuntu server:
 
 ## Update
 
-Recommended one-command GitHub update path after Version 2.3:
+Recommended one-command GitHub update path after Version 2.4:
 
 ```bash
-sdac-update version-2.3
+sdac-update latest-official
 ```
 
 If `sdac-update` has not been installed yet:
@@ -49,7 +49,7 @@ If `sdac-update` has not been installed yet:
 ```bash
 cd /tmp
 rm -f SDAC-Bot-Ubuntu-Update.sh
-gh release download version-2.3 \
+gh release download version-2.4 \
   --repo eatyba12/SDAC-Bot \
   --pattern SDAC-Bot-Ubuntu-Update.sh \
   --dir /tmp
@@ -61,8 +61,11 @@ SDAC_ENV_FILE=/etc/sdac-bot/sdac.env \
 SDAC_DOMAIN=freethefishies.us.to \
 ./SDAC-Bot-Ubuntu-Update.sh --install-command
 
-sdac-update version-2.3
+sdac-update latest-official
 ```
+
+Use `sdac-update latest-experimental` for the experimental channel. The updater
+also accepts `latest-expirimental` as a typo-compatible alias.
 
 After manually uploading changed files:
 
@@ -190,7 +193,8 @@ In Discord, admins can run this command after permission changes:
 
 The GitHub Actions workflow in `.github/workflows/release.yml` builds both
 single-file installers. Push a tag like `v1.1.0`, or run the workflow manually
-from GitHub Actions and provide a tag.
+from GitHub Actions and provide a tag. Channel tags such as `latest-official`
+and `latest-experimental` also publish release assets for one-command updates.
 
 Discord slash commands sync when `sdac-bot` starts. If a new command does not
 appear immediately, wait a few minutes and check the bot logs for the synced

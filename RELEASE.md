@@ -1,35 +1,29 @@
-# SDAC Bot Version 2.3
+# SDAC Bot Version 2.4
 
 Date: 2026-06-18
 
-Version 2.3 focuses on installing a reusable server update command.
+Version 2.4 focuses on release channels and matching updater scripts for each
+operating system.
 
 Included:
 
-- installed `/usr/local/bin/sdac-update` command for future one-command updates
-- `/etc/sdac-bot/update.env` updater defaults written by the Ubuntu installer
-- standalone `sdac-update` release asset
+- `latest-official` update channel for production servers
+- `latest-experimental` update channel for test builds
+- typo-compatible updater aliases including `latest-expirimental`
+- Linux `sdac-update` now defaults to `latest-official`
 - standalone Ubuntu updater release asset
-- one-stop GitHub update script with systemd reload, service restarts, and optional checks
-- expanded README with command directory
+- standalone Windows updater release asset
+- Windows installer now writes `update-sdac.bat`
+- GitHub Actions release workflow publishes `latest-*` channel tags
 - Linux single-file installer
 - Windows single-file installer
-- GitHub Actions release workflow with Linux installer smoke test
-- Ubuntu production hardening helpers
-- SQLite migration tooling
-- backup restore-test script
-- scheduled weekly restore-test tracking
+- Ubuntu systemd service installation and restart helpers
+- Nginx, backup, restore-test, and production-check helpers
 - dashboard Maintenance page
 - dashboard Moderation page
 - Discord `/checkpermissions` command
-- storage warning thresholds
-- dedicated Linux service-user install option
-- repository line-ending rules for Linux and Windows files
-- optional Sentry error reporting
-- admin onboarding checklist for each Discord server
-- configurable rate limits
-- media metadata storage and dashboard display
-- PostgreSQL migration planning notes
+- cross-server dashboard filtering and guessing rankings
+- monthly submission and guessing leaderboards
 
 Not included:
 

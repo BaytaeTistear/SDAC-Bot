@@ -84,6 +84,7 @@ install_update_command() {
     UPDATE_CONFIG_TMP="$(mktemp)"
     {
         write_update_assignment SDAC_GITHUB_REPO "eatyba12/SDAC-Bot"
+        write_update_assignment SDAC_RELEASE_TAG "latest-official"
         write_update_assignment SDAC_APP_DIR "$APP_DIR"
         write_update_assignment SDAC_APP_USER "$APP_USER"
         write_update_assignment SDAC_ENV_FILE "$ENV_FILE"
@@ -202,7 +203,8 @@ echo "  sudo systemctl status sdac-bot --no-pager"
 echo "  sudo systemctl status sdac-dashboard --no-pager"
 echo
 echo "Future GitHub updates:"
-echo "  sdac-update version-2.4"
+echo "  sdac-update latest-official"
+echo "  sdac-update latest-experimental"
 echo
 echo "View logs:"
 echo "  journalctl -u sdac-bot -n 80 --no-pager"

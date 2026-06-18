@@ -14,7 +14,7 @@ if [[ -f "$CONFIG_FILE" ]]; then
 fi
 
 REPO="${SDAC_GITHUB_REPO:-eatyba12/SDAC-Bot}"
-RELEASE_TAG="${SDAC_RELEASE_TAG:-latest}"
+RELEASE_TAG="${SDAC_RELEASE_TAG:-latest-official}"
 APP_DIR="${SDAC_APP_DIR:-/home/ubuntu/discord-screenshot-bot}"
 ENV_FILE="${SDAC_ENV_FILE:-/etc/sdac-bot/sdac.env}"
 DASHBOARD_BIND="${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}"
@@ -32,17 +32,37 @@ Usage:
   $0 --install-command
 
 Examples:
-  sdac-update version-2.3
-  sdac-update latest
-  SDAC_RUN_RESTORE_TEST=1 sdac-update version-2.3
+  sdac-update latest-official
+  sdac-update latest-experimental
+  sdac-update latest-expirimental
+  sdac-update version-2.4
+  SDAC_RUN_RESTORE_TEST=1 sdac-update latest-official
 
 Environment:
   SDAC_GITHUB_REPO=$REPO
+  SDAC_RELEASE_TAG=$RELEASE_TAG
   SDAC_APP_DIR=$APP_DIR
   SDAC_APP_USER=${SDAC_APP_USER:-}
   SDAC_ENV_FILE=$ENV_FILE
   SDAC_DOMAIN=$DOMAIN
 EOF
+}
+
+normalize_release_tag() {
+    local raw="$1"
+    local lowered
+    lowered="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+    case "$lowered" in
+        ""|latest|stable|official|latest-official)
+            printf '%s\n' "latest-official"
+            ;;
+        experimental|expirimental|latest-experimental|latest-expirimental)
+            printf '%s\n' "latest-experimental"
+            ;;
+        *)
+            printf '%s\n' "$raw"
+            ;;
+    esac
 }
 
 while [[ $# -gt 0 ]]; do
@@ -78,6 +98,8 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+RELEASE_TAG="$(normalize_release_tag "$RELEASE_TAG")"
 
 default_app_user() {
     if [[ -n "${SDAC_APP_USER:-}" ]]; then
@@ -132,6 +154,7 @@ install_update_command() {
     config_tmp="$(mktemp)"
     {
         write_assignment SDAC_GITHUB_REPO "$REPO"
+        write_assignment SDAC_RELEASE_TAG "$RELEASE_TAG"
         write_assignment SDAC_APP_DIR "$APP_DIR"
         write_assignment SDAC_APP_USER "$APP_USER"
         write_assignment SDAC_ENV_FILE "$ENV_FILE"
@@ -148,30 +171,20 @@ install_update_command() {
     echo "Config: $CONFIG_FILE"
     echo
     echo "Future updates can be one command:"
-    echo "  sdac-update version-2.4"
+    echo "  sdac-update latest-official"
+    echo "  sdac-update latest-experimental"
 }
 
 download_with_gh() {
-    if [[ "$RELEASE_TAG" == "latest" ]]; then
-        gh release download \
-            --repo "$REPO" \
-            --pattern "$INSTALLER_NAME" \
-            --dir "$TMP_DIR"
-    else
-        gh release download "$RELEASE_TAG" \
-            --repo "$REPO" \
-            --pattern "$INSTALLER_NAME" \
-            --dir "$TMP_DIR"
-    fi
+    gh release download "$RELEASE_TAG" \
+        --repo "$REPO" \
+        --pattern "$INSTALLER_NAME" \
+        --dir "$TMP_DIR"
 }
 
 download_with_http() {
     local url
-    if [[ "$RELEASE_TAG" == "latest" ]]; then
-        url="https://github.com/$REPO/releases/latest/download/$INSTALLER_NAME"
-    else
-        url="https://github.com/$REPO/releases/download/$RELEASE_TAG/$INSTALLER_NAME"
-    fi
+    url="https://github.com/$REPO/releases/download/$RELEASE_TAG/$INSTALLER_NAME"
 
     if command -v curl >/dev/null 2>&1; then
         curl -fsSL "$url" -o "$INSTALLER_PATH"

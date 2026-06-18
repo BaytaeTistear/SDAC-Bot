@@ -5,6 +5,7 @@ on:
     tags:
       - "v*"
       - "version-*"
+      - "latest-*"
   workflow_dispatch:
     inputs:
       tag:
@@ -45,6 +46,9 @@ jobs:
     needs: python-check
     steps:
       - uses: actions/checkout@v4
+      - name: Check Windows updater help
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\update_from_github_windows.ps1 -Help
       - name: Build single-file installers
         shell: pwsh
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\build_installers.ps1
@@ -56,6 +60,7 @@ jobs:
             dist/SDAC-Bot-Linux-Installer.sh
             dist/SDAC-Bot-Windows-Installer.exe
             dist/SDAC-Bot-Ubuntu-Update.sh
+            dist/SDAC-Bot-Windows-Update.ps1
             dist/sdac-update
 
   linux-installer-smoke-test:

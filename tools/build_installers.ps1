@@ -40,6 +40,7 @@ function Copy-PayloadFiles {
         "scripts\migrate_database.py",
         "scripts\test_restore.sh",
         "scripts\update_from_github.sh",
+        "scripts\update_from_github_windows.ps1",
         "systemd\sdac-bot.service.template",
         "systemd\sdac-dashboard.service.template",
         "systemd\sdac-journald.conf",
@@ -669,6 +670,19 @@ if not exist ""venv\Scripts\python.exe"" (
 ""%~dp0venv\Scripts\python.exe"" -m py_compile bot.py dashboard.py config.py
 pause
 ", new UTF8Encoding(false));
+
+        string updateSdacBat = Path.Combine(appDir, "update-sdac.bat");
+        File.WriteAllText(updateSdacBat,
+@"@echo off
+cd /d ""%~dp0""
+if not exist ""scripts\update_from_github_windows.ps1"" (
+    echo Missing scripts\update_from_github_windows.ps1. Re-run the latest Windows installer.
+    pause
+    exit /b 1
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File ""%~dp0scripts\update_from_github_windows.ps1"" %*
+pause
+", new UTF8Encoding(false));
     }
 
     static void InstallPythonDependencies(string appDir)
@@ -808,6 +822,16 @@ function Copy-ReleaseHelperScripts {
             [Text.UTF8Encoding]::new($false)
         )
     }
+
+    $windowsSource = Join-Path $Root "scripts\update_from_github_windows.ps1"
+    $windowsContent = [IO.File]::ReadAllText($windowsSource)
+    $windowsContent = $windowsContent -replace "`r`n", "`n" -replace "`r", "`n"
+    $windowsContent = $windowsContent -replace "`n", "`r`n"
+    [IO.File]::WriteAllText(
+        (Join-Path $Dist "SDAC-Bot-Windows-Update.ps1"),
+        $windowsContent,
+        [Text.UTF8Encoding]::new($false)
+    )
 }
 
 New-Item -ItemType Directory -Force -Path $Dist | Out-Null

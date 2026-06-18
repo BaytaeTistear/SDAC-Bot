@@ -35,13 +35,13 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 
 ### One-Time Updater Install
 
-Install the `sdac-update` command once. The Version 2.3 installer also installs
+Install the `sdac-update` command once. The Version 2.4 installer also installs
 this command automatically.
 
 ```bash
 cd /tmp
 rm -f SDAC-Bot-Ubuntu-Update.sh
-gh release download version-2.3 \
+gh release download version-2.4 \
   --repo eatyba12/SDAC-Bot \
   --pattern SDAC-Bot-Ubuntu-Update.sh \
   --dir /tmp
@@ -59,14 +59,23 @@ SDAC_DOMAIN=freethefishies.us.to \
 After `sdac-update` is installed, future updates are one command:
 
 ```bash
-sdac-update version-2.3
+sdac-update latest-official
+```
+
+Experimental channel:
+
+```bash
+sdac-update latest-experimental
 ```
 
 Optional checks:
 
 ```bash
-SDAC_RUN_RESTORE_TEST=1 SDAC_RUN_PRODUCTION_CHECK=1 sdac-update version-2.3
+SDAC_RUN_RESTORE_TEST=1 SDAC_RUN_PRODUCTION_CHECK=1 sdac-update latest-official
 ```
+
+The updater also accepts `latest`, `official`, `experimental`, `expirimental`,
+and `latest-expirimental` as aliases.
 
 ### New Ubuntu Install
 
@@ -230,6 +239,19 @@ Download `SDAC-Bot-Windows-Installer.exe` from the latest GitHub release, run it
 
 ```bat
 start-sdac.bat
+```
+
+After Version 2.4 is installed on Windows, update with:
+
+```bat
+update-sdac.bat latest-official
+```
+
+The release also includes `SDAC-Bot-Windows-Update.ps1` for Windows-only
+updates.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\SDAC-Bot-Windows-Update.ps1 latest-official
 ```
 
 ## Do Not Upload Or Commit
