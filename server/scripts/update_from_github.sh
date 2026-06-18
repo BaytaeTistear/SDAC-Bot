@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+REPO="${SDAC_GITHUB_REPO:-eatyba12/SDAC-Bot}"
+RELEASE_TAG="${SDAC_RELEASE_TAG:-latest}"
+APP_DIR="${SDAC_APP_DIR:-/home/ubuntu/discord-screenshot-bot}"
+ENV_FILE="${SDAC_ENV_FILE:-/etc/sdac-bot/sdac.env}"
+DASHBOARD_BIND="${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}"
+INSTALLER_NAME="${SDAC_INSTALLER_NAME:-SDAC-Bot-Linux-Installer.sh}"
+RUN_RESTORE_TEST="${SDAC_RUN_RESTORE_TEST:-0}"
+RUN_PRODUCTION_CHECK="${SDAC_RUN_PRODUCTION_CHECK:-0}"
+DOMAIN="${SDAC_DOMAIN:-}"
+RELOAD_NGINX="${SDAC_RELOAD_NGINX:-1}"
+
+default_app_user() {
+    if [[ -n "${SDAC_APP_USER:-}" ]]; then
+        printf '%s\n' "$SDAC_APP_USER"
+        return
+    fi
+    if id ubuntu >/dev/null 2>&1; then
+        printf '%s\n' "ubuntu"
+        return
+    fi
+    id -un
+}
+
+APP_USER="$(default_app_user)"
+TMP_DIR="$(mktemp -d)"
+INSTALLER_PATH="$TMP_DIR/$INSTALLER_NAME"
+
+cleanup() {
+    rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+say() {
+    printf '\n==> %s\n' "$*"
+}
+
+fail() {
+    echo "ERROR: $*" >&2
+    exit 1
+}
+
+need_command() {
+    command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
+}
+
+download_with_gh() {
+    if [[ "$RELEASE_TAG" == "latest" ]]; then
+        gh release download \
+            --repo "$REPO" \
+            --pattern "$INSTALLER_NAME" \
+            --dir "$TMP_DIR"
+    else
+        gh release download "$RELEASE_TAG" \
+            --repo "$REPO" \
+            --pattern "$INSTALLER_NAME" \
+            --dir "$TMP_DIR"
+    fi
+}
+
+download_with_http() {
+    local url
+    if [[ "$RELEASE_TAG" == "latest" ]]; then
+        url="https://github.com/$REPO/releases/latest/download/$INSTALLER_NAME"
+    else
+        url="https://github.com/$REPO/releases/download/$RELEASE_TAG/$INSTALLER_NAME"
+    fi
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$url" -o "$INSTALLER_PATH"
+        return
+    fi
+    if command -v wget >/dev/null 2>&1; then
+        wget -qO "$INSTALLER_PATH" "$url"
+        return
+    fi
+    fail "Install GitHub CLI, curl, or wget to download the release installer."
+}
+
+download_installer() {
+    say "Downloading $INSTALLER_NAME from $REPO ($RELEASE_TAG)"
+    if command -v gh >/dev/null 2>&1; then
+        if ! download_with_gh; then
+            echo "GitHub CLI download failed. Falling back to HTTPS download."
+            download_with_http
+        fi
+    else
+        download_with_http
+    fi
+
+    if [[ ! -f "$INSTALLER_PATH" ]]; then
+        fail "Downloaded installer was not found at $INSTALLER_PATH."
+    fi
+    sed -i 's/\r$//' "$INSTALLER_PATH"
+    chmod +x "$INSTALLER_PATH"
+}
+
+restart_services() {
+    say "Reloading systemd and restarting SDAC services"
+    sudo systemctl daemon-reload
+    sudo systemctl reset-failed sdac-bot sdac-dashboard >/dev/null 2>&1 || true
+    sudo systemctl restart sdac-bot
+    sudo systemctl restart sdac-dashboard
+
+    if [[ "$RELOAD_NGINX" == "1" ]] && systemctl list-unit-files nginx.service >/dev/null 2>&1; then
+        if systemctl is-active --quiet nginx; then
+            say "Reloading Nginx"
+            sudo systemctl reload nginx || sudo systemctl restart nginx
+        fi
+    fi
+
+    sudo systemctl is-active --quiet sdac-bot
+    sudo systemctl is-active --quiet sdac-dashboard
+}
+
+run_optional_checks() {
+    if [[ "$RUN_RESTORE_TEST" == "1" && -x "$APP_DIR/scripts/test_restore.sh" ]]; then
+        say "Running restore test"
+        SDAC_APP_DIR="$APP_DIR" bash "$APP_DIR/scripts/test_restore.sh"
+    fi
+
+    if [[ "$RUN_PRODUCTION_CHECK" == "1" && -x "$APP_DIR/scripts/check_production.sh" ]]; then
+        say "Running production check"
+        SDAC_DOMAIN="$DOMAIN" bash "$APP_DIR/scripts/check_production.sh"
+    fi
+}
+
+print_summary() {
+    say "Update complete"
+    echo "Repository: $REPO"
+    echo "Release tag: $RELEASE_TAG"
+    echo "App directory: $APP_DIR"
+    echo "App user: $APP_USER"
+    echo "Environment file: $ENV_FILE"
+    echo "Dashboard bind: $DASHBOARD_BIND"
+    echo
+    echo "Status:"
+    sudo systemctl status sdac-bot --no-pager -l
+    sudo systemctl status sdac-dashboard --no-pager -l
+    echo
+    echo "Useful commands:"
+    echo "  journalctl -u sdac-bot -n 80 --no-pager"
+    echo "  journalctl -u sdac-dashboard -n 80 --no-pager"
+    echo "  curl http://127.0.0.1:5000/health"
+    if [[ -n "$DOMAIN" ]]; then
+        echo "  curl -I https://$DOMAIN/health"
+    fi
+}
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+    fail "This updater is intended for Ubuntu/Linux servers."
+fi
+
+need_command sudo
+need_command sed
+need_command chmod
+need_command systemctl
+
+download_installer
+
+say "Running release installer"
+SDAC_APP_DIR="$APP_DIR" \
+SDAC_APP_USER="$APP_USER" \
+SDAC_CREATE_APP_USER="${SDAC_CREATE_APP_USER:-0}" \
+SDAC_ENV_FILE="$ENV_FILE" \
+SDAC_DASHBOARD_BIND="$DASHBOARD_BIND" \
+"$INSTALLER_PATH"
+
+restart_services
+run_optional_checks
+print_summary

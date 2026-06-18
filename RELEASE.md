@@ -1,12 +1,14 @@
-# SDAC Bot Version 2.1
+# SDAC Bot Version 2.2
 
 Date: 2026-06-18
 
-Version 2.1 focuses on production polish, safer cross-platform installers, and
-admin maintenance tools.
+Version 2.2 focuses on one-command server updates and clearer operator docs.
 
 Included:
 
+- standalone Ubuntu updater release asset
+- one-stop GitHub update script with systemd reload, service restarts, and optional checks
+- expanded README with command directory
 - Linux single-file installer
 - Windows single-file installer
 - GitHub Actions release workflow with Linux installer smoke test

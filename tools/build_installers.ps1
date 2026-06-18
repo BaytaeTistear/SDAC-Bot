@@ -39,6 +39,7 @@ function Copy-PayloadFiles {
         "scripts\check_production.sh",
         "scripts\migrate_database.py",
         "scripts\test_restore.sh",
+        "scripts\update_from_github.sh",
         "systemd\sdac-bot.service.template",
         "systemd\sdac-dashboard.service.template",
         "systemd\sdac-journald.conf",
@@ -795,6 +796,18 @@ pause
     Remove-Item -LiteralPath $sourcePath -Force
 }
 
+function Copy-ReleaseHelperScripts {
+    $source = Join-Path $Root "scripts\update_from_github.sh"
+    $target = Join-Path $Dist "SDAC-Bot-Ubuntu-Update.sh"
+    $content = [IO.File]::ReadAllText($source)
+    $content = $content -replace "`r`n", "`n" -replace "`r", "`n"
+    [IO.File]::WriteAllText(
+        $target,
+        $content,
+        [Text.UTF8Encoding]::new($false)
+    )
+}
+
 New-Item -ItemType Directory -Force -Path $Dist | Out-Null
 $payloadRoot = Join-Path $Dist "payload-root"
 Copy-PayloadFiles -PayloadRoot $payloadRoot
@@ -807,6 +820,8 @@ New-LinuxInstaller `
 New-WindowsInstaller `
     -PayloadRoot $payloadRoot `
     -OutputPath (Join-Path $Dist "SDAC-Bot-Windows-Installer.exe")
+
+Copy-ReleaseHelperScripts
 
 Remove-Item -LiteralPath $payloadRoot -Recurse -Force
 

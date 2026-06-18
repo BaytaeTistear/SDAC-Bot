@@ -38,7 +38,23 @@ Keep these on the Ubuntu server:
 
 ## Update
 
-After uploading changed files:
+Recommended GitHub update path:
+
+```bash
+cd /tmp
+rm -f SDAC-Bot-Ubuntu-Update.sh
+curl -fsSL https://github.com/eatyba12/SDAC-Bot/releases/download/version-2.2/SDAC-Bot-Ubuntu-Update.sh -o SDAC-Bot-Ubuntu-Update.sh
+chmod +x SDAC-Bot-Ubuntu-Update.sh
+
+SDAC_RELEASE_TAG=version-2.2 \
+SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot \
+SDAC_APP_USER=ubuntu \
+SDAC_ENV_FILE=/etc/sdac-bot/sdac.env \
+SDAC_DOMAIN=freethefishies.us.to \
+./SDAC-Bot-Ubuntu-Update.sh
+```
+
+After manually uploading changed files:
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot

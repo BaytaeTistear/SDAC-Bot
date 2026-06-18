@@ -55,6 +55,7 @@ jobs:
           path: |
             dist/SDAC-Bot-Linux-Installer.sh
             dist/SDAC-Bot-Windows-Installer.exe
+            dist/SDAC-Bot-Ubuntu-Update.sh
 
   linux-installer-smoke-test:
     name: Linux Installer Smoke Test
@@ -72,6 +73,11 @@ jobs:
             echo "Linux installer contains CRLF line endings."
             exit 1
           fi
+          if grep -q $'\r' artifacts/SDAC-Bot-Ubuntu-Update.sh; then
+            echo "Ubuntu updater contains CRLF line endings."
+            exit 1
+          fi
+          bash -n artifacts/SDAC-Bot-Ubuntu-Update.sh
           chmod +x artifacts/SDAC-Bot-Linux-Installer.sh
           export SDAC_APP_DIR="$RUNNER_TEMP/sdac-smoke"
           export SDAC_APP_USER="$(id -un)"
