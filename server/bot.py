@@ -2,8 +2,10 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
+import tempfile
 import time
 import traceback
 from contextlib import contextmanager
@@ -69,6 +71,11 @@ DEFAULT_CONFIG = {
         "orphan_media_cleanup_enabled": True,
         "audit_retention_days": 365,
         "pending_submission_retention_hours": 48,
+        "media_warning_bytes": 5 * 1024 * 1024 * 1024,
+        "database_warning_bytes": 512 * 1024 * 1024,
+        "restore_test_enabled": True,
+        "restore_test_weekday": "sunday",
+        "restore_test_time_utc": "03:30",
     },
 }
 
@@ -102,6 +109,7 @@ REQUIRED_TABLES = {
     "monthly_submission_top",
     "schema_version",
     "rate_limit_events",
+    "restore_test_runs",
 }
 
 
@@ -342,6 +350,15 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS restore_test_runs (
+                run_key TEXT PRIMARY KEY,
+                backup_name TEXT,
+                status TEXT,
+                details TEXT,
+                created_at TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS guess_games (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 guild_id TEXT,
@@ -570,6 +587,10 @@ def initialize_database():
             CREATE INDEX IF NOT EXISTS idx_admin_audit_log_action
             ON admin_audit_log (action, guild_id)
         """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_restore_test_runs_created
+            ON restore_test_runs (created_at)
+        """)
         apply_database_migrations(connection)
 
 
@@ -735,6 +756,17 @@ def cleanup_old_database_backups():
             pass
 
 
+def latest_database_backup():
+    if not BACKUP_DIR.exists():
+        return None
+    backups = sorted(
+        BACKUP_DIR.glob("sdac-*.db"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return backups[0] if backups else None
+
+
 def create_database_backup(label):
     if not DB_FILE.exists():
         return None, False, "Database file does not exist."
@@ -755,6 +787,90 @@ def create_database_backup(label):
 
     cleanup_old_database_backups()
     return backup_path, True, "Backup created."
+
+
+def validate_database_backup(backup_path):
+    backup_path = Path(backup_path) if backup_path else None
+    if backup_path is None or not backup_path.is_file():
+        return False, "Backup file was not found."
+
+    with tempfile.TemporaryDirectory(prefix="sdac-restore-test-") as temp_dir:
+        restore_path = Path(temp_dir) / "sdac.db"
+        shutil.copy2(backup_path, restore_path)
+        connection = sqlite3.connect(restore_path)
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.execute("PRAGMA busy_timeout = 30000")
+            connection.execute("PRAGMA foreign_keys = ON")
+            apply_database_migrations(connection)
+            integrity = connection.execute(
+                "PRAGMA integrity_check"
+            ).fetchone()[0]
+            if integrity != "ok":
+                return False, f"Integrity check failed: {integrity}"
+            tables = {
+                row["name"]
+                for row in connection.execute("""
+                    SELECT name
+                    FROM sqlite_master
+                    WHERE type = 'table'
+                """).fetchall()
+            }
+            required = {
+                "submissions",
+                "admin_audit_log",
+                "schema_version",
+            }
+            missing = sorted(required - tables)
+            if missing:
+                return (
+                    False,
+                    "Missing required table(s): " + ", ".join(missing),
+                )
+            connection.commit()
+        finally:
+            connection.close()
+    return True, f"Restore test passed for {backup_path.name}."
+
+
+def record_restore_test_run(run_key, backup_path, status, details):
+    with database() as connection:
+        connection.execute("""
+            INSERT INTO restore_test_runs (
+                run_key, backup_name, status, details, created_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(run_key) DO UPDATE SET
+                backup_name = excluded.backup_name,
+                status = excluded.status,
+                details = excluded.details,
+                created_at = excluded.created_at
+        """, (
+            run_key,
+            backup_path.name if backup_path else "",
+            status,
+            details,
+            utc_now_iso(),
+        ))
+
+
+def restore_test_has_run(run_key):
+    with database() as connection:
+        row = connection.execute("""
+            SELECT 1
+            FROM restore_test_runs
+            WHERE run_key = ?
+            LIMIT 1
+        """, (run_key,)).fetchone()
+    return row is not None
+
+
+def run_restore_test(run_key):
+    backup_path = latest_database_backup()
+    passed, details = validate_database_backup(backup_path)
+    status = "passed" if passed else "failed"
+    record_restore_test_run(run_key, backup_path, status, details)
+    return passed, backup_path, details
 
 
 def create_daily_database_backup():
@@ -971,6 +1087,40 @@ def format_bytes(size):
     if size < 1024 * 1024:
         return f"{size / 1024:.1f} KB"
     return f"{size / (1024 * 1024):.1f} MB"
+
+
+def directory_size(path):
+    total = 0
+    if not path.exists():
+        return 0
+    for item in path.rglob("*"):
+        if not item.is_file():
+            continue
+        try:
+            total += item.stat().st_size
+        except OSError:
+            pass
+    return total
+
+
+def storage_warning_lines():
+    lines = []
+    media_limit = configured_limit("media_warning_bytes", 0)
+    database_limit = configured_limit("database_warning_bytes", 0)
+    media_size = directory_size(MEDIA_DIR)
+    database_size = DB_FILE.stat().st_size if DB_FILE.exists() else 0
+
+    if media_limit and media_size >= media_limit:
+        lines.append(
+            f"Media folder is {format_bytes(media_size)} "
+            f"(warning at {format_bytes(media_limit)})."
+        )
+    if database_limit and database_size >= database_limit:
+        lines.append(
+            f"Database is {format_bytes(database_size)} "
+            f"(warning at {format_bytes(database_limit)})."
+        )
+    return lines
 
 
 def probe_media_duration(path):
@@ -1338,6 +1488,83 @@ def submission_content(row):
     )
 
 
+REQUIRED_BOT_PERMISSIONS = (
+    ("view_channel", "View Channel"),
+    ("send_messages", "Send Messages"),
+    ("attach_files", "Attach Files"),
+    ("read_message_history", "Read Message History"),
+)
+OPTIONAL_BOT_PERMISSIONS = (
+    ("manage_messages", "Manage Messages"),
+)
+
+
+def configured_channel_ids(guild_config):
+    channel_ids = []
+    for key in (
+        "submit_channel",
+        "daily_top_channel",
+        "game_summary_channel",
+        "error_channel",
+        "approval_channel",
+    ):
+        channel_id = guild_config.get(key)
+        if channel_id:
+            channel_ids.append(channel_id)
+    channel_ids.extend((guild_config.get("categories") or {}).values())
+
+    deduped = []
+    seen = set()
+    for channel_id in channel_ids:
+        if str(channel_id) in seen:
+            continue
+        seen.add(str(channel_id))
+        deduped.append(channel_id)
+    return deduped
+
+
+async def resolve_guild_channel(guild, channel_id):
+    try:
+        channel_id = int(channel_id)
+    except (TypeError, ValueError):
+        return None
+    channel = guild.get_channel(channel_id)
+    if channel is not None:
+        return channel
+    try:
+        channel = await bot.fetch_channel(channel_id)
+    except discord.HTTPException:
+        return None
+    if getattr(channel, "guild", None) and channel.guild.id == guild.id:
+        return channel
+    return None
+
+
+def bot_permission_summary(guild, channel):
+    bot_member = guild.me
+    if bot_member is None and bot.user is not None:
+        bot_member = guild.get_member(bot.user.id)
+    if bot_member is None:
+        return "Bot member was not found in this server."
+
+    permissions = channel.permissions_for(bot_member)
+    missing_required = [
+        label
+        for attribute, label in REQUIRED_BOT_PERMISSIONS
+        if not getattr(permissions, attribute, False)
+    ]
+    missing_optional = [
+        label
+        for attribute, label in OPTIONAL_BOT_PERMISSIONS
+        if not getattr(permissions, attribute, False)
+    ]
+    if missing_required:
+        return "Missing required: " + ", ".join(missing_required)
+    if missing_optional:
+        return "Usable, recommended: " + ", ".join(missing_optional)
+    return "OK"
+
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
@@ -1351,6 +1578,7 @@ active_submission_sessions = set()
 slash_commands_synced = False
 persistent_views_registered = False
 last_backup_date = None
+last_storage_warning_date = None
 
 
 def refresh_known_guilds():
@@ -2081,6 +2309,57 @@ async def settings(interaction):
     guild_config = get_guild_config(interaction.guild_id, create=False)
     await interaction.response.send_message(
         "\n".join(settings_lines(guild_config)),
+        ephemeral=True,
+    )
+
+
+@tree.command(name="checkpermissions", description="Check SDAC bot channel permissions")
+@app_commands.guild_only()
+@app_commands.describe(channel="Optional channel to check")
+async def checkpermissions(
+    interaction,
+    channel: Optional[discord.TextChannel] = None,
+):
+    if not await require_admin(interaction):
+        return
+
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    channel_ids = configured_channel_ids(guild_config)
+    if channel is not None:
+        channel_ids.insert(0, channel.id)
+    if not channel_ids and isinstance(interaction.channel, discord.TextChannel):
+        channel_ids.append(interaction.channel.id)
+
+    lines = ["**SDAC Permission Check**"]
+    if not channel_ids:
+        lines.append("No configured text channels were found.")
+
+    seen = set()
+    for channel_id in channel_ids:
+        if str(channel_id) in seen:
+            continue
+        seen.add(str(channel_id))
+        guild_channel = await resolve_guild_channel(
+            interaction.guild,
+            channel_id,
+        )
+        if guild_channel is None:
+            lines.append(
+                f"- `{channel_id}`: channel was not found or is not visible."
+            )
+            continue
+        summary = bot_permission_summary(interaction.guild, guild_channel)
+        lines.append(f"- {guild_channel.mention}: {summary}")
+
+    audit_interaction(
+        interaction,
+        "check_permissions",
+        "guild",
+        interaction.guild_id,
+        f"Checked {len(seen)} channel(s).",
+    )
+    await interaction.response.send_message(
+        "\n".join(lines)[:1900],
         ephemeral=True,
     )
 
@@ -3833,6 +4112,60 @@ async def before_backup_scheduler():
     await bot.wait_until_ready()
 
 
+def restore_test_weekday_index():
+    day = normalize_weekday(config["limits"].get("restore_test_weekday"))
+    if day is None:
+        day = DEFAULT_CONFIG["limits"]["restore_test_weekday"]
+    return WEEKDAY_NAMES.index(day)
+
+
+def restore_test_time_minutes():
+    raw_value = str(
+        config["limits"].get(
+            "restore_test_time_utc",
+            DEFAULT_CONFIG["limits"]["restore_test_time_utc"],
+        )
+    )
+    if not re.match(r"^\d{2}:\d{2}$", raw_value):
+        raw_value = DEFAULT_CONFIG["limits"]["restore_test_time_utc"]
+    hour, minute = [int(part) for part in raw_value.split(":")]
+    if hour > 23 or minute > 59:
+        hour, minute = [int(part) for part in (
+            DEFAULT_CONFIG["limits"]["restore_test_time_utc"].split(":")
+        )]
+    return hour * 60 + minute
+
+
+@tasks.loop(minutes=30)
+async def restore_test_scheduler():
+    try:
+        if not config["limits"].get("restore_test_enabled", True):
+            return
+        now = datetime.now(timezone.utc)
+        if now.weekday() != restore_test_weekday_index():
+            return
+        if now.hour * 60 + now.minute < restore_test_time_minutes():
+            return
+        run_key = f"restore:{now.strftime('%G-W%V')}"
+        if restore_test_has_run(run_key):
+            return
+        passed, backup_path, details = run_restore_test(run_key)
+        if passed:
+            print(f"Restore test passed: {details}", flush=True)
+            return
+        target = backup_path.name if backup_path else "no backup"
+        await send_system_error_notification(
+            f"Weekly restore test failed for `{target}`: `{details}`"
+        )
+    except Exception as error:
+        await report_background_error("restore_test_scheduler", error)
+
+
+@restore_test_scheduler.before_loop
+async def before_restore_test_scheduler():
+    await bot.wait_until_ready()
+
+
 @tasks.loop(minutes=10)
 async def guess_summary_scheduler():
     try:
@@ -3869,6 +4202,29 @@ async def cleanup_scheduler():
 
 @cleanup_scheduler.before_loop
 async def before_cleanup_scheduler():
+    await bot.wait_until_ready()
+
+
+@tasks.loop(hours=6)
+async def storage_warning_scheduler():
+    global last_storage_warning_date
+    try:
+        today = datetime.now(timezone.utc).date().isoformat()
+        if last_storage_warning_date == today:
+            return
+        warnings = storage_warning_lines()
+        if not warnings:
+            return
+        last_storage_warning_date = today
+        await send_system_error_notification(
+            "Storage warning:\n" + "\n".join(f"- {line}" for line in warnings)
+        )
+    except Exception as error:
+        await report_background_error("storage_warning_scheduler", error)
+
+
+@storage_warning_scheduler.before_loop
+async def before_storage_warning_scheduler():
     await bot.wait_until_ready()
 
 
@@ -3923,12 +4279,16 @@ async def on_ready():
         weekly_top_scheduler.start()
     if not backup_scheduler.is_running():
         backup_scheduler.start()
+    if not restore_test_scheduler.is_running():
+        restore_test_scheduler.start()
     if not guess_summary_scheduler.is_running():
         guess_summary_scheduler.start()
     if not monthly_leaderboard_scheduler.is_running():
         monthly_leaderboard_scheduler.start()
     if not cleanup_scheduler.is_running():
         cleanup_scheduler.start()
+    if not storage_warning_scheduler.is_running():
+        storage_warning_scheduler.start()
     print(f"Logged in as {bot.user}", flush=True)
     print(f"Using database: {DB_FILE}", flush=True)
     print(f"Using config: {CONFIG_FILE}", flush=True)

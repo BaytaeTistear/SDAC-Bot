@@ -22,6 +22,7 @@ function Copy-PayloadFiles {
         "DISCORD_PERMISSIONS.md",
         "PRODUCTION_NEXT.md",
         "MONITORING.md",
+        "POSTGRESQL.md",
         "bot.py",
         "dashboard.py",
         "config.py",
@@ -133,6 +134,7 @@ set -Eeuo pipefail
 # Optional environment overrides:
 #   SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot
 #   SDAC_APP_USER=ubuntu
+#   SDAC_CREATE_APP_USER=1         # create SDAC_APP_USER if it is missing
 #   SDAC_ENV_FILE=/etc/sdac-bot/sdac.env
 #   SDAC_DASHBOARD_BIND=127.0.0.1:5000
 #   SDAC_SKIP_SERVICES=1            # extract and compile only
@@ -140,6 +142,7 @@ set -Eeuo pipefail
 
 APP_DIR="`${SDAC_APP_DIR:-/home/ubuntu/discord-screenshot-bot}"
 APP_USER="`${SDAC_APP_USER:-`$(id -un)}"
+CREATE_APP_USER="`${SDAC_CREATE_APP_USER:-0}"
 ENV_FILE="`${SDAC_ENV_FILE:-/etc/sdac-bot/sdac.env}"
 DASHBOARD_BIND="`${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}"
 SKIP_SERVICES="`${SDAC_SKIP_SERVICES:-0}"
@@ -169,6 +172,15 @@ need_command base64
 need_command tar
 need_command sudo
 
+if ! id "`$APP_USER" >/dev/null 2>&1; then
+    if [[ "`$CREATE_APP_USER" == "1" ]]; then
+        say "Creating system user `$APP_USER"
+        sudo useradd --system --home-dir "`$APP_DIR" --shell /usr/sbin/nologin --no-create-home "`$APP_USER"
+    else
+        fail "User `$APP_USER does not exist. Create it, use SDAC_APP_USER=`$(id -un), or set SDAC_CREATE_APP_USER=1."
+    fi
+fi
+
 if ! command -v python3 >/dev/null 2>&1; then
     if command -v apt-get >/dev/null 2>&1; then
         say "Installing Python system packages"
@@ -191,9 +203,9 @@ fi
 
 say "Preparing `$APP_DIR"
 sudo mkdir -p "`$APP_DIR"
-if id "`$APP_USER" >/dev/null 2>&1; then
-    sudo chown -R "`$APP_USER":"`$APP_USER" "`$APP_DIR" 2>/dev/null || sudo chown -R "`$APP_USER" "`$APP_DIR"
-fi
+CURRENT_USER="`$(id -un)"
+CURRENT_GROUP="`$(id -gn)"
+sudo chown -R "`$CURRENT_USER":"`$CURRENT_GROUP" "`$APP_DIR" 2>/dev/null || sudo chown -R "`$CURRENT_USER" "`$APP_DIR"
 mkdir -p "`$APP_DIR/media" "`$APP_DIR/backups" "`$APP_DIR/deploy-backups"
 
 if [[ -f "`$APP_DIR/bot.py" || -f "`$APP_DIR/dashboard.py" ]]; then
@@ -212,6 +224,7 @@ if [[ -f "`$APP_DIR/bot.py" || -f "`$APP_DIR/dashboard.py" ]]; then
         DEPLOY.md \
         PRODUCTION_NEXT.md \
         MONITORING.md \
+        POSTGRESQL.md \
         DISCORD_PERMISSIONS.md
     do
         if [[ -e "`$APP_DIR/`$file" ]]; then
@@ -467,7 +480,7 @@ $chunkLiteral
             "bot.py", "dashboard.py", "config.py", "requirements.txt",
             "database_migrations.py", "observability.py",
             "README.md", "HOSTING.md", "DEPLOY.md", "PRODUCTION_NEXT.md",
-            "MONITORING.md", "DISCORD_PERMISSIONS.md", ".env"
+            "MONITORING.md", "POSTGRESQL.md", "DISCORD_PERMISSIONS.md", ".env"
         };
         foreach (string file in files)
         {
@@ -571,9 +584,19 @@ $chunkLiteral
         ""max_total_bytes"": 52428800,
         ""max_text_length"": 1500,
         ""wrong_guess_timeout_seconds"": 600,
+        ""submission_user_cooldown_seconds"": 30,
+        ""submission_category_cooldown_seconds"": 5,
+        ""guess_command_cooldown_seconds"": 2,
+        ""admin_action_cooldown_seconds"": 1,
+        ""rate_limit_retention_days"": 30,
         ""orphan_media_cleanup_enabled"": true,
         ""audit_retention_days"": 365,
-        ""pending_submission_retention_hours"": 48
+        ""pending_submission_retention_hours"": 48,
+        ""media_warning_bytes"": 5368709120,
+        ""database_warning_bytes"": 536870912,
+        ""restore_test_enabled"": true,
+        ""restore_test_weekday"": ""sunday"",
+        ""restore_test_time_utc"": ""03:30""
     }
 }
 ", new UTF8Encoding(false));

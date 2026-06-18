@@ -3,9 +3,11 @@ set -Eeuo pipefail
 
 APP_DIR="${SDAC_APP_DIR:-$(pwd)}"
 APP_USER="${SDAC_APP_USER:-$(id -un)}"
+CREATE_APP_USER="${SDAC_CREATE_APP_USER:-0}"
 DASHBOARD_BIND="${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}"
 ENV_DIR="${SDAC_ENV_DIR:-/etc/sdac-bot}"
 ENV_FILE="${SDAC_ENV_FILE:-$ENV_DIR/sdac.env}"
+SKIP_SERVICES="${SDAC_SKIP_SERVICES:-0}"
 
 if [[ ! -f "$APP_DIR/bot.py" || ! -f "$APP_DIR/dashboard.py" ]]; then
     echo "Run this script from the SDAC bot folder, or set SDAC_APP_DIR." >&2
@@ -25,6 +27,17 @@ fi
 echo "Setting up SDAC in $APP_DIR as user $APP_USER"
 echo "Using environment file $ENV_FILE"
 
+if ! id "$APP_USER" >/dev/null 2>&1; then
+    if [[ "$CREATE_APP_USER" == "1" ]]; then
+        echo "Creating system user $APP_USER"
+        sudo useradd --system --home-dir "$APP_DIR" --shell /usr/sbin/nologin --no-create-home "$APP_USER"
+    else
+        echo "User $APP_USER does not exist." >&2
+        echo "Create it first, use SDAC_APP_USER=$(id -un), or set SDAC_CREATE_APP_USER=1." >&2
+        exit 1
+    fi
+fi
+
 mkdir -p "$APP_DIR/media" "$APP_DIR/backups"
 
 if [[ ! -f "$APP_DIR/config.json" ]]; then
@@ -36,9 +49,19 @@ if [[ ! -f "$APP_DIR/config.json" ]]; then
         "max_total_bytes": 52428800,
         "max_text_length": 1500,
         "wrong_guess_timeout_seconds": 600,
+        "submission_user_cooldown_seconds": 30,
+        "submission_category_cooldown_seconds": 5,
+        "guess_command_cooldown_seconds": 2,
+        "admin_action_cooldown_seconds": 1,
+        "rate_limit_retention_days": 30,
         "orphan_media_cleanup_enabled": true,
         "audit_retention_days": 365,
-        "pending_submission_retention_hours": 48
+        "pending_submission_retention_hours": 48,
+        "media_warning_bytes": 5368709120,
+        "database_warning_bytes": 536870912,
+        "restore_test_enabled": true,
+        "restore_test_weekday": "sunday",
+        "restore_test_time_utc": "03:30"
     }
 }
 JSON
@@ -109,6 +132,14 @@ else
 fi
 "$APP_DIR/venv/bin/python" -m py_compile "$APP_DIR/bot.py" "$APP_DIR/dashboard.py"
 "$APP_DIR/venv/bin/python" -m py_compile "$APP_DIR/config.py" "$APP_DIR/database_migrations.py" "$APP_DIR/observability.py"
+
+sudo chown -R "$APP_USER:$APP_USER" "$APP_DIR" 2>/dev/null || sudo chown -R "$APP_USER" "$APP_DIR"
+
+if [[ "$SKIP_SERVICES" == "1" ]]; then
+    echo
+    echo "SDAC files compiled. Skipping service installation because SDAC_SKIP_SERVICES=1."
+    exit 0
+fi
 
 render_service() {
     local template="$1"

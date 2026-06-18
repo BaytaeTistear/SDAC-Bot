@@ -4,8 +4,10 @@ import math
 import os
 import json
 import re
+import shutil
 import sqlite3
 import secrets
+import tempfile
 import time
 from contextlib import closing, contextmanager
 from datetime import datetime, timezone
@@ -73,6 +75,11 @@ DEFAULT_LIMITS = {
     "orphan_media_cleanup_enabled": True,
     "audit_retention_days": 365,
     "pending_submission_retention_hours": 48,
+    "media_warning_bytes": 5 * 1024 * 1024 * 1024,
+    "database_warning_bytes": 512 * 1024 * 1024,
+    "restore_test_enabled": True,
+    "restore_test_weekday": "sunday",
+    "restore_test_time_utc": "03:30",
 }
 
 
@@ -283,6 +290,8 @@ HTML = """
         <a href="{{ url_for('achievements', key=admin_key if is_admin else None) }}">Achievements</a>
         {% if is_admin %}
             <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+            <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+            <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
             <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
             <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
             <a href="{{ url_for('admin_logout') }}">Log out</a>
@@ -1110,6 +1119,8 @@ SETTINGS_HTML = """
     <nav>
         <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
         <a href="{{ url_for('guessing_leaderboard', key=admin_key) }}">Guessing leaderboard</a>
+        <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
         <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
         <a href="{{ url_for('admin_health', key=admin_key) }}">Health</a>
@@ -1174,6 +1185,22 @@ SETTINGS_HTML = """
                     <tr><th>Rate-limit retention days</th><td><input name="rate_limit_retention_days" value="{{ limits.get('rate_limit_retention_days', 30) }}"></td></tr>
                     <tr><th>Audit retention days</th><td><input name="audit_retention_days" value="{{ limits.get('audit_retention_days', 365) }}"></td></tr>
                     <tr><th>Pending submission retention hours</th><td><input name="pending_submission_retention_hours" value="{{ limits.get('pending_submission_retention_hours', 48) }}"></td></tr>
+                    <tr><th>Media warning bytes</th><td><input name="media_warning_bytes" value="{{ limits.get('media_warning_bytes', 5368709120) }}"></td></tr>
+                    <tr><th>Database warning bytes</th><td><input name="database_warning_bytes" value="{{ limits.get('database_warning_bytes', 536870912) }}"></td></tr>
+                    <tr><th>Restore test weekday</th><td>
+                        <select name="restore_test_weekday">
+                            {% for day in weekdays %}
+                                <option value="{{ day }}" {% if limits.get('restore_test_weekday', 'sunday') == day %}selected{% endif %}>{{ day.title() }}</option>
+                            {% endfor %}
+                        </select>
+                    </td></tr>
+                    <tr><th>Restore test time UTC</th><td><input name="restore_test_time_utc" value="{{ limits.get('restore_test_time_utc', '03:30') }}" placeholder="HH:MM"></td></tr>
+                    <tr><th>Restore test</th><td>
+                        <select name="restore_test_enabled">
+                            <option value="1" {% if limits.get('restore_test_enabled', True) %}selected{% endif %}>Enabled</option>
+                            <option value="0" {% if not limits.get('restore_test_enabled', True) %}selected{% endif %}>Disabled</option>
+                        </select>
+                    </td></tr>
                     <tr><th>Orphan media cleanup</th><td>
                         <select name="orphan_media_cleanup_enabled">
                             <option value="1" {% if limits.get('orphan_media_cleanup_enabled', True) %}selected{% endif %}>Enabled</option>
@@ -1326,6 +1353,219 @@ SETTINGS_HTML = """
 """
 
 
+MAINTENANCE_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Maintenance</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1000px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        button { background: #7c9cff; border: 0; border-radius: 7px; color: #0b1020; cursor: pointer; font-weight: bold; padding: 9px 10px; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin: 0 auto 20px; padding: 12px; text-align: center; }
+        .notice.error { border-color: #e45d68; }
+        .ok { color: #63c174; font-weight: bold; }
+        .bad { color: #e45d68; font-weight: bold; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Maintenance</h1>
+    <nav>
+        <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
+        <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
+        <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
+        <a href="{{ url_for('admin_health', key=admin_key) }}">Health JSON</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+
+    {% if notice %}
+        <div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>
+    {% endif %}
+
+    {% if warnings %}
+        <section class="panel">
+            <h2>Warnings</h2>
+            {% for warning in warnings %}
+                <p class="notice error">{{ warning }}</p>
+            {% endfor %}
+        </section>
+    {% endif %}
+
+    <section class="panel">
+        <h2>Runtime</h2>
+        <table>
+            <tbody>
+                <tr><th>Release</th><td>{{ release }}</td></tr>
+                <tr><th>Server name</th><td>{{ server_name }}</td></tr>
+                <tr><th>Started</th><td>{{ started_at }}</td></tr>
+                <tr><th>Uptime</th><td>{{ uptime }}</td></tr>
+                <tr><th>Database</th><td><code>{{ db_file }}</code></td></tr>
+                <tr><th>Database size</th><td>{{ db_size }}</td></tr>
+                <tr><th>Media files</th><td>{{ media_files }}</td></tr>
+                <tr><th>Media size</th><td>{{ media_size }}</td></tr>
+                <tr><th>Cache entries</th><td>{{ cache_entries }}</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h2>Actions</h2>
+        <form method="post">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button name="action" value="backup_now" type="submit">Create Backup Now</button>
+            <button name="action" value="restore_test" type="submit">Run Restore Test</button>
+        </form>
+    </section>
+
+    <section class="panel">
+        <h2>Recent Restore Tests</h2>
+        <table>
+            <thead><tr><th>Run</th><th>Backup</th><th>Status</th><th>Details</th><th>Created</th></tr></thead>
+            <tbody>
+                {% for row in restore_runs %}
+                    <tr>
+                        <td><code>{{ row.run_key }}</code></td>
+                        <td>{{ row.backup_name }}</td>
+                        <td class="{{ 'ok' if row.status == 'passed' else 'bad' }}">{{ row.status }}</td>
+                        <td>{{ row.details }}</td>
+                        <td>{{ row.created_at }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="muted">No restore tests have run yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h2>Recent Backups</h2>
+        <table>
+            <thead><tr><th>File</th><th>Size</th><th>Modified</th></tr></thead>
+            <tbody>
+                {% for backup in backups %}
+                    <tr><td><code>{{ backup.name }}</code></td><td>{{ backup.size }}</td><td>{{ backup.modified }}</td></tr>
+                {% else %}
+                    <tr><td colspan="3" class="muted">No backups found yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+MODERATION_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Moderation</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1100px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+        img, video { max-height: 110px; max-width: 180px; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Moderation</h1>
+    <nav>
+        <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+
+    <section class="panel">
+        <h2>Pending Queue</h2>
+        <table>
+            <thead><tr><th>ID</th><th>Server</th><th>User</th><th>Category</th><th>Media</th><th>Text</th><th>Created</th></tr></thead>
+            <tbody>
+                {% for post in pending_posts %}
+                    <tr>
+                        <td><a href="{{ url_for('index', key=admin_key, status='pending', q=post.id) }}">{{ post.id }}</a></td>
+                        <td>{{ guild_names.get(post.guild_id, post.guild_id) }}</td>
+                        <td>{{ post.username }}</td>
+                        <td>{{ post.category }}</td>
+                        <td>
+                            {% for item in post.media[:2] %}
+                                {% if item.type == "image" %}
+                                    <img src="{{ item.url }}" alt="{{ item.name }}">
+                                {% elif item.type == "video" %}
+                                    <video controls src="{{ item.url }}"></video>
+                                {% elif item.type == "audio" %}
+                                    <audio controls src="{{ item.url }}"></audio>
+                                {% else %}
+                                    <a href="{{ item.url }}">{{ item.name }}</a>
+                                {% endif %}
+                            {% else %}
+                                <span class="muted">No media found</span>
+                            {% endfor %}
+                        </td>
+                        <td>{{ post.message_text or "" }}</td>
+                        <td>{{ post.created_at or post.submitted_at }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="7" class="muted">No pending submissions.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h2>Recent Moderation History</h2>
+        <table>
+            <thead><tr><th>Submission</th><th>Server</th><th>Action</th><th>Actor</th><th>Details</th><th>Created</th></tr></thead>
+            <tbody>
+                {% for row in history %}
+                    <tr>
+                        <td>{{ row.submission_id }}</td>
+                        <td>{{ guild_names.get(row.guild_id, row.guild_id) }}</td>
+                        <td><code>{{ row.action }}</code></td>
+                        <td>{{ row.actor_username }}</td>
+                        <td>{{ row.details }}</td>
+                        <td>{{ row.created_at }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="6" class="muted">No moderation history yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
 ONBOARDING_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -1380,6 +1620,8 @@ ONBOARDING_HTML = """
     <nav>
         <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
         <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
     </nav>
@@ -1500,6 +1742,115 @@ def media_directory_size():
     return media_directory_stats()["bytes"]
 
 
+def latest_database_backup():
+    if not BACKUP_DIR.exists():
+        return None
+    backups = sorted(
+        BACKUP_DIR.glob("sdac-*.db"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return backups[0] if backups else None
+
+
+def validate_database_backup(backup_path):
+    backup_path = Path(backup_path) if backup_path else None
+    if backup_path is None or not backup_path.is_file():
+        return False, "Backup file was not found."
+
+    with tempfile.TemporaryDirectory(prefix="sdac-restore-test-") as temp_dir:
+        restore_path = Path(temp_dir) / "sdac.db"
+        shutil.copy2(backup_path, restore_path)
+        connection = sqlite3.connect(restore_path)
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.execute("PRAGMA busy_timeout = 30000")
+            connection.execute("PRAGMA foreign_keys = ON")
+            apply_database_migrations(connection)
+            integrity = connection.execute(
+                "PRAGMA integrity_check"
+            ).fetchone()[0]
+            if integrity != "ok":
+                return False, f"Integrity check failed: {integrity}"
+            tables = {
+                row["name"]
+                for row in connection.execute("""
+                    SELECT name
+                    FROM sqlite_master
+                    WHERE type = 'table'
+                """).fetchall()
+            }
+            required = {
+                "submissions",
+                "admin_audit_log",
+                "schema_version",
+            }
+            missing = sorted(required - tables)
+            if missing:
+                return (
+                    False,
+                    "Missing required table(s): " + ", ".join(missing),
+                )
+            connection.commit()
+        finally:
+            connection.close()
+    return True, f"Restore test passed for {backup_path.name}."
+
+
+def record_restore_test_run(run_key, backup_path, status, details):
+    with database() as connection:
+        connection.execute("""
+            INSERT INTO restore_test_runs (
+                run_key, backup_name, status, details, created_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(run_key) DO UPDATE SET
+                backup_name = excluded.backup_name,
+                status = excluded.status,
+                details = excluded.details,
+                created_at = excluded.created_at
+        """, (
+            run_key,
+            backup_path.name if backup_path else "",
+            status,
+            details,
+            utc_now_iso(),
+        ))
+
+
+def run_manual_restore_test():
+    backup_path = latest_database_backup()
+    passed, details = validate_database_backup(backup_path)
+    status = "passed" if passed else "failed"
+    run_key = datetime.now(timezone.utc).strftime("manual:%Y-%m-%d-%H%M%S")
+    record_restore_test_run(run_key, backup_path, status, details)
+    return passed, backup_path, details
+
+
+def storage_warnings(config_data=None):
+    config_data = config_data or load_config()
+    limits = config_data.get("limits", {})
+    warnings = []
+    try:
+        media_limit = int(limits.get("media_warning_bytes") or 0)
+        database_limit = int(limits.get("database_warning_bytes") or 0)
+    except (TypeError, ValueError):
+        return ["Storage warning thresholds must be numeric."]
+    media_size = media_directory_size()
+    database_size = DB_FILE.stat().st_size if DB_FILE.exists() else 0
+    if media_limit and media_size >= media_limit:
+        warnings.append(
+            f"Media folder is {format_bytes(media_size)} "
+            f"(warning at {format_bytes(media_limit)})."
+        )
+    if database_limit and database_size >= database_limit:
+        warnings.append(
+            f"Database is {format_bytes(database_size)} "
+            f"(warning at {format_bytes(database_limit)})."
+        )
+    return warnings
+
+
 def security_warnings():
     warnings = []
     if ADMIN_PASSWORD == ADMIN_KEY:
@@ -1522,7 +1873,6 @@ def security_warnings():
             "admin key as the password."
         )
     return warnings
-    return total
 
 
 def csv_response(filename, rows, columns):
@@ -1958,6 +2308,15 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS restore_test_runs (
+                run_key TEXT PRIMARY KEY,
+                backup_name TEXT,
+                status TEXT,
+                details TEXT,
+                created_at TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS guess_games (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 guild_id TEXT,
@@ -2128,6 +2487,10 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_admin_audit_log_action
             ON admin_audit_log (action, guild_id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_restore_test_runs_created
+            ON restore_test_runs (created_at)
         """)
         apply_database_migrations(connection)
 
@@ -2530,11 +2893,26 @@ def admin_settings():
                     "rate_limit_retention_days",
                     "audit_retention_days",
                     "pending_submission_retention_hours",
+                    "media_warning_bytes",
+                    "database_warning_bytes",
                 ):
                     value = int(request.form.get(field, "0"))
                     if value < 0:
                         raise ValueError("Limits cannot be negative.")
                     limits[field] = value
+                restore_weekday = request.form.get(
+                    "restore_test_weekday",
+                    "sunday",
+                )
+                if restore_weekday not in WEEKDAYS:
+                    raise ValueError("Invalid restore test weekday.")
+                limits["restore_test_weekday"] = restore_weekday
+                limits["restore_test_time_utc"] = validate_time(
+                    request.form.get("restore_test_time_utc")
+                )
+                limits["restore_test_enabled"] = (
+                    request.form.get("restore_test_enabled") == "1"
+                )
                 limits["orphan_media_cleanup_enabled"] = (
                     request.form.get("orphan_media_cleanup_enabled") == "1"
                 )
@@ -2649,6 +3027,7 @@ def admin_settings():
 
     config_data = load_config()
     limits = config_data.get("limits", {})
+    warnings = security_warnings() + storage_warnings(config_data)
     guilds = []
     for guild_id, guild_config in sorted(
         (config_data.get("guilds") or {}).items()
@@ -2720,9 +3099,143 @@ def admin_settings():
         guilds=guilds,
         limits=limits,
         notice=notice,
-        security_warnings=security_warnings(),
+        security_warnings=warnings,
         stats=stats,
         weekdays=WEEKDAYS,
+    )
+
+
+@app.route("/admin/maintenance", methods=["GET", "POST"])
+def admin_maintenance():
+    login_response = require_admin_login()
+    if login_response:
+        return login_response
+
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    actor_id, actor_name = web_actor()
+
+    if request.method == "POST":
+        require_csrf_token()
+        action = request.form.get("action", "")
+        if action == "backup_now":
+            label = datetime.now(timezone.utc).strftime("manual-%Y-%m-%d-%H%M%S")
+            try:
+                backup_path, created, message = create_database_backup(label)
+            except (OSError, sqlite3.Error) as backup_error:
+                backup_path = None
+                created = False
+                message = f"Backup failed: {backup_error}"
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    "maintenance_backup_manual",
+                    actor_id,
+                    actor_name,
+                    "backup",
+                    backup_path.name if backup_path else "",
+                    message,
+                )
+            return redirect(url_for(
+                "admin_maintenance",
+                key=ADMIN_KEY,
+                notice=message,
+                error=0 if created else 1,
+            ))
+        if action == "restore_test":
+            try:
+                passed, backup_path, message = run_manual_restore_test()
+            except (OSError, sqlite3.Error) as restore_error:
+                passed = False
+                backup_path = None
+                message = f"Restore test failed: {restore_error}"
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    "maintenance_restore_test",
+                    actor_id,
+                    actor_name,
+                    "backup",
+                    backup_path.name if backup_path else "",
+                    message,
+                )
+            return redirect(url_for(
+                "admin_maintenance",
+                key=ADMIN_KEY,
+                notice=message,
+                error=0 if passed else 1,
+            ))
+
+    media_stats = media_directory_stats()
+    config_data = load_config()
+    uptime_seconds = int(
+        (datetime.now(timezone.utc) - APP_STARTED_AT).total_seconds()
+    )
+    days, remainder = divmod(uptime_seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes = remainder // 60
+
+    with closing(connect_db()) as connection:
+        restore_runs = connection.execute("""
+            SELECT run_key, backup_name, status, details, created_at
+            FROM restore_test_runs
+            ORDER BY created_at DESC
+            LIMIT 10
+        """).fetchall()
+
+    return render_template_string(
+        MAINTENANCE_HTML,
+        admin_key=ADMIN_KEY,
+        backups=recent_database_backups(),
+        cache_entries=len(PUBLIC_PAGE_CACHE),
+        csrf_token=get_csrf_token(),
+        db_file=DB_FILE,
+        db_size=format_bytes(DB_FILE.stat().st_size) if DB_FILE.exists() else "0 B",
+        error=error,
+        media_files=media_stats["files"],
+        media_size=format_bytes(media_stats["bytes"]),
+        notice=notice,
+        release=os.getenv("SDAC_RELEASE") or "development",
+        restore_runs=restore_runs,
+        server_name=os.getenv("SDAC_SERVER_NAME") or "local",
+        started_at=APP_STARTED_AT.strftime("%Y-%m-%d %H:%M UTC"),
+        uptime=f"{days}d {hours}h {minutes}m",
+        warnings=security_warnings() + storage_warnings(config_data),
+    )
+
+
+@app.route("/admin/moderation")
+def admin_moderation():
+    login_response = require_admin_login()
+    if login_response:
+        return login_response
+
+    config_data = load_config()
+    guild_names = guild_name_map(config_data)
+    with closing(connect_db()) as connection:
+        pending_rows = connection.execute("""
+            SELECT *
+            FROM submissions
+            WHERE status = 'pending'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 50
+        """).fetchall()
+        history = connection.execute("""
+            SELECT guild_id, submission_id, action, actor_username,
+                   details, created_at
+            FROM moderation_history
+            ORDER BY created_at DESC, id DESC
+            LIMIT 50
+        """).fetchall()
+    pending_posts = [prepare_post(row) for row in pending_rows]
+    return render_template_string(
+        MODERATION_HTML,
+        admin_key=ADMIN_KEY,
+        guild_names=guild_names,
+        history=history,
+        pending_posts=pending_posts,
     )
 
 

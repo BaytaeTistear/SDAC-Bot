@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import sqlite3
 
 
-DATABASE_SCHEMA_VERSION = 3
+DATABASE_SCHEMA_VERSION = 4
 
 
 def utc_now_iso():
@@ -104,8 +104,25 @@ def migration_3_media_metadata_and_rate_limits(connection):
     """)
 
 
+def migration_4_restore_test_runs(connection):
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS restore_test_runs (
+            run_key TEXT PRIMARY KEY,
+            backup_name TEXT,
+            status TEXT,
+            details TEXT,
+            created_at TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_restore_test_runs_created
+        ON restore_test_runs (created_at)
+    """)
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
+    (4, migration_4_restore_test_runs),
 )
 
 

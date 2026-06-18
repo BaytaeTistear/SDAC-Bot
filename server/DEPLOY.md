@@ -115,6 +115,12 @@ Detailed health is available in the dashboard after admin login at:
 /admin/health?key=ImTheBestAdmin
 ```
 
+Human-friendly maintenance, backups, restore tests, and storage warnings are at:
+
+```text
+/admin/maintenance?key=ImTheBestAdmin
+```
+
 Run the bundled production check:
 
 ```bash
@@ -131,12 +137,27 @@ cd /home/ubuntu/discord-screenshot-bot
 bash scripts/test_restore.sh
 ```
 
+The bot also runs a scheduled weekly restore test. Change the schedule from the
+dashboard Settings page.
+
 ## Admin Onboarding
 
 Use this page to see what each Discord server still needs configured:
 
 ```text
 https://freethefishies.us.to/admin/onboarding?key=ImTheBestAdmin
+```
+
+Use this page to watch pending submissions and recent moderation decisions:
+
+```text
+https://freethefishies.us.to/admin/moderation?key=ImTheBestAdmin
+```
+
+In Discord, admins can run this command after permission changes:
+
+```text
+/checkpermissions
 ```
 
 ## GitHub Releases

@@ -39,6 +39,23 @@ cd /home/ubuntu/discord-screenshot-bot
 bash scripts/install_ubuntu.sh
 ```
 
+For the simplest setup, keep `SDAC_APP_USER=ubuntu`. For a more locked-down
+service user, run the installer with:
+
+```bash
+cd /home/ubuntu/discord-screenshot-bot
+SDAC_APP_USER=sdac SDAC_CREATE_APP_USER=1 bash scripts/install_ubuntu.sh
+```
+
+When using a dedicated service user, run future updates with `sudo -E` and the
+same environment values so the update script can write files and restore
+ownership:
+
+```bash
+cd /home/ubuntu/discord-screenshot-bot
+sudo -E SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot SDAC_APP_USER=sdac bash scripts/update_ubuntu.sh
+```
+
 The installer will:
 
 - create `media/` and `backups/`
@@ -144,6 +161,13 @@ cd /home/ubuntu/discord-screenshot-bot
 bash scripts/test_restore.sh
 ```
 
+The bot runs a scheduled weekly restore test from the newest backup. The default
+is Sunday at `03:30` UTC. Change it from the dashboard Settings page with:
+
+- `restore_test_enabled`
+- `restore_test_weekday`
+- `restore_test_time_utc`
+
 Test a specific backup:
 
 ```bash
@@ -186,6 +210,18 @@ Admin-only detailed health check after logging in through the dashboard:
 
 ```text
 https://freethefishies.us.to/admin/health?key=ImTheBestAdmin
+```
+
+Human-friendly maintenance page:
+
+```text
+https://freethefishies.us.to/admin/maintenance?key=ImTheBestAdmin
+```
+
+Moderation queue and recent decisions:
+
+```text
+https://freethefishies.us.to/admin/moderation?key=ImTheBestAdmin
 ```
 
 ## 11. Future Updates
@@ -260,6 +296,12 @@ integer and least-privilege guidance.
 
 After the bot starts, slash commands sync automatically. It can take a few
 minutes for Discord to show new commands.
+
+After changing permissions or channels, run:
+
+```text
+/checkpermissions
+```
 
 Set a private staff channel for bot error notices:
 

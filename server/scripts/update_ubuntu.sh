@@ -22,6 +22,11 @@ if [[ ! -x "$PYTHON" ]]; then
     exit 1
 fi
 
+if ! id "$APP_USER" >/dev/null 2>&1; then
+    echo "Configured app user does not exist: $APP_USER" >&2
+    exit 1
+fi
+
 mkdir -p "$DEPLOY_BACKUP_DIR" "$DB_BACKUP_DIR"
 
 if [[ ! -f "$ENV_FILE" && "$ENV_FILE" == "/etc/sdac-bot/sdac.env" && -f "/etc/sdac.env" ]]; then
@@ -56,6 +61,7 @@ for file in \
     DEPLOY.md \
     PRODUCTION_NEXT.md \
     MONITORING.md \
+    POSTGRESQL.md \
     DISCORD_PERMISSIONS.md
 do
     if [[ -e "$APP_DIR/$file" ]]; then
@@ -127,6 +133,7 @@ render_service \
     "$APP_DIR/systemd/sdac-dashboard.service.template" \
     "/etc/systemd/system/sdac-dashboard.service"
 
+sudo chown -R "$APP_USER:$APP_USER" "$APP_DIR" 2>/dev/null || sudo chown -R "$APP_USER" "$APP_DIR"
 sudo systemctl daemon-reload
 sudo systemctl restart sdac-bot sdac-dashboard
 sudo systemctl is-active --quiet sdac-bot

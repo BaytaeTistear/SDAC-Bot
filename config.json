@@ -12,6 +12,11 @@
         "rate_limit_retention_days": 30,
         "orphan_media_cleanup_enabled": true,
         "audit_retention_days": 365,
-        "pending_submission_retention_hours": 48
+        "pending_submission_retention_hours": 48,
+        "media_warning_bytes": 5368709120,
+        "database_warning_bytes": 536870912,
+        "restore_test_enabled": true,
+        "restore_test_weekday": "sunday",
+        "restore_test_time_utc": "03:30"
     }
 }

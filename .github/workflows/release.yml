@@ -56,10 +56,41 @@ jobs:
             dist/SDAC-Bot-Linux-Installer.sh
             dist/SDAC-Bot-Windows-Installer.exe
 
+  linux-installer-smoke-test:
+    name: Linux Installer Smoke Test
+    runs-on: ubuntu-latest
+    needs: build-installers
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdac-installers
+          path: artifacts
+      - name: Verify Linux line endings and installer extraction
+        run: |
+          set -Eeuo pipefail
+          if grep -q $'\r' artifacts/SDAC-Bot-Linux-Installer.sh; then
+            echo "Linux installer contains CRLF line endings."
+            exit 1
+          fi
+          chmod +x artifacts/SDAC-Bot-Linux-Installer.sh
+          export SDAC_APP_DIR="$RUNNER_TEMP/sdac-smoke"
+          export SDAC_APP_USER="$(id -un)"
+          export SDAC_ENV_FILE="$RUNNER_TEMP/sdac.env"
+          export SDAC_SKIP_SERVICES=1
+          artifacts/SDAC-Bot-Linux-Installer.sh
+          find "$SDAC_APP_DIR" -type f \
+            \( -name "*.sh" -o -name "*.py" -o -name "*.template" -o -name "*.conf" -o -name "*.md" -o -name "*.yml" -o -name "*.json" \) \
+            -print0 | xargs -0 grep -l $'\r' > "$RUNNER_TEMP/crlf-files.txt" || true
+          cat "$RUNNER_TEMP/crlf-files.txt"
+          if [[ -s "$RUNNER_TEMP/crlf-files.txt" ]]; then
+            echo "Extracted Linux payload contains CRLF files."
+            exit 1
+          fi
+
   release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-    needs: build-installers
+    needs: linux-installer-smoke-test
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
