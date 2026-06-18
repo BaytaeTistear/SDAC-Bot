@@ -203,8 +203,9 @@ echo "  sudo systemctl status sdac-bot --no-pager"
 echo "  sudo systemctl status sdac-dashboard --no-pager"
 echo
 echo "Future GitHub updates:"
-echo "  sdac-update latest-official"
+echo "  sdac-update \"Version 2\""
 echo "  sdac-update latest-experimental"
+echo "  sdac-update 2.4.2"
 echo
 echo "View logs:"
 echo "  journalctl -u sdac-bot -n 80 --no-pager"

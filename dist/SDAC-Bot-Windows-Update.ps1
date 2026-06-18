@@ -3,10 +3,16 @@ param(
     [string]$ReleaseTag = "",
     [string]$Repo = "",
     [string]$AssetName = "SDAC-Bot-Windows-Installer.exe",
-    [switch]$Help
+    [switch]$Help,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$RemainingArgs
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($RemainingArgs.Count -gt 0) {
+    $ReleaseTag = (@($ReleaseTag) + $RemainingArgs) -join " "
+}
 
 if ([string]::IsNullOrWhiteSpace($Repo)) {
     $Repo = $env:SDAC_GITHUB_REPO
@@ -28,28 +34,44 @@ function Resolve-ReleaseTag {
     if ($null -eq $Value) {
         $Value = ""
     }
-    $lowered = $Value.Trim().ToLowerInvariant()
+    $lowered = $Value.Trim().ToLowerInvariant().Replace(" ", "-").Replace("_", "-")
     switch ($lowered) {
         "" { return "latest-official" }
         "latest" { return "latest-official" }
         "stable" { return "latest-official" }
         "official" { return "latest-official" }
         "latest-official" { return "latest-official" }
+        "2" { return "latest-official" }
+        "v2" { return "latest-official" }
+        "version-2" { return "latest-official" }
         "experimental" { return "latest-experimental" }
         "expirimental" { return "latest-experimental" }
         "latest-experimental" { return "latest-experimental" }
         "latest-expirimental" { return "latest-experimental" }
-        default { return $Value }
+        default {
+            if ($lowered -match "^version-(\d+\.\d+(?:\.\d+)?)$") {
+                return $lowered
+            }
+            if ($lowered -match "^v(\d+\.\d+(?:\.\d+)?)$") {
+                return "version-$($Matches[1])"
+            }
+            if ($lowered -match "^(\d+\.\d+(?:\.\d+)?)$") {
+                return "version-$lowered"
+            }
+            return $Value
+        }
     }
 }
 
 function Show-Usage {
     Write-Host "Usage:"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 [release-tag]"
+    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 'Version 2'"
+    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 2"
+    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 2.4.2"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 latest-official"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 latest-experimental"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 latest-expirimental"
-    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 version-2.4"
     Write-Host ""
     Write-Host "Environment:"
     Write-Host "  SDAC_GITHUB_REPO=$Repo"

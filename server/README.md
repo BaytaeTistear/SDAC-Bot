@@ -62,10 +62,22 @@ After `sdac-update` is installed, future updates are one command:
 sdac-update latest-official
 ```
 
+Stable Version 2 alias:
+
+```bash
+sdac-update "Version 2"
+```
+
 Experimental channel:
 
 ```bash
 sdac-update latest-experimental
+```
+
+Explicit numbered release:
+
+```bash
+sdac-update 2.4.2
 ```
 
 Optional checks:
@@ -74,8 +86,10 @@ Optional checks:
 SDAC_RUN_RESTORE_TEST=1 SDAC_RUN_PRODUCTION_CHECK=1 sdac-update latest-official
 ```
 
-The updater also accepts `latest`, `official`, `experimental`, `expirimental`,
-and `latest-expirimental` as aliases.
+The updater also accepts `latest`, `official`, `2`, `v2`, `version-2`,
+`experimental`, `expirimental`, and `latest-expirimental` as aliases. `Version
+2` always resolves to the latest official Version 2 release. Exact versions like
+`2.0` or `2.4.2` resolve to that specific `version-*` release.
 
 If an older install says `/etc/sdac-bot/update.env: Permission denied`, fix the
 updater defaults file once:
@@ -252,6 +266,14 @@ After Version 2.4 is installed on Windows, update with:
 
 ```bat
 update-sdac.bat latest-official
+```
+
+Windows accepts the same channel and version names:
+
+```bat
+update-sdac.bat "Version 2"
+update-sdac.bat 2.4.2
+update-sdac.bat latest-experimental
 ```
 
 The release also includes `SDAC-Bot-Windows-Update.ps1` for Windows-only

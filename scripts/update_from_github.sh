@@ -38,10 +38,12 @@ Usage:
   $0 --install-command
 
 Examples:
+  sdac-update "Version 2"
+  sdac-update 2
+  sdac-update 2.4.2
   sdac-update latest-official
   sdac-update latest-experimental
   sdac-update latest-expirimental
-  sdac-update version-2.4
   SDAC_RUN_RESTORE_TEST=1 sdac-update latest-official
 
 Environment:
@@ -58,12 +60,23 @@ normalize_release_tag() {
     local raw="$1"
     local lowered
     lowered="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+    lowered="${lowered// /-}"
+    lowered="${lowered//_/-}"
     case "$lowered" in
-        ""|latest|stable|official|latest-official)
+        ""|latest|stable|official|latest-official|2|v2|version-2)
             printf '%s\n' "latest-official"
             ;;
         experimental|expirimental|latest-experimental|latest-expirimental)
             printf '%s\n' "latest-experimental"
+            ;;
+        version-[0-9]*.[0-9]*)
+            printf '%s\n' "$lowered"
+            ;;
+        v[0-9]*.[0-9]*)
+            printf 'version-%s\n' "${lowered#v}"
+            ;;
+        [0-9]*.[0-9]*)
+            printf 'version-%s\n' "$lowered"
             ;;
         *)
             printf '%s\n' "$raw"

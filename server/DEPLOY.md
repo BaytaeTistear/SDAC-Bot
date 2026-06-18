@@ -44,6 +44,12 @@ Recommended one-command GitHub update path after Version 2.4:
 sdac-update latest-official
 ```
 
+Stable Version 2 alias:
+
+```bash
+sdac-update "Version 2"
+```
+
 If `sdac-update` has not been installed yet:
 
 ```bash
@@ -64,8 +70,17 @@ SDAC_DOMAIN=freethefishies.us.to \
 sdac-update latest-official
 ```
 
-Use `sdac-update latest-experimental` for the experimental channel. The updater
-also accepts `latest-expirimental` as a typo-compatible alias.
+Use `sdac-update latest-experimental` for the experimental channel. Exact
+version numbers also work:
+
+```bash
+sdac-update 2.4.2
+```
+
+The updater also accepts `latest-expirimental` as a typo-compatible alias.
+`Version 2`, `2`, `v2`, and `version-2` always resolve to the latest official
+Version 2 release. Exact versions like `2.0` or `2.4.2` resolve to that
+specific `version-*` release.
 
 If an older install says `/etc/sdac-bot/update.env: Permission denied`, fix the
 updater defaults file once:
