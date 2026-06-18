@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+CONFIG_FILE="${SDAC_UPDATE_CONFIG:-/etc/sdac-bot/update.env}"
+COMMAND_PATH="${SDAC_UPDATE_COMMAND_PATH:-/usr/local/bin/sdac-update}"
+SCRIPT_PATH="$0"
+if command -v readlink >/dev/null 2>&1; then
+    SCRIPT_PATH="$(readlink -f "$0" 2>/dev/null || printf '%s\n' "$0")"
+fi
+
+if [[ -f "$CONFIG_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$CONFIG_FILE"
+fi
+
 REPO="${SDAC_GITHUB_REPO:-eatyba12/SDAC-Bot}"
 RELEASE_TAG="${SDAC_RELEASE_TAG:-latest}"
 APP_DIR="${SDAC_APP_DIR:-/home/ubuntu/discord-screenshot-bot}"
@@ -11,6 +23,61 @@ RUN_RESTORE_TEST="${SDAC_RUN_RESTORE_TEST:-0}"
 RUN_PRODUCTION_CHECK="${SDAC_RUN_PRODUCTION_CHECK:-0}"
 DOMAIN="${SDAC_DOMAIN:-}"
 RELOAD_NGINX="${SDAC_RELOAD_NGINX:-1}"
+INSTALL_COMMAND=0
+
+usage() {
+    cat <<EOF
+Usage:
+  $0 [release-tag]
+  $0 --install-command
+
+Examples:
+  sdac-update version-2.3
+  sdac-update latest
+  SDAC_RUN_RESTORE_TEST=1 sdac-update version-2.3
+
+Environment:
+  SDAC_GITHUB_REPO=$REPO
+  SDAC_APP_DIR=$APP_DIR
+  SDAC_APP_USER=${SDAC_APP_USER:-}
+  SDAC_ENV_FILE=$ENV_FILE
+  SDAC_DOMAIN=$DOMAIN
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        --install-command)
+            INSTALL_COMMAND=1
+            shift
+            ;;
+        --run-restore-test)
+            RUN_RESTORE_TEST=1
+            shift
+            ;;
+        --run-production-check)
+            RUN_PRODUCTION_CHECK=1
+            shift
+            ;;
+        --no-nginx-reload)
+            RELOAD_NGINX=0
+            shift
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 1
+            ;;
+        *)
+            RELEASE_TAG="$1"
+            shift
+            ;;
+    esac
+done
 
 default_app_user() {
     if [[ -n "${SDAC_APP_USER:-}" ]]; then
@@ -44,6 +111,44 @@ fail() {
 
 need_command() {
     command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
+}
+
+write_assignment() {
+    local key="$1"
+    local value="$2"
+    printf '%s=%q\n' "$key" "$value"
+}
+
+install_update_command() {
+    need_command sudo
+    need_command install
+
+    say "Installing sdac-update command"
+    sudo install -m 755 "$SCRIPT_PATH" "$COMMAND_PATH"
+
+    local config_dir
+    config_dir="$(dirname "$CONFIG_FILE")"
+    local config_tmp
+    config_tmp="$(mktemp)"
+    {
+        write_assignment SDAC_GITHUB_REPO "$REPO"
+        write_assignment SDAC_APP_DIR "$APP_DIR"
+        write_assignment SDAC_APP_USER "$APP_USER"
+        write_assignment SDAC_ENV_FILE "$ENV_FILE"
+        write_assignment SDAC_DASHBOARD_BIND "$DASHBOARD_BIND"
+        write_assignment SDAC_DOMAIN "$DOMAIN"
+        write_assignment SDAC_RELOAD_NGINX "$RELOAD_NGINX"
+    } > "$config_tmp"
+    sudo mkdir -p "$config_dir"
+    sudo install -m 600 -o root -g root "$config_tmp" "$CONFIG_FILE"
+    rm -f "$config_tmp"
+
+    echo
+    echo "Installed: $COMMAND_PATH"
+    echo "Config: $CONFIG_FILE"
+    echo
+    echo "Future updates can be one command:"
+    echo "  sdac-update version-2.4"
 }
 
 download_with_gh() {
@@ -151,6 +256,11 @@ print_summary() {
 
 if [[ "$(uname -s)" != "Linux" ]]; then
     fail "This updater is intended for Ubuntu/Linux servers."
+fi
+
+if [[ "$INSTALL_COMMAND" == "1" ]]; then
+    install_update_command
+    exit 0
 fi
 
 need_command sudo

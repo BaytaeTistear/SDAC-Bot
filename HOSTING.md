@@ -226,25 +226,35 @@ https://freethefishies.us.to/admin/moderation?key=ImTheBestAdmin
 
 ## 11. Future Updates
 
-Recommended GitHub update:
+Recommended one-command GitHub update after Version 2.3:
+
+```bash
+sdac-update version-2.3
+```
+
+If `sdac-update` has not been installed yet:
 
 ```bash
 cd /tmp
 rm -f SDAC-Bot-Ubuntu-Update.sh
-curl -fsSL https://github.com/eatyba12/SDAC-Bot/releases/download/version-2.2/SDAC-Bot-Ubuntu-Update.sh -o SDAC-Bot-Ubuntu-Update.sh
+gh release download version-2.3 \
+  --repo eatyba12/SDAC-Bot \
+  --pattern SDAC-Bot-Ubuntu-Update.sh \
+  --dir /tmp
 chmod +x SDAC-Bot-Ubuntu-Update.sh
 
-SDAC_RELEASE_TAG=version-2.2 \
 SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot \
 SDAC_APP_USER=ubuntu \
 SDAC_ENV_FILE=/etc/sdac-bot/sdac.env \
 SDAC_DOMAIN=freethefishies.us.to \
-./SDAC-Bot-Ubuntu-Update.sh
+./SDAC-Bot-Ubuntu-Update.sh --install-command
+
+sdac-update version-2.3
 ```
 
-The one-stop updater downloads the selected release, runs the Linux installer,
-reloads systemd, restarts `sdac-bot` and `sdac-dashboard`, reloads Nginx when it
-is active, then prints status and log commands.
+The updater downloads the selected release, runs the Linux installer, reloads
+systemd, restarts `sdac-bot` and `sdac-dashboard`, reloads Nginx when it is
+active, then prints status and log commands.
 
 For manual file uploads, upload the changed files, then run:
 

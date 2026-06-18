@@ -1,11 +1,14 @@
-# SDAC Bot Version 2.2
+# SDAC Bot Version 2.3
 
 Date: 2026-06-18
 
-Version 2.2 focuses on one-command server updates and clearer operator docs.
+Version 2.3 focuses on installing a reusable server update command.
 
 Included:
 
+- installed `/usr/local/bin/sdac-update` command for future one-command updates
+- `/etc/sdac-bot/update.env` updater defaults written by the Ubuntu installer
+- standalone `sdac-update` release asset
 - standalone Ubuntu updater release asset
 - one-stop GitHub update script with systemd reload, service restarts, and optional checks
 - expanded README with command directory

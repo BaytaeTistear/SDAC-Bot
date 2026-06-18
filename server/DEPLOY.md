@@ -38,20 +38,30 @@ Keep these on the Ubuntu server:
 
 ## Update
 
-Recommended GitHub update path:
+Recommended one-command GitHub update path after Version 2.3:
+
+```bash
+sdac-update version-2.3
+```
+
+If `sdac-update` has not been installed yet:
 
 ```bash
 cd /tmp
 rm -f SDAC-Bot-Ubuntu-Update.sh
-curl -fsSL https://github.com/eatyba12/SDAC-Bot/releases/download/version-2.2/SDAC-Bot-Ubuntu-Update.sh -o SDAC-Bot-Ubuntu-Update.sh
+gh release download version-2.3 \
+  --repo eatyba12/SDAC-Bot \
+  --pattern SDAC-Bot-Ubuntu-Update.sh \
+  --dir /tmp
 chmod +x SDAC-Bot-Ubuntu-Update.sh
 
-SDAC_RELEASE_TAG=version-2.2 \
 SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot \
 SDAC_APP_USER=ubuntu \
 SDAC_ENV_FILE=/etc/sdac-bot/sdac.env \
 SDAC_DOMAIN=freethefishies.us.to \
-./SDAC-Bot-Ubuntu-Update.sh
+./SDAC-Bot-Ubuntu-Update.sh --install-command
+
+sdac-update version-2.3
 ```
 
 After manually uploading changed files:

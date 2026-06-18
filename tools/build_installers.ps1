@@ -798,14 +798,16 @@ pause
 
 function Copy-ReleaseHelperScripts {
     $source = Join-Path $Root "scripts\update_from_github.sh"
-    $target = Join-Path $Dist "SDAC-Bot-Ubuntu-Update.sh"
     $content = [IO.File]::ReadAllText($source)
     $content = $content -replace "`r`n", "`n" -replace "`r", "`n"
-    [IO.File]::WriteAllText(
-        $target,
-        $content,
-        [Text.UTF8Encoding]::new($false)
-    )
+    foreach ($targetName in @("SDAC-Bot-Ubuntu-Update.sh", "sdac-update")) {
+        $target = Join-Path $Dist $targetName
+        [IO.File]::WriteAllText(
+            $target,
+            $content,
+            [Text.UTF8Encoding]::new($false)
+        )
+    }
 }
 
 New-Item -ItemType Directory -Force -Path $Dist | Out-Null

@@ -33,28 +33,39 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 
 ## Command Directory
 
-### One-Stop Ubuntu Update From GitHub
+### One-Time Updater Install
 
-Use this for normal server updates. It downloads the selected GitHub release, runs the Linux installer, reloads systemd, restarts both SDAC services, reloads Nginx when it is active, and prints status/log commands.
+Install the `sdac-update` command once. The Version 2.3 installer also installs
+this command automatically.
 
 ```bash
 cd /tmp
 rm -f SDAC-Bot-Ubuntu-Update.sh
-curl -fsSL https://github.com/eatyba12/SDAC-Bot/releases/download/version-2.2/SDAC-Bot-Ubuntu-Update.sh -o SDAC-Bot-Ubuntu-Update.sh
+gh release download version-2.3 \
+  --repo eatyba12/SDAC-Bot \
+  --pattern SDAC-Bot-Ubuntu-Update.sh \
+  --dir /tmp
 chmod +x SDAC-Bot-Ubuntu-Update.sh
 
-SDAC_RELEASE_TAG=version-2.2 \
 SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot \
 SDAC_APP_USER=ubuntu \
 SDAC_ENV_FILE=/etc/sdac-bot/sdac.env \
 SDAC_DOMAIN=freethefishies.us.to \
-./SDAC-Bot-Ubuntu-Update.sh
+./SDAC-Bot-Ubuntu-Update.sh --install-command
+```
+
+### One-Command Ubuntu Updates
+
+After `sdac-update` is installed, future updates are one command:
+
+```bash
+sdac-update version-2.3
 ```
 
 Optional checks:
 
 ```bash
-SDAC_RUN_RESTORE_TEST=1 SDAC_RUN_PRODUCTION_CHECK=1 ./SDAC-Bot-Ubuntu-Update.sh
+SDAC_RUN_RESTORE_TEST=1 SDAC_RUN_PRODUCTION_CHECK=1 sdac-update version-2.3
 ```
 
 ### New Ubuntu Install

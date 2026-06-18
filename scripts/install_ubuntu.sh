@@ -67,6 +67,35 @@ if [[ ! -f "$APP_DIR/config.json" ]]; then
 JSON
 fi
 
+write_update_assignment() {
+    local key="$1"
+    local value="$2"
+    printf '%s=%q\n' "$key" "$value"
+}
+
+install_update_command() {
+    if [[ ! -f "$APP_DIR/scripts/update_from_github.sh" ]]; then
+        return
+    fi
+
+    echo "Installing sdac-update command"
+    sudo install -m 755 "$APP_DIR/scripts/update_from_github.sh" "/usr/local/bin/sdac-update"
+
+    UPDATE_CONFIG_TMP="$(mktemp)"
+    {
+        write_update_assignment SDAC_GITHUB_REPO "eatyba12/SDAC-Bot"
+        write_update_assignment SDAC_APP_DIR "$APP_DIR"
+        write_update_assignment SDAC_APP_USER "$APP_USER"
+        write_update_assignment SDAC_ENV_FILE "$ENV_FILE"
+        write_update_assignment SDAC_DASHBOARD_BIND "$DASHBOARD_BIND"
+        write_update_assignment SDAC_DOMAIN "${SDAC_DOMAIN:-}"
+        write_update_assignment SDAC_RELOAD_NGINX "1"
+    } > "$UPDATE_CONFIG_TMP"
+    sudo mkdir -p "$ENV_DIR"
+    sudo install -m 600 -o root -g root "$UPDATE_CONFIG_TMP" "$ENV_DIR/update.env"
+    rm -f "$UPDATE_CONFIG_TMP"
+}
+
 if [[ ! -f "$ENV_FILE" ]]; then
     echo "Creating $ENV_FILE"
     DISCORD_TOKEN_INPUT="${SDAC_DISCORD_TOKEN:-}"
@@ -141,6 +170,8 @@ if [[ "$SKIP_SERVICES" == "1" ]]; then
     exit 0
 fi
 
+install_update_command
+
 render_service() {
     local template="$1"
     local target="$2"
@@ -169,6 +200,9 @@ echo "Dashboard bind: $DASHBOARD_BIND"
 echo "Check status:"
 echo "  sudo systemctl status sdac-bot --no-pager"
 echo "  sudo systemctl status sdac-dashboard --no-pager"
+echo
+echo "Future GitHub updates:"
+echo "  sdac-update version-2.4"
 echo
 echo "View logs:"
 echo "  journalctl -u sdac-bot -n 80 --no-pager"
