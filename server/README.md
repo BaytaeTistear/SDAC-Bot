@@ -77,6 +77,13 @@ SDAC_RUN_RESTORE_TEST=1 SDAC_RUN_PRODUCTION_CHECK=1 sdac-update latest-official
 The updater also accepts `latest`, `official`, `experimental`, `expirimental`,
 and `latest-expirimental` as aliases.
 
+If an older install says `/etc/sdac-bot/update.env: Permission denied`, fix the
+updater defaults file once:
+
+```bash
+sudo chmod 644 /etc/sdac-bot/update.env
+```
+
 ### New Ubuntu Install
 
 ```bash

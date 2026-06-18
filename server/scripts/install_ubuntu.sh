@@ -93,7 +93,7 @@ install_update_command() {
         write_update_assignment SDAC_RELOAD_NGINX "1"
     } > "$UPDATE_CONFIG_TMP"
     sudo mkdir -p "$ENV_DIR"
-    sudo install -m 600 -o root -g root "$UPDATE_CONFIG_TMP" "$ENV_DIR/update.env"
+    sudo install -m 644 -o root -g root "$UPDATE_CONFIG_TMP" "$ENV_DIR/update.env"
     rm -f "$UPDATE_CONFIG_TMP"
 }
 

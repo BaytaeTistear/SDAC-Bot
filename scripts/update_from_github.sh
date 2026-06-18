@@ -9,6 +9,12 @@ if command -v readlink >/dev/null 2>&1; then
 fi
 
 if [[ -f "$CONFIG_FILE" ]]; then
+    if [[ ! -r "$CONFIG_FILE" ]]; then
+        echo "ERROR: Cannot read updater config: $CONFIG_FILE" >&2
+        echo "This file stores updater defaults, not secrets." >&2
+        echo "Fix it once with: sudo chmod 644 $CONFIG_FILE" >&2
+        exit 1
+    fi
     # shellcheck disable=SC1090
     source "$CONFIG_FILE"
 fi
@@ -163,7 +169,7 @@ install_update_command() {
         write_assignment SDAC_RELOAD_NGINX "$RELOAD_NGINX"
     } > "$config_tmp"
     sudo mkdir -p "$config_dir"
-    sudo install -m 600 -o root -g root "$config_tmp" "$CONFIG_FILE"
+    sudo install -m 644 -o root -g root "$config_tmp" "$CONFIG_FILE"
     rm -f "$config_tmp"
 
     echo

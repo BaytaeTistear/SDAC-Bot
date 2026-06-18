@@ -260,6 +260,13 @@ sdac-update latest-experimental
 
 The updater also accepts `latest-expirimental` as a typo-compatible alias.
 
+If an older install says `/etc/sdac-bot/update.env: Permission denied`, fix the
+updater defaults file once:
+
+```bash
+sudo chmod 644 /etc/sdac-bot/update.env
+```
+
 The updater downloads the selected release, runs the Linux installer, reloads
 systemd, restarts `sdac-bot` and `sdac-dashboard`, reloads Nginx when it is
 active, then prints status and log commands.

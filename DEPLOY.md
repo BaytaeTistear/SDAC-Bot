@@ -67,6 +67,13 @@ sdac-update latest-official
 Use `sdac-update latest-experimental` for the experimental channel. The updater
 also accepts `latest-expirimental` as a typo-compatible alias.
 
+If an older install says `/etc/sdac-bot/update.env: Permission denied`, fix the
+updater defaults file once:
+
+```bash
+sudo chmod 644 /etc/sdac-bot/update.env
+```
+
 After manually uploading changed files:
 
 ```bash

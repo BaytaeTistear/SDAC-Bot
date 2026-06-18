@@ -1,29 +1,23 @@
-# SDAC Bot Version 2.4
+# SDAC Bot Version 2.4.1
 
 Date: 2026-06-18
 
-Version 2.4 focuses on release channels and matching updater scripts for each
-operating system.
+Version 2.4.1 fixes the Linux updater defaults file permissions introduced in
+Version 2.4.
 
 Included:
 
-- `latest-official` update channel for production servers
-- `latest-experimental` update channel for test builds
-- typo-compatible updater aliases including `latest-expirimental`
-- Linux `sdac-update` now defaults to `latest-official`
-- standalone Ubuntu updater release asset
-- standalone Windows updater release asset
-- Windows installer now writes `update-sdac.bat`
-- GitHub Actions release workflow publishes `latest-*` channel tags
+- `/etc/sdac-bot/update.env` is now installed as readable updater defaults
+- `/etc/sdac-bot/sdac.env` remains root-only because it contains secrets
+- `sdac-update` now prints a clear fix command if the old updater defaults file
+  is still unreadable
+- documentation includes the one-time `chmod` fix for older installs
 - Linux single-file installer
 - Windows single-file installer
-- Ubuntu systemd service installation and restart helpers
-- Nginx, backup, restore-test, and production-check helpers
-- dashboard Maintenance page
-- dashboard Moderation page
-- Discord `/checkpermissions` command
-- cross-server dashboard filtering and guessing rankings
-- monthly submission and guessing leaderboards
+- standalone Ubuntu updater release asset
+- standalone Windows updater release asset
+- `latest-official` update channel
+- `latest-experimental` update channel
 
 Not included:
 
