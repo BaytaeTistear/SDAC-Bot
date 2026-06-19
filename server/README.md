@@ -41,14 +41,14 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 
 ### One-Time Updater Install
 
-Install the `sdac-update` command once. The Version 2.4 installer also installs
+Install the `sdac-update` command once. The latest official installer also installs
 this command automatically.
 
 ```bash
 cd /tmp
 rm -f SDAC-Bot-Ubuntu-Update.sh
-gh release download version-2.4 \
-  --repo eatyba12/SDAC-Bot \
+gh release download latest-official \
+  --repo BaytaeTistear/SDAC-Bot \
   --pattern SDAC-Bot-Ubuntu-Update.sh \
   --dir /tmp
 chmod +x SDAC-Bot-Ubuntu-Update.sh
@@ -83,7 +83,7 @@ sdac-update latest-experimental
 Explicit numbered release:
 
 ```bash
-sdac-update 2.4.3
+sdac-update 2.5
 ```
 
 Optional checks:
@@ -95,7 +95,7 @@ SDAC_RUN_RESTORE_TEST=1 SDAC_RUN_PRODUCTION_CHECK=1 sdac-update latest-official
 The updater also accepts `latest`, `official`, `2`, `v2`, `version-2`,
 `experimental`, `expirimental`, and `latest-expirimental` as aliases. `Version
 2` always resolves to the latest official Version 2 release. Exact versions like
-`2.0` or `2.4.3` resolve to that specific `version-*` release.
+`2.0` or `2.5` resolve to that specific `version-*` release.
 
 If an older install says `/etc/sdac-bot/update.env: Permission denied`, fix the
 updater defaults file once:
@@ -271,7 +271,7 @@ Download `SDAC-Bot-Windows-Installer.exe` from the latest GitHub release, run it
 start-sdac.bat
 ```
 
-After Version 2.4 is installed on Windows, update with:
+After latest official is installed on Windows, update with:
 
 ```bat
 update-sdac.bat latest-official
@@ -281,7 +281,7 @@ Windows accepts the same channel and version names:
 
 ```bat
 update-sdac.bat "Version 2"
-update-sdac.bat 2.4.3
+update-sdac.bat 2.5
 update-sdac.bat latest-experimental
 ```
 

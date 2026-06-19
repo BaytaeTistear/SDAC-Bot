@@ -19,7 +19,7 @@ if [[ -f "$CONFIG_FILE" ]]; then
     source "$CONFIG_FILE"
 fi
 
-REPO="${SDAC_GITHUB_REPO:-eatyba12/SDAC-Bot}"
+REPO="${SDAC_GITHUB_REPO:-BaytaeTistear/SDAC-Bot}"
 RELEASE_TAG="${SDAC_RELEASE_TAG:-latest-official}"
 APP_DIR="${SDAC_APP_DIR:-/home/ubuntu/discord-screenshot-bot}"
 ENV_FILE="${SDAC_ENV_FILE:-/etc/sdac-bot/sdac.env}"
@@ -40,7 +40,7 @@ Usage:
 Examples:
   sdac-update "Version 2"
   sdac-update 2
-  sdac-update 2.4.3
+  sdac-update 2.5
   sdac-update latest-official
   sdac-update latest-experimental
   sdac-update latest-expirimental

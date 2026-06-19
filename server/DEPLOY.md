@@ -38,7 +38,7 @@ Keep these on the Ubuntu server:
 
 ## Update
 
-Recommended one-command GitHub update path after Version 2.4:
+Recommended one-command GitHub update path:
 
 ```bash
 sdac-update latest-official
@@ -55,8 +55,8 @@ If `sdac-update` has not been installed yet:
 ```bash
 cd /tmp
 rm -f SDAC-Bot-Ubuntu-Update.sh
-gh release download version-2.4 \
-  --repo eatyba12/SDAC-Bot \
+gh release download latest-official \
+  --repo BaytaeTistear/SDAC-Bot \
   --pattern SDAC-Bot-Ubuntu-Update.sh \
   --dir /tmp
 chmod +x SDAC-Bot-Ubuntu-Update.sh
@@ -74,12 +74,12 @@ Use `sdac-update latest-experimental` for the experimental channel. Exact
 version numbers also work:
 
 ```bash
-sdac-update 2.4.3
+sdac-update 2.5
 ```
 
 The updater also accepts `latest-expirimental` as a typo-compatible alias.
 `Version 2`, `2`, `v2`, and `version-2` always resolve to the latest official
-Version 2 release. Exact versions like `2.0` or `2.4.3` resolve to that
+Version 2 release. Exact versions like `2.0` or `2.5` resolve to that
 specific `version-*` release.
 
 If an older install says `/etc/sdac-bot/update.env: Permission denied`, fix the

@@ -83,7 +83,7 @@ install_update_command() {
 
     UPDATE_CONFIG_TMP="$(mktemp)"
     {
-        write_update_assignment SDAC_GITHUB_REPO "eatyba12/SDAC-Bot"
+        write_update_assignment SDAC_GITHUB_REPO "BaytaeTistear/SDAC-Bot"
         write_update_assignment SDAC_RELEASE_TAG "latest-official"
         write_update_assignment SDAC_APP_DIR "$APP_DIR"
         write_update_assignment SDAC_APP_USER "$APP_USER"
@@ -205,7 +205,7 @@ echo
 echo "Future GitHub updates:"
 echo "  sdac-update \"Version 2\""
 echo "  sdac-update latest-experimental"
-echo "  sdac-update 2.4.3"
+echo "  sdac-update 2.5"
 echo
 echo "View logs:"
 echo "  journalctl -u sdac-bot -n 80 --no-pager"

@@ -101,7 +101,7 @@ FEATURE_LABELS = {
     "cross_server_leaderboard": "Cross-Server Leaderboard",
 }
 
-RELEASE_REPO = os.getenv("SDAC_GITHUB_REPO", "eatyba12/SDAC-Bot")
+RELEASE_REPO = os.getenv("SDAC_GITHUB_REPO", "BaytaeTistear/SDAC-Bot")
 UPDATE_ENV_FILE = Path(os.getenv("SDAC_UPDATE_CONFIG", "/etc/sdac-bot/update.env"))
 RELEASE_CACHE = {
     "expires_at": 0,
@@ -3108,7 +3108,7 @@ def fetch_github_release(tag):
     token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
     headers = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": "SDAC-Dashboard/2.4",
+        "User-Agent": "SDAC-Dashboard/2.5",
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"

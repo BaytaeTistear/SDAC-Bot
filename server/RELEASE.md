@@ -1,12 +1,14 @@
-# SDAC Bot Version 2.4.3 Experimental
+# SDAC Bot Version 2.5 Official
 
-Date: 2026-06-18
+Date: 2026-06-19
 
-Version 2.4.3 is an experimental feature release. It does not promote the
-official Version 2 channel.
+Version 2.5 is an official release. It promotes the recent multi-server
+feature work and updates GitHub release/update defaults for the new repository
+owner, `BaytaeTistear`.
 
 Included:
 
+- GitHub release/update defaults now use `BaytaeTistear/SDAC-Bot`
 - per-server feature toggles for submissions, approval queues, guessing games,
   weekly posts, public gallery visibility, and cross-server rankings
 - guessing-game answer aliases using `|`
@@ -25,9 +27,9 @@ Included:
 
 Release channel:
 
-- `version-2.4.3` is this experimental build
-- `latest-experimental` points to this build
-- `latest-official` is not moved by this build
+- `version-2.5` is this official build
+- `latest-official` points to this build
+- `Version 2`, `2`, `v2`, and `version-2` resolve to this official channel
 
 Not included:
 

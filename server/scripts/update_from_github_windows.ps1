@@ -18,7 +18,7 @@ if ([string]::IsNullOrWhiteSpace($Repo)) {
     $Repo = $env:SDAC_GITHUB_REPO
 }
 if ([string]::IsNullOrWhiteSpace($Repo)) {
-    $Repo = "eatyba12/SDAC-Bot"
+    $Repo = "BaytaeTistear/SDAC-Bot"
 }
 
 if ([string]::IsNullOrWhiteSpace($ReleaseTag)) {
@@ -68,7 +68,7 @@ function Show-Usage {
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 [release-tag]"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 'Version 2'"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 2"
-    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 2.4.3"
+    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 2.5"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 latest-official"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 latest-experimental"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 latest-expirimental"
