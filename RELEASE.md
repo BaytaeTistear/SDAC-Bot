@@ -1,3 +1,48 @@
+# SDAC Bot Version 2.6 Official
+
+Date: 2026-06-21
+
+Version 2.6 is an official release. It promotes the recent website-managed
+guessing-game library, admin onboarding fix, and Discord-native setup wizard.
+
+Included:
+
+- website-managed guessing-game library at
+  `/admin/game-library?key=ImTheBestAdmin`
+- reusable game media, prompts, answers, aliases, categories, custom hints, and
+  automatic hint timing
+- `/startlibrarygame #channel item_id` for starting saved website library items
+  from Discord
+- `/setup` admin command with a three-page Discord setup wizard
+- `/setupstatus` command for a quick setup checklist
+- role selector for SDAC admin access
+- channel selectors for submit, category, approval, weekly top, game summary,
+  and error channels
+- category-name modal after choosing a category repost channel
+- timezone modal and weekly schedule modal
+- feature-toggle select for per-server features
+- built-in permission check from the final wizard page
+- `/admin/onboarding` template fix for the setup checklist
+- dashboard onboarding quick setup commands now point admins to `/setup`
+- Linux and Windows single-file installers
+- standalone Ubuntu and Windows update assets
+
+Release channel:
+
+- `version-2.6` is this official build
+- `latest-official` points to this build
+- `Version 2`, `2`, `v2`, and `version-2` resolve to this official channel
+
+Not included:
+
+- Discord token or `.env`
+- SQLite database files such as `sdac.db`
+- `media/` uploads
+- `backups/`
+- `venv/` or Python cache files
+
+---
+
 # SDAC Bot Version 2.5.3 Experimental
 
 Date: 2026-06-21

@@ -68,7 +68,7 @@ function Show-Usage {
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 [release-tag]"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 'Version 2'"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 2"
-    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 2.5"
+    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 2.6"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 latest-official"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 latest-experimental"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 latest-expirimental"
