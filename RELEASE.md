@@ -1,3 +1,33 @@
+# SDAC Bot Version 2.5.3 Experimental
+
+Date: 2026-06-21
+
+Version 2.5.3 adds a Discord-native setup wizard to streamline new server
+onboarding.
+
+Included:
+
+- new `/setup` admin command with a three-page Discord setup wizard
+- new `/setupstatus` command for a quick setup checklist
+- role selector for SDAC admin access
+- channel selectors for submit, category, approval, weekly top, game summary,
+  and error channels
+- category-name modal after choosing a category repost channel
+- timezone modal and weekly schedule modal
+- feature-toggle select for per-server features
+- built-in permission check from the final wizard page
+- dashboard onboarding quick setup commands now point admins to `/setup`
+- setup actions write to the same `config.json` fields as the existing direct
+  slash commands and record admin audit events
+
+Release channel:
+
+- `version-2.5.3` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+---
+
 # SDAC Bot Version 2.5.2 Experimental
 
 Date: 2026-06-21

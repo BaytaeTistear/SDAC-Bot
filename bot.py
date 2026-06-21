@@ -2292,6 +2292,703 @@ class ApprovalView(discord.ui.View):
         )
 
 
+def setup_status_rows(guild_config):
+    categories = guild_config.get("categories") or {}
+    admin_roles = [
+        role_id
+        for role_id in guild_config.get("admin_role_ids", [])
+        if str(role_id).strip()
+    ]
+    rows = [
+        {
+            "label": "Admin role",
+            "ok": bool(admin_roles),
+            "value": (
+                ", ".join(f"<@&{role_id}>" for role_id in admin_roles)
+                if admin_roles
+                else "Not set",
+            ),
+            "required": True,
+        },
+        {
+            "label": "Submit channel",
+            "ok": bool(guild_config.get("submit_channel")),
+            "value": channel_display(guild_config.get("submit_channel")),
+            "required": True,
+        },
+        {
+            "label": "Submission categories",
+            "ok": bool(categories),
+            "value": (
+                ", ".join(
+                    f"`{name}` -> {channel_display(channel_id)}"
+                    for name, channel_id in sorted(categories.items())
+                )
+                if categories
+                else "Not set",
+            ),
+            "required": True,
+        },
+        {
+            "label": "Approval queue",
+            "ok": (
+                not guild_config.get("approval_enabled")
+                or bool(guild_config.get("approval_channel"))
+            ),
+            "value": (
+                f"Enabled in {channel_display(guild_config.get('approval_channel'))}"
+                if guild_config.get("approval_enabled")
+                else "Disabled",
+            ),
+            "required": False,
+        },
+        {
+            "label": "Weekly top posts",
+            "ok": bool(guild_config.get("daily_top_channel")),
+            "value": (
+                f"{channel_display(guild_config.get('daily_top_channel'))} "
+                f"on {guild_config.get('weekly_top_day', 'sunday').title()} "
+                f"at {guild_config.get('daily_top_time_utc', '00:00')}"
+            ),
+            "required": False,
+        },
+        {
+            "label": "Timezone",
+            "ok": bool(guild_config.get("timezone")),
+            "value": guild_config.get("timezone", "UTC"),
+            "required": False,
+        },
+        {
+            "label": "Game summary channel",
+            "ok": bool(guild_config.get("game_summary_channel")),
+            "value": channel_display(guild_config.get("game_summary_channel")),
+            "required": False,
+        },
+        {
+            "label": "Error channel",
+            "ok": bool(guild_config.get("error_channel")),
+            "value": channel_display(guild_config.get("error_channel")),
+            "required": False,
+        },
+    ]
+    return rows
+
+
+def setup_wizard_content(guild_config, page=1, notice=""):
+    rows = setup_status_rows(guild_config)
+    required_rows = [row for row in rows if row["required"]]
+    complete_required = sum(1 for row in required_rows if row["ok"])
+    page_titles = {
+        1: "Basics",
+        2: "Channels And Schedule",
+        3: "Features And Finish",
+    }
+    lines = [
+        "**SDAC Setup Wizard**",
+        f"Page {page} of 3: {page_titles.get(page, 'Setup')}",
+        f"Required progress: `{complete_required}/{len(required_rows)}`",
+    ]
+    if notice:
+        lines.extend(["", notice])
+
+    lines.append("")
+    lines.append("**Required Setup**")
+    for row in required_rows:
+        status = "[OK]" if row["ok"] else "[MISSING]"
+        lines.append(f"{status} {row['label']}: {row['value']}")
+
+    lines.append("")
+    lines.append("**Recommended Setup**")
+    for row in rows:
+        if row["required"]:
+            continue
+        status = "[OK]" if row["ok"] else "[OPTIONAL]"
+        lines.append(f"{status} {row['label']}: {row['value']}")
+
+    lines.append("")
+    if page == 1:
+        lines.append(
+            "Use the controls below to set an admin role, submit channel, "
+            "categories, and approval queue."
+        )
+    elif page == 2:
+        lines.append(
+            "Use the controls below to set weekly posts, game summaries, "
+            "error notifications, timezone, and weekly schedule."
+        )
+    else:
+        lines.append(
+            "Use the controls below to choose enabled features and run a "
+            "permission check."
+        )
+    return "\n".join(lines)[:1900]
+
+
+def setup_modal_allowed(interaction, owner_id, guild_id):
+    return (
+        interaction.guild is not None
+        and str(interaction.guild_id) == str(guild_id)
+        and interaction.user.id == owner_id
+        and admin_only(interaction)
+    )
+
+
+class SetupCategoryModal(discord.ui.Modal):
+    def __init__(self, owner_id, guild_id, channel_id, channel_mention):
+        super().__init__(title="Add Setup Category")
+        self.owner_id = owner_id
+        self.guild_id = str(guild_id)
+        self.channel_id = int(channel_id)
+        self.channel_mention = channel_mention
+        self.category_input = discord.ui.TextInput(
+            label="Category name",
+            placeholder="screenshots, clips, memes",
+            max_length=50,
+        )
+        self.add_item(self.category_input)
+
+    async def on_submit(self, interaction):
+        if not setup_modal_allowed(interaction, self.owner_id, self.guild_id):
+            await interaction.response.send_message(
+                "Only the admin who opened this setup wizard can use this modal.",
+                ephemeral=True,
+            )
+            return
+
+        category = clean_category_name(str(self.category_input.value))
+        if not category:
+            await interaction.response.send_message(
+                "Category name cannot be empty.",
+                ephemeral=True,
+            )
+            return
+
+        guild_config = get_guild_config(interaction.guild_id)
+        guild_config.setdefault("categories", {})[category] = self.channel_id
+        save_config(config)
+        with database() as connection:
+            connection.execute("""
+                INSERT INTO category_history (
+                    guild_id, action, category, channel_id,
+                    admin_user_id, admin_username, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                str(interaction.guild_id),
+                "setup:set",
+                category,
+                str(self.channel_id),
+                str(interaction.user.id),
+                str(interaction.user),
+                utc_now_iso(),
+            ))
+            add_admin_audit_log(
+                connection,
+                interaction.guild_id,
+                "setup_set_category",
+                interaction.user.id,
+                interaction.user,
+                "category",
+                category,
+                f"Channel {self.channel_id}.",
+            )
+        await interaction.response.send_message(
+            setup_wizard_content(
+                guild_config,
+                page=1,
+                notice=(
+                    f"Category `{category}` now posts to "
+                    f"{self.channel_mention}."
+                ),
+            ),
+            view=SetupWizardView(interaction.user.id, interaction.guild_id, 1),
+            ephemeral=True,
+        )
+
+
+class SetupScheduleModal(discord.ui.Modal):
+    def __init__(self, owner_id, guild_id):
+        super().__init__(title="Weekly Schedule")
+        self.owner_id = owner_id
+        self.guild_id = str(guild_id)
+        self.weekday_input = discord.ui.TextInput(
+            label="Weekly day",
+            placeholder="sunday",
+            default="sunday",
+            max_length=20,
+        )
+        self.time_input = discord.ui.TextInput(
+            label="Weekly time",
+            placeholder="00:00",
+            default="00:00",
+            max_length=5,
+        )
+        self.add_item(self.weekday_input)
+        self.add_item(self.time_input)
+
+    async def on_submit(self, interaction):
+        if not setup_modal_allowed(interaction, self.owner_id, self.guild_id):
+            await interaction.response.send_message(
+                "Only the admin who opened this setup wizard can use this modal.",
+                ephemeral=True,
+            )
+            return
+
+        day = normalize_weekday(str(self.weekday_input.value))
+        if day is None:
+            await interaction.response.send_message(
+                "Choose a valid weekday, like `sunday` or `monday`.",
+                ephemeral=True,
+            )
+            return
+        raw_time = str(self.time_input.value or "").strip()
+        if not re.match(r"^\d{2}:\d{2}$", raw_time):
+            await interaction.response.send_message(
+                "Time must be in `HH:MM` format.",
+                ephemeral=True,
+            )
+            return
+        hour, minute = [int(part) for part in raw_time.split(":")]
+        if hour > 23 or minute > 59:
+            await interaction.response.send_message(
+                "Time must be between `00:00` and `23:59`.",
+                ephemeral=True,
+            )
+            return
+
+        guild_config = get_guild_config(interaction.guild_id)
+        guild_config["weekly_top_day"] = day
+        guild_config["daily_top_time_utc"] = raw_time
+        save_config(config)
+        audit_interaction(
+            interaction,
+            "setup_set_weekly_schedule",
+            "schedule",
+            raw_time,
+            f"Weekly top set to {day} {raw_time}.",
+        )
+        await interaction.response.send_message(
+            setup_wizard_content(
+                guild_config,
+                page=2,
+                notice=f"Weekly schedule set to `{day.title()}` at `{raw_time}`.",
+            ),
+            view=SetupWizardView(interaction.user.id, interaction.guild_id, 2),
+            ephemeral=True,
+        )
+
+
+class SetupTimezoneModal(discord.ui.Modal):
+    def __init__(self, owner_id, guild_id):
+        super().__init__(title="Server Timezone")
+        self.owner_id = owner_id
+        self.guild_id = str(guild_id)
+        self.timezone_input = discord.ui.TextInput(
+            label="IANA timezone",
+            placeholder="America/New_York",
+            default="UTC",
+            max_length=80,
+        )
+        self.add_item(self.timezone_input)
+
+    async def on_submit(self, interaction):
+        if not setup_modal_allowed(interaction, self.owner_id, self.guild_id):
+            await interaction.response.send_message(
+                "Only the admin who opened this setup wizard can use this modal.",
+                ephemeral=True,
+            )
+            return
+
+        timezone_name = str(self.timezone_input.value or "").strip()
+        try:
+            selected_timezone = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            await interaction.response.send_message(
+                "That timezone was not found. Use an IANA name like "
+                "`America/Los_Angeles`, `America/New_York`, or `UTC`.",
+                ephemeral=True,
+            )
+            return
+
+        guild_config = get_guild_config(interaction.guild_id)
+        guild_config["timezone"] = timezone_name
+        save_config(config)
+        current_time = datetime.now(selected_timezone).strftime("%Y-%m-%d %H:%M")
+        audit_interaction(
+            interaction,
+            "setup_set_timezone",
+            "timezone",
+            timezone_name,
+            f"Current configured local time was {current_time}.",
+        )
+        await interaction.response.send_message(
+            setup_wizard_content(
+                guild_config,
+                page=2,
+                notice=(
+                    f"Timezone set to `{timezone_name}`. Current time there "
+                    f"is `{current_time}`."
+                ),
+            ),
+            view=SetupWizardView(interaction.user.id, interaction.guild_id, 2),
+            ephemeral=True,
+        )
+
+
+class SetupRoleSelect(discord.ui.RoleSelect):
+    def __init__(self):
+        super().__init__(
+            placeholder="Step 1: choose an SDAC admin role",
+            min_values=1,
+            max_values=1,
+            row=0,
+        )
+
+    async def callback(self, interaction):
+        if not await self.view.ensure_allowed(interaction):
+            return
+        role = self.values[0]
+        guild_config = get_guild_config(interaction.guild_id)
+        role_ids = {
+            str(role_id)
+            for role_id in guild_config.get("admin_role_ids", [])
+            if str(role_id).strip()
+        }
+        role_ids.add(str(role.id))
+        guild_config["admin_role_ids"] = sorted(role_ids)
+        save_config(config)
+        audit_interaction(
+            interaction,
+            "setup_set_admin_role",
+            "role",
+            role.id,
+            f"Added SDAC admin role {role.name}.",
+        )
+        await self.view.refresh(
+            interaction,
+            f"{role.mention} can now manage SDAC.",
+        )
+
+
+class SetupChannelSelect(discord.ui.ChannelSelect):
+    def __init__(self, setup_action, placeholder, row):
+        super().__init__(
+            placeholder=placeholder,
+            min_values=1,
+            max_values=1,
+            channel_types=[discord.ChannelType.text, discord.ChannelType.news],
+            row=row,
+        )
+        self.setup_action = setup_action
+
+    async def callback(self, interaction):
+        if not await self.view.ensure_allowed(interaction):
+            return
+        channel = self.values[0]
+        guild_config = get_guild_config(interaction.guild_id)
+
+        if self.setup_action == "category":
+            await interaction.response.send_modal(
+                SetupCategoryModal(
+                    interaction.user.id,
+                    interaction.guild_id,
+                    channel.id,
+                    channel.mention,
+                )
+            )
+            return
+
+        updates = {
+            "submit": ("submit_channel", "setup_set_submit_channel"),
+            "approval": ("approval_channel", "setup_set_approval_channel"),
+            "weekly": ("daily_top_channel", "setup_set_weekly_channel"),
+            "summary": ("game_summary_channel", "setup_set_game_summary_channel"),
+            "error": ("error_channel", "setup_set_error_channel"),
+        }
+        config_key, audit_action = updates[self.setup_action]
+        guild_config[config_key] = channel.id
+        if self.setup_action == "approval":
+            guild_config["approval_enabled"] = True
+        save_config(config)
+        audit_interaction(
+            interaction,
+            audit_action,
+            "channel",
+            channel.id,
+            f"Set by Discord setup wizard.",
+        )
+        await self.view.refresh(
+            interaction,
+            f"{channel.mention} saved for `{config_key}`.",
+        )
+
+
+class SetupFeatureSelect(discord.ui.Select):
+    def __init__(self, guild_config):
+        features = guild_config.get("features") or {}
+        options = [
+            discord.SelectOption(
+                label=label,
+                value=key,
+                default=features.get(key, DEFAULT_FEATURES[key]),
+            )
+            for key, label in FEATURE_LABELS.items()
+        ]
+        super().__init__(
+            placeholder="Select features that should be enabled",
+            min_values=0,
+            max_values=len(options),
+            options=options,
+            row=0,
+        )
+
+    async def callback(self, interaction):
+        if not await self.view.ensure_allowed(interaction):
+            return
+        enabled_features = set(self.values)
+        guild_config = get_guild_config(interaction.guild_id)
+        features = guild_config.setdefault("features", {})
+        for feature_key in DEFAULT_FEATURES:
+            features[feature_key] = feature_key in enabled_features
+        save_config(config)
+        audit_interaction(
+            interaction,
+            "setup_set_features",
+            "features",
+            "",
+            "Updated feature toggles from Discord setup wizard.",
+        )
+        await self.view.refresh(interaction, "Feature toggles saved.")
+
+
+class SetupButton(discord.ui.Button):
+    def __init__(self, label, setup_action, style=discord.ButtonStyle.secondary, row=4):
+        super().__init__(label=label, style=style, row=row)
+        self.setup_action = setup_action
+
+    async def callback(self, interaction):
+        if not await self.view.ensure_allowed(interaction):
+            return
+        await self.view.handle_button(interaction, self.setup_action)
+
+
+class SetupWizardView(discord.ui.View):
+    def __init__(self, owner_id, guild_id, page=1):
+        super().__init__(timeout=900)
+        self.owner_id = int(owner_id)
+        self.guild_id = str(guild_id)
+        self.page = max(1, min(3, int(page or 1)))
+        guild_config = get_guild_config(guild_id, create=False)
+
+        if self.page == 1:
+            self.add_item(SetupRoleSelect())
+            self.add_item(SetupChannelSelect(
+                "submit",
+                "Step 2: choose the submission channel",
+                1,
+            ))
+            self.add_item(SetupChannelSelect(
+                "category",
+                "Step 3: choose a category repost channel",
+                2,
+            ))
+            self.add_item(SetupChannelSelect(
+                "approval",
+                "Optional: choose approval channel and enable approval",
+                3,
+            ))
+            self.add_item(SetupButton("Disable Approval", "disable_approval", row=4))
+            self.add_item(SetupButton("Next", "next", discord.ButtonStyle.primary, 4))
+        elif self.page == 2:
+            self.add_item(SetupChannelSelect(
+                "weekly",
+                "Optional: choose weekly top channel",
+                0,
+            ))
+            self.add_item(SetupChannelSelect(
+                "summary",
+                "Optional: choose guessing game summary channel",
+                1,
+            ))
+            self.add_item(SetupChannelSelect(
+                "error",
+                "Optional: choose error notification channel",
+                2,
+            ))
+            self.add_item(SetupButton("Weekly Schedule", "weekly_schedule", row=3))
+            self.add_item(SetupButton("Timezone", "timezone", row=3))
+            self.add_item(SetupButton("Back", "back", row=4))
+            self.add_item(SetupButton("Next", "next", discord.ButtonStyle.primary, 4))
+        else:
+            self.add_item(SetupFeatureSelect(guild_config))
+            self.add_item(SetupButton("Permission Check", "permission_check", row=1))
+            self.add_item(SetupButton("Refresh", "refresh", row=1))
+            self.add_item(SetupButton("Back", "back", row=2))
+            self.add_item(SetupButton("Finish", "finish", discord.ButtonStyle.success, 2))
+
+    async def ensure_allowed(self, interaction):
+        if not interaction.guild or str(interaction.guild_id) != self.guild_id:
+            await interaction.response.send_message(
+                "This setup wizard belongs to another server.",
+                ephemeral=True,
+            )
+            return False
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message(
+                "Only the admin who opened this setup wizard can use these controls.",
+                ephemeral=True,
+            )
+            return False
+        if not admin_only(interaction):
+            await interaction.response.send_message(
+                "Only admins can use this setup wizard.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    async def refresh(self, interaction, notice=""):
+        guild_config = get_guild_config(interaction.guild_id, create=False)
+        await interaction.response.edit_message(
+            content=setup_wizard_content(guild_config, self.page, notice),
+            view=SetupWizardView(self.owner_id, self.guild_id, self.page),
+        )
+
+    async def handle_button(self, interaction, action):
+        if action == "next":
+            page = min(3, self.page + 1)
+            guild_config = get_guild_config(interaction.guild_id, create=False)
+            await interaction.response.edit_message(
+                content=setup_wizard_content(guild_config, page),
+                view=SetupWizardView(self.owner_id, self.guild_id, page),
+            )
+            return
+        if action == "back":
+            page = max(1, self.page - 1)
+            guild_config = get_guild_config(interaction.guild_id, create=False)
+            await interaction.response.edit_message(
+                content=setup_wizard_content(guild_config, page),
+                view=SetupWizardView(self.owner_id, self.guild_id, page),
+            )
+            return
+        if action == "refresh":
+            await self.refresh(interaction, "Setup status refreshed.")
+            return
+        if action == "disable_approval":
+            guild_config = get_guild_config(interaction.guild_id)
+            guild_config["approval_enabled"] = False
+            save_config(config)
+            audit_interaction(
+                interaction,
+                "setup_disable_approval",
+                "approval",
+                "disabled",
+                "Disabled from Discord setup wizard.",
+            )
+            await self.refresh(interaction, "Approval queue disabled.")
+            return
+        if action == "weekly_schedule":
+            await interaction.response.send_modal(
+                SetupScheduleModal(interaction.user.id, interaction.guild_id)
+            )
+            return
+        if action == "timezone":
+            await interaction.response.send_modal(
+                SetupTimezoneModal(interaction.user.id, interaction.guild_id)
+            )
+            return
+        if action == "permission_check":
+            await self.send_permission_check(interaction)
+            return
+        if action == "finish":
+            guild_config = get_guild_config(interaction.guild_id, create=False)
+            await interaction.response.edit_message(
+                content=(
+                    setup_wizard_content(
+                        guild_config,
+                        self.page,
+                        "Setup wizard closed. Run `/setup` any time to reopen it.",
+                    )
+                ),
+                view=None,
+            )
+
+    async def send_permission_check(self, interaction):
+        guild_config = get_guild_config(interaction.guild_id, create=False)
+        channel_ids = configured_channel_ids(guild_config)
+        if not channel_ids and isinstance(interaction.channel, discord.TextChannel):
+            channel_ids.append(interaction.channel.id)
+
+        lines = ["**SDAC Permission Check**"]
+        if not channel_ids:
+            lines.append("No configured text channels were found.")
+
+        seen = set()
+        for channel_id in channel_ids:
+            if str(channel_id) in seen:
+                continue
+            seen.add(str(channel_id))
+            guild_channel = await resolve_guild_channel(
+                interaction.guild,
+                channel_id,
+            )
+            if guild_channel is None:
+                lines.append(
+                    f"- `{channel_id}`: channel was not found or is not visible."
+                )
+                continue
+            summary = bot_permission_summary(interaction.guild, guild_channel)
+            lines.append(f"- {guild_channel.mention}: {summary}")
+
+        audit_interaction(
+            interaction,
+            "setup_check_permissions",
+            "guild",
+            interaction.guild_id,
+            f"Checked {len(seen)} channel(s).",
+        )
+        await interaction.response.send_message(
+            "\n".join(lines)[:1900],
+            ephemeral=True,
+        )
+
+
+@tree.command(name="setup", description="Open the guided SDAC setup wizard")
+@app_commands.guild_only()
+async def setup(interaction):
+    if not await require_admin(interaction):
+        return
+    guild_config = get_guild_config(interaction.guild_id)
+    audit_interaction(
+        interaction,
+        "open_setup_wizard",
+        "guild",
+        interaction.guild_id,
+        "Opened Discord setup wizard.",
+    )
+    await interaction.response.send_message(
+        setup_wizard_content(guild_config, page=1),
+        view=SetupWizardView(interaction.user.id, interaction.guild_id, 1),
+        ephemeral=True,
+    )
+
+
+@tree.command(name="setupstatus", description="Show SDAC setup progress")
+@app_commands.guild_only()
+async def setupstatus(interaction):
+    if not await require_admin(interaction):
+        return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    await interaction.response.send_message(
+        setup_wizard_content(
+            guild_config,
+            page=1,
+            notice="Run `/setup` to change these settings with the wizard.",
+        ),
+        ephemeral=True,
+    )
+
+
 @tree.command(name="setsubmit", description="Set the SDAC submission channel")
 @app_commands.guild_only()
 @app_commands.describe(channel="Channel where users can submit")

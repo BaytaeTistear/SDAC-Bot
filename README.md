@@ -224,6 +224,8 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /editcategory oldname newname #channel
 /deletecategory category
 /categories
+/setup
+/setupstatus
 /settings
 /setfeature submissions true
 /checkpermissions
