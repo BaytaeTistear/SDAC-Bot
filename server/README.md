@@ -10,6 +10,8 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - Public web gallery with sorting by newest, votes, and month
 - Preserved monthly top 10 submission snapshots
 - Guessing games started by admins with `/startgame`
+- Website-managed guessing-game library for reusable media, answers, aliases,
+  prompts, categories, and hints
 - Answer aliases, generated hints, automatic hints, `/guess` scoring,
   wrong-guess cooldowns, and monthly leaderboards
 - Cross-server dashboard filtering and cross-server guessing rankings
@@ -236,6 +238,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /setgamesummarychannel #channel
 /seterrorchannel #channel
 /startgame #channel answer media text category hint auto_hint_minutes
+/startlibrarygame #channel item_id
 /activegame
 /guess guess
 /correct
@@ -256,6 +259,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /servers                        Server list
 /admin/login?key=ImTheBestAdmin Admin login
 /admin/settings?key=ImTheBestAdmin
+/admin/game-library?key=ImTheBestAdmin
 /admin/onboarding?key=ImTheBestAdmin
 /admin/maintenance?key=ImTheBestAdmin
 /admin/moderation?key=ImTheBestAdmin

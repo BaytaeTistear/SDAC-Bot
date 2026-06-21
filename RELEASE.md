@@ -1,3 +1,38 @@
+# SDAC Bot Version 2.5.1 Experimental
+
+Date: 2026-06-21
+
+Version 2.5.1 is an experimental build for testing website-managed guessing
+games.
+
+Included:
+
+- new `guess_library_items` database table and schema migration
+- admin dashboard page at `/admin/game-library?key=ImTheBestAdmin`
+- website uploads for reusable guessing-game media, prompts, answers, aliases,
+  categories, custom hints, and automatic hint timing
+- enable, disable, and delete actions for saved library items
+- new `/startlibrarygame #channel item_id` Discord admin command
+- `item_id` `0` starts the next unused active library item for that server
+- active games copy the saved library media before posting, so the reusable
+  website upload is not removed when an active game is replaced or cleaned up
+
+Release channel:
+
+- `version-2.5.1` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+Not included:
+
+- Discord token or `.env`
+- SQLite database files such as `sdac.db`
+- `media/` uploads
+- `backups/`
+- `venv/` or Python cache files
+
+---
+
 # SDAC Bot Version 2.5 Official
 
 Date: 2026-06-19

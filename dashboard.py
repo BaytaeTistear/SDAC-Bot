@@ -63,6 +63,11 @@ WEEKDAYS = (
     "saturday",
     "sunday",
 )
+ALLOWED_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".gif", ".webp",
+    ".mp4", ".mov", ".webm", ".mkv",
+    ".mp3", ".wav", ".ogg", ".flac", ".m4a",
+}
 DEFAULT_LIMITS = {
     "max_file_bytes": 25 * 1024 * 1024,
     "max_total_bytes": 50 * 1024 * 1024,
@@ -316,6 +321,7 @@ HTML = """
         <a href="{{ url_for('achievements', key=admin_key if is_admin else None) }}">Achievements</a>
         {% if is_admin %}
             <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+            <a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a>
             <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
             <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
             <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
@@ -727,6 +733,7 @@ AUDIT_HTML = """
     <h1>SDAC Audit Log</h1>
     <nav><a href="{{ url_for('index', key=admin_key) }}">Back to submissions</a></nav>
     <nav><a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a></nav>
+    <nav><a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a></nav>
     <nav><a href="{{ url_for('admin_logout') }}">Log out</a></nav>
     <section class="filter">
         <form method="get" action="{{ url_for('audit_log') }}">
@@ -863,6 +870,7 @@ GUESSING_HTML = """
         <a href="{{ url_for('achievements', key=admin_key if is_admin else None) }}">Achievements</a>
         {% if is_admin %}
             <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+            <a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a>
             <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
             <a href="{{ url_for('admin_logout') }}">Log out</a>
         {% endif %}
@@ -1198,6 +1206,236 @@ ACHIEVEMENTS_HTML = """
 """
 
 
+GAME_LIBRARY_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Game Library</title>
+    <style>
+        :root { color-scheme: dark; }
+        body {
+            background: #101114;
+            color: #f4f5f7;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 24px;
+        }
+        main { margin: 0 auto; width: min(100%, 1100px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            justify-content: center;
+            margin-bottom: 24px;
+        }
+        .panel {
+            background: #1b1d22;
+            border: 1px solid #30333b;
+            border-radius: 12px;
+            margin: 16px 0;
+            padding: 16px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        th, td {
+            border-bottom: 1px solid #30333b;
+            padding: 10px;
+            text-align: left;
+            vertical-align: top;
+        }
+        input, select, textarea, button {
+            border: 1px solid #30333b;
+            border-radius: 7px;
+            font-size: 15px;
+            padding: 9px 10px;
+        }
+        input, select, textarea { width: 100%; }
+        textarea { min-height: 84px; resize: vertical; }
+        button {
+            background: #7c9cff;
+            color: #0b1020;
+            cursor: pointer;
+            font-weight: bold;
+            width: auto;
+        }
+        .danger {
+            background: #e45d68;
+            color: white;
+        }
+        .notice {
+            border: 1px solid #30333b;
+            border-radius: 8px;
+            margin: 0 auto 20px;
+            padding: 12px;
+            text-align: center;
+        }
+        .notice.error { border-color: #e45d68; }
+        .grid {
+            display: grid;
+            gap: 12px;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        }
+        .actions form {
+            display: inline-block;
+            margin: 0 6px 6px 0;
+        }
+        .actions button { padding: 7px 9px; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Game Library</h1>
+    <nav>
+        <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
+        <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
+        <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+
+    {% if notice %}
+        <div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>
+    {% endif %}
+
+    <section class="panel">
+        <h2>Add Guess Item</h2>
+        <p class="muted">
+            Add reusable media and answers here, then start one in Discord with
+            <code>/startlibrarygame #channel item_id</code>. Use <code>|</code>
+            between alternate answers, for example <code>Jack Black|Jables</code>.
+            Matching ignores capitalization and special characters.
+        </p>
+        <form method="post" enctype="multipart/form-data">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="create_item">
+            <div class="grid">
+                <label>Discord server
+                    <select name="guild_id" required>
+                        {% for guild in guild_options %}
+                            <option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>{{ guild.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Title
+                    <input name="title" maxlength="120" placeholder="Optional display title">
+                </label>
+                <label>Answer and aliases
+                    <input name="answer" required maxlength="300" placeholder="Minecraft: The Movie | Minecraft Movie">
+                </label>
+                <label>Category
+                    <input name="category" maxlength="80" placeholder="movie, game, music, etc.">
+                </label>
+                <label>Auto hint minutes
+                    <input name="auto_hint_minutes" type="number" min="0" max="1440" value="0">
+                </label>
+                <label>Media
+                    <input name="media" type="file" required>
+                </label>
+            </div>
+            <p class="muted">Maximum file size: {{ max_file_label }}.</p>
+            <label>Prompt text
+                <textarea name="prompt_text" maxlength="{{ max_text_length }}" placeholder="Optional text shown with the media"></textarea>
+            </label>
+            <label>Custom hint
+                <textarea name="hint_text" maxlength="500" placeholder="Optional hint included in generated hints"></textarea>
+            </label>
+            <p><button type="submit">Add Library Item</button></p>
+        </form>
+    </section>
+
+    <section class="panel">
+        <h2>Saved Items</h2>
+        <form method="get">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <select name="guild_id">
+                <option value="all">All Discord Servers</option>
+                {% for guild in guild_options %}
+                    <option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>{{ guild.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit">Filter</button>
+        </form>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Server</th>
+                    <th>Title / Answer</th>
+                    <th>Media</th>
+                    <th>Status</th>
+                    <th>Used</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                    <tr>
+                        <td><code>{{ item.id }}</code></td>
+                        <td>{{ item.guild_name }}</td>
+                        <td>
+                            <strong>{{ item.title or item.answer_display }}</strong><br>
+                            Answer: <code>{{ item.answer_display }}</code><br>
+                            Aliases: {{ item.alias_count }}<br>
+                            {% if item.category %}Category: {{ item.category }}<br>{% endif %}
+                            {% if item.prompt_text %}<span class="muted">{{ item.prompt_text }}</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if item.media_url %}
+                                <a href="{{ item.media_url }}" target="_blank">{{ item.media_name }}</a>
+                            {% else %}
+                                {{ item.media_name }}
+                            {% endif %}
+                            <br>{{ item.media_type }}{% if item.size_label %} - {{ item.size_label }}{% endif %}
+                        </td>
+                        <td><code>{{ item.status }}</code></td>
+                        <td>
+                            {{ item.times_used or 0 }} time(s)<br>
+                            <span class="muted">Last: {{ item.last_used_at or "Never" }}</span><br>
+                            <span class="muted">Created: {{ item.created_at or "" }}</span>
+                        </td>
+                        <td class="actions">
+                            <form method="post">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="set_status">
+                                <input type="hidden" name="guild_id" value="{{ selected_guild_id or 'all' }}">
+                                <input type="hidden" name="item_id" value="{{ item.id }}">
+                                <input type="hidden" name="status" value="{{ 'disabled' if item.status == 'active' else 'active' }}">
+                                <button type="submit">{{ 'Disable' if item.status == 'active' else 'Enable' }}</button>
+                            </form>
+                            <form method="post">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="delete_item">
+                                <input type="hidden" name="guild_id" value="{{ selected_guild_id or 'all' }}">
+                                <input type="hidden" name="item_id" value="{{ item.id }}">
+                                <button class="danger" type="submit">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="7" class="muted">No game library items yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
 SETTINGS_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -1270,6 +1508,7 @@ SETTINGS_HTML = """
     <nav>
         <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
         <a href="{{ url_for('guessing_leaderboard', key=admin_key) }}">Guessing leaderboard</a>
+        <a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a>
         <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
         <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
         <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
@@ -1550,6 +1789,7 @@ MAINTENANCE_HTML = """
     <nav>
         <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
         <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a>
         <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
         <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
@@ -1677,6 +1917,7 @@ MODERATION_HTML = """
     <nav>
         <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
         <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a>
         <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
@@ -1833,6 +2074,7 @@ ONBOARDING_HTML = """
     <nav>
         <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
         <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a>
         <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
         <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
@@ -2147,6 +2389,122 @@ def re_split_ids(raw_value):
 
 def clean_category_name(category):
     return category.lower().strip().replace(" ", "")
+
+
+def normalize_guess(value):
+    cleaned = re.sub(r"[^\w\s]", " ", str(value or "").casefold())
+    cleaned = re.sub(r"[_\s]+", " ", cleaned)
+    return cleaned.strip()
+
+
+def parse_answer_aliases(answer):
+    aliases = []
+    seen = set()
+    for part in str(answer or "").split("|"):
+        display = part.strip()
+        normalized = normalize_guess(display)
+        if not display or not normalized or normalized in seen:
+            continue
+        aliases.append({
+            "display": display,
+            "normalized": normalized,
+        })
+        seen.add(normalized)
+    return aliases
+
+
+def is_allowed_file(filename):
+    return Path(filename or "").suffix.lower() in ALLOWED_EXTENSIONS
+
+
+def get_media_type(filename):
+    extension = Path(filename or "").suffix.lower()
+    if extension in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
+        return "image"
+    if extension in {".mp4", ".mov", ".webm", ".mkv"}:
+        return "video"
+    if extension in {".mp3", ".wav", ".ogg", ".flac", ".m4a"}:
+        return "audio"
+    return "unknown"
+
+
+def safe_upload_filename(filename):
+    basename = Path(filename or "").name.replace("\\", "_")
+    basename = re.sub(r"[^A-Za-z0-9_.-]+", "-", basename).strip("-")
+    return basename or "media"
+
+
+def guess_library_media_metadata(filename, path, content_type=""):
+    try:
+        size = Path(path).stat().st_size
+    except OSError:
+        size = 0
+    media_type = get_media_type(filename)
+    return {
+        "filename": filename,
+        "media_type": media_type,
+        "size": int(size or 0),
+        "size_label": format_bytes(int(size or 0)),
+        "content_type": content_type or "",
+    }
+
+
+def save_guess_library_upload(guild_id, upload, limits):
+    if upload is None or not upload.filename:
+        raise ValueError("Game media is required.")
+    if not is_allowed_file(upload.filename):
+        raise ValueError("Game media must be an image, video, or audio file.")
+
+    folder = MEDIA_DIR / str(guild_id) / "guess_library"
+    folder.mkdir(parents=True, exist_ok=True)
+    filename = safe_upload_filename(upload.filename)
+    stored_name = f"{int(time.time())}-{secrets.token_hex(4)}-{filename}"
+    path = folder / stored_name
+    upload.save(path)
+
+    size = path.stat().st_size if path.exists() else 0
+    max_file_bytes = int(limits.get("max_file_bytes", 25 * 1024 * 1024))
+    if size <= 0:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        raise ValueError("Uploaded media was empty.")
+    if max_file_bytes and size > max_file_bytes:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        raise ValueError("Uploaded media exceeds the per-file size limit.")
+
+    metadata = guess_library_media_metadata(
+        filename,
+        path,
+        getattr(upload, "mimetype", "") or "",
+    )
+    return {
+        "path": str(path),
+        "name": filename,
+        "type": metadata["media_type"],
+        "size": size,
+        "metadata": metadata,
+    }
+
+
+def delete_guess_library_media(stored_path):
+    relative_path = media_relative_path(stored_path)
+    if not relative_path:
+        return
+    file_path = (MEDIA_DIR / relative_path).resolve()
+    try:
+        file_path.relative_to(MEDIA_DIR)
+    except ValueError:
+        return
+    if file_path.is_file():
+        try:
+            file_path.unlink()
+        except OSError:
+            pass
 
 
 def validate_time(value):
@@ -2631,11 +2989,37 @@ def initialize_database():
                 next_hint_at TEXT,
                 auto_hint_minutes INTEGER DEFAULT 0,
                 hint_category TEXT,
+                library_item_id INTEGER,
                 status TEXT DEFAULT 'active',
                 winner_user_id TEXT,
                 winner_username TEXT,
                 started_at TEXT,
                 solved_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS guess_library_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                title TEXT,
+                answer TEXT,
+                answer_display TEXT,
+                answer_aliases_json TEXT,
+                prompt_text TEXT,
+                category TEXT,
+                hint_text TEXT,
+                auto_hint_minutes INTEGER DEFAULT 0,
+                media_path TEXT,
+                media_name TEXT,
+                media_type TEXT,
+                media_size INTEGER DEFAULT 0,
+                media_metadata_json TEXT,
+                status TEXT DEFAULT 'active',
+                times_used INTEGER DEFAULT 0,
+                last_used_at TEXT,
+                created_by TEXT,
+                created_at TEXT,
+                updated_at TEXT
             )
         """)
         connection.execute("""
@@ -2772,10 +3156,43 @@ def initialize_database():
             "next_hint_at": "TEXT",
             "auto_hint_minutes": "INTEGER DEFAULT 0",
             "hint_category": "TEXT",
+            "library_item_id": "INTEGER",
         }.items():
             if column not in guess_columns:
                 connection.execute(
                     f"ALTER TABLE guess_games ADD COLUMN {column} {definition}"
+                )
+        library_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(guess_library_items)"
+            ).fetchall()
+        }
+        for column, definition in {
+            "guild_id": "TEXT",
+            "title": "TEXT",
+            "answer": "TEXT",
+            "answer_display": "TEXT",
+            "answer_aliases_json": "TEXT",
+            "prompt_text": "TEXT",
+            "category": "TEXT",
+            "hint_text": "TEXT",
+            "auto_hint_minutes": "INTEGER DEFAULT 0",
+            "media_path": "TEXT",
+            "media_name": "TEXT",
+            "media_type": "TEXT",
+            "media_size": "INTEGER DEFAULT 0",
+            "media_metadata_json": "TEXT",
+            "status": "TEXT DEFAULT 'active'",
+            "times_used": "INTEGER DEFAULT 0",
+            "last_used_at": "TEXT",
+            "created_by": "TEXT",
+            "created_at": "TEXT",
+            "updated_at": "TEXT",
+        }.items():
+            if column not in library_columns:
+                connection.execute(
+                    f"ALTER TABLE guess_library_items ADD COLUMN {column} {definition}"
                 )
         connection.execute("""
             UPDATE submissions
@@ -2797,6 +3214,14 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_guess_points_global_month
             ON guess_points (month, user_id, points)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guess_library_items_guild_status
+            ON guess_library_items (guild_id, status, id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guess_library_items_last_used
+            ON guess_library_items (guild_id, status, last_used_at)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
@@ -3239,6 +3664,278 @@ def admin_logout():
             )
     session.pop("sdac_admin", None)
     return redirect(url_for("index"))
+
+
+def game_library_redirect(message, error=False, guild_id="all"):
+    return redirect(url_for(
+        "admin_game_library",
+        key=ADMIN_KEY,
+        guild_id=guild_id or "all",
+        notice=message,
+        error=1 if error else 0,
+    ))
+
+
+@app.route("/admin/game-library", methods=["GET", "POST"])
+def admin_game_library():
+    login_response = require_admin_login()
+    if login_response:
+        return login_response
+
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    config_data = load_config()
+    options = guild_options(config_data)
+    valid_guild_ids = {option["id"] for option in options}
+    selected_server_id = request.values.get("guild_id", "all").strip()
+    if selected_server_id == "all":
+        selected_server_id = ""
+    if selected_server_id and selected_server_id not in valid_guild_ids:
+        selected_server_id = ""
+
+    if request.method == "POST":
+        require_csrf_token()
+        action = request.form.get("action", "")
+        actor_id, actor_name = web_actor()
+        redirect_guild_id = request.form.get(
+            "guild_id",
+            selected_server_id or "all",
+        ).strip() or "all"
+        try:
+            if action == "create_item":
+                guild_id = request.form.get("guild_id", "").strip()
+                if guild_id not in valid_guild_ids:
+                    raise ValueError("Choose a valid Discord server.")
+                answer_aliases = parse_answer_aliases(
+                    request.form.get("answer", "")
+                )
+                if not answer_aliases:
+                    raise ValueError("Answer is required.")
+                answer_display = answer_aliases[0]["display"]
+                normalized_answer = answer_aliases[0]["normalized"]
+                title = request.form.get("title", "").strip()[:120]
+                prompt_text = request.form.get("prompt_text", "").strip()
+                max_text_length = int(
+                    config_data.get("limits", {}).get(
+                        "max_text_length",
+                        DEFAULT_LIMITS["max_text_length"],
+                    )
+                )
+                if len(prompt_text) > max_text_length:
+                    raise ValueError(
+                        f"Prompt text is limited to {max_text_length} characters."
+                    )
+                category = request.form.get("category", "").strip()[:80]
+                hint_text = request.form.get("hint_text", "").strip()
+                if len(hint_text) > 500:
+                    raise ValueError("Hints are limited to 500 characters.")
+                try:
+                    auto_hint_minutes = int(
+                        request.form.get("auto_hint_minutes", "0") or 0
+                    )
+                except ValueError as form_error:
+                    raise ValueError(
+                        "Automatic hint minutes must be a number."
+                    ) from form_error
+                if auto_hint_minutes < 0 or auto_hint_minutes > 1440:
+                    raise ValueError(
+                        "Automatic hint minutes must be between 0 and 1440."
+                    )
+
+                media_info = save_guess_library_upload(
+                    guild_id,
+                    request.files.get("media"),
+                    config_data.get("limits", {}),
+                )
+                now = utc_now_iso()
+                try:
+                    with database() as connection:
+                        cursor = connection.execute("""
+                            INSERT INTO guess_library_items (
+                                guild_id, title, answer, answer_display,
+                                answer_aliases_json, prompt_text, category,
+                                hint_text, auto_hint_minutes, media_path,
+                                media_name, media_type, media_size,
+                                media_metadata_json, status, times_used,
+                                created_by, created_at, updated_at
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, ?, ?)
+                        """, (
+                            guild_id,
+                            title or answer_display,
+                            normalized_answer,
+                            answer_display,
+                            json.dumps(answer_aliases, separators=(",", ":")),
+                            prompt_text,
+                            category,
+                            hint_text,
+                            auto_hint_minutes,
+                            media_info["path"],
+                            media_info["name"],
+                            media_info["type"],
+                            int(media_info["size"] or 0),
+                            json.dumps(
+                                media_info["metadata"],
+                                separators=(",", ":"),
+                            ),
+                            actor_name,
+                            now,
+                            now,
+                        ))
+                        item_id = cursor.lastrowid
+                        add_admin_audit_log(
+                            connection,
+                            guild_id,
+                            "dashboard_create_guess_library_item",
+                            actor_id,
+                            actor_name,
+                            "guess_library_item",
+                            item_id,
+                            f"Created website game-library item {item_id}.",
+                        )
+                except Exception:
+                    delete_guess_library_media(media_info["path"])
+                    raise
+                return game_library_redirect(
+                    f"Library item {item_id} added.",
+                    guild_id=guild_id,
+                )
+
+            if action == "set_status":
+                item_id = int(request.form.get("item_id", "0") or 0)
+                new_status = request.form.get("status", "").strip()
+                if new_status not in {"active", "disabled"}:
+                    raise ValueError("Invalid library item status.")
+                with database() as connection:
+                    item = connection.execute("""
+                        SELECT id, guild_id, title
+                        FROM guess_library_items
+                        WHERE id = ?
+                    """, (item_id,)).fetchone()
+                    if not item:
+                        raise ValueError("Library item was not found.")
+                    connection.execute("""
+                        UPDATE guess_library_items
+                        SET status = ?,
+                            updated_at = ?
+                        WHERE id = ?
+                    """, (new_status, utc_now_iso(), item_id))
+                    add_admin_audit_log(
+                        connection,
+                        item["guild_id"],
+                        "dashboard_update_guess_library_item_status",
+                        actor_id,
+                        actor_name,
+                        "guess_library_item",
+                        item_id,
+                        f"Set website game-library item to {new_status}.",
+                    )
+                return game_library_redirect(
+                    f"Library item {item_id} set to {new_status}.",
+                    guild_id=redirect_guild_id,
+                )
+
+            if action == "delete_item":
+                item_id = int(request.form.get("item_id", "0") or 0)
+                with database() as connection:
+                    item = connection.execute("""
+                        SELECT id, guild_id, title, media_path
+                        FROM guess_library_items
+                        WHERE id = ?
+                    """, (item_id,)).fetchone()
+                    if not item:
+                        raise ValueError("Library item was not found.")
+                    connection.execute(
+                        "DELETE FROM guess_library_items WHERE id = ?",
+                        (item_id,),
+                    )
+                    add_admin_audit_log(
+                        connection,
+                        item["guild_id"],
+                        "dashboard_delete_guess_library_item",
+                        actor_id,
+                        actor_name,
+                        "guess_library_item",
+                        item_id,
+                        "Deleted website game-library item.",
+                    )
+                delete_guess_library_media(item["media_path"])
+                return game_library_redirect(
+                    f"Library item {item_id} deleted.",
+                    guild_id=redirect_guild_id,
+                )
+
+            raise ValueError("Unknown game-library action.")
+        except (ValueError, OSError, sqlite3.Error) as form_error:
+            return game_library_redirect(
+                str(form_error),
+                error=True,
+                guild_id=redirect_guild_id,
+            )
+
+    guild_names = guild_name_map(config_data)
+    where = []
+    parameters = []
+    if selected_server_id:
+        where.append("guild_id = ?")
+        parameters.append(selected_server_id)
+    where_sql = "WHERE " + " AND ".join(where) if where else ""
+    with closing(connect_db()) as connection:
+        rows = connection.execute(f"""
+            SELECT *
+            FROM guess_library_items
+            {where_sql}
+            ORDER BY created_at DESC, id DESC
+            LIMIT 200
+        """, parameters).fetchall()
+
+    items = []
+    for row in rows:
+        item = dict(row)
+        try:
+            aliases = json.loads(item.get("answer_aliases_json") or "[]")
+        except (TypeError, json.JSONDecodeError):
+            aliases = []
+        relative_path = media_relative_path(item.get("media_path") or "")
+        size = int(item.get("media_size") or 0)
+        item["alias_count"] = len(aliases)
+        item["guild_name"] = guild_names.get(
+            item.get("guild_id"),
+            item.get("guild_id") or "Unknown",
+        )
+        item["media_url"] = (
+            url_for("serve_media", filename=relative_path)
+            if relative_path
+            else ""
+        )
+        item["size_label"] = format_bytes(size) if size else ""
+        item["status"] = item.get("status") or "active"
+        items.append(item)
+
+    max_file_bytes = int(
+        config_data.get("limits", {}).get(
+            "max_file_bytes",
+            DEFAULT_LIMITS["max_file_bytes"],
+        )
+    )
+    max_text_length = int(
+        config_data.get("limits", {}).get(
+            "max_text_length",
+            DEFAULT_LIMITS["max_text_length"],
+        )
+    )
+    return render_template_string(
+        GAME_LIBRARY_HTML,
+        admin_key=ADMIN_KEY,
+        csrf_token=get_csrf_token(),
+        error=error,
+        guild_options=options,
+        items=items,
+        max_file_label=format_bytes(max_file_bytes),
+        max_text_length=max_text_length,
+        notice=notice,
+        selected_guild_id=selected_server_id,
+    )
 
 
 @app.route("/admin/settings", methods=["GET", "POST"])
