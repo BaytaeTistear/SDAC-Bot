@@ -1,3 +1,25 @@
+# SDAC Bot Version 2.5.2 Experimental
+
+Date: 2026-06-21
+
+Version 2.5.2 is an experimental hotfix for the admin onboarding page.
+
+Included:
+
+- fixes `/admin/onboarding` failing with `TypeError:
+  'builtin_function_or_method' object is not iterable`
+- changes the onboarding template to read the server setup checklist with
+  bracket access so Jinja does not confuse the `"items"` list with
+  `dict.items`
+
+Release channel:
+
+- `version-2.5.2` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+---
+
 # SDAC Bot Version 2.5.1 Experimental
 
 Date: 2026-06-21

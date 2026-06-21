@@ -2098,7 +2098,7 @@ ONBOARDING_HTML = """
                     </tr>
                 </thead>
                 <tbody>
-                    {% for item in server.items %}
+                    {% for item in server["items"] %}
                         <tr>
                             <td class="{{ 'ok' if item.ok else 'missing' }}">{{ 'OK' if item.ok else 'Missing' }}</td>
                             <td>{{ item.label }}{% if item.optional %}<br><span class="muted">Recommended</span>{% endif %}</td>
