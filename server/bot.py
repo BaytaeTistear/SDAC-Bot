@@ -28,6 +28,7 @@ CONFIG_FILE = BASE_DIR / "config.json"
 DB_FILE = BASE_DIR / "sdac.db"
 MEDIA_DIR = BASE_DIR / "media"
 BACKUP_DIR = BASE_DIR / "backups"
+BOT_STATUS_FILE = BASE_DIR / "bot_status.json"
 BACKUP_KEEP_COUNT = 30
 SCHEMA_VERSION = DATABASE_SCHEMA_VERSION
 
@@ -90,6 +91,10 @@ DEFAULT_FEATURES = {
 
 DEFAULT_GUILD_CONFIG = {
     "guild_name": "",
+    "brand_name": "",
+    "brand_accent": "#7c9cff",
+    "brand_logo_url": "",
+    "setup_preset": "",
     "admin_role_ids": [],
     "submit_channel": None,
     "daily_top_channel": None,
@@ -118,6 +123,48 @@ FEATURE_CHOICES = [
     for key, label in FEATURE_LABELS.items()
 ]
 
+SETUP_PRESETS = {
+    "simple": {
+        "label": "Simple Gallery",
+        "description": "Submissions, public gallery, weekly posts, and games.",
+        "approval_enabled": False,
+        "features": {
+            "submissions": True,
+            "approval_queue": False,
+            "guessing_games": True,
+            "weekly_posts": True,
+            "public_gallery": True,
+            "cross_server_leaderboard": True,
+        },
+    },
+    "approval": {
+        "label": "Approval Queue",
+        "description": "Submissions with admin approval before public posting.",
+        "approval_enabled": True,
+        "features": {
+            "submissions": True,
+            "approval_queue": True,
+            "guessing_games": True,
+            "weekly_posts": True,
+            "public_gallery": True,
+            "cross_server_leaderboard": True,
+        },
+    },
+    "game_only": {
+        "label": "Guessing Games Only",
+        "description": "Disable submissions and focus on media guessing games.",
+        "approval_enabled": False,
+        "features": {
+            "submissions": False,
+            "approval_queue": False,
+            "guessing_games": True,
+            "weekly_posts": False,
+            "public_gallery": False,
+            "cross_server_leaderboard": True,
+        },
+    },
+}
+
 REQUIRED_TABLES = {
     "submissions",
     "category_history",
@@ -139,10 +186,45 @@ REQUIRED_TABLES = {
 }
 
 
+def cleanup_old_config_backups():
+    if not BACKUP_DIR.exists():
+        return
+    backups = sorted(
+        BACKUP_DIR.glob("config-*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for backup_path in backups[BACKUP_KEEP_COUNT:]:
+        try:
+            backup_path.unlink()
+        except OSError:
+            pass
+
+
+def backup_config_file(label="auto"):
+    if not CONFIG_FILE.is_file():
+        return None
+    safe_label = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(label)).strip("-")
+    safe_label = safe_label or "auto"
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    backup_path = BACKUP_DIR / f"config-{safe_label}-{stamp}.json"
+    shutil.copy2(CONFIG_FILE, backup_path)
+    cleanup_old_config_backups()
+    return backup_path
+
+
 def save_config(data):
+    payload = json.dumps(data, indent=4) + "\n"
+    if CONFIG_FILE.exists():
+        try:
+            if CONFIG_FILE.read_text(encoding="utf-8") == payload:
+                return
+        except OSError:
+            pass
+        backup_config_file()
     with CONFIG_FILE.open("w", encoding="utf-8", newline="\n") as file:
-        json.dump(data, file, indent=4)
-        file.write("\n")
+        file.write(payload)
 
 
 def load_config():
@@ -1707,8 +1789,13 @@ def settings_lines(guild_config):
         "weekly_top_day",
         DEFAULT_GUILD_CONFIG["weekly_top_day"],
     ).title()
+    brand_name = guild_config.get("brand_name") or guild_config.get("guild_name") or "SDAC"
+    setup_preset = guild_config.get("setup_preset") or "custom"
     lines = [
         "**SDAC Settings**",
+        f"Brand name: `{brand_name}`",
+        f"Brand accent: `{guild_config.get('brand_accent') or '#7c9cff'}`",
+        f"Setup preset: `{setup_preset}`",
         f"Submit channel: {channel_display(guild_config.get('submit_channel'))}",
         f"Weekly top channel: {channel_display(guild_config.get('daily_top_channel'))}",
         f"Weekly top day: `{weekly_day}`",
@@ -1850,6 +1937,33 @@ def refresh_known_guilds():
             changed = True
     if changed:
         save_config(config)
+
+
+def write_bot_status(event="heartbeat"):
+    payload = {
+        "event": event,
+        "updated_at": utc_now_iso(),
+        "release": os.getenv("SDAC_RELEASE") or "development",
+        "bot_user": str(bot.user) if bot.user else "",
+        "bot_id": str(bot.user.id) if bot.user else "",
+        "guild_count": len(bot.guilds),
+        "slash_commands_synced": slash_commands_synced,
+        "guilds": [
+            {
+                "id": str(guild.id),
+                "name": guild.name,
+                "member_count": guild.member_count,
+            }
+            for guild in bot.guilds
+        ],
+    }
+    try:
+        BOT_STATUS_FILE.write_text(
+            json.dumps(payload, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as error:
+        print(f"Could not write bot status file: {error}", flush=True)
 
 
 async def delete_discord_message(channel_id, message_id):
@@ -2330,6 +2444,16 @@ def setup_status_rows(guild_config):
             "required": True,
         },
         {
+            "label": "Branding",
+            "ok": bool(guild_config.get("brand_name")),
+            "value": (
+                guild_config.get("brand_name")
+                or guild_config.get("guild_name")
+                or "Default SDAC"
+            ),
+            "required": False,
+        },
+        {
             "label": "Approval queue",
             "ok": (
                 not guild_config.get("approval_enabled")
@@ -2419,7 +2543,7 @@ def setup_wizard_content(guild_config, page=1, notice=""):
     else:
         lines.append(
             "Use the controls below to choose enabled features and run a "
-            "permission check."
+            "setup test."
         )
     return "\n".join(lines)[:1900]
 
@@ -2431,6 +2555,71 @@ def setup_modal_allowed(interaction, owner_id, guild_id):
         and interaction.user.id == owner_id
         and admin_only(interaction)
     )
+
+
+async def setup_test_lines(guild, guild_config):
+    rows = setup_status_rows(guild_config)
+    required_rows = [row for row in rows if row["required"]]
+    missing_required = [row["label"] for row in required_rows if not row["ok"]]
+    lines = ["**SDAC Setup Test**"]
+    if missing_required:
+        lines.append("[MISSING] Required setup: " + ", ".join(missing_required))
+    else:
+        lines.append("[OK] Required setup is complete.")
+
+    try:
+        with database() as connection:
+            table_names = {
+                row["name"]
+                for row in connection.execute("""
+                    SELECT name
+                    FROM sqlite_master
+                    WHERE type = 'table'
+                """).fetchall()
+            }
+            missing_tables = sorted(REQUIRED_TABLES - table_names)
+        if missing_tables:
+            lines.append("[MISSING] Database tables: " + ", ".join(missing_tables))
+        else:
+            lines.append(f"[OK] Database schema v{SCHEMA_VERSION} is ready.")
+    except sqlite3.Error as error:
+        lines.append(f"[MISSING] Database check failed: {error}")
+
+    for directory in (MEDIA_DIR, BACKUP_DIR):
+        try:
+            ensure_directory_writable(directory)
+            lines.append(f"[OK] Writable: `{directory.name}/`")
+        except OSError as error:
+            lines.append(f"[MISSING] `{directory.name}/` is not writable: {error}")
+
+    channel_ids = configured_channel_ids(guild_config)
+    if not channel_ids:
+        lines.append("[MISSING] No configured channels were found.")
+    seen = set()
+    for channel_id in channel_ids:
+        channel_key = str(channel_id)
+        if channel_key in seen:
+            continue
+        seen.add(channel_key)
+        guild_channel = await resolve_guild_channel(guild, channel_id)
+        if guild_channel is None:
+            lines.append(f"[MISSING] `{channel_id}` was not found or visible.")
+            continue
+        summary = bot_permission_summary(guild, guild_channel)
+        status = "[MISSING]" if summary.startswith("Missing required") else "[OK]"
+        lines.append(f"{status} {guild_channel.mention}: {summary}")
+
+    lines.append(
+        "[OK] Slash commands synced."
+        if slash_commands_synced
+        else "[MISSING] Slash commands have not synced in this process yet."
+    )
+    public_url = os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN") or ""
+    if public_url:
+        lines.append(f"[OK] Public URL/domain configured: `{public_url}`")
+    else:
+        lines.append("[OPTIONAL] Set `SDAC_PUBLIC_URL` or `SDAC_DOMAIN` for links.")
+    return lines
 
 
 class SetupCategoryModal(discord.ui.Modal):
@@ -2635,6 +2824,80 @@ class SetupTimezoneModal(discord.ui.Modal):
         )
 
 
+class SetupBrandingModal(discord.ui.Modal):
+    def __init__(self, owner_id, guild_id):
+        super().__init__(title="Server Branding")
+        self.owner_id = owner_id
+        self.guild_id = str(guild_id)
+        guild_config = get_guild_config(guild_id, create=False)
+        self.name_input = discord.ui.TextInput(
+            label="Display name",
+            placeholder="SDAC, Free The Fishies, etc.",
+            default=(
+                guild_config.get("brand_name")
+                or guild_config.get("guild_name")
+                or ""
+            )[:80],
+            max_length=80,
+            required=False,
+        )
+        self.accent_input = discord.ui.TextInput(
+            label="Accent color",
+            placeholder="#7c9cff",
+            default=(guild_config.get("brand_accent") or "#7c9cff")[:16],
+            max_length=16,
+            required=False,
+        )
+        self.logo_input = discord.ui.TextInput(
+            label="Logo URL",
+            placeholder="https://example.com/logo.png",
+            default=(guild_config.get("brand_logo_url") or "")[:200],
+            max_length=200,
+            required=False,
+        )
+        self.add_item(self.name_input)
+        self.add_item(self.accent_input)
+        self.add_item(self.logo_input)
+
+    async def on_submit(self, interaction):
+        if not setup_modal_allowed(interaction, self.owner_id, self.guild_id):
+            await interaction.response.send_message(
+                "Only the admin who opened this setup wizard can use this modal.",
+                ephemeral=True,
+            )
+            return
+
+        accent = str(self.accent_input.value or "").strip() or "#7c9cff"
+        if not re.match(r"^#[0-9A-Fa-f]{6}$", accent):
+            await interaction.response.send_message(
+                "Accent color must be a hex color like `#7c9cff`.",
+                ephemeral=True,
+            )
+            return
+
+        guild_config = get_guild_config(interaction.guild_id)
+        guild_config["brand_name"] = str(self.name_input.value or "").strip()[:80]
+        guild_config["brand_accent"] = accent
+        guild_config["brand_logo_url"] = str(self.logo_input.value or "").strip()[:200]
+        save_config(config)
+        audit_interaction(
+            interaction,
+            "setup_set_branding",
+            "guild",
+            interaction.guild_id,
+            "Updated server branding from Discord setup wizard.",
+        )
+        await interaction.response.send_message(
+            setup_wizard_content(
+                guild_config,
+                page=3,
+                notice="Server branding saved.",
+            ),
+            view=SetupWizardView(interaction.user.id, interaction.guild_id, 3),
+            ephemeral=True,
+        )
+
+
 class SetupRoleSelect(discord.ui.RoleSelect):
     def __init__(self):
         super().__init__(
@@ -2761,6 +3024,58 @@ class SetupFeatureSelect(discord.ui.Select):
         await self.view.refresh(interaction, "Feature toggles saved.")
 
 
+class SetupPresetSelect(discord.ui.Select):
+    def __init__(self, guild_config):
+        options = []
+        selected_preset = guild_config.get("setup_preset") or ""
+        for preset_key, preset in SETUP_PRESETS.items():
+            options.append(discord.SelectOption(
+                label=preset["label"],
+                value=preset_key,
+                description=preset["description"],
+                default=selected_preset == preset_key,
+            ))
+        super().__init__(
+            placeholder="Apply a setup preset",
+            min_values=1,
+            max_values=1,
+            options=options,
+            row=1,
+        )
+
+    async def callback(self, interaction):
+        if not await self.view.ensure_allowed(interaction):
+            return
+        preset_key = self.values[0]
+        preset = SETUP_PRESETS.get(preset_key)
+        if not preset:
+            await interaction.response.send_message(
+                "Unknown setup preset.",
+                ephemeral=True,
+            )
+            return
+        guild_config = get_guild_config(interaction.guild_id)
+        guild_config["setup_preset"] = preset_key
+        guild_config["approval_enabled"] = bool(preset["approval_enabled"])
+        features = guild_config.setdefault("features", {})
+        for feature_key in DEFAULT_FEATURES:
+            features[feature_key] = bool(
+                preset["features"].get(feature_key, DEFAULT_FEATURES[feature_key])
+            )
+        save_config(config)
+        audit_interaction(
+            interaction,
+            "setup_apply_preset",
+            "preset",
+            preset_key,
+            f"Applied setup preset {preset['label']}.",
+        )
+        await self.view.refresh(
+            interaction,
+            f"`{preset['label']}` preset applied. Review channels before finishing.",
+        )
+
+
 class SetupButton(discord.ui.Button):
     def __init__(self, label, setup_action, style=discord.ButtonStyle.secondary, row=4):
         super().__init__(label=label, style=style, row=row)
@@ -2821,10 +3136,13 @@ class SetupWizardView(discord.ui.View):
             self.add_item(SetupButton("Next", "next", discord.ButtonStyle.primary, 4))
         else:
             self.add_item(SetupFeatureSelect(guild_config))
-            self.add_item(SetupButton("Permission Check", "permission_check", row=1))
-            self.add_item(SetupButton("Refresh", "refresh", row=1))
-            self.add_item(SetupButton("Back", "back", row=2))
-            self.add_item(SetupButton("Finish", "finish", discord.ButtonStyle.success, 2))
+            self.add_item(SetupPresetSelect(guild_config))
+            self.add_item(SetupButton("Branding", "branding", row=2))
+            self.add_item(SetupButton("Permission Check", "permission_check", row=2))
+            self.add_item(SetupButton("Full Setup Test", "setup_test", row=3))
+            self.add_item(SetupButton("Refresh", "refresh", row=3))
+            self.add_item(SetupButton("Back", "back", row=4))
+            self.add_item(SetupButton("Finish", "finish", discord.ButtonStyle.success, 4))
 
     async def ensure_allowed(self, interaction):
         if not interaction.guild or str(interaction.guild_id) != self.guild_id:
@@ -2897,8 +3215,16 @@ class SetupWizardView(discord.ui.View):
                 SetupTimezoneModal(interaction.user.id, interaction.guild_id)
             )
             return
+        if action == "branding":
+            await interaction.response.send_modal(
+                SetupBrandingModal(interaction.user.id, interaction.guild_id)
+            )
+            return
         if action == "permission_check":
             await self.send_permission_check(interaction)
+            return
+        if action == "setup_test":
+            await self.send_setup_test(interaction)
             return
         if action == "finish":
             guild_config = get_guild_config(interaction.guild_id, create=False)
@@ -2952,6 +3278,21 @@ class SetupWizardView(discord.ui.View):
             ephemeral=True,
         )
 
+    async def send_setup_test(self, interaction):
+        guild_config = get_guild_config(interaction.guild_id, create=False)
+        lines = await setup_test_lines(interaction.guild, guild_config)
+        audit_interaction(
+            interaction,
+            "setup_full_test",
+            "guild",
+            interaction.guild_id,
+            "Ran full setup test from Discord setup wizard.",
+        )
+        await interaction.response.send_message(
+            "\n".join(lines)[:1900],
+            ephemeral=True,
+        )
+
 
 @tree.command(name="setup", description="Open the guided SDAC setup wizard")
 @app_commands.guild_only()
@@ -2985,6 +3326,66 @@ async def setupstatus(interaction):
             page=1,
             notice="Run `/setup` to change these settings with the wizard.",
         ),
+        ephemeral=True,
+    )
+
+
+@tree.command(name="setuptest", description="Run a full SDAC setup test")
+@app_commands.guild_only()
+async def setuptest(interaction):
+    if not await require_admin(interaction):
+        return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    lines = await setup_test_lines(interaction.guild, guild_config)
+    audit_interaction(
+        interaction,
+        "run_setup_test",
+        "guild",
+        interaction.guild_id,
+        "Ran full setup test from slash command.",
+    )
+    await interaction.response.send_message(
+        "\n".join(lines)[:1900],
+        ephemeral=True,
+    )
+
+
+@tree.command(name="setbranding", description="Set this server's SDAC branding")
+@app_commands.guild_only()
+@app_commands.describe(
+    name="Display name for this server on the dashboard",
+    accent="#RRGGBB accent color",
+    logo_url="Optional logo URL",
+)
+async def setbranding(
+    interaction,
+    name: str,
+    accent: str = "#7c9cff",
+    logo_url: str = "",
+):
+    if not await require_admin(interaction):
+        return
+    accent = (accent or "#7c9cff").strip()
+    if not re.match(r"^#[0-9A-Fa-f]{6}$", accent):
+        await interaction.response.send_message(
+            "Accent color must be a hex color like `#7c9cff`.",
+            ephemeral=True,
+        )
+        return
+    guild_config = get_guild_config(interaction.guild_id)
+    guild_config["brand_name"] = (name or "").strip()[:80]
+    guild_config["brand_accent"] = accent
+    guild_config["brand_logo_url"] = (logo_url or "").strip()[:200]
+    save_config(config)
+    audit_interaction(
+        interaction,
+        "set_branding",
+        "guild",
+        interaction.guild_id,
+        "Updated per-server branding.",
+    )
+    await interaction.response.send_message(
+        f"Branding saved as `{guild_config['brand_name']}` with `{accent}`.",
         ephemeral=True,
     )
 
@@ -4440,11 +4841,15 @@ async def startgame(
 @app_commands.describe(
     channel="Channel where users will guess",
     item_id="Library item ID from the dashboard. Use 0 for next unused item.",
+    category="Optional library category filter when item_id is 0",
+    random_item="Pick a random matching library item",
 )
 async def startlibrarygame(
     interaction,
     channel: discord.TextChannel,
     item_id: int = 0,
+    category: str = "",
+    random_item: bool = False,
 ):
     if not await require_admin(interaction):
         return
@@ -4479,6 +4884,8 @@ async def startlibrarygame(
         )
         return
 
+    category_filter = (category or "").strip()
+
     with database() as connection:
         if item_id > 0:
             item = connection.execute("""
@@ -4490,23 +4897,39 @@ async def startlibrarygame(
                 LIMIT 1
             """, (item_id, str(interaction.guild_id))).fetchone()
         else:
-            item = connection.execute("""
-                SELECT *
-                FROM guess_library_items
-                WHERE guild_id = ?
-                  AND status = 'active'
-                ORDER BY
+            where = [
+                "guild_id = ?",
+                "status = 'active'",
+                "media_path IS NOT NULL",
+                "media_path != ''",
+            ]
+            parameters = [str(interaction.guild_id)]
+            if category_filter:
+                where.append("LOWER(category) = LOWER(?)")
+                parameters.append(category_filter)
+            order_sql = (
+                "RANDOM()"
+                if random_item
+                else """
                     CASE WHEN last_used_at IS NULL OR last_used_at = '' THEN 0 ELSE 1 END,
                     last_used_at ASC,
                     id ASC
+                """
+            )
+            item = connection.execute(f"""
+                SELECT *
+                FROM guess_library_items
+                WHERE {" AND ".join(where)}
+                ORDER BY {order_sql}
                 LIMIT 1
-            """, (str(interaction.guild_id),)).fetchone()
+            """, parameters).fetchone()
 
     if not item:
+        filter_text = f" in category `{category_filter}`" if category_filter else ""
         await interaction.response.send_message(
             (
-                "No active website game-library item was found for this "
-                "server."
+                "No active website game-library item with media was found "
+                f"for this server{filter_text}."
                 if item_id <= 0
                 else f"Active website game-library item `{item_id}` was not found for this server."
             ),
@@ -5732,6 +6155,19 @@ async def before_storage_warning_scheduler():
     await bot.wait_until_ready()
 
 
+@tasks.loop(minutes=5)
+async def bot_status_scheduler():
+    try:
+        write_bot_status("heartbeat")
+    except Exception as error:
+        await report_background_error("bot_status_scheduler", error)
+
+
+@bot_status_scheduler.before_loop
+async def before_bot_status_scheduler():
+    await bot.wait_until_ready()
+
+
 async def sync_slash_commands():
     global slash_commands_synced
     if slash_commands_synced:
@@ -5761,6 +6197,7 @@ async def sync_slash_commands():
             flush=True,
         )
     slash_commands_synced = True
+    write_bot_status("slash_sync")
 
 
 @bot.event
@@ -5795,6 +6232,9 @@ async def on_ready():
         cleanup_scheduler.start()
     if not storage_warning_scheduler.is_running():
         storage_warning_scheduler.start()
+    if not bot_status_scheduler.is_running():
+        bot_status_scheduler.start()
+    write_bot_status("ready")
     print(f"Logged in as {bot.user}", flush=True)
     print(f"Using database: {DB_FILE}", flush=True)
     print(f"Using config: {CONFIG_FILE}", flush=True)
@@ -5816,6 +6256,50 @@ async def on_guild_join(guild):
     guild_config = get_guild_config(guild.id)
     guild_config["guild_name"] = guild.name
     save_config(config)
+    log_admin_action(
+        guild.id,
+        "bot_joined_guild",
+        "system",
+        "system",
+        "guild",
+        guild.id,
+        "Bot joined server and initialized default config.",
+    )
+    try:
+        discord_guild = discord.Object(id=guild.id)
+        tree.copy_global_to(guild=discord_guild)
+        await tree.sync(guild=discord_guild)
+    except Exception as error:
+        capture_exception(error)
+        print(f"Guild command sync failed for {guild.id}: {error}", flush=True)
+
+    welcome = (
+        "**SDAC is connected.**\n"
+        "An administrator can run `/setup` to walk through channels, roles, "
+        "features, timezone, branding, and the setup test from Discord."
+    )
+    candidate_channels = []
+    if guild.system_channel is not None:
+        candidate_channels.append(guild.system_channel)
+    candidate_channels.extend(guild.text_channels)
+    seen_channels = set()
+    for channel in candidate_channels:
+        if channel.id in seen_channels:
+            continue
+        seen_channels.add(channel.id)
+        bot_member = guild.me
+        if bot_member is None and bot.user is not None:
+            bot_member = guild.get_member(bot.user.id)
+        if bot_member is None:
+            break
+        permissions = channel.permissions_for(bot_member)
+        if permissions.view_channel and permissions.send_messages:
+            try:
+                await channel.send(welcome)
+                break
+            except discord.HTTPException:
+                continue
+    write_bot_status("guild_join")
 
 
 def main():

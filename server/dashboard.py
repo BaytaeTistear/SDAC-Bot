@@ -45,7 +45,9 @@ DB_FILE = BASE_DIR / "sdac.db"
 CONFIG_FILE = BASE_DIR / "config.json"
 MEDIA_DIR = (BASE_DIR / "media").resolve()
 BACKUP_DIR = BASE_DIR / "backups"
+BOT_STATUS_FILE = BASE_DIR / "bot_status.json"
 BACKUP_KEEP_COUNT = 30
+CONFIG_BACKUP_KEEP_COUNT = 30
 SCHEMA_VERSION = DATABASE_SCHEMA_VERSION
 PAGE_SIZE = 20
 CACHE_TTL_SECONDS = 45
@@ -104,6 +106,26 @@ FEATURE_LABELS = {
     "weekly_posts": "Weekly Posts",
     "public_gallery": "Public Gallery",
     "cross_server_leaderboard": "Cross-Server Leaderboard",
+}
+
+DEFAULT_GUILD_FIELDS = {
+    "guild_name": "",
+    "brand_name": "",
+    "brand_accent": "#7c9cff",
+    "brand_logo_url": "",
+    "setup_preset": "",
+    "admin_role_ids": [],
+    "submit_channel": None,
+    "daily_top_channel": None,
+    "daily_top_time_utc": "00:00",
+    "weekly_top_day": "sunday",
+    "game_summary_channel": None,
+    "error_channel": None,
+    "timezone": "UTC",
+    "approval_enabled": False,
+    "approval_channel": None,
+    "categories": {},
+    "features": DEFAULT_FEATURES,
 }
 
 RELEASE_REPO = os.getenv("SDAC_GITHUB_REPO", "BaytaeTistear/SDAC-Bot")
@@ -1355,6 +1377,36 @@ GAME_LIBRARY_HTML = """
     </section>
 
     <section class="panel">
+        <h2>Bulk Import Answer Drafts</h2>
+        <p class="muted">
+            Upload a CSV to add many guess answers at once. Supported columns:
+            <code>title</code>, <code>answer</code>, <code>aliases</code>,
+            <code>category</code>, <code>hint</code>, <code>prompt_text</code>,
+            <code>auto_hint_minutes</code>, and optional <code>status</code>.
+            Rows without valid media stay as drafts, so they will not be chosen
+            by <code>/startlibrarygame</code> until media is added through a normal item.
+        </p>
+        <form method="post" enctype="multipart/form-data">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="bulk_import">
+            <div class="grid">
+                <label>Discord server
+                    <select name="guild_id" required>
+                        {% for guild in guild_options %}
+                            <option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>{{ guild.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>CSV file
+                    <input name="csv_file" type="file" accept=".csv,text/csv" required>
+                </label>
+            </div>
+            <p><button type="submit">Import Drafts</button></p>
+        </form>
+    </section>
+
+    <section class="panel">
         <h2>Saved Items</h2>
         <form method="get">
             <input type="hidden" name="key" value="{{ admin_key }}">
@@ -1394,7 +1446,7 @@ GAME_LIBRARY_HTML = """
                             {% if item.media_url %}
                                 <a href="{{ item.media_url }}" target="_blank">{{ item.media_name }}</a>
                             {% else %}
-                                {{ item.media_name }}
+                                <span class="muted">No media attached</span>
                             {% endif %}
                             <br>{{ item.media_type }}{% if item.size_label %} - {{ item.size_label }}{% endif %}
                         </td>
@@ -1405,15 +1457,19 @@ GAME_LIBRARY_HTML = """
                             <span class="muted">Created: {{ item.created_at or "" }}</span>
                         </td>
                         <td class="actions">
-                            <form method="post">
-                                <input type="hidden" name="key" value="{{ admin_key }}">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                <input type="hidden" name="action" value="set_status">
-                                <input type="hidden" name="guild_id" value="{{ selected_guild_id or 'all' }}">
-                                <input type="hidden" name="item_id" value="{{ item.id }}">
-                                <input type="hidden" name="status" value="{{ 'disabled' if item.status == 'active' else 'active' }}">
-                                <button type="submit">{{ 'Disable' if item.status == 'active' else 'Enable' }}</button>
-                            </form>
+                            {% if item.media_url %}
+                                <form method="post">
+                                    <input type="hidden" name="key" value="{{ admin_key }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="action" value="set_status">
+                                    <input type="hidden" name="guild_id" value="{{ selected_guild_id or 'all' }}">
+                                    <input type="hidden" name="item_id" value="{{ item.id }}">
+                                    <input type="hidden" name="status" value="{{ 'disabled' if item.status == 'active' else 'active' }}">
+                                    <button type="submit">{{ 'Disable' if item.status == 'active' else 'Enable' }}</button>
+                                </form>
+                            {% else %}
+                                <span class="muted">Create a media item to activate.</span>
+                            {% endif %}
                             <form method="post">
                                 <input type="hidden" name="key" value="{{ admin_key }}">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -1623,6 +1679,9 @@ SETTINGS_HTML = """
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <table>
                     <tbody>
+                        <tr><th>Brand display name</th><td><input name="brand_name" value="{{ guild.brand_name }}"></td></tr>
+                        <tr><th>Brand accent</th><td><input name="brand_accent" value="{{ guild.brand_accent }}" placeholder="#7c9cff"></td></tr>
+                        <tr><th>Brand logo URL</th><td><input name="brand_logo_url" value="{{ guild.brand_logo_url }}"></td></tr>
                         <tr><th>Timezone</th><td><input name="timezone" value="{{ guild.timezone }}"></td></tr>
                         <tr><th>Submit channel ID</th><td><input name="submit_channel" value="{{ guild.submit_channel or '' }}"></td></tr>
                         <tr><th>Weekly channel ID</th><td><input name="weekly_channel" value="{{ guild.daily_top_channel or '' }}"></td></tr>
@@ -1667,6 +1726,9 @@ SETTINGS_HTML = """
             </form>
             <table>
                 <tbody>
+                    <tr><th>Brand display name</th><td>{{ guild.brand_name or guild.name }}</td></tr>
+                    <tr><th>Brand accent</th><td><code>{{ guild.brand_accent }}</code></td></tr>
+                    <tr><th>Brand logo URL</th><td>{{ guild.brand_logo_url or "Not set" }}</td></tr>
                     <tr><th>Timezone</th><td><code>{{ guild.timezone }}</code></td></tr>
                     <tr><th>Submit channel</th><td>{{ guild.submit_channel or "Not set" }}</td></tr>
                     <tr><th>Weekly channel</th><td>{{ guild.daily_top_channel or "Not set" }}</td></tr>
@@ -1833,12 +1895,27 @@ MAINTENANCE_HTML = """
     </section>
 
     <section class="panel">
+        <h2>Bot Status</h2>
+        <table>
+            <tbody>
+                <tr><th>Heartbeat</th><td class="{{ 'ok' if bot_status.fresh else 'bad' }}">{{ bot_status.message }}</td></tr>
+                <tr><th>Updated</th><td>{{ bot_status.updated_at or "Unknown" }}</td></tr>
+                <tr><th>Bot user</th><td>{{ bot_status.bot_user or "Unknown" }}</td></tr>
+                <tr><th>Guild count</th><td>{{ bot_status.guild_count or 0 }}</td></tr>
+                <tr><th>Slash commands synced</th><td>{{ "Yes" if bot_status.slash_commands_synced else "No" }}</td></tr>
+                <tr><th>Last event</th><td>{{ bot_status.event or "Unknown" }}</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section class="panel">
         <h2>Actions</h2>
         <form method="post">
             <input type="hidden" name="key" value="{{ admin_key }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button name="action" value="backup_now" type="submit">Create Backup Now</button>
             <button name="action" value="restore_test" type="submit">Run Restore Test</button>
+            <button name="action" value="restore_config" type="submit">Restore Latest Config Backup</button>
         </form>
     </section>
 
@@ -1876,6 +1953,24 @@ MAINTENANCE_HTML = """
                     </tr>
                 {% else %}
                     <tr><td colspan="4" class="muted">No backups found yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h2>Recent Config Backups</h2>
+        <table>
+            <thead><tr><th>File</th><th>Size</th><th>Modified</th></tr></thead>
+            <tbody>
+                {% for backup in config_backups %}
+                    <tr>
+                        <td><code>{{ backup.name }}</code></td>
+                        <td>{{ backup.size }}</td>
+                        <td>{{ backup.modified }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="3" class="muted">No config backups found yet.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -2084,6 +2179,13 @@ ONBOARDING_HTML = """
     {% for server in servers %}
         <article class="server">
             <h2>{{ server.name }} <span class="muted">({{ server.id }})</span></h2>
+            {% if server.guild_name != server.name or server.brand_logo_url %}
+                <p>
+                    Discord name: <code>{{ server.guild_name }}</code>
+                    &middot; Accent: <code>{{ server.brand_accent }}</code>
+                    {% if server.brand_logo_url %}&middot; Logo: <a href="{{ server.brand_logo_url }}" target="_blank">open</a>{% endif %}
+                </p>
+            {% endif %}
             <p>
                 Setup health: <strong>{{ server.health_score }}%</strong>
                 &middot; {{ server.complete_count }} of {{ server.total_count }} required item(s) complete
@@ -2151,6 +2253,10 @@ def load_config():
             limits[key] = value
             changed = True
     for guild_config in (data.get("guilds") or {}).values():
+        for key, value in DEFAULT_GUILD_FIELDS.items():
+            if key not in guild_config:
+                guild_config[key] = json.loads(json.dumps(value))
+                changed = True
         features = guild_config.setdefault("features", {})
         for key, value in DEFAULT_FEATURES.items():
             if key not in features:
@@ -2161,10 +2267,45 @@ def load_config():
     return data
 
 
+def cleanup_old_config_backups():
+    if not BACKUP_DIR.exists():
+        return
+    backups = sorted(
+        BACKUP_DIR.glob("config-*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for backup_path in backups[CONFIG_BACKUP_KEEP_COUNT:]:
+        try:
+            backup_path.unlink()
+        except OSError:
+            pass
+
+
+def backup_config_file(label="auto"):
+    if not CONFIG_FILE.is_file():
+        return None
+    safe_label = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(label)).strip("-")
+    safe_label = safe_label or "auto"
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    backup_path = BACKUP_DIR / f"config-{safe_label}-{stamp}.json"
+    shutil.copy2(CONFIG_FILE, backup_path)
+    cleanup_old_config_backups()
+    return backup_path
+
+
 def save_config(data):
+    payload = json.dumps(data, indent=4) + "\n"
+    if CONFIG_FILE.exists():
+        try:
+            if CONFIG_FILE.read_text(encoding="utf-8") == payload:
+                return
+        except OSError:
+            pass
+        backup_config_file()
     with CONFIG_FILE.open("w", encoding="utf-8", newline="\n") as file:
-        json.dump(data, file, indent=4)
-        file.write("\n")
+        file.write(payload)
     PUBLIC_PAGE_CACHE.clear()
 
 
@@ -2549,9 +2690,17 @@ def guild_options(config_data=None, public_only=False):
     ):
         if public_only and not feature_enabled(guild_config, "public_gallery"):
             continue
+        display_name = (
+            guild_config.get("brand_name")
+            or guild_config.get("guild_name")
+            or f"Discord {guild_id}"
+        )
         options.append({
             "id": guild_id,
-            "name": guild_config.get("guild_name") or f"Discord {guild_id}",
+            "name": display_name,
+            "guild_name": guild_config.get("guild_name") or display_name,
+            "brand_accent": guild_config.get("brand_accent") or "#7c9cff",
+            "brand_logo_url": guild_config.get("brand_logo_url") or "",
         })
     return options
 
@@ -2627,6 +2776,12 @@ def build_onboarding_rows(config_data):
                 "/setadminrole @role",
                 optional=True,
             ),
+            onboarding_item(
+                guild_config.get("brand_name"),
+                "Server branding",
+                "/setbranding name:#7c9cff",
+                optional=True,
+            ),
         ]
         required_items = [item for item in items if not item["optional"]]
         optional_items = [item for item in items if item["optional"]]
@@ -2642,10 +2797,18 @@ def build_onboarding_rows(config_data):
         )
         rows.append({
             "id": guild_id,
-            "name": guild_config.get("guild_name") or f"Discord {guild_id}",
+            "name": (
+                guild_config.get("brand_name")
+                or guild_config.get("guild_name")
+                or f"Discord {guild_id}"
+            ),
+            "guild_name": guild_config.get("guild_name") or f"Discord {guild_id}",
+            "brand_accent": guild_config.get("brand_accent") or "#7c9cff",
+            "brand_logo_url": guild_config.get("brand_logo_url") or "",
             "command_steps": [
                 "/setup",
                 "/setupstatus",
+                "/setuptest",
                 "/settings",
                 "/checkpermissions",
             ],
@@ -3505,6 +3668,84 @@ def recent_database_backups():
     return rows
 
 
+def recent_config_backups():
+    if not BACKUP_DIR.exists():
+        return []
+    backups = sorted(
+        BACKUP_DIR.glob("config-*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    rows = []
+    for backup_path in backups[:10]:
+        stat = backup_path.stat()
+        rows.append({
+            "name": backup_path.name,
+            "size": format_bytes(stat.st_size),
+            "modified": datetime.fromtimestamp(
+                stat.st_mtime,
+                timezone.utc,
+            ).strftime("%Y-%m-%d %H:%M UTC"),
+        })
+    return rows
+
+
+def latest_config_backup():
+    backups = recent_config_backups()
+    if not backups:
+        return None
+    backup_path = (BACKUP_DIR / backups[0]["name"]).resolve()
+    try:
+        backup_path.relative_to(BACKUP_DIR.resolve())
+    except ValueError:
+        return None
+    return backup_path if backup_path.is_file() else None
+
+
+def restore_latest_config_backup():
+    backup_path = latest_config_backup()
+    if backup_path is None:
+        return None, False, "No config backup was found."
+    backup_config_file("pre-restore")
+    shutil.copy2(backup_path, CONFIG_FILE)
+    PUBLIC_PAGE_CACHE.clear()
+    return backup_path, True, f"Restored config backup {backup_path.name}."
+
+
+def read_bot_status():
+    if not BOT_STATUS_FILE.is_file():
+        return {
+            "available": False,
+            "message": "No bot status heartbeat has been written yet.",
+        }
+    try:
+        data = json.loads(BOT_STATUS_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return {
+            "available": False,
+            "message": f"Bot status file could not be read: {error}",
+        }
+    updated_at = data.get("updated_at") or ""
+    age_seconds = None
+    if updated_at:
+        try:
+            updated = datetime.fromisoformat(updated_at)
+            age_seconds = int(
+                (datetime.now(timezone.utc) - updated).total_seconds()
+            )
+        except ValueError:
+            age_seconds = None
+    data["available"] = True
+    data["age_seconds"] = age_seconds
+    data["fresh"] = age_seconds is not None and age_seconds <= 600
+    data["message"] = (
+        "Fresh heartbeat"
+        if data["fresh"]
+        else "Heartbeat is older than 10 minutes"
+    )
+    return data
+
+
 def read_update_config():
     values = {}
     try:
@@ -3800,10 +4041,126 @@ def admin_game_library():
                     guild_id=guild_id,
                 )
 
+            if action == "bulk_import":
+                guild_id = request.form.get("guild_id", "").strip()
+                if guild_id not in valid_guild_ids:
+                    raise ValueError("Choose a valid Discord server.")
+                upload = request.files.get("csv_file")
+                if upload is None or not upload.filename:
+                    raise ValueError("Choose a CSV file to import.")
+                raw_content = upload.stream.read()
+                if not raw_content:
+                    raise ValueError("CSV file was empty.")
+                try:
+                    decoded = raw_content.decode("utf-8-sig")
+                except UnicodeDecodeError as decode_error:
+                    raise ValueError(
+                        "CSV must be UTF-8 encoded."
+                    ) from decode_error
+                reader = csv.DictReader(io.StringIO(decoded))
+                if not reader.fieldnames:
+                    raise ValueError("CSV must include a header row.")
+
+                max_text_length = int(
+                    config_data.get("limits", {}).get(
+                        "max_text_length",
+                        DEFAULT_LIMITS["max_text_length"],
+                    )
+                )
+                imported = 0
+                skipped = 0
+                now = utc_now_iso()
+                with database() as connection:
+                    for raw_row in reader:
+                        row = {
+                            str(key or "").strip().lower(): str(value or "").strip()
+                            for key, value in raw_row.items()
+                        }
+                        answer_value = (
+                            row.get("answer")
+                            or row.get("answers")
+                            or row.get("answer_aliases")
+                            or ""
+                        )
+                        aliases_value = row.get("aliases") or ""
+                        alias_source = answer_value
+                        if aliases_value:
+                            alias_source = (
+                                alias_source
+                                + "|"
+                                + aliases_value.replace(",", "|")
+                            )
+                        answer_aliases = parse_answer_aliases(alias_source)
+                        if not answer_aliases:
+                            skipped += 1
+                            continue
+                        answer_display = answer_aliases[0]["display"]
+                        normalized_answer = answer_aliases[0]["normalized"]
+                        title = (row.get("title") or answer_display)[:120]
+                        prompt_text = (row.get("prompt_text") or row.get("prompt") or "")[:max_text_length]
+                        category = (row.get("category") or "")[:80]
+                        hint_text = (row.get("hint") or row.get("hint_text") or "")[:500]
+                        try:
+                            auto_hint_minutes = int(
+                                row.get("auto_hint_minutes") or "0"
+                            )
+                        except ValueError:
+                            auto_hint_minutes = 0
+                        auto_hint_minutes = max(0, min(1440, auto_hint_minutes))
+                        requested_status = (row.get("status") or "draft").lower()
+                        status = (
+                            requested_status
+                            if requested_status in {"draft", "disabled"}
+                            else "draft"
+                        )
+                        cursor = connection.execute("""
+                            INSERT INTO guess_library_items (
+                                guild_id, title, answer, answer_display,
+                                answer_aliases_json, prompt_text, category,
+                                hint_text, auto_hint_minutes, media_path,
+                                media_name, media_type, media_size,
+                                media_metadata_json, status, times_used,
+                                created_by, created_at, updated_at
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', 'unknown', 0, '{}', ?, 0, ?, ?, ?)
+                        """, (
+                            guild_id,
+                            title,
+                            normalized_answer,
+                            answer_display,
+                            json.dumps(answer_aliases, separators=(",", ":")),
+                            prompt_text,
+                            category,
+                            hint_text,
+                            auto_hint_minutes,
+                            status,
+                            actor_name,
+                            now,
+                            now,
+                        ))
+                        imported += 1
+                    add_admin_audit_log(
+                        connection,
+                        guild_id,
+                        "dashboard_bulk_import_guess_library",
+                        actor_id,
+                        actor_name,
+                        "guess_library_item",
+                        "",
+                        (
+                            f"Imported {imported} draft/disabled library "
+                            f"item(s); skipped {skipped} row(s)."
+                        ),
+                    )
+                return game_library_redirect(
+                    f"Imported {imported} library draft(s); skipped {skipped} row(s).",
+                    guild_id=guild_id,
+                )
+
             if action == "set_status":
                 item_id = int(request.form.get("item_id", "0") or 0)
                 new_status = request.form.get("status", "").strip()
-                if new_status not in {"active", "disabled"}:
+                if new_status not in {"active", "disabled", "draft"}:
                     raise ValueError("Invalid library item status.")
                 with database() as connection:
                     item = connection.execute("""
@@ -4048,6 +4405,23 @@ def admin_settings():
                 ))
             try:
                 if action == "update_guild":
+                    brand_accent = (
+                        request.form.get("brand_accent", "#7c9cff").strip()
+                        or "#7c9cff"
+                    )
+                    if not re.match(r"^#[0-9A-Fa-f]{6}$", brand_accent):
+                        raise ValueError(
+                            "Brand accent must be a hex color like #7c9cff."
+                        )
+                    guild_config["brand_name"] = request.form.get(
+                        "brand_name",
+                        "",
+                    ).strip()[:80]
+                    guild_config["brand_accent"] = brand_accent
+                    guild_config["brand_logo_url"] = request.form.get(
+                        "brand_logo_url",
+                        "",
+                    ).strip()[:200]
                     guild_config["timezone"] = request.form.get(
                         "timezone",
                         "UTC",
@@ -4135,7 +4509,15 @@ def admin_settings():
         features = guild_config.get("features") or {}
         guilds.append({
             "id": guild_id,
-            "name": guild_config.get("guild_name") or f"Discord {guild_id}",
+            "name": (
+                guild_config.get("brand_name")
+                or guild_config.get("guild_name")
+                or f"Discord {guild_id}"
+            ),
+            "guild_name": guild_config.get("guild_name") or f"Discord {guild_id}",
+            "brand_name": guild_config.get("brand_name") or "",
+            "brand_accent": guild_config.get("brand_accent") or "#7c9cff",
+            "brand_logo_url": guild_config.get("brand_logo_url") or "",
             "submit_channel": guild_config.get("submit_channel"),
             "daily_top_channel": guild_config.get("daily_top_channel"),
             "daily_top_time_utc": guild_config.get(
@@ -4276,6 +4658,30 @@ def admin_maintenance():
                 notice=message,
                 error=0 if passed else 1,
             ))
+        if action == "restore_config":
+            try:
+                backup_path, restored, message = restore_latest_config_backup()
+            except OSError as restore_error:
+                backup_path = None
+                restored = False
+                message = f"Config restore failed: {restore_error}"
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    "maintenance_restore_config",
+                    actor_id,
+                    actor_name,
+                    "config_backup",
+                    backup_path.name if backup_path else "",
+                    message,
+                )
+            return redirect(url_for(
+                "admin_maintenance",
+                key=ADMIN_KEY,
+                notice=message,
+                error=0 if restored else 1,
+            ))
 
     media_stats = media_directory_stats()
     config_data = load_config()
@@ -4297,8 +4703,10 @@ def admin_maintenance():
     return render_template_string(
         MAINTENANCE_HTML,
         admin_key=ADMIN_KEY,
+        bot_status=read_bot_status(),
         backups=recent_database_backups(),
         cache_entries=len(PUBLIC_PAGE_CACHE),
+        config_backups=recent_config_backups(),
         csrf_token=get_csrf_token(),
         db_file=DB_FILE,
         db_size=format_bytes(DB_FILE.stat().st_size) if DB_FILE.exists() else "0 B",
@@ -5335,9 +5743,11 @@ def achievements():
 
 @app.route("/health")
 def health():
+    bot_status = read_bot_status()
     return jsonify({
         "ok": True,
         "service": "sdac-dashboard",
+        "bot_heartbeat_fresh": bool(bot_status.get("fresh")),
     })
 
 
@@ -5349,6 +5759,7 @@ def admin_health():
 
     media_stats = media_directory_stats()
     setup_rows = build_onboarding_rows(load_config())
+    bot_status = read_bot_status()
     with closing(connect_db()) as connection:
         schema_row = connection.execute("""
             SELECT version, updated_at
@@ -5367,6 +5778,7 @@ def admin_health():
             "db_size_bytes": DB_FILE.stat().st_size if DB_FILE.exists() else 0,
             "media_size_bytes": media_stats["bytes"],
             "media_file_count": media_stats["files"],
+            "bot_status": bot_status,
             "setup_health": {
                 row["id"]: row["health_score"]
                 for row in setup_rows

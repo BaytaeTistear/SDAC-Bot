@@ -12,17 +12,23 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - Guessing games started by admins with `/startgame`
 - Website-managed guessing-game library for reusable media, answers, aliases,
   prompts, categories, and hints
+- Bulk CSV import for website game-library answer drafts
+- Library game randomizer and category filter for `/startlibrarygame`
 - Answer aliases, generated hints, automatic hints, `/guess` scoring,
   wrong-guess cooldowns, and monthly leaderboards
 - Cross-server dashboard filtering and cross-server guessing rankings
 - Per-server feature toggles for submissions, approval queues, guessing games,
   weekly posts, public gallery visibility, and cross-server rankings
+- Per-server dashboard branding with display name, accent color, and logo URL
 - Dashboard admin login on top of the admin key
 - Public user profiles and submission reports
 - Maintenance page for backups, backup downloads, release status, restore tests,
-  storage warnings, and health
+  storage warnings, config backup restore, bot heartbeat status, and health
 - Moderation page for pending submissions, public reports, and recent decisions
 - Onboarding page with setup health scores and quick setup commands
+- Discord-native `/setup` wizard with presets, permission checks, and full
+  setup test
+- New-server welcome message that points admins to `/setup`
 - Ubuntu systemd service templates and Nginx helper scripts
 - Linux and Windows single-file installers from GitHub Releases
 
@@ -226,9 +232,11 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /categories
 /setup
 /setupstatus
+/setuptest
 /settings
 /setfeature submissions true
 /checkpermissions
+/setbranding "Server Name" #7c9cff https://example.com/logo.png
 /setapproval enabled #channel
 /setadminrole @role
 /removeadminrole @role
@@ -240,7 +248,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /setgamesummarychannel #channel
 /seterrorchannel #channel
 /startgame #channel answer media text category hint auto_hint_minutes
-/startlibrarygame #channel item_id
+/startlibrarygame #channel item_id category random_item
 /activegame
 /guess guess
 /correct

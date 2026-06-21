@@ -1,3 +1,41 @@
+# SDAC Bot Version 2.6.1 Experimental
+
+Date: 2026-06-21
+
+Version 2.6.1 is an experimental build focused on easier setup, safer
+operations, and richer multi-server administration.
+
+Included:
+
+- setup presets in the Discord `/setup` wizard
+- full `/setuptest` setup validation for database, writable folders,
+  configured channels, permissions, command sync, and public URL/domain hints
+- per-server branding through `/setbranding` and the dashboard settings page
+- new-server welcome message that tells admins to run `/setup`
+- bot heartbeat file surfaced on `/admin/maintenance` and `/admin/health`
+- rolling `config.json` backups before config writes
+- dashboard action to restore the latest config backup
+- website game-library CSV import for answer drafts
+- `/startlibrarygame` category filter and random-item option
+- installer first-run prompts for public dashboard URL/domain and server label
+- README command directory updates for the new commands and pages
+
+Release channel:
+
+- `version-2.6.1` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+Not included:
+
+- Discord token or `.env`
+- SQLite database files such as `sdac.db`
+- `media/` uploads
+- `backups/`
+- `venv/` or Python cache files
+
+---
+
 # SDAC Bot Version 2.6 Official
 
 Date: 2026-06-21

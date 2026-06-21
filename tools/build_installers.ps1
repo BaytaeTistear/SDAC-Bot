@@ -627,6 +627,8 @@ $chunkLiteral
             adminPassword = RandomToken(24);
             Console.WriteLine("Generated dashboard admin password: " + adminPassword);
         }
+        string publicUrl = Prompt("Public dashboard URL or domain", "");
+        string serverName = Prompt("Server label for dashboard status", "windows");
         string secretKey = RandomToken(48);
 
         StringBuilder env = new StringBuilder();
@@ -635,6 +637,9 @@ $chunkLiteral
         env.AppendLine("SDAC_ADMIN_PASSWORD=" + QuoteEnv(adminPassword));
         env.AppendLine("SDAC_SECRET_KEY=" + QuoteEnv(secretKey));
         env.AppendLine("PYTHONUNBUFFERED=1");
+        env.AppendLine("SDAC_PUBLIC_URL=" + QuoteEnv(publicUrl));
+        env.AppendLine("SDAC_RELEASE=");
+        env.AppendLine("SDAC_SERVER_NAME=" + QuoteEnv(serverName));
         File.WriteAllText(envPath, env.ToString(), new UTF8Encoding(false));
     }
 
