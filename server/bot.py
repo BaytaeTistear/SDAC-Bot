@@ -170,7 +170,11 @@ REQUIRED_TABLES = {
     "category_history",
     "moderation_history",
     "admin_audit_log",
+    "admin_notifications",
+    "backup_integrity",
     "daily_runs",
+    "dashboard_admin_users",
+    "game_seasons",
     "guess_games",
     "guess_library_items",
     "guess_points",
@@ -183,7 +187,22 @@ REQUIRED_TABLES = {
     "rate_limit_events",
     "restore_test_runs",
     "submission_reports",
+    "setup_test_runs",
 }
+
+NOTIFICATION_EVENT_LABELS = {
+    "system_errors": "System Errors",
+    "backup_failed": "Backup Failed",
+    "restore_test_failed": "Restore Test Failed",
+    "storage_warning": "Storage Warning",
+    "repost_delete_failed": "Discord Repost Delete Failed",
+    "heartbeat_stale": "Bot Heartbeat Stale",
+}
+
+NOTIFICATION_EVENT_CHOICES = [
+    app_commands.Choice(name=label, value=key)
+    for key, label in NOTIFICATION_EVENT_LABELS.items()
+]
 
 
 def cleanup_old_config_backups():
@@ -452,6 +471,66 @@ def initialize_database():
                 target_id TEXT,
                 details TEXT,
                 created_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS dashboard_admin_users (
+                username TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'moderator',
+                disabled INTEGER DEFAULT 0,
+                created_at TEXT,
+                updated_at TEXT,
+                last_login_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS setup_test_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                actor_user_id TEXT,
+                actor_username TEXT,
+                status TEXT,
+                summary TEXT,
+                details_json TEXT,
+                created_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS admin_notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                event_key TEXT,
+                channel_id TEXT,
+                enabled INTEGER DEFAULT 1,
+                created_at TEXT,
+                updated_at TEXT,
+                UNIQUE (guild_id, event_key)
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS game_seasons (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                name TEXT,
+                starts_at TEXT,
+                ends_at TEXT,
+                status TEXT DEFAULT 'active',
+                winner_user_id TEXT,
+                winner_username TEXT,
+                winner_points INTEGER DEFAULT 0,
+                created_at TEXT,
+                updated_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS backup_integrity (
+                backup_name TEXT PRIMARY KEY,
+                sha256 TEXT,
+                size_bytes INTEGER DEFAULT 0,
+                restore_status TEXT,
+                restore_details TEXT,
+                checked_at TEXT
             )
         """)
         connection.execute("""
@@ -759,6 +838,26 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_admin_audit_log_action
             ON admin_audit_log (action, guild_id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_dashboard_admin_users_role
+            ON dashboard_admin_users (role, disabled)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_setup_test_runs_guild_created
+            ON setup_test_runs (guild_id, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_admin_notifications_guild_event
+            ON admin_notifications (guild_id, event_key, enabled)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_game_seasons_guild_status
+            ON game_seasons (guild_id, status, starts_at, ends_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_backup_integrity_checked
+            ON backup_integrity (checked_at)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_restore_test_runs_created
@@ -2056,9 +2155,28 @@ async def configured_summary_channel(game, fallback_channel):
     return channel or fallback_channel
 
 
-async def send_error_notification(guild_id, message):
+def configured_notification_channel_id(guild_id, event_key):
+    if not event_key:
+        return None
+    with database() as connection:
+        row = connection.execute("""
+            SELECT channel_id
+            FROM admin_notifications
+            WHERE guild_id = ?
+              AND event_key = ?
+              AND enabled = 1
+            LIMIT 1
+        """, (str(guild_id), event_key)).fetchone()
+    return row["channel_id"] if row else None
+
+
+async def send_error_notification(guild_id, message, event_key="system_errors"):
     guild_config = get_guild_config(guild_id, create=False)
-    channel_id = guild_config.get("error_channel")
+    try:
+        channel_id = configured_notification_channel_id(guild_id, event_key)
+    except sqlite3.Error:
+        channel_id = None
+    channel_id = channel_id or guild_config.get("error_channel")
     if not channel_id:
         return
     channel = bot.get_channel(int(channel_id))
@@ -2069,25 +2187,27 @@ async def send_error_notification(guild_id, message):
             channel = None
     if channel is not None:
         try:
-            await channel.send(f"**SDAC Error**\n{message}")
+            event_label = NOTIFICATION_EVENT_LABELS.get(event_key, "System Error")
+            await channel.send(f"**SDAC {event_label}**\n{message}")
         except discord.HTTPException:
             pass
 
 
-async def send_system_error_notification(message):
+async def send_system_error_notification(message, event_key="system_errors"):
     sent_guilds = set()
     for guild_id in config.get("guilds", {}):
         if guild_id in sent_guilds:
             continue
         sent_guilds.add(guild_id)
-        await send_error_notification(guild_id, message)
+        await send_error_notification(guild_id, message, event_key)
 
 
 async def report_background_error(name, error):
     capture_exception(error)
     print(f"{name} failed: {error}", flush=True)
     await send_system_error_notification(
-        f"`{name}` failed: `{error}`"
+        f"`{name}` failed: `{error}`",
+        "system_errors",
     )
 
 
@@ -2619,6 +2739,54 @@ async def setup_test_lines(guild, guild_config):
         lines.append(f"[OK] Public URL/domain configured: `{public_url}`")
     else:
         lines.append("[OPTIONAL] Set `SDAC_PUBLIC_URL` or `SDAC_DOMAIN` for links.")
+    return lines
+
+
+def save_setup_test_run(interaction, lines):
+    missing_count = sum(1 for line in lines if line.startswith("[MISSING]"))
+    status = "passed" if missing_count == 0 else "needs_attention"
+    summary = f"{status.replace('_', ' ').title()}; {missing_count} issue(s)."
+    with database() as connection:
+        connection.execute("""
+            INSERT INTO setup_test_runs (
+                guild_id, actor_user_id, actor_username, status,
+                summary, details_json, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            str(interaction.guild_id),
+            str(interaction.user.id),
+            str(interaction.user),
+            status,
+            summary,
+            json.dumps({"lines": lines}, separators=(",", ":")),
+            utc_now_iso(),
+        ))
+    return status, summary
+
+
+async def diagnostic_lines(interaction):
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    lines = await setup_test_lines(interaction.guild, guild_config)
+    lines.extend([
+        "",
+        "**Runtime Diagnostics**",
+        f"[OK] Bot user: `{bot.user}`",
+        f"[OK] Connected guilds: `{len(bot.guilds)}`",
+        f"[OK] Database path: `{DB_FILE}`",
+        f"[OK] Config path: `{CONFIG_FILE}`",
+        f"[OK] Release: `{os.getenv('SDAC_RELEASE') or 'development'}`",
+        (
+            "[OK] Discord token is loaded."
+            if bool(TOKEN)
+            else "[MISSING] Discord token is missing."
+        ),
+        (
+            "[OK] Public URL/domain configured."
+            if (os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN"))
+            else "[OPTIONAL] Public URL/domain is not configured."
+        ),
+    ])
     return lines
 
 
@@ -3281,13 +3449,15 @@ class SetupWizardView(discord.ui.View):
     async def send_setup_test(self, interaction):
         guild_config = get_guild_config(interaction.guild_id, create=False)
         lines = await setup_test_lines(interaction.guild, guild_config)
+        status, summary = save_setup_test_run(interaction, lines)
         audit_interaction(
             interaction,
             "setup_full_test",
             "guild",
             interaction.guild_id,
-            "Ran full setup test from Discord setup wizard.",
+            f"Ran full setup test from Discord setup wizard: {summary}",
         )
+        lines.insert(1, f"Saved result: `{status}`.")
         await interaction.response.send_message(
             "\n".join(lines)[:1900],
             ephemeral=True,
@@ -3337,13 +3507,36 @@ async def setuptest(interaction):
         return
     guild_config = get_guild_config(interaction.guild_id, create=False)
     lines = await setup_test_lines(interaction.guild, guild_config)
+    status, summary = save_setup_test_run(interaction, lines)
     audit_interaction(
         interaction,
         "run_setup_test",
         "guild",
         interaction.guild_id,
-        "Ran full setup test from slash command.",
+        f"Ran full setup test from slash command: {summary}",
     )
+    lines.insert(1, f"Saved result: `{status}`.")
+    await interaction.response.send_message(
+        "\n".join(lines)[:1900],
+        ephemeral=True,
+    )
+
+
+@tree.command(name="diagnose", description="Run SDAC setup and runtime diagnostics")
+@app_commands.guild_only()
+async def diagnose(interaction):
+    if not await require_admin(interaction):
+        return
+    lines = await diagnostic_lines(interaction)
+    status, summary = save_setup_test_run(interaction, lines)
+    audit_interaction(
+        interaction,
+        "run_diagnostics",
+        "guild",
+        interaction.guild_id,
+        f"Ran diagnostics: {summary}",
+    )
+    lines.insert(1, f"Saved diagnostic result: `{status}`.")
     await interaction.response.send_message(
         "\n".join(lines)[:1900],
         ephemeral=True,
@@ -3388,6 +3581,69 @@ async def setbranding(
         f"Branding saved as `{guild_config['brand_name']}` with `{accent}`.",
         ephemeral=True,
     )
+
+
+@tree.command(name="setnotification", description="Route SDAC admin alerts to a channel")
+@app_commands.guild_only()
+@app_commands.describe(
+    event="Alert type to route",
+    channel="Channel that should receive this alert type",
+    enabled="Disable to pause this alert route",
+)
+@app_commands.choices(event=NOTIFICATION_EVENT_CHOICES)
+async def setnotification(
+    interaction,
+    event: app_commands.Choice[str],
+    channel: Optional[discord.TextChannel] = None,
+    enabled: bool = True,
+):
+    if not await require_admin(interaction):
+        return
+    if enabled and channel is None:
+        await interaction.response.send_message(
+            "Choose a channel when enabling a notification route.",
+            ephemeral=True,
+        )
+        return
+    now = utc_now_iso()
+    with database() as connection:
+        connection.execute("""
+            INSERT INTO admin_notifications (
+                guild_id, event_key, channel_id, enabled, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id, event_key) DO UPDATE SET
+                channel_id = excluded.channel_id,
+                enabled = excluded.enabled,
+                updated_at = excluded.updated_at
+        """, (
+            str(interaction.guild_id),
+            event.value,
+            str(channel.id) if channel else "",
+            1 if enabled else 0,
+            now,
+            now,
+        ))
+        add_admin_audit_log(
+            connection,
+            interaction.guild_id,
+            "set_notification_route",
+            interaction.user.id,
+            interaction.user,
+            "notification",
+            event.value,
+            (
+                f"{event.value} -> {channel.id if channel else 'disabled'}; "
+                f"enabled={enabled}."
+            ),
+        )
+    if enabled:
+        message = (
+            f"`{event.name}` notifications will go to {channel.mention}."
+        )
+    else:
+        message = f"`{event.name}` notifications are disabled."
+    await interaction.response.send_message(message, ephemeral=True)
 
 
 @tree.command(name="setsubmit", description="Set the SDAC submission channel")
@@ -6015,7 +6271,12 @@ async def backup_scheduler():
     try:
         backup_date = datetime.now(timezone.utc).date().isoformat()
         if last_backup_date != backup_date:
-            create_daily_database_backup()
+            _backup_path, created, message = create_daily_database_backup()
+            if not created and message != "Backup already exists.":
+                await send_system_error_notification(
+                    f"Daily database backup failed: `{message}`",
+                    "backup_failed",
+                )
             last_backup_date = backup_date
     except Exception as error:
         await report_background_error("backup_scheduler", error)
@@ -6069,7 +6330,8 @@ async def restore_test_scheduler():
             return
         target = backup_path.name if backup_path else "no backup"
         await send_system_error_notification(
-            f"Weekly restore test failed for `{target}`: `{details}`"
+            f"Weekly restore test failed for `{target}`: `{details}`",
+            "restore_test_failed",
         )
     except Exception as error:
         await report_background_error("restore_test_scheduler", error)
@@ -6144,7 +6406,8 @@ async def storage_warning_scheduler():
             return
         last_storage_warning_date = today
         await send_system_error_notification(
-            "Storage warning:\n" + "\n".join(f"- {line}" for line in warnings)
+            "Storage warning:\n" + "\n".join(f"- {line}" for line in warnings),
+            "storage_warning",
         )
     except Exception as error:
         await report_background_error("storage_warning_scheduler", error)
@@ -6215,7 +6478,11 @@ async def on_ready():
     except Exception as error:
         print(f"Slash command sync failed: {error}", flush=True)
         for guild in bot.guilds:
-            await send_error_notification(guild.id, f"Slash command sync failed: `{error}`")
+            await send_error_notification(
+                guild.id,
+                f"Slash command sync failed: `{error}`",
+                "system_errors",
+            )
     if not weekly_top_scheduler.is_running():
         weekly_top_scheduler.start()
     if not backup_scheduler.is_running():
@@ -6247,7 +6514,8 @@ async def on_error(event_method, *args, **kwargs):
     message = formatted[-1500:] if formatted else "Unknown bot event error."
     print(f"Unhandled event error in {event_method}: {message}", flush=True)
     await send_system_error_notification(
-        f"Unhandled event error in `{event_method}`:\n```{message}```"
+        f"Unhandled event error in `{event_method}`:\n```{message}```",
+        "system_errors",
     )
 
 

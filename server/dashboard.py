@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 import math
 import os
@@ -15,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from flask import (
     Flask,
@@ -53,6 +55,7 @@ PAGE_SIZE = 20
 CACHE_TTL_SECONDS = 45
 PUBLIC_PAGE_CACHE = {}
 LOGIN_ATTEMPTS = {}
+NOTIFICATION_THROTTLES = {}
 LOGIN_WINDOW_SECONDS = 300
 LOGIN_MAX_ATTEMPTS = 5
 APP_STARTED_AT = datetime.now(timezone.utc)
@@ -106,6 +109,27 @@ FEATURE_LABELS = {
     "weekly_posts": "Weekly Posts",
     "public_gallery": "Public Gallery",
     "cross_server_leaderboard": "Cross-Server Leaderboard",
+}
+
+ROLE_LEVELS = {
+    "moderator": 1,
+    "admin": 2,
+    "owner": 3,
+}
+
+ROLE_LABELS = {
+    "moderator": "Moderator",
+    "admin": "Admin",
+    "owner": "Owner",
+}
+
+NOTIFICATION_EVENT_LABELS = {
+    "system_errors": "System Errors",
+    "backup_failed": "Backup Failed",
+    "restore_test_failed": "Restore Test Failed",
+    "storage_warning": "Storage Warning",
+    "repost_delete_failed": "Discord Repost Delete Failed",
+    "heartbeat_stale": "Bot Heartbeat Stale",
 }
 
 DEFAULT_GUILD_FIELDS = {
@@ -344,6 +368,7 @@ HTML = """
         {% if is_admin %}
             <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
             <a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a>
+            <a href="{{ url_for('admin_seasons', key=admin_key) }}">Seasons</a>
             <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
             <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
             <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
@@ -392,7 +417,7 @@ HTML = """
             {% if is_admin %}
                 <select name="status" aria-label="Status">
                     <option value="">All Statuses</option>
-                    {% for status in ("posted", "pending") %}
+                    {% for status in ("posted", "pending", "needs_review", "removed") %}
                         <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>
                             {{ status }}
                         </option>
@@ -443,6 +468,21 @@ HTML = """
                                       onsubmit="return confirm('Remove this submission from the website and Discord?');">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <button class="delete-button" type="submit">Remove</button>
+                                </form>
+                                <form method="post"
+                                      action="{{ url_for(
+                                          'set_submission_status',
+                                          submission_id=post.id,
+                                          key=admin_key,
+                                          category=selected_category,
+                                          guild_id=selected_guild_id or 'all',
+                                          q=search_query,
+                                          status=selected_status,
+                                          page=page
+                                      ) }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="new_status" value="{{ 'posted' if post.status == 'needs_review' else 'needs_review' }}">
+                                    <button type="submit">{{ 'Clear Review' if post.status == 'needs_review' else 'Needs Review' }}</button>
                                 </form>
                             {% endif %}
                         </div>
@@ -566,8 +606,10 @@ LOGIN_HTML = """
         <input type="hidden" name="key" value="{{ admin_key }}">
         <input type="hidden" name="next" value="{{ next_url }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="username">Admin username</label>
+        <input id="username" name="username" value="{{ username }}" placeholder="owner" autofocus>
         <label for="password">Admin password</label>
-        <input id="password" name="password" type="password" required autofocus>
+        <input id="password" name="password" type="password" required>
         <button type="submit">Log In</button>
     </form>
 </main>
@@ -1318,6 +1360,7 @@ GAME_LIBRARY_HTML = """
     <nav>
         <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
         <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_seasons', key=admin_key) }}">Seasons</a>
         <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
         <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
         <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
@@ -1457,6 +1500,29 @@ GAME_LIBRARY_HTML = """
                             <span class="muted">Created: {{ item.created_at or "" }}</span>
                         </td>
                         <td class="actions">
+                            <details>
+                                <summary>Edit / attach media</summary>
+                                <form method="post" enctype="multipart/form-data">
+                                    <input type="hidden" name="key" value="{{ admin_key }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="action" value="update_item">
+                                    <input type="hidden" name="guild_id" value="{{ selected_guild_id or 'all' }}">
+                                    <input type="hidden" name="item_id" value="{{ item.id }}">
+                                    <input name="title" value="{{ item.title or '' }}" placeholder="Title">
+                                    <input name="answer" value="{{ item.answer_display }}" placeholder="Answer | Alias">
+                                    <input name="category" value="{{ item.category or '' }}" placeholder="Category">
+                                    <input name="auto_hint_minutes" type="number" min="0" max="1440" value="{{ item.auto_hint_minutes or 0 }}">
+                                    <textarea name="prompt_text" placeholder="Prompt text">{{ item.prompt_text or '' }}</textarea>
+                                    <textarea name="hint_text" placeholder="Hint text">{{ item.hint_text or '' }}</textarea>
+                                    <select name="status">
+                                        {% for status in ["draft", "active", "disabled"] %}
+                                            <option value="{{ status }}" {% if item.status == status %}selected{% endif %}>{{ status }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <input name="media" type="file">
+                                    <button type="submit">Save Item</button>
+                                </form>
+                            </details>
                             {% if item.media_url %}
                                 <form method="post">
                                     <input type="hidden" name="key" value="{{ admin_key }}">
@@ -1565,6 +1631,7 @@ SETTINGS_HTML = """
         <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
         <a href="{{ url_for('guessing_leaderboard', key=admin_key) }}">Guessing leaderboard</a>
         <a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a>
+        <a href="{{ url_for('admin_seasons', key=admin_key) }}">Seasons</a>
         <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
         <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
         <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
@@ -1585,6 +1652,133 @@ SETTINGS_HTML = """
             {% endfor %}
         </section>
     {% endif %}
+
+    <section class="panel">
+        <h2>Dashboard Access</h2>
+        <p>
+            Logged in as <code>{{ current_admin_username }}</code>
+            with <code>{{ current_admin_role }}</code> access.
+        </p>
+        {% if can_manage_users %}
+            <form method="post">
+                <input type="hidden" name="key" value="{{ admin_key }}">
+                <input type="hidden" name="action" value="create_dashboard_user">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <table>
+                    <tbody>
+                        <tr><th>Username</th><td><input name="username" placeholder="moderator-name"></td></tr>
+                        <tr><th>Password</th><td><input name="password" type="password"></td></tr>
+                        <tr><th>Role</th><td>
+                            <select name="role">
+                                {% for role_key, role_label in role_labels.items() %}
+                                    <option value="{{ role_key }}">{{ role_label }}</option>
+                                {% endfor %}
+                            </select>
+                        </td></tr>
+                    </tbody>
+                </table>
+                <button type="submit">Create / Replace Dashboard User</button>
+            </form>
+        {% else %}
+            <p class="muted">Only owners can create, update, or disable dashboard users.</p>
+        {% endif %}
+        <table>
+            <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
+            <tbody>
+                {% for user in dashboard_users %}
+                    <tr>
+                        <td><code>{{ user.username }}</code></td>
+                        <td>{{ role_labels.get(user.role, user.role) }}</td>
+                        <td>{{ "Disabled" if user.disabled else "Active" }}</td>
+                        <td>{{ user.last_login_at or "Never" }}</td>
+                        <td>
+                            {% if can_manage_users %}
+                                <form method="post">
+                                    <input type="hidden" name="key" value="{{ admin_key }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="action" value="update_dashboard_user">
+                                    <input type="hidden" name="username" value="{{ user.username }}">
+                                    <select name="role">
+                                        {% for role_key, role_label in role_labels.items() %}
+                                            <option value="{{ role_key }}" {% if user.role == role_key %}selected{% endif %}>{{ role_label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <input name="password" type="password" placeholder="New password optional">
+                                    <button type="submit">Update</button>
+                                </form>
+                                <form method="post">
+                                    <input type="hidden" name="key" value="{{ admin_key }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="action" value="disable_dashboard_user">
+                                    <input type="hidden" name="username" value="{{ user.username }}">
+                                    <button type="submit">Disable</button>
+                                </form>
+                            {% else %}
+                                <span class="muted">Owner only</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="muted">No named dashboard users yet. Legacy owner login is still active.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h2>Admin Notifications</h2>
+        <p class="muted">
+            Route important SDAC alerts to a Discord channel. If no route exists,
+            system errors fall back to each server's Error channel.
+        </p>
+        <form method="post">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="action" value="set_notification_route">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <table>
+                <tbody>
+                    <tr><th>Server</th><td>
+                        <select name="guild_id">
+                            {% for guild in guilds %}
+                                <option value="{{ guild.id }}">{{ guild.name }} ({{ guild.id }})</option>
+                            {% endfor %}
+                        </select>
+                    </td></tr>
+                    <tr><th>Event</th><td>
+                        <select name="event_key">
+                            {% for event_key, event_label in notification_event_labels.items() %}
+                                <option value="{{ event_key }}">{{ event_label }}</option>
+                            {% endfor %}
+                        </select>
+                    </td></tr>
+                    <tr><th>Channel ID</th><td><input name="channel_id" placeholder="Discord channel ID"></td></tr>
+                    <tr><th>Status</th><td>
+                        <select name="enabled">
+                            <option value="1" selected>Enabled</option>
+                            <option value="0">Disabled</option>
+                        </select>
+                    </td></tr>
+                </tbody>
+            </table>
+            <button type="submit">Save Notification Route</button>
+        </form>
+        <table>
+            <thead><tr><th>Server</th><th>Event</th><th>Channel</th><th>Status</th><th>Updated</th></tr></thead>
+            <tbody>
+                {% for route in notification_routes %}
+                    <tr>
+                        <td>{{ route.guild_name }} <br><code>{{ route.guild_id }}</code></td>
+                        <td>{{ route.event_label }}</td>
+                        <td><code>{{ route.channel_id or "Not set" }}</code></td>
+                        <td>{{ "Enabled" if route.enabled else "Disabled" }}</td>
+                        <td>{{ route.updated_at }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="muted">No notification routes configured yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
 
     <section class="panel">
         <h2>Database</h2>
@@ -1797,7 +1991,7 @@ SETTINGS_HTML = """
         <h2>Recent Backups</h2>
         <table>
             <thead>
-                <tr><th>File</th><th>Size</th><th>Modified</th><th>Download</th></tr>
+                <tr><th>File</th><th>Size</th><th>Modified</th><th>Checksum</th><th>Restore</th><th>Download</th></tr>
             </thead>
             <tbody>
                 {% for backup in backups %}
@@ -1805,10 +1999,12 @@ SETTINGS_HTML = """
                         <td><code>{{ backup.name }}</code></td>
                         <td>{{ backup.size }}</td>
                         <td>{{ backup.modified }}</td>
+                        <td><code>{{ backup.sha256[:12] if backup.sha256 else "Not checked" }}</code></td>
+                        <td class="{{ 'ok' if backup.restore_status == 'passed' else 'bad' if backup.restore_status == 'failed' else '' }}">{{ backup.restore_status or "Not tested" }}</td>
                         <td><a href="{{ url_for('download_backup', name=backup.name, key=admin_key) }}">Download</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="4" class="muted">No backups found yet.</td></tr>
+                    <tr><td colspan="6" class="muted">No backups found yet.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -1852,6 +2048,7 @@ MAINTENANCE_HTML = """
         <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
         <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
         <a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a>
+        <a href="{{ url_for('admin_seasons', key=admin_key) }}">Seasons</a>
         <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
         <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
@@ -1942,17 +2139,19 @@ MAINTENANCE_HTML = """
     <section class="panel">
         <h2>Recent Backups</h2>
         <table>
-            <thead><tr><th>File</th><th>Size</th><th>Modified</th><th>Download</th></tr></thead>
+            <thead><tr><th>File</th><th>Size</th><th>Modified</th><th>Checksum</th><th>Restore</th><th>Download</th></tr></thead>
             <tbody>
                 {% for backup in backups %}
                     <tr>
                         <td><code>{{ backup.name }}</code></td>
                         <td>{{ backup.size }}</td>
                         <td>{{ backup.modified }}</td>
+                        <td><code>{{ backup.sha256[:12] if backup.sha256 else "Not checked" }}</code></td>
+                        <td class="{{ 'ok' if backup.restore_status == 'passed' else 'bad' if backup.restore_status == 'failed' else '' }}">{{ backup.restore_status or "Not tested" }}</td>
                         <td><a href="{{ url_for('download_backup', name=backup.name, key=admin_key) }}">Download</a></td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="4" class="muted">No backups found yet.</td></tr>
+                    <tr><td colspan="6" class="muted">No backups found yet.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -2013,6 +2212,7 @@ MODERATION_HTML = """
         <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
         <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
         <a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a>
+        <a href="{{ url_for('admin_seasons', key=admin_key) }}">Seasons</a>
         <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
@@ -2024,11 +2224,19 @@ MODERATION_HTML = """
 
     <section class="panel">
         <h2>Open Submission Reports</h2>
+        <form id="bulk-report-form" method="post">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="bulk_resolve_reports">
+            <input name="admin_notes" placeholder="Bulk review notes">
+            <button type="submit">Mark Selected Reviewed</button>
+        </form>
         <table>
-            <thead><tr><th>Report</th><th>Submission</th><th>Server</th><th>Reporter</th><th>Reason</th><th>Created</th><th>Action</th></tr></thead>
+            <thead><tr><th>Select</th><th>Report</th><th>Submission</th><th>Server</th><th>Reporter</th><th>Reason</th><th>Created</th><th>Action</th></tr></thead>
             <tbody>
                 {% for report in reports %}
                     <tr>
+                        <td><input form="bulk-report-form" type="checkbox" name="report_ids" value="{{ report.id }}"></td>
                         <td>{{ report.id }}</td>
                         <td><a href="{{ url_for('index', key=admin_key, q=report.submission_id, guild_id=report.guild_id or 'all') }}">{{ report.submission_id }}</a></td>
                         <td>{{ guild_names.get(report.guild_id, report.guild_id) }}</td>
@@ -2047,7 +2255,7 @@ MODERATION_HTML = """
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="7" class="muted">No open reports.</td></tr>
+                    <tr><td colspan="8" class="muted">No open reports.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -2170,11 +2378,30 @@ ONBOARDING_HTML = """
         <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
         <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
         <a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a>
+        <a href="{{ url_for('admin_seasons', key=admin_key) }}">Seasons</a>
         <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
         <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
     </nav>
+
+    <section class="server">
+        <h2>New Server Setup Link</h2>
+        {% if invite_url %}
+            <p><a href="{{ invite_url }}" target="_blank">Invite SDAC Bot to a Discord server</a></p>
+        {% else %}
+            <p class="muted">
+                Set <code>SDAC_BOT_CLIENT_ID</code> or <code>DISCORD_CLIENT_ID</code>
+                to show a ready-to-use bot invite link here.
+            </p>
+        {% endif %}
+        <ol>
+            <li>Invite the bot with bot and application command scopes.</li>
+            <li>Grant the bot channel permissions.</li>
+            <li>Run <code>/setup</code> in Discord.</li>
+            <li>Run <code>/setuptest</code> or <code>/diagnose</code>.</li>
+        </ol>
+    </section>
 
     {% for server in servers %}
         <article class="server">
@@ -2191,6 +2418,17 @@ ONBOARDING_HTML = """
                 &middot; {{ server.complete_count }} of {{ server.total_count }} required item(s) complete
                 &middot; {{ server.optional_complete_count }} of {{ server.optional_total_count }} recommended item(s) complete
             </p>
+            {% if server.last_setup_test %}
+                <p>
+                    Last setup test:
+                    <strong class="{{ 'ok' if server.last_setup_test.status == 'passed' else 'missing' }}">{{ server.last_setup_test.status }}</strong>
+                    &middot; {{ server.last_setup_test.summary }}
+                    &middot; {{ server.last_setup_test.created_at }}
+                    &middot; by {{ server.last_setup_test.actor_username or "unknown" }}
+                </p>
+            {% else %}
+                <p class="muted">No saved setup test yet. Run <code>/setuptest</code> or <code>/diagnose</code> in Discord.</p>
+            {% endif %}
             <table>
                 <thead>
                     <tr>
@@ -2218,6 +2456,98 @@ ONBOARDING_HTML = """
         </article>
     {% else %}
         <p>No Discord servers are configured yet. Invite the bot and let it start once, then refresh this page.</p>
+    {% endfor %}
+</main>
+</body>
+</html>
+"""
+
+
+SEASONS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Game Seasons</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1100px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        input, select, button { border: 1px solid #30333b; border-radius: 7px; font-size: 15px; padding: 9px 10px; }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin: 0 auto 20px; padding: 12px; text-align: center; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Game Seasons</h1>
+    <nav>
+        <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a>
+        <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
+        <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+    {% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
+
+    <section class="panel">
+        <h2>Create Season</h2>
+        <form method="post">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="create_season">
+            <select name="guild_id" required>
+                {% for guild in guild_options %}
+                    <option value="{{ guild.id }}">{{ guild.name }}</option>
+                {% endfor %}
+            </select>
+            <input name="name" maxlength="120" placeholder="Summer Season" required>
+            <input name="starts_at" placeholder="2026-07-01">
+            <input name="ends_at" placeholder="2026-07-31">
+            <button type="submit">Create Season</button>
+        </form>
+    </section>
+
+    {% for season in seasons %}
+        <section class="panel">
+            <h2>{{ season.name }} <span class="muted">({{ season.status }})</span></h2>
+            <p>
+                {{ season.guild_name }} &middot;
+                <code>{{ season.starts_at }}</code> to <code>{{ season.ends_at }}</code>
+                {% if season.winner_username %}
+                    &middot; Winner: <strong>{{ season.winner_username }}</strong> ({{ season.winner_points }})
+                {% endif %}
+            </p>
+            <form method="post">
+                <input type="hidden" name="key" value="{{ admin_key }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="action" value="close_season">
+                <input type="hidden" name="season_id" value="{{ season.id }}">
+                <button type="submit">Close And Archive Winner</button>
+            </form>
+            <table>
+                <thead><tr><th>Rank</th><th>User</th><th>Correct Guesses</th></tr></thead>
+                <tbody>
+                    {% for row in season.leaderboard %}
+                        <tr><td>{{ loop.index }}</td><td>{{ row.username }}</td><td>{{ row.points }}</td></tr>
+                    {% else %}
+                        <tr><td colspan="3" class="muted">No correct guesses in this season window yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    {% else %}
+        <p class="muted">No seasons have been created yet.</p>
     {% endfor %}
 </main>
 </body>
@@ -2436,6 +2766,8 @@ def run_manual_restore_test():
     status = "passed" if passed else "failed"
     run_key = datetime.now(timezone.utc).strftime("manual:%Y-%m-%d-%H%M%S")
     record_restore_test_run(run_key, backup_path, status, details)
+    if backup_path:
+        record_backup_integrity(backup_path, status, details)
     return passed, backup_path, details
 
 
@@ -2712,6 +3044,23 @@ def guild_name_map(config_data=None):
     }
 
 
+def bot_invite_url():
+    client_id = (
+        os.getenv("SDAC_BOT_CLIENT_ID")
+        or os.getenv("DISCORD_CLIENT_ID")
+        or ""
+    ).strip()
+    if not client_id:
+        return ""
+    permissions = os.getenv("SDAC_BOT_PERMISSIONS", "274878221376")
+    return (
+        "https://discord.com/api/oauth2/authorize"
+        f"?client_id={client_id}"
+        f"&permissions={permissions}"
+        "&scope=bot%20applications.commands"
+    )
+
+
 def onboarding_item(ok, label, fix, optional=False):
     return {
         "ok": bool(ok),
@@ -2721,8 +3070,42 @@ def onboarding_item(ok, label, fix, optional=False):
     }
 
 
+def latest_setup_test_rows():
+    with closing(connect_db()) as connection:
+        rows = connection.execute("""
+            SELECT *
+            FROM setup_test_runs
+            ORDER BY created_at DESC, id DESC
+        """).fetchall()
+    latest = {}
+    for row in rows:
+        guild_id = row["guild_id"] or ""
+        if guild_id and guild_id not in latest:
+            latest[guild_id] = row
+    return latest
+
+
+def season_leaderboard(connection, season, limit=10):
+    return connection.execute("""
+        SELECT user_id, username, COUNT(*) AS points
+        FROM guess_correct_guesses
+        WHERE guild_id = ?
+          AND guessed_at >= ?
+          AND guessed_at <= ?
+        GROUP BY user_id, username
+        ORDER BY points DESC, MIN(guessed_at) ASC
+        LIMIT ?
+    """, (
+        season["guild_id"],
+        season["starts_at"],
+        season["ends_at"],
+        limit,
+    )).fetchall()
+
+
 def build_onboarding_rows(config_data):
     rows = []
+    setup_tests = latest_setup_test_rows()
     for guild_id, guild_config in sorted(
         (config_data.get("guilds") or {}).items(),
         key=lambda item: (
@@ -2805,6 +3188,7 @@ def build_onboarding_rows(config_data):
             "guild_name": guild_config.get("guild_name") or f"Discord {guild_id}",
             "brand_accent": guild_config.get("brand_accent") or "#7c9cff",
             "brand_logo_url": guild_config.get("brand_logo_url") or "",
+            "last_setup_test": setup_tests.get(guild_id),
             "command_steps": [
                 "/setup",
                 "/setupstatus",
@@ -2882,7 +3266,45 @@ def create_database_backup(label):
         source.close()
 
     cleanup_old_database_backups()
+    record_backup_integrity(backup_path)
     return backup_path, True, "Backup created."
+
+
+def backup_sha256(path):
+    hasher = hashlib.sha256()
+    with Path(path).open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def record_backup_integrity(backup_path, restore_status="", restore_details=""):
+    if not backup_path or not Path(backup_path).is_file():
+        return
+    backup_path = Path(backup_path)
+    stat = backup_path.stat()
+    digest = backup_sha256(backup_path)
+    with database() as connection:
+        connection.execute("""
+            INSERT INTO backup_integrity (
+                backup_name, sha256, size_bytes, restore_status,
+                restore_details, checked_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(backup_name) DO UPDATE SET
+                sha256 = excluded.sha256,
+                size_bytes = excluded.size_bytes,
+                restore_status = COALESCE(NULLIF(excluded.restore_status, ''), backup_integrity.restore_status),
+                restore_details = COALESCE(NULLIF(excluded.restore_details, ''), backup_integrity.restore_details),
+                checked_at = excluded.checked_at
+        """, (
+            backup_path.name,
+            digest,
+            int(stat.st_size),
+            restore_status,
+            restore_details,
+            utc_now_iso(),
+        ))
 
 
 def add_admin_audit_log(
@@ -3116,6 +3538,66 @@ def initialize_database():
                 target_id TEXT,
                 details TEXT,
                 created_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS dashboard_admin_users (
+                username TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'moderator',
+                disabled INTEGER DEFAULT 0,
+                created_at TEXT,
+                updated_at TEXT,
+                last_login_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS setup_test_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                actor_user_id TEXT,
+                actor_username TEXT,
+                status TEXT,
+                summary TEXT,
+                details_json TEXT,
+                created_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS admin_notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                event_key TEXT,
+                channel_id TEXT,
+                enabled INTEGER DEFAULT 1,
+                created_at TEXT,
+                updated_at TEXT,
+                UNIQUE (guild_id, event_key)
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS game_seasons (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                name TEXT,
+                starts_at TEXT,
+                ends_at TEXT,
+                status TEXT DEFAULT 'active',
+                winner_user_id TEXT,
+                winner_username TEXT,
+                winner_points INTEGER DEFAULT 0,
+                created_at TEXT,
+                updated_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS backup_integrity (
+                backup_name TEXT PRIMARY KEY,
+                sha256 TEXT,
+                size_bytes INTEGER DEFAULT 0,
+                restore_status TEXT,
+                restore_details TEXT,
+                checked_at TEXT
             )
         """)
         connection.execute("""
@@ -3394,6 +3876,26 @@ def initialize_database():
             ON admin_audit_log (action, guild_id)
         """)
         connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_dashboard_admin_users_role
+            ON dashboard_admin_users (role, disabled)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_setup_test_runs_guild_created
+            ON setup_test_runs (guild_id, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_admin_notifications_guild_event
+            ON admin_notifications (guild_id, event_key, enabled)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_game_seasons_guild_status
+            ON game_seasons (guild_id, status, starts_at, ends_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_backup_integrity_checked
+            ON backup_integrity (checked_at)
+        """)
+        connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_restore_test_runs_created
             ON restore_test_runs (created_at)
         """)
@@ -3540,6 +4042,83 @@ def delete_discord_message(channel_id, message_id):
         return False, "Discord could not be reached. Nothing was removed."
 
 
+def configured_notification_rows(event_key, guild_id=None):
+    query = """
+        SELECT guild_id, event_key, channel_id
+        FROM admin_notifications
+        WHERE event_key = ?
+          AND enabled = 1
+          AND channel_id IS NOT NULL
+          AND channel_id != ''
+    """
+    parameters = [event_key]
+    if guild_id is not None:
+        query += " AND guild_id = ?"
+        parameters.append(str(guild_id))
+    query += " ORDER BY guild_id, event_key"
+    try:
+        with closing(connect_db()) as connection:
+            return connection.execute(query, parameters).fetchall()
+    except sqlite3.Error:
+        return []
+
+
+def post_discord_channel_message(channel_id, content):
+    channel_id = str(channel_id or "")
+    if not channel_id.isdigit() or not TOKEN:
+        return False
+    payload = json.dumps({"content": content[:1900]}).encode("utf-8")
+    api_request = Request(
+        f"https://discord.com/api/v10/channels/{channel_id}/messages",
+        data=payload,
+        method="POST",
+        headers={
+            "Authorization": f"Bot {TOKEN}",
+            "Content-Type": "application/json",
+            "User-Agent": "SDAC-Dashboard/2.0",
+        },
+    )
+    try:
+        with urlopen(api_request, timeout=10) as response:
+            return response.status in {200, 201}
+    except (HTTPError, URLError, TimeoutError, OSError):
+        return False
+
+
+def send_admin_notification(
+    event_key,
+    message,
+    guild_id=None,
+    throttle_key=None,
+    throttle_seconds=3600,
+):
+    if event_key not in NOTIFICATION_EVENT_LABELS:
+        return
+    route_rows = configured_notification_rows(event_key, guild_id)
+    if not route_rows:
+        return
+    throttle_id = throttle_key or f"{event_key}:{guild_id or 'all'}:{message[:80]}"
+    now = time.time()
+    if now - NOTIFICATION_THROTTLES.get(throttle_id, 0) < throttle_seconds:
+        return
+    NOTIFICATION_THROTTLES[throttle_id] = now
+    title = NOTIFICATION_EVENT_LABELS.get(event_key, event_key)
+    content = f"**SDAC {title}**\n{message}"
+    for row in route_rows:
+        post_discord_channel_message(row["channel_id"], content)
+
+
+def maybe_notify_stale_bot(bot_status):
+    if bot_status.get("fresh"):
+        return
+    send_admin_notification(
+        "heartbeat_stale",
+        bot_status.get("message") or "The SDAC bot heartbeat is stale.",
+        throttle_key="heartbeat_stale",
+        throttle_seconds=3600,
+    )
+
+
 def delete_local_media(row):
     for stored_path in split_values(
         row["media_paths"] or row["file_paths"]
@@ -3609,8 +4188,81 @@ def clear_login_failures(remote_key):
     LOGIN_ATTEMPTS.pop(remote_key, None)
 
 
+def normalize_role(role):
+    role = str(role or "").strip().lower()
+    return role if role in ROLE_LEVELS else "moderator"
+
+
 def is_admin_logged_in():
     return bool(session.get("sdac_admin"))
+
+
+def current_admin_username():
+    return session.get("sdac_admin_username") or "web-admin"
+
+
+def current_admin_role():
+    return normalize_role(session.get("sdac_admin_role") or "moderator")
+
+
+def has_admin_role(required_role):
+    return ROLE_LEVELS[current_admin_role()] >= ROLE_LEVELS[normalize_role(required_role)]
+
+
+def dashboard_user(username):
+    username = str(username or "").strip().casefold()
+    if not username:
+        return None
+    with closing(connect_db()) as connection:
+        return connection.execute("""
+            SELECT username, password_hash, role, disabled
+            FROM dashboard_admin_users
+            WHERE username = ?
+            LIMIT 1
+        """, (username,)).fetchone()
+
+
+def dashboard_user_count():
+    with closing(connect_db()) as connection:
+        return connection.execute("""
+            SELECT COUNT(*)
+            FROM dashboard_admin_users
+            WHERE disabled = 0
+        """).fetchone()[0]
+
+
+def dashboard_users():
+    with closing(connect_db()) as connection:
+        return connection.execute("""
+            SELECT username, role, disabled, created_at, updated_at, last_login_at
+            FROM dashboard_admin_users
+            ORDER BY disabled ASC, role DESC, username ASC
+        """).fetchall()
+
+
+def notification_routes(config_data=None):
+    guild_names = guild_name_map(config_data)
+    with closing(connect_db()) as connection:
+        rows = connection.execute("""
+            SELECT guild_id, event_key, channel_id, enabled, updated_at
+            FROM admin_notifications
+            ORDER BY guild_id, event_key
+        """).fetchall()
+    return [
+        {
+            "guild_id": row["guild_id"],
+            "guild_name": guild_names.get(row["guild_id"], row["guild_id"]),
+            "event_key": row["event_key"],
+            "event_label": NOTIFICATION_EVENT_LABELS.get(
+                row["event_key"],
+                row["event_key"],
+            ),
+            "channel_id": row["channel_id"],
+            "enabled": bool(row["enabled"]),
+            "updated_at": row["updated_at"],
+        }
+        for row in rows
+    ]
 
 
 def admin_url(endpoint, **values):
@@ -3623,7 +4275,7 @@ def require_admin_key():
         abort(403)
 
 
-def require_admin_login():
+def require_admin_login(required_role="moderator"):
     require_admin_key()
     if not is_admin_logged_in():
         return redirect(url_for(
@@ -3631,6 +4283,8 @@ def require_admin_login():
             key=ADMIN_KEY,
             next=request.full_path,
         ))
+    if not has_admin_role(required_role):
+        abort(403)
     return None
 
 
@@ -3643,7 +4297,9 @@ def positive_page(raw_value):
 
 def web_actor():
     remote_addr = request.remote_addr or "unknown"
-    return remote_addr, f"web-admin@{remote_addr}"
+    username = current_admin_username()
+    role = current_admin_role()
+    return username, f"{username} ({role})@{remote_addr}"
 
 
 def recent_database_backups():
@@ -3655,8 +4311,22 @@ def recent_database_backups():
         reverse=True,
     )
     rows = []
+    integrity = {}
+    try:
+        with closing(connect_db()) as connection:
+            integrity = {
+                row["backup_name"]: row
+                for row in connection.execute("""
+                    SELECT backup_name, sha256, restore_status,
+                           restore_details, checked_at
+                    FROM backup_integrity
+                """).fetchall()
+            }
+    except sqlite3.Error:
+        integrity = {}
     for backup_path in backups[:10]:
         stat = backup_path.stat()
+        integrity_row = integrity.get(backup_path.name)
         rows.append({
             "name": backup_path.name,
             "size": format_bytes(stat.st_size),
@@ -3664,6 +4334,18 @@ def recent_database_backups():
                 stat.st_mtime,
                 timezone.utc,
             ).strftime("%Y-%m-%d %H:%M UTC"),
+            "sha256": (
+                integrity_row["sha256"] if integrity_row else ""
+            ),
+            "restore_status": (
+                integrity_row["restore_status"] if integrity_row else ""
+            ),
+            "restore_details": (
+                integrity_row["restore_details"] if integrity_row else ""
+            ),
+            "checked_at": (
+                integrity_row["checked_at"] if integrity_row else ""
+            ),
         })
     return rows
 
@@ -3829,9 +4511,11 @@ def admin_login():
         key=ADMIN_KEY,
     )
     error = ""
+    username = request.values.get("username", "owner").strip() or "owner"
 
     if request.method == "POST":
         require_csrf_token()
+        username = request.form.get("username", "owner").strip().casefold() or "owner"
         password = request.form.get("password", "")
         actor_id, actor_name = web_actor()
         remote_key = login_remote_key()
@@ -3848,22 +4532,42 @@ def admin_login():
                     "Too many failed admin login attempts.",
                 )
             error = "Too many failed login attempts. Try again in a few minutes."
-        elif secrets.compare_digest(password, ADMIN_PASSWORD):
-            clear_login_failures(remote_key)
-            session["sdac_admin"] = True
-            with database() as connection:
-                add_admin_audit_log(
-                    connection,
-                    None,
-                    "dashboard_login_success",
-                    actor_id,
-                    actor_name,
-                    "dashboard",
-                    "admin_login",
-                    "Admin login succeeded.",
-                )
-            return redirect(next_url)
         else:
+            user = dashboard_user(username)
+            role = ""
+            login_ok = False
+            if user and not int(user["disabled"] or 0):
+                login_ok = check_password_hash(user["password_hash"], password)
+                role = normalize_role(user["role"])
+            elif username in {"owner", "admin", "web-admin"}:
+                login_ok = secrets.compare_digest(password, ADMIN_PASSWORD)
+                role = "owner"
+
+            if login_ok:
+                clear_login_failures(remote_key)
+                session["sdac_admin"] = True
+                session["sdac_admin_username"] = username
+                session["sdac_admin_role"] = role
+                if user:
+                    with database() as connection:
+                        connection.execute("""
+                            UPDATE dashboard_admin_users
+                            SET last_login_at = ?
+                            WHERE username = ?
+                        """, (utc_now_iso(), username))
+                with database() as connection:
+                    add_admin_audit_log(
+                        connection,
+                        None,
+                        "dashboard_login_success",
+                        username,
+                        f"{username} ({role})",
+                        "dashboard",
+                        "admin_login",
+                        "Admin login succeeded.",
+                    )
+                return redirect(next_url)
+
             record_login_failure(remote_key)
             with database() as connection:
                 add_admin_audit_log(
@@ -3874,9 +4578,9 @@ def admin_login():
                     actor_name,
                     "dashboard",
                     "admin_login",
-                    "Invalid admin password.",
+                    f"Invalid password for {username}.",
                 )
-            error = "Invalid admin password."
+            error = "Invalid admin username or password."
 
     return render_template_string(
         LOGIN_HTML,
@@ -3884,6 +4588,7 @@ def admin_login():
         csrf_token=get_csrf_token(),
         error=error,
         next_url=next_url,
+        username=username,
     )
 
 
@@ -3903,6 +4608,8 @@ def admin_logout():
                 "Admin logged out.",
             )
     session.pop("sdac_admin", None)
+    session.pop("sdac_admin_username", None)
+    session.pop("sdac_admin_role", None)
     return redirect(url_for("index"))
 
 
@@ -3918,7 +4625,7 @@ def game_library_redirect(message, error=False, guild_id="all"):
 
 @app.route("/admin/game-library", methods=["GET", "POST"])
 def admin_game_library():
-    login_response = require_admin_login()
+    login_response = require_admin_login("admin")
     if login_response:
         return login_response
 
@@ -4157,6 +4864,137 @@ def admin_game_library():
                     guild_id=guild_id,
                 )
 
+            if action == "update_item":
+                item_id = int(request.form.get("item_id", "0") or 0)
+                with database() as connection:
+                    existing_item = connection.execute("""
+                        SELECT *
+                        FROM guess_library_items
+                        WHERE id = ?
+                    """, (item_id,)).fetchone()
+                if not existing_item:
+                    raise ValueError("Library item was not found.")
+                answer_aliases = parse_answer_aliases(
+                    request.form.get("answer", "")
+                )
+                if not answer_aliases:
+                    raise ValueError("Answer is required.")
+                answer_display = answer_aliases[0]["display"]
+                normalized_answer = answer_aliases[0]["normalized"]
+                title = request.form.get("title", "").strip()[:120]
+                max_text_length = int(
+                    config_data.get("limits", {}).get(
+                        "max_text_length",
+                        DEFAULT_LIMITS["max_text_length"],
+                    )
+                )
+                prompt_text = request.form.get("prompt_text", "").strip()
+                if len(prompt_text) > max_text_length:
+                    raise ValueError(
+                        f"Prompt text is limited to {max_text_length} characters."
+                    )
+                hint_text = request.form.get("hint_text", "").strip()
+                if len(hint_text) > 500:
+                    raise ValueError("Hints are limited to 500 characters.")
+                category = request.form.get("category", "").strip()[:80]
+                try:
+                    auto_hint_minutes = int(
+                        request.form.get("auto_hint_minutes", "0") or 0
+                    )
+                except ValueError as form_error:
+                    raise ValueError(
+                        "Automatic hint minutes must be a number."
+                    ) from form_error
+                auto_hint_minutes = max(0, min(1440, auto_hint_minutes))
+                new_status = request.form.get("status", "draft").strip()
+                if new_status not in {"draft", "active", "disabled"}:
+                    raise ValueError("Invalid library item status.")
+
+                media_info = None
+                upload = request.files.get("media")
+                if upload is not None and upload.filename:
+                    media_info = save_guess_library_upload(
+                        existing_item["guild_id"],
+                        upload,
+                        config_data.get("limits", {}),
+                    )
+                has_media = bool(
+                    media_info
+                    or (
+                        existing_item["media_path"]
+                        and Path(existing_item["media_path"]).exists()
+                    )
+                )
+                if new_status == "active" and not has_media:
+                    raise ValueError("Active library items must have media attached.")
+
+                old_media_path = existing_item["media_path"] if media_info else ""
+                try:
+                    with database() as connection:
+                        connection.execute("""
+                            UPDATE guess_library_items
+                            SET title = ?,
+                                answer = ?,
+                                answer_display = ?,
+                                answer_aliases_json = ?,
+                                prompt_text = ?,
+                                category = ?,
+                                hint_text = ?,
+                                auto_hint_minutes = ?,
+                                media_path = ?,
+                                media_name = ?,
+                                media_type = ?,
+                                media_size = ?,
+                                media_metadata_json = ?,
+                                status = ?,
+                                updated_at = ?
+                            WHERE id = ?
+                        """, (
+                            title or answer_display,
+                            normalized_answer,
+                            answer_display,
+                            json.dumps(answer_aliases, separators=(",", ":")),
+                            prompt_text,
+                            category,
+                            hint_text,
+                            auto_hint_minutes,
+                            media_info["path"] if media_info else existing_item["media_path"],
+                            media_info["name"] if media_info else existing_item["media_name"],
+                            media_info["type"] if media_info else existing_item["media_type"],
+                            int(media_info["size"] or 0) if media_info else int(existing_item["media_size"] or 0),
+                            (
+                                json.dumps(
+                                    media_info["metadata"],
+                                    separators=(",", ":"),
+                                )
+                                if media_info
+                                else existing_item["media_metadata_json"]
+                            ),
+                            new_status,
+                            utc_now_iso(),
+                            item_id,
+                        ))
+                        add_admin_audit_log(
+                            connection,
+                            existing_item["guild_id"],
+                            "dashboard_update_guess_library_item",
+                            actor_id,
+                            actor_name,
+                            "guess_library_item",
+                            item_id,
+                            f"Updated website game-library item {item_id}.",
+                        )
+                except Exception:
+                    if media_info:
+                        delete_guess_library_media(media_info["path"])
+                    raise
+                if old_media_path:
+                    delete_guess_library_media(old_media_path)
+                return game_library_redirect(
+                    f"Library item {item_id} updated.",
+                    guild_id=redirect_guild_id,
+                )
+
             if action == "set_status":
                 item_id = int(request.form.get("item_id", "0") or 0)
                 new_status = request.form.get("status", "").strip()
@@ -4296,7 +5134,7 @@ def admin_game_library():
 
 @app.route("/admin/settings", methods=["GET", "POST"])
 def admin_settings():
-    login_response = require_admin_login()
+    login_response = require_admin_login("admin")
     if login_response:
         return login_response
 
@@ -4307,6 +5145,186 @@ def admin_settings():
         require_csrf_token()
         action = request.form.get("action", "")
         actor_id, actor_name = web_actor()
+        if action in {
+            "create_dashboard_user",
+            "update_dashboard_user",
+            "disable_dashboard_user",
+        }:
+            if not has_admin_role("owner"):
+                abort(403)
+            username = request.form.get("username", "").strip().casefold()
+            role = normalize_role(request.form.get("role", "moderator"))
+            password = request.form.get("password", "")
+            if not username or not re.match(r"^[a-z0-9_.-]{3,40}$", username):
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice="Dashboard username must be 3-40 letters, numbers, dots, dashes, or underscores.",
+                    error=1,
+                ))
+            now = utc_now_iso()
+            with database() as connection:
+                if action == "create_dashboard_user":
+                    if not password:
+                        return redirect(url_for(
+                            "admin_settings",
+                            key=ADMIN_KEY,
+                            notice="Password is required for new dashboard users.",
+                            error=1,
+                        ))
+                    connection.execute("""
+                        INSERT INTO dashboard_admin_users (
+                            username, password_hash, role, disabled,
+                            created_at, updated_at
+                        )
+                        VALUES (?, ?, ?, 0, ?, ?)
+                        ON CONFLICT(username) DO UPDATE SET
+                            password_hash = excluded.password_hash,
+                            role = excluded.role,
+                            disabled = 0,
+                            updated_at = excluded.updated_at
+                    """, (
+                        username,
+                        generate_password_hash(password),
+                        role,
+                        now,
+                        now,
+                    ))
+                    message = f"Dashboard user {username} saved as {role}."
+                elif action == "update_dashboard_user":
+                    user = connection.execute("""
+                        SELECT username
+                        FROM dashboard_admin_users
+                        WHERE username = ?
+                    """, (username,)).fetchone()
+                    if not user:
+                        return redirect(url_for(
+                            "admin_settings",
+                            key=ADMIN_KEY,
+                            notice="Dashboard user was not found.",
+                            error=1,
+                        ))
+                    if password:
+                        connection.execute("""
+                            UPDATE dashboard_admin_users
+                            SET password_hash = ?, role = ?, disabled = 0,
+                                updated_at = ?
+                            WHERE username = ?
+                        """, (
+                            generate_password_hash(password),
+                            role,
+                            now,
+                            username,
+                        ))
+                    else:
+                        connection.execute("""
+                            UPDATE dashboard_admin_users
+                            SET role = ?, disabled = 0, updated_at = ?
+                            WHERE username = ?
+                        """, (role, now, username))
+                    message = f"Dashboard user {username} updated."
+                else:
+                    connection.execute("""
+                        UPDATE dashboard_admin_users
+                        SET disabled = 1, updated_at = ?
+                        WHERE username = ?
+                    """, (now, username))
+                    message = f"Dashboard user {username} disabled."
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    f"dashboard_{action}",
+                    actor_id,
+                    actor_name,
+                    "dashboard_user",
+                    username,
+                    message,
+                )
+            if not created and message != "Backup already exists.":
+                send_admin_notification(
+                    "backup_failed",
+                    f"Manual dashboard backup failed: `{message}`",
+                    throttle_key="dashboard_backup_failed",
+                    throttle_seconds=900,
+                )
+            return redirect(url_for(
+                "admin_settings",
+                key=ADMIN_KEY,
+                notice=message,
+            ))
+        if action == "set_notification_route":
+            config_data = load_config()
+            guild_id = request.form.get("guild_id", "").strip()
+            if guild_id not in (config_data.get("guilds") or {}):
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice="Unknown guild for notification route.",
+                    error=1,
+                ))
+            event_key = request.form.get("event_key", "").strip()
+            if event_key not in NOTIFICATION_EVENT_LABELS:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice="Unknown notification event.",
+                    error=1,
+                ))
+            try:
+                channel_id = nullable_channel_id(request.form.get("channel_id"))
+            except ValueError as form_error:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice=str(form_error),
+                    error=1,
+                ))
+            enabled = request.form.get("enabled") == "1"
+            if enabled and channel_id is None:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice="Enabled notification routes need a channel ID.",
+                    error=1,
+                ))
+            now = utc_now_iso()
+            with database() as connection:
+                connection.execute("""
+                    INSERT INTO admin_notifications (
+                        guild_id, event_key, channel_id, enabled,
+                        created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(guild_id, event_key) DO UPDATE SET
+                        channel_id = excluded.channel_id,
+                        enabled = excluded.enabled,
+                        updated_at = excluded.updated_at
+                """, (
+                    guild_id,
+                    event_key,
+                    str(channel_id) if channel_id is not None else "",
+                    1 if enabled else 0,
+                    now,
+                    now,
+                ))
+                add_admin_audit_log(
+                    connection,
+                    guild_id,
+                    "dashboard_set_notification_route",
+                    actor_id,
+                    actor_name,
+                    "admin_notification",
+                    event_key,
+                    (
+                        f"Set {NOTIFICATION_EVENT_LABELS[event_key]} route to "
+                        f"{channel_id or 'disabled'}."
+                    ),
+                )
+            return redirect(url_for(
+                "admin_settings",
+                key=ADMIN_KEY,
+                notice="Notification route saved.",
+            ))
         if action == "backup_now":
             label = datetime.now(timezone.utc).strftime("manual-%Y-%m-%d-%H%M%S")
             try:
@@ -4583,13 +5601,20 @@ def admin_settings():
         active_games=active_games,
         admin_key=ADMIN_KEY,
         backups=recent_database_backups(),
+        can_manage_users=has_admin_role("owner"),
         csrf_token=get_csrf_token(),
+        current_admin_role=current_admin_role(),
+        current_admin_username=current_admin_username(),
+        dashboard_users=dashboard_users(),
         db_file=DB_FILE,
         db_size=db_size,
         error=error,
         guilds=guilds,
         limits=limits,
         notice=notice,
+        notification_event_labels=NOTIFICATION_EVENT_LABELS,
+        notification_routes=notification_routes(config_data),
+        role_labels=ROLE_LABELS,
         security_warnings=warnings,
         stats=stats,
         weekdays=WEEKDAYS,
@@ -4598,7 +5623,7 @@ def admin_settings():
 
 @app.route("/admin/maintenance", methods=["GET", "POST"])
 def admin_maintenance():
-    login_response = require_admin_login()
+    login_response = require_admin_login("admin")
     if login_response:
         return login_response
 
@@ -4628,6 +5653,13 @@ def admin_maintenance():
                     backup_path.name if backup_path else "",
                     message,
                 )
+            if not created and message != "Backup already exists.":
+                send_admin_notification(
+                    "backup_failed",
+                    f"Manual maintenance backup failed: `{message}`",
+                    throttle_key="maintenance_backup_failed",
+                    throttle_seconds=900,
+                )
             return redirect(url_for(
                 "admin_maintenance",
                 key=ADMIN_KEY,
@@ -4651,6 +5683,13 @@ def admin_maintenance():
                     "backup",
                     backup_path.name if backup_path else "",
                     message,
+                )
+            if not passed:
+                send_admin_notification(
+                    "restore_test_failed",
+                    f"Manual restore test failed: `{message}`",
+                    throttle_key="maintenance_restore_test_failed",
+                    throttle_seconds=900,
                 )
             return redirect(url_for(
                 "admin_maintenance",
@@ -4700,10 +5739,13 @@ def admin_maintenance():
             LIMIT 10
         """).fetchall()
 
+    bot_status = read_bot_status()
+    maybe_notify_stale_bot(bot_status)
+
     return render_template_string(
         MAINTENANCE_HTML,
         admin_key=ADMIN_KEY,
-        bot_status=read_bot_status(),
+        bot_status=bot_status,
         backups=recent_database_backups(),
         cache_entries=len(PUBLIC_PAGE_CACHE),
         config_backups=recent_config_backups(),
@@ -4737,6 +5779,43 @@ def admin_moderation():
         require_csrf_token()
         action = request.form.get("action", "")
         actor_id, actor_name = web_actor()
+        if action == "bulk_resolve_reports":
+            report_ids = [
+                int(report_id)
+                for report_id in request.form.getlist("report_ids")
+                if str(report_id).isdigit()
+            ]
+            admin_notes = request.form.get("admin_notes", "").strip()[:500]
+            if not report_ids:
+                return redirect(url_for(
+                    "admin_moderation",
+                    key=ADMIN_KEY,
+                    notice="Choose at least one report.",
+                ))
+            placeholders = ", ".join("?" for _ in report_ids)
+            with database() as connection:
+                connection.execute(f"""
+                    UPDATE submission_reports
+                    SET status = 'resolved',
+                        admin_notes = ?,
+                        resolved_at = ?
+                    WHERE id IN ({placeholders})
+                """, [admin_notes, utc_now_iso()] + report_ids)
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    "dashboard_bulk_resolve_reports",
+                    actor_id,
+                    actor_name,
+                    "submission_report",
+                    ",".join(str(report_id) for report_id in report_ids),
+                    f"Resolved {len(report_ids)} report(s).",
+                )
+            return redirect(url_for(
+                "admin_moderation",
+                key=ADMIN_KEY,
+                notice=f"Resolved {len(report_ids)} report(s).",
+            ))
         if action == "resolve_report":
             report_id = request.form.get("report_id", "").strip()
             admin_notes = request.form.get("admin_notes", "").strip()[:500]
@@ -4812,7 +5891,7 @@ def admin_moderation():
 
 @app.route("/admin/onboarding")
 def admin_onboarding():
-    login_response = require_admin_login()
+    login_response = require_admin_login("admin")
     if login_response:
         return login_response
 
@@ -4820,7 +5899,137 @@ def admin_onboarding():
     return render_template_string(
         ONBOARDING_HTML,
         admin_key=ADMIN_KEY,
+        invite_url=bot_invite_url(),
         servers=build_onboarding_rows(config_data),
+    )
+
+
+@app.route("/admin/seasons", methods=["GET", "POST"])
+def admin_seasons():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+
+    notice = request.args.get("notice", "")
+    config_data = load_config()
+    options = guild_options(config_data)
+    valid_guild_ids = {option["id"] for option in options}
+    actor_id, actor_name = web_actor()
+
+    if request.method == "POST":
+        require_csrf_token()
+        action = request.form.get("action", "")
+        if action == "create_season":
+            guild_id = request.form.get("guild_id", "").strip()
+            if guild_id not in valid_guild_ids:
+                abort(400)
+            name = request.form.get("name", "").strip()[:120]
+            starts_at = request.form.get("starts_at", "").strip()
+            ends_at = request.form.get("ends_at", "").strip()
+            if not name or not starts_at or not ends_at:
+                return redirect(url_for(
+                    "admin_seasons",
+                    key=ADMIN_KEY,
+                    notice="Name, start date, and end date are required.",
+                ))
+            if len(starts_at) == 10:
+                starts_at = starts_at + "T00:00:00+00:00"
+            if len(ends_at) == 10:
+                ends_at = ends_at + "T23:59:59+00:00"
+            now = utc_now_iso()
+            with database() as connection:
+                cursor = connection.execute("""
+                    INSERT INTO game_seasons (
+                        guild_id, name, starts_at, ends_at, status,
+                        created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, 'active', ?, ?)
+                """, (guild_id, name, starts_at, ends_at, now, now))
+                season_id = cursor.lastrowid
+                add_admin_audit_log(
+                    connection,
+                    guild_id,
+                    "dashboard_create_game_season",
+                    actor_id,
+                    actor_name,
+                    "game_season",
+                    season_id,
+                    f"Created season {name}.",
+                )
+            return redirect(url_for(
+                "admin_seasons",
+                key=ADMIN_KEY,
+                notice=f"Season {name} created.",
+            ))
+
+        if action == "close_season":
+            season_id = int(request.form.get("season_id", "0") or 0)
+            with database() as connection:
+                season = connection.execute("""
+                    SELECT *
+                    FROM game_seasons
+                    WHERE id = ?
+                """, (season_id,)).fetchone()
+                if not season:
+                    abort(404)
+                leaderboard = season_leaderboard(connection, season, limit=1)
+                winner = leaderboard[0] if leaderboard else None
+                connection.execute("""
+                    UPDATE game_seasons
+                    SET status = 'closed',
+                        winner_user_id = ?,
+                        winner_username = ?,
+                        winner_points = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                """, (
+                    winner["user_id"] if winner else "",
+                    winner["username"] if winner else "",
+                    int(winner["points"] or 0) if winner else 0,
+                    utc_now_iso(),
+                    season_id,
+                ))
+                add_admin_audit_log(
+                    connection,
+                    season["guild_id"],
+                    "dashboard_close_game_season",
+                    actor_id,
+                    actor_name,
+                    "game_season",
+                    season_id,
+                    "Closed season and archived winner.",
+                )
+            return redirect(url_for(
+                "admin_seasons",
+                key=ADMIN_KEY,
+                notice="Season closed and winner archived.",
+            ))
+
+    guild_names = guild_name_map(config_data)
+    with closing(connect_db()) as connection:
+        rows = connection.execute("""
+            SELECT *
+            FROM game_seasons
+            ORDER BY starts_at DESC, id DESC
+            LIMIT 100
+        """).fetchall()
+        seasons = []
+        for row in rows:
+            season = dict(row)
+            season["guild_name"] = guild_names.get(
+                season.get("guild_id"),
+                season.get("guild_id") or "Unknown",
+            )
+            season["leaderboard"] = season_leaderboard(connection, row, limit=10)
+            seasons.append(season)
+
+    return render_template_string(
+        SEASONS_HTML,
+        admin_key=ADMIN_KEY,
+        csrf_token=get_csrf_token(),
+        guild_options=options,
+        notice=notice,
+        seasons=seasons,
     )
 
 
@@ -4982,7 +6191,7 @@ def index():
             parameters = []
             if not is_admin:
                 where.append("status = 'posted'")
-            elif selected_status in {"posted", "pending"}:
+            elif selected_status in {"posted", "pending", "needs_review", "removed"}:
                 where.append("status = ?")
                 parameters.append(selected_status)
             if selected_server_id:
@@ -5753,13 +6962,14 @@ def health():
 
 @app.route("/admin/health")
 def admin_health():
-    login_response = require_admin_login()
+    login_response = require_admin_login("admin")
     if login_response:
         return login_response
 
     media_stats = media_directory_stats()
     setup_rows = build_onboarding_rows(load_config())
     bot_status = read_bot_status()
+    maybe_notify_stale_bot(bot_status)
     with closing(connect_db()) as connection:
         schema_row = connection.execute("""
             SELECT version, updated_at
@@ -5938,6 +7148,80 @@ def serve_media(filename):
     return send_from_directory(MEDIA_DIR, filename)
 
 
+@app.post("/admin/submission/<int:submission_id>/status")
+def set_submission_status(submission_id):
+    login_response = require_admin_login()
+    if login_response:
+        return login_response
+    require_csrf_token()
+
+    new_status = request.form.get("new_status", "").strip()
+    if new_status not in {"posted", "needs_review"}:
+        abort(400)
+
+    selected_category = request.args.get("category", "").strip()
+    selected_status = request.args.get("status", "").strip()
+    selected_server_id = request.args.get("guild_id", "all").strip()
+    page = positive_page(request.args.get("page"))
+    redirect_values = {
+        "key": ADMIN_KEY,
+        "category": selected_category,
+        "guild_id": selected_server_id or "all",
+        "status": selected_status,
+        "page": page,
+    }
+
+    actor_id, actor = web_actor()
+    with database() as connection:
+        row = connection.execute(
+            "SELECT * FROM submissions WHERE id = ?",
+            (submission_id,),
+        ).fetchone()
+        if not row:
+            return redirect(url_for(
+                "index",
+                notice="Submission not found.",
+                error=1,
+                **redirect_values,
+            ))
+        connection.execute("""
+            UPDATE submissions
+            SET status = ?
+            WHERE id = ?
+        """, (new_status, submission_id))
+        connection.execute("""
+            INSERT INTO moderation_history (
+                guild_id, submission_id, action, actor_user_id,
+                actor_username, details, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            row["guild_id"],
+            row["id"],
+            "status",
+            actor_id,
+            actor,
+            f"Set status to {new_status}",
+            utc_now_iso(),
+        ))
+        add_admin_audit_log(
+            connection,
+            row["guild_id"],
+            "set_submission_status_dashboard",
+            actor_id,
+            actor,
+            "submission",
+            row["id"],
+            f"Set status to {new_status}.",
+        )
+    PUBLIC_PAGE_CACHE.clear()
+    return redirect(url_for(
+        "index",
+        notice=f"Submission marked {new_status}.",
+        **redirect_values,
+    ))
+
+
 @app.post("/delete/<int:submission_id>")
 def delete_submission(submission_id):
     login_response = require_admin_login()
@@ -5980,6 +7264,17 @@ def delete_submission(submission_id):
             message_id,
         )
         if not deleted:
+            send_admin_notification(
+                "repost_delete_failed",
+                (
+                    f"Could not delete Discord message `{message_id}` in "
+                    f"channel `{channel_id}` for submission `{row['id']}`: "
+                    f"`{error_message}`"
+                ),
+                guild_id=row["guild_id"],
+                throttle_key=f"repost_delete_failed:{row['id']}:{message_id}",
+                throttle_seconds=900,
+            )
             return redirect(url_for(
                 "index",
                 notice=error_message,

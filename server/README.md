@@ -20,14 +20,22 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - Per-server feature toggles for submissions, approval queues, guessing games,
   weekly posts, public gallery visibility, and cross-server rankings
 - Per-server dashboard branding with display name, accent color, and logo URL
-- Dashboard admin login on top of the admin key
+- Role-based dashboard admin login on top of the admin key
+- Admin alert routing for system errors, backup/restore failures, storage
+  warnings, repost deletion failures, and stale bot heartbeat warnings
 - Public user profiles and submission reports
+- Moderation queue bulk review and submission review flags
 - Maintenance page for backups, backup downloads, release status, restore tests,
-  storage warnings, config backup restore, bot heartbeat status, and health
+  backup checksums, storage warnings, config backup restore, bot heartbeat
+  status, and health
 - Moderation page for pending submissions, public reports, and recent decisions
-- Onboarding page with setup health scores and quick setup commands
+- Onboarding page with setup health scores, saved setup-test reports, invite
+  link helper, and quick setup commands
 - Discord-native `/setup` wizard with presets, permission checks, and full
   setup test
+- `/diagnose` self-checks for database, folders, channels, permissions, bot
+  runtime state, public URL, and command sync
+- Website-managed guessing-game seasons with top 10 leaderboard snapshots
 - New-server welcome message that points admins to `/setup`
 - Ubuntu systemd service templates and Nginx helper scripts
 - Linux and Windows single-file installers from GitHub Releases
@@ -233,6 +241,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /setup
 /setupstatus
 /setuptest
+/diagnose
 /settings
 /setfeature submissions true
 /checkpermissions
@@ -247,6 +256,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /setguesstimeout 10
 /setgamesummarychannel #channel
 /seterrorchannel #channel
+/setnotification system_errors #channel true
 /startgame #channel answer media text category hint auto_hint_minutes
 /startlibrarygame #channel item_id category random_item
 /activegame
@@ -270,10 +280,12 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /admin/login?key=ImTheBestAdmin Admin login
 /admin/settings?key=ImTheBestAdmin
 /admin/game-library?key=ImTheBestAdmin
+/admin/seasons?key=ImTheBestAdmin
 /admin/onboarding?key=ImTheBestAdmin
 /admin/maintenance?key=ImTheBestAdmin
 /admin/moderation?key=ImTheBestAdmin
 /audit?key=ImTheBestAdmin
+/export/audit.csv?key=ImTheBestAdmin
 /admin/health?key=ImTheBestAdmin
 ```
 

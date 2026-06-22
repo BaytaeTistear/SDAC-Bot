@@ -1,3 +1,43 @@
+# SDAC Bot Version 2.6.2 Experimental
+
+Date: 2026-06-21
+
+Version 2.6.2 is an experimental operations and admin-control build.
+
+Included:
+
+- role-based dashboard admin accounts for moderator, admin, and owner access
+- dashboard owner tools to create, update, and disable named admin users
+- `/setnotification` plus dashboard notification routing for system errors,
+  backup/restore failures, storage warnings, repost delete failures, and stale
+  heartbeat warnings
+- saved setup-test and `/diagnose` reports on the onboarding page
+- `/diagnose` runtime checks for database, folders, channels, permissions,
+  command sync, public URL, release, and token configuration
+- website game-library edit forms with media replacement support
+- moderation bulk report review and submission review flags
+- game seasons page with top 10 per-season leaderboards and archived winners
+- backup checksums and restore-test badges on settings and maintenance pages
+- onboarding invite-link helper using `SDAC_BOT_CLIENT_ID` and
+  `SDAC_BOT_PERMISSIONS`
+- README and environment example updates for the new commands and settings
+
+Release channel:
+
+- `version-2.6.2` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+Not included:
+
+- Discord token or `.env`
+- SQLite database files such as `sdac.db`
+- `media/` uploads
+- `backups/`
+- `venv/` or Python cache files
+
+---
+
 # SDAC Bot Version 2.6.1 Experimental
 
 Date: 2026-06-21
