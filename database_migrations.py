@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import sqlite3
 
 
-DATABASE_SCHEMA_VERSION = 8
+DATABASE_SCHEMA_VERSION = 9
 
 
 def utc_now_iso():
@@ -304,6 +304,65 @@ def migration_8_multi_server_and_answer_history(connection):
     """)
 
 
+def migration_9_production_operations(connection):
+    ensure_column(connection, "guess_library_items", "difficulty", "TEXT")
+    ensure_column(
+        connection,
+        "guess_library_items",
+        "reuse_cooldown_days",
+        "INTEGER DEFAULT 0",
+    )
+
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS support_bundles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT,
+            actor_user_id TEXT,
+            actor_username TEXT,
+            summary TEXT,
+            details_json TEXT,
+            created_at TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_support_bundles_created
+        ON support_bundles (created_at, guild_id)
+    """)
+
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS content_moderation_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT,
+            user_id TEXT,
+            username TEXT,
+            category TEXT,
+            reason TEXT,
+            action TEXT,
+            details TEXT,
+            created_at TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_content_moderation_events_guild_created
+        ON content_moderation_events (guild_id, created_at)
+    """)
+
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS offsite_backup_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider TEXT,
+            destination TEXT,
+            status TEXT,
+            details TEXT,
+            created_at TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_offsite_backup_runs_created
+        ON offsite_backup_runs (created_at, status)
+    """)
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -311,6 +370,7 @@ MIGRATIONS = (
     (6, migration_6_guess_library),
     (7, migration_7_operations_tables),
     (8, migration_8_multi_server_and_answer_history),
+    (9, migration_9_production_operations),
 )
 
 

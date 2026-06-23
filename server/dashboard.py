@@ -34,6 +34,7 @@ from flask import (
 )
 
 from config import TOKEN
+from database_backend import connect_database, using_postgres
 from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
 from observability import init_sentry
 
@@ -106,6 +107,18 @@ DEFAULT_LIMITS = {
     "restore_test_enabled": True,
     "restore_test_weekday": "sunday",
     "restore_test_time_utc": "03:30",
+    "monthly_submission_limit_per_guild": 0,
+    "active_game_limit_per_guild": 0,
+    "guild_storage_limit_bytes": 0,
+    "offsite_backup_warning_hours": 72,
+}
+
+DEFAULT_OFFSITE_BACKUP = {
+    "provider": "",
+    "remote": "",
+    "last_success_at": "",
+    "last_status": "",
+    "last_details": "",
 }
 
 DEFAULT_FEATURES = {
@@ -165,6 +178,26 @@ DEFAULT_GUILD_FIELDS = {
     "approval_channel": None,
     "emergency_paused": False,
     "emergency_reason": "",
+    "limits": {
+        "max_file_bytes": 0,
+        "max_total_bytes": 0,
+        "monthly_submission_limit": 0,
+        "active_game_limit": 0,
+        "storage_limit_bytes": 0,
+    },
+    "moderation": {
+        "blocked_words": [],
+        "allowed_media_types": ["image", "video", "audio"],
+        "require_approval_for_new_users": False,
+        "new_user_days": 7,
+        "spoiler_requires_approval": False,
+    },
+    "game_settings": {
+        "reuse_cooldown_days": 30,
+        "default_auto_hint_minutes": 0,
+        "default_difficulty": "normal",
+    },
+    "public_stats_enabled": True,
     "categories": {},
     "features": DEFAULT_FEATURES,
 }
@@ -1881,6 +1914,10 @@ SETTINGS_HTML = """
                     <tr><th>Pending submission retention hours</th><td><input name="pending_submission_retention_hours" value="{{ limits.get('pending_submission_retention_hours', 48) }}"></td></tr>
                     <tr><th>Media warning bytes</th><td><input name="media_warning_bytes" value="{{ limits.get('media_warning_bytes', 5368709120) }}"></td></tr>
                     <tr><th>Database warning bytes</th><td><input name="database_warning_bytes" value="{{ limits.get('database_warning_bytes', 536870912) }}"></td></tr>
+                    <tr><th>Monthly submissions per guild</th><td><input name="monthly_submission_limit_per_guild" value="{{ limits.get('monthly_submission_limit_per_guild', 0) }}"></td></tr>
+                    <tr><th>Active games per guild</th><td><input name="active_game_limit_per_guild" value="{{ limits.get('active_game_limit_per_guild', 0) }}"></td></tr>
+                    <tr><th>Guild storage limit bytes</th><td><input name="guild_storage_limit_bytes" value="{{ limits.get('guild_storage_limit_bytes', 0) }}"></td></tr>
+                    <tr><th>Offsite backup warning hours</th><td><input name="offsite_backup_warning_hours" value="{{ limits.get('offsite_backup_warning_hours', 72) }}"></td></tr>
                     <tr><th>Restore test weekday</th><td>
                         <select name="restore_test_weekday">
                             {% for day in weekdays %}
@@ -1958,6 +1995,35 @@ SETTINGS_HTML = """
                         <tr><th>Game summary channel ID</th><td><input name="game_summary_channel" value="{{ guild.game_summary_channel or '' }}"></td></tr>
                         <tr><th>Error channel ID</th><td><input name="error_channel" value="{{ guild.error_channel or '' }}"></td></tr>
                         <tr><th>Admin role IDs</th><td><input name="admin_role_ids" value="{{ guild.admin_role_ids }}"></td></tr>
+                        <tr><th>Public stats</th><td>
+                            <select name="public_stats_enabled">
+                                <option value="1" {% if guild.public_stats_enabled %}selected{% endif %}>Enabled</option>
+                                <option value="0" {% if not guild.public_stats_enabled %}selected{% endif %}>Disabled</option>
+                            </select>
+                        </td></tr>
+                        <tr><th>Max file bytes override</th><td><input name="guild_max_file_bytes" value="{{ guild.limits.max_file_bytes }}"></td></tr>
+                        <tr><th>Max total bytes override</th><td><input name="guild_max_total_bytes" value="{{ guild.limits.max_total_bytes }}"></td></tr>
+                        <tr><th>Monthly submission limit</th><td><input name="guild_monthly_submission_limit" value="{{ guild.limits.monthly_submission_limit }}"></td></tr>
+                        <tr><th>Active game limit</th><td><input name="guild_active_game_limit" value="{{ guild.limits.active_game_limit }}"></td></tr>
+                        <tr><th>Storage limit bytes</th><td><input name="guild_storage_limit_bytes" value="{{ guild.limits.storage_limit_bytes }}"></td></tr>
+                        <tr><th>Blocked words</th><td><input name="blocked_words" value="{{ guild.moderation.blocked_words|join(', ') }}" placeholder="comma separated"></td></tr>
+                        <tr><th>Allowed media types</th><td><input name="allowed_media_types" value="{{ guild.moderation.allowed_media_types|join(',') }}" placeholder="image,video,audio"></td></tr>
+                        <tr><th>New-user approval</th><td>
+                            <select name="require_approval_for_new_users">
+                                <option value="0" {% if not guild.moderation.require_approval_for_new_users %}selected{% endif %}>Disabled</option>
+                                <option value="1" {% if guild.moderation.require_approval_for_new_users %}selected{% endif %}>Enabled</option>
+                            </select>
+                        </td></tr>
+                        <tr><th>New-user days</th><td><input name="new_user_days" value="{{ guild.moderation.new_user_days }}"></td></tr>
+                        <tr><th>Spoiler approval</th><td>
+                            <select name="spoiler_requires_approval">
+                                <option value="0" {% if not guild.moderation.spoiler_requires_approval %}selected{% endif %}>Disabled</option>
+                                <option value="1" {% if guild.moderation.spoiler_requires_approval %}selected{% endif %}>Enabled</option>
+                            </select>
+                        </td></tr>
+                        <tr><th>Answer reuse cooldown days</th><td><input name="reuse_cooldown_days" value="{{ guild.game_settings.reuse_cooldown_days }}"></td></tr>
+                        <tr><th>Default auto-hint minutes</th><td><input name="default_auto_hint_minutes" value="{{ guild.game_settings.default_auto_hint_minutes }}"></td></tr>
+                        <tr><th>Default difficulty</th><td><input name="default_difficulty" value="{{ guild.game_settings.default_difficulty }}"></td></tr>
                         {% for feature in guild.features %}
                             <tr><th>{{ feature.label }}</th><td>
                                 <select name="feature_{{ feature.key }}">
@@ -2114,6 +2180,7 @@ MAINTENANCE_HTML = """
         <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
         <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
+        <a href="{{ url_for('admin_production_health', key=admin_key) }}">Health Score</a>
         <a href="{{ url_for('admin_health', key=admin_key) }}">Health JSON</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
     </nav>
@@ -2176,6 +2243,26 @@ MAINTENANCE_HTML = """
             <button name="action" value="restore_test" type="submit">Run Restore Test</button>
             <button name="action" value="restore_config" type="submit">Restore Latest Config Backup</button>
         </form>
+    </section>
+
+    <section class="panel">
+        <h2>Offsite Backups</h2>
+        <table>
+            <tbody>
+                <tr><th>Provider</th><td>{{ offsite_backup.provider or "Not set" }}</td></tr>
+                <tr><th>Remote</th><td><code>{{ offsite_backup.remote or "Not set" }}</code></td></tr>
+                <tr><th>Last success</th><td>{{ offsite_backup.last_success_at or "Unknown" }}</td></tr>
+                <tr><th>Last status</th><td>{{ offsite_backup.last_status or "Unknown" }}</td></tr>
+                <tr><th>Details</th><td>{{ offsite_backup.last_details or "" }}</td></tr>
+            </tbody>
+        </table>
+        <p class="muted">
+            Free options: Google Drive via rclone, Mega via rclone,
+            Backblaze B2 free allowance, an existing VPS with rsync, or encrypted
+            config-only archives stored in a private GitHub release.
+        </p>
+        <p><code>bash scripts/backup_offsite.sh remote:sdac-backups</code></p>
+        <p><code>bash scripts/sync_media_rclone.sh remote:sdac-media</code></p>
     </section>
 
     <section class="panel">
@@ -2407,6 +2494,139 @@ ANALYTICS_HTML = """
                 </tbody>
             </table>
         </div>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+PUBLIC_STATS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Public Stats</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1000px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>SDAC Public Stats</h1>
+    <nav>
+        <a href="{{ url_for('index') }}">Submissions</a>
+        <a href="{{ url_for('servers') }}">Servers</a>
+        <a href="{{ url_for('guessing_leaderboard') }}">Guessing leaderboard</a>
+        <a href="{{ url_for('achievements') }}">Achievements</a>
+    </nav>
+    <section class="grid">
+        {% for label, value in totals.items() %}
+            <div class="panel"><h2>{{ label }}</h2><p><code>{{ value }}</code></p></div>
+        {% endfor %}
+    </section>
+    <section class="panel">
+        <h2>Top Servers</h2>
+        <table>
+            <thead><tr><th>Server</th><th>Submissions</th><th>Guess Points</th></tr></thead>
+            <tbody>
+                {% for row in servers %}
+                    <tr>
+                        <td><a href="{{ url_for('server_profile', guild_id=row.id) }}">{{ row.name }}</a></td>
+                        <td>{{ row.submissions }}</td>
+                        <td>{{ row.guess_points }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="3" class="muted">No public servers yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    <section class="panel">
+        <h2>Monthly Winners</h2>
+        <table>
+            <thead><tr><th>Month</th><th>User</th><th>Points</th></tr></thead>
+            <tbody>
+                {% for row in winners %}
+                    <tr><td>{{ row.month }}</td><td>{{ row.username }}</td><td>{{ row.points }}</td></tr>
+                {% else %}
+                    <tr><td colspan="3" class="muted">No winners yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+PRODUCTION_HEALTH_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Production Health</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1000px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        .ok { color: #63c174; font-weight: bold; }
+        .bad { color: #e45d68; font-weight: bold; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Production Health</h1>
+    <nav>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('admin_health', key=admin_key) }}">Health JSON</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+    <section class="panel">
+        <h2>Score: {{ score }} / {{ max_score }}</h2>
+        <table>
+            <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+            <tbody>
+                {% for check in checks %}
+                    <tr>
+                        <td>{{ check.label }}</td>
+                        <td class="{{ 'ok' if check.ok else 'bad' }}">{{ "OK" if check.ok else "Needs attention" }}</td>
+                        <td>{{ check.details }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    <section class="panel">
+        <h2>Free Offsite Backup Options</h2>
+        <ul>
+            {% for option in free_backup_options %}
+                <li><strong>{{ option.name }}</strong>: {{ option.details }}</li>
+            {% endfor %}
+        </ul>
     </section>
 </main>
 </body>
@@ -2805,22 +3025,45 @@ def format_bytes(size):
     return f"{size / (1024 * 1024):.1f} MB"
 
 
+def fill_nested_defaults(target, defaults):
+    changed = False
+    for key, value in defaults.items():
+        if key not in target:
+            target[key] = json.loads(json.dumps(value))
+            changed = True
+            continue
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            if fill_nested_defaults(target[key], value):
+                changed = True
+    return changed
+
+
 def load_config():
     if not CONFIG_FILE.exists():
-        return {"guilds": {}, "limits": dict(DEFAULT_LIMITS)}
+        return {
+            "guilds": {},
+            "limits": dict(DEFAULT_LIMITS),
+            "offsite_backup": dict(DEFAULT_OFFSITE_BACKUP),
+        }
     with CONFIG_FILE.open("r", encoding="utf-8") as file:
         data = json.load(file)
     limits = data.setdefault("limits", {})
+    offsite_backup = data.setdefault("offsite_backup", {})
     changed = False
     for key, value in DEFAULT_LIMITS.items():
         if key not in limits:
             limits[key] = value
             changed = True
+    if fill_nested_defaults(offsite_backup, DEFAULT_OFFSITE_BACKUP):
+        changed = True
     for guild_config in (data.get("guilds") or {}).values():
         for key, value in DEFAULT_GUILD_FIELDS.items():
             if key not in guild_config:
                 guild_config[key] = json.loads(json.dumps(value))
                 changed = True
+            elif isinstance(value, dict) and isinstance(guild_config.get(key), dict):
+                if fill_nested_defaults(guild_config[key], value):
+                    changed = True
         features = guild_config.setdefault("features", {})
         for key, value in DEFAULT_FEATURES.items():
             if key not in features:
@@ -3051,6 +3294,68 @@ def security_warnings():
             "admin key as the password."
         )
     return warnings
+
+
+def free_offsite_backup_options():
+    return [
+        {
+            "name": "Google Drive via rclone",
+            "details": "Free personal storage tier; easiest rclone target for many small installs.",
+        },
+        {
+            "name": "Mega via rclone",
+            "details": "Large free tier in many regions; good for compressed media snapshots.",
+        },
+        {
+            "name": "Backblaze B2 free allowance",
+            "details": "Free daily download allowance and small free storage amount; good for testing.",
+        },
+        {
+            "name": "GitHub private release/manual upload",
+            "details": "Free for config-only encrypted archives; do not upload tokens or public media dumps.",
+        },
+        {
+            "name": "Another cheap/free VPS with rsync",
+            "details": "Free if you already have another machine; use SSH keys and encrypted archives.",
+        },
+    ]
+
+
+def production_health_report(config_data=None):
+    config_data = config_data or load_config()
+    bot_status = read_bot_status()
+    warnings = security_warnings() + storage_warnings(config_data)
+    offsite = config_data.get("offsite_backup") or {}
+    checks = []
+
+    def add(label, ok, details):
+        checks.append({"label": label, "ok": bool(ok), "details": details})
+
+    add("Secrets", not security_warnings(), "No default/missing dashboard secrets." if not security_warnings() else "; ".join(security_warnings()))
+    add("Discord OAuth", oauth_enabled(), "OAuth configured." if oauth_enabled() else "Set SDAC_DISCORD_CLIENT_ID and SDAC_DISCORD_CLIENT_SECRET.")
+    add("Bot heartbeat", bot_status.get("fresh"), bot_status.get("message") or "No heartbeat.")
+    add("Database backend", True, "PostgreSQL mode." if using_postgres() else "SQLite mode.")
+    add("Backups", bool(recent_database_backups()), "Recent backup found." if recent_database_backups() else "No database backup found yet.")
+    add(
+        "Offsite backups",
+        bool(offsite.get("last_success_at") or offsite.get("remote")),
+        offsite.get("last_success_at") or offsite.get("remote") or "No offsite backup destination recorded.",
+    )
+    add("Storage warnings", not storage_warnings(config_data), "No storage warnings." if not storage_warnings(config_data) else "; ".join(storage_warnings(config_data)))
+    add("Public URL", bool(os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN")), "Public URL configured." if os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN") else "Set SDAC_PUBLIC_URL.")
+    add("Guilds configured", bool(config_data.get("guilds")), f"{len(config_data.get('guilds') or {})} guild(s) configured.")
+    add(
+        "Release updater",
+        bool(release_status().get("configured_tag")),
+        f"Configured tag: {release_status().get('configured_tag') or 'unknown'}",
+    )
+    add("Warnings", not warnings, "No warnings." if not warnings else "; ".join(warnings))
+    score = sum(1 for check in checks if check["ok"])
+    return {
+        "score": score,
+        "max_score": len(checks),
+        "checks": checks,
+    }
 
 
 def csv_response(filename, rows, columns):
@@ -3736,12 +4041,7 @@ def preserve_monthly_submission_top(connection, month):
 
 
 def connect_db():
-    connection = sqlite3.connect(DB_FILE, timeout=30)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA busy_timeout = 30000")
-    connection.execute("PRAGMA journal_mode = WAL")
-    connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+    return connect_database(DB_FILE, timeout=30)
 
 
 @contextmanager
@@ -4268,6 +4568,15 @@ def media_relative_path(stored_path):
     return relative_path.as_posix()
 
 
+def media_url(relative_path):
+    if not relative_path:
+        return None
+    public_base = os.getenv("SDAC_MEDIA_PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if public_base:
+        return f"{public_base}/{str(relative_path).lstrip('/')}"
+    return url_for("serve_media", filename=relative_path)
+
+
 def referenced_media_paths(connection):
     paths = set()
     for row in connection.execute("""
@@ -4396,7 +4705,7 @@ def prepare_post(row):
                 metadata.get("media_type")
                 or (types[index] if index < len(types) else "unknown")
             ),
-            "url": url_for("serve_media", filename=relative_path),
+            "url": media_url(relative_path),
             "size": size,
             "size_label": format_bytes(size) if size else "",
             "content_type": metadata.get("content_type") or "",
@@ -5762,11 +6071,7 @@ def admin_game_library():
             item.get("guild_id"),
             item.get("guild_id") or "Unknown",
         )
-        item["media_url"] = (
-            url_for("serve_media", filename=relative_path)
-            if relative_path
-            else ""
-        )
+        item["media_url"] = media_url(relative_path) if relative_path else ""
         item["size_label"] = format_bytes(size) if size else ""
         item["status"] = item.get("status") or "active"
         items.append(item)
@@ -6039,6 +6344,10 @@ def admin_settings():
                     "pending_submission_retention_hours",
                     "media_warning_bytes",
                     "database_warning_bytes",
+                    "monthly_submission_limit_per_guild",
+                    "active_game_limit_per_guild",
+                    "guild_storage_limit_bytes",
+                    "offsite_backup_warning_hours",
                 ):
                     value = int(request.form.get(field, "0"))
                     if value < 0:
@@ -6157,6 +6466,68 @@ def admin_settings():
                     guild_config["admin_role_ids"] = role_id_list(
                         request.form.get("admin_role_ids")
                     )
+                    guild_config["public_stats_enabled"] = (
+                        request.form.get("public_stats_enabled") == "1"
+                    )
+                    guild_limits = guild_config.setdefault("limits", {})
+                    for field, form_name in (
+                        ("max_file_bytes", "guild_max_file_bytes"),
+                        ("max_total_bytes", "guild_max_total_bytes"),
+                        ("monthly_submission_limit", "guild_monthly_submission_limit"),
+                        ("active_game_limit", "guild_active_game_limit"),
+                        ("storage_limit_bytes", "guild_storage_limit_bytes"),
+                    ):
+                        value = int(request.form.get(form_name, "0") or 0)
+                        if value < 0:
+                            raise ValueError("Guild limits cannot be negative.")
+                        guild_limits[field] = value
+                    media_types = [
+                        item.strip().casefold()
+                        for item in request.form.get(
+                            "allowed_media_types",
+                            "image,video,audio",
+                        ).split(",")
+                        if item.strip()
+                    ]
+                    invalid_types = sorted(
+                        set(media_types) - {"image", "video", "audio"}
+                    )
+                    if invalid_types:
+                        raise ValueError(
+                            "Allowed media types can only include image, video, and audio."
+                        )
+                    new_user_days = int(request.form.get("new_user_days", "7") or 7)
+                    if new_user_days < 0 or new_user_days > 365:
+                        raise ValueError("New-user days must be 0-365.")
+                    guild_config["moderation"] = {
+                        "blocked_words": [
+                            item.strip()
+                            for item in request.form.get("blocked_words", "").split(",")
+                            if item.strip()
+                        ][:100],
+                        "allowed_media_types": media_types or ["image", "video", "audio"],
+                        "require_approval_for_new_users": (
+                            request.form.get("require_approval_for_new_users") == "1"
+                        ),
+                        "new_user_days": new_user_days,
+                        "spoiler_requires_approval": (
+                            request.form.get("spoiler_requires_approval") == "1"
+                        ),
+                    }
+                    reuse_days = int(request.form.get("reuse_cooldown_days", "30") or 0)
+                    auto_hint = int(request.form.get("default_auto_hint_minutes", "0") or 0)
+                    if reuse_days < 0 or reuse_days > 3650:
+                        raise ValueError("Reuse cooldown must be 0-3650 days.")
+                    if auto_hint < 0 or auto_hint > 1440:
+                        raise ValueError("Auto-hint minutes must be 0-1440.")
+                    guild_config["game_settings"] = {
+                        "reuse_cooldown_days": reuse_days,
+                        "default_auto_hint_minutes": auto_hint,
+                        "default_difficulty": request.form.get(
+                            "default_difficulty",
+                            "normal",
+                        ).strip()[:40] or "normal",
+                    }
                     features = guild_config.setdefault("features", {})
                     for feature_key in DEFAULT_FEATURES:
                         features[feature_key] = (
@@ -6213,6 +6584,9 @@ def admin_settings():
         if str(guild_id) not in allowed_settings_ids:
             continue
         features = guild_config.get("features") or {}
+        guild_limits = guild_config.get("limits") or {}
+        moderation = guild_config.get("moderation") or {}
+        game_settings = guild_config.get("game_settings") or {}
         guilds.append({
             "id": guild_id,
             "name": (
@@ -6237,6 +6611,19 @@ def admin_settings():
             "approval_channel": guild_config.get("approval_channel"),
             "emergency_paused": guild_config.get("emergency_paused", False),
             "emergency_reason": guild_config.get("emergency_reason") or "",
+            "limits": {
+                **DEFAULT_GUILD_FIELDS["limits"],
+                **guild_limits,
+            },
+            "moderation": {
+                **DEFAULT_GUILD_FIELDS["moderation"],
+                **moderation,
+            },
+            "game_settings": {
+                **DEFAULT_GUILD_FIELDS["game_settings"],
+                **game_settings,
+            },
+            "public_stats_enabled": guild_config.get("public_stats_enabled", True),
             "game_summary_channel": guild_config.get("game_summary_channel"),
             "error_channel": guild_config.get("error_channel"),
             "admin_role_ids": " ".join(
@@ -6452,6 +6839,7 @@ def admin_maintenance():
         media_files=media_stats["files"],
         media_size=format_bytes(media_stats["bytes"]),
         notice=notice,
+        offsite_backup=config_data.get("offsite_backup") or {},
         release=os.getenv("SDAC_RELEASE") or "development",
         release_status=release_status(),
         restore_runs=restore_runs,
@@ -6578,6 +6966,22 @@ def admin_analytics():
         top_categories=top_categories,
         top_submitters=top_submitters,
         totals=totals,
+    )
+
+
+@app.route("/admin/production-health")
+def admin_production_health():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+    report = production_health_report(load_config())
+    return render_template_string(
+        PRODUCTION_HEALTH_HTML,
+        admin_key=ADMIN_KEY,
+        checks=report["checks"],
+        free_backup_options=free_offsite_backup_options(),
+        max_score=report["max_score"],
+        score=report["score"],
     )
 
 
@@ -7641,6 +8045,70 @@ def servers():
     return render_template_string(SERVERS_HTML, servers=rows)
 
 
+@app.route("/stats")
+def public_stats():
+    config_data = load_config()
+    public_guilds = {
+        option["id"]: option["name"]
+        for option in guild_options(config_data, public_only=True)
+        if (config_data.get("guilds") or {})
+        .get(option["id"], {})
+        .get("public_stats_enabled", True)
+    }
+    visible_ids = set(public_guilds)
+    scope_sql, scope_params = guild_id_filter("guild_id", visible_ids)
+    with closing(connect_db()) as connection:
+        totals = {
+            "Servers": len(public_guilds),
+            "Submissions": connection.execute(
+                f"SELECT COUNT(*) FROM submissions WHERE status = 'posted' AND {scope_sql}",
+                scope_params,
+            ).fetchone()[0],
+            "Guess Points": connection.execute(
+                f"SELECT COALESCE(SUM(points), 0) FROM guess_points WHERE {scope_sql}",
+                scope_params,
+            ).fetchone()[0],
+            "Active Games": connection.execute(
+                f"SELECT COUNT(*) FROM guess_games WHERE status = 'active' AND {scope_sql}",
+                scope_params,
+            ).fetchone()[0],
+        }
+        servers_rows = []
+        for guild_id, name in public_guilds.items():
+            servers_rows.append({
+                "id": guild_id,
+                "name": name,
+                "submissions": connection.execute("""
+                    SELECT COUNT(*)
+                    FROM submissions
+                    WHERE guild_id = ? AND status = 'posted'
+                """, (guild_id,)).fetchone()[0],
+                "guess_points": connection.execute("""
+                    SELECT COALESCE(SUM(points), 0)
+                    FROM guess_points
+                    WHERE guild_id = ?
+                """, (guild_id,)).fetchone()[0],
+            })
+        servers_rows.sort(
+            key=lambda row: (row["submissions"], row["guess_points"]),
+            reverse=True,
+        )
+        winners = connection.execute(f"""
+            SELECT month, username, SUM(points) AS points
+            FROM guess_points
+            WHERE {scope_sql}
+            GROUP BY month, user_id, username
+            ORDER BY month DESC, points DESC, username ASC
+            LIMIT 20
+        """, scope_params).fetchall()
+    return render_template_string(
+        PUBLIC_STATS_HTML,
+        servers=servers_rows[:10],
+        totals=totals,
+        winners=winners,
+    )
+
+
 @app.route("/server/<guild_id>")
 def server_profile(guild_id):
     config_data = load_config()
@@ -7806,7 +8274,9 @@ def admin_health():
         return login_response
 
     media_stats = media_directory_stats()
-    setup_rows = build_onboarding_rows(load_config())
+    config_data = load_config()
+    setup_rows = build_onboarding_rows(config_data)
+    production_health = production_health_report(config_data)
     bot_status = read_bot_status()
     maybe_notify_stale_bot(bot_status)
     with closing(connect_db()) as connection:
@@ -7831,6 +8301,10 @@ def admin_health():
             "setup_health": {
                 row["id"]: row["health_score"]
                 for row in setup_rows
+            },
+            "production_health": {
+                "score": production_health["score"],
+                "max_score": production_health["max_score"],
             },
             "submissions": connection.execute(
                 "SELECT COUNT(*) FROM submissions"

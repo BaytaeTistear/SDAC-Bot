@@ -19,6 +19,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from config import TOKEN
+from database_backend import connect_database, using_postgres
 from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
 from observability import capture_exception, init_sentry
 
@@ -77,6 +78,17 @@ DEFAULT_CONFIG = {
         "restore_test_enabled": True,
         "restore_test_weekday": "sunday",
         "restore_test_time_utc": "03:30",
+        "monthly_submission_limit_per_guild": 0,
+        "active_game_limit_per_guild": 0,
+        "guild_storage_limit_bytes": 0,
+        "offsite_backup_warning_hours": 72,
+    },
+    "offsite_backup": {
+        "provider": "",
+        "remote": "",
+        "last_success_at": "",
+        "last_status": "",
+        "last_details": "",
     },
 }
 
@@ -107,6 +119,26 @@ DEFAULT_GUILD_CONFIG = {
     "approval_channel": None,
     "emergency_paused": False,
     "emergency_reason": "",
+    "limits": {
+        "max_file_bytes": 0,
+        "max_total_bytes": 0,
+        "monthly_submission_limit": 0,
+        "active_game_limit": 0,
+        "storage_limit_bytes": 0,
+    },
+    "moderation": {
+        "blocked_words": [],
+        "allowed_media_types": ["image", "video", "audio"],
+        "require_approval_for_new_users": False,
+        "new_user_days": 7,
+        "spoiler_requires_approval": False,
+    },
+    "game_settings": {
+        "reuse_cooldown_days": 30,
+        "default_auto_hint_minutes": 0,
+        "default_difficulty": "normal",
+    },
+    "public_stats_enabled": True,
     "categories": {},
     "features": DEFAULT_FEATURES,
 }
@@ -123,6 +155,19 @@ FEATURE_LABELS = {
 FEATURE_CHOICES = [
     app_commands.Choice(name=label, value=key)
     for key, label in FEATURE_LABELS.items()
+]
+
+LIMIT_LABELS = {
+    "max_file_mb": "Max File MB",
+    "max_total_mb": "Max Submission Total MB",
+    "monthly_submissions": "Monthly Submissions",
+    "active_games": "Active Games",
+    "storage_mb": "Storage MB",
+}
+
+LIMIT_CHOICES = [
+    app_commands.Choice(name=label, value=key)
+    for key, label in LIMIT_LABELS.items()
 ]
 
 SETUP_PRESETS = {
@@ -191,6 +236,9 @@ REQUIRED_TABLES = {
     "restore_test_runs",
     "submission_reports",
     "setup_test_runs",
+    "support_bundles",
+    "content_moderation_events",
+    "offsite_backup_runs",
 }
 
 NOTIFICATION_EVENT_LABELS = {
@@ -206,6 +254,19 @@ NOTIFICATION_EVENT_CHOICES = [
     app_commands.Choice(name=label, value=key)
     for key, label in NOTIFICATION_EVENT_LABELS.items()
 ]
+
+
+def fill_nested_defaults(target, defaults):
+    changed = False
+    for key, value in defaults.items():
+        if key not in target:
+            target[key] = json.loads(json.dumps(value))
+            changed = True
+            continue
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            if fill_nested_defaults(target[key], value):
+                changed = True
+    return changed
 
 
 def cleanup_old_config_backups():
@@ -288,11 +349,19 @@ def load_config():
     if "limits" not in data:
         data["limits"] = dict(DEFAULT_CONFIG["limits"])
         changed = True
+    if "offsite_backup" not in data:
+        data["offsite_backup"] = dict(DEFAULT_CONFIG["offsite_backup"])
+        changed = True
 
     for key, value in DEFAULT_CONFIG["limits"].items():
         if key not in data["limits"]:
             data["limits"][key] = value
             changed = True
+    if fill_nested_defaults(
+        data.setdefault("offsite_backup", {}),
+        DEFAULT_CONFIG["offsite_backup"],
+    ):
+        changed = True
 
     if changed:
         save_config(data)
@@ -366,6 +435,9 @@ def get_guild_config(guild_id, create=True):
         if setting not in guild_config:
             guild_config[setting] = json.loads(json.dumps(default))
             changed = True
+        elif isinstance(default, dict) and isinstance(guild_config.get(setting), dict):
+            if fill_nested_defaults(guild_config[setting], default):
+                changed = True
     features = guild_config.setdefault("features", {})
     for feature, default in DEFAULT_FEATURES.items():
         if feature not in features:
@@ -377,12 +449,7 @@ def get_guild_config(guild_id, create=True):
 
 
 def connect_db():
-    connection = sqlite3.connect(DB_FILE, timeout=30)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA busy_timeout = 30000")
-    connection.execute("PRAGMA journal_mode = WAL")
-    connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+    return connect_database(DB_FILE, timeout=30)
 
 
 @contextmanager
@@ -1825,6 +1892,257 @@ def record_rate_limit_event(
             details,
             utc_now_iso(),
         ))
+
+
+def record_content_moderation_event(
+    guild_id,
+    user_id,
+    username,
+    category,
+    reason,
+    action,
+    details="",
+):
+    with database() as connection:
+        connection.execute("""
+            INSERT INTO content_moderation_events (
+                guild_id, user_id, username, category, reason, action,
+                details, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            str(guild_id) if guild_id is not None else "",
+            str(user_id) if user_id is not None else "",
+            str(username) if username is not None else "",
+            category or "",
+            reason,
+            action,
+            details,
+            utc_now_iso(),
+        ))
+
+
+def guild_limits(guild_config):
+    return (guild_config or {}).get("limits") or {}
+
+
+def guild_moderation(guild_config):
+    return (guild_config or {}).get("moderation") or {}
+
+
+def guild_game_settings(guild_config):
+    return (guild_config or {}).get("game_settings") or {}
+
+
+def configured_guild_limit(guild_config, guild_key, global_key, default=0):
+    try:
+        guild_value = int(guild_limits(guild_config).get(guild_key) or 0)
+    except (TypeError, ValueError):
+        guild_value = 0
+    if guild_value > 0:
+        return guild_value
+    return configured_limit(global_key, default)
+
+
+def guild_monthly_submission_limit(guild_config):
+    return configured_guild_limit(
+        guild_config,
+        "monthly_submission_limit",
+        "monthly_submission_limit_per_guild",
+        0,
+    )
+
+
+def guild_active_game_limit(guild_config):
+    return configured_guild_limit(
+        guild_config,
+        "active_game_limit",
+        "active_game_limit_per_guild",
+        0,
+    )
+
+
+def guild_storage_limit(guild_config):
+    return configured_guild_limit(
+        guild_config,
+        "storage_limit_bytes",
+        "guild_storage_limit_bytes",
+        0,
+    )
+
+
+def guild_max_file_bytes(guild_config):
+    return configured_guild_limit(
+        guild_config,
+        "max_file_bytes",
+        "max_file_bytes",
+        25 * 1024 * 1024,
+    )
+
+
+def guild_max_total_bytes(guild_config):
+    return configured_guild_limit(
+        guild_config,
+        "max_total_bytes",
+        "max_total_bytes",
+        50 * 1024 * 1024,
+    )
+
+
+def guild_media_size(guild_id):
+    root = MEDIA_DIR / str(guild_id)
+    total = 0
+    if not root.exists():
+        return 0
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        try:
+            total += path.stat().st_size
+        except OSError:
+            pass
+    return total
+
+
+def current_month_submission_count(connection, guild_id, guild_config):
+    month = current_month_key(guild_config)
+    row = connection.execute("""
+        SELECT COUNT(*)
+        FROM submissions
+        WHERE guild_id = ?
+          AND substr(COALESCE(created_at, submitted_at, ''), 1, 7) = ?
+    """, (str(guild_id), month)).fetchone()
+    return int(row[0] or 0)
+
+
+def active_game_count(connection, guild_id):
+    row = connection.execute("""
+        SELECT COUNT(*)
+        FROM guess_games
+        WHERE guild_id = ? AND status = 'active'
+    """, (str(guild_id),)).fetchone()
+    return int(row[0] or 0)
+
+
+def blocked_word_match(text, blocked_words):
+    normalized_text = (text or "").casefold()
+    for word in blocked_words or []:
+        word = str(word or "").strip().casefold()
+        if word and word in normalized_text:
+            return word
+    return ""
+
+
+def moderation_rejection(guild_config, message, category):
+    moderation = guild_moderation(guild_config)
+    blocked = blocked_word_match(
+        message.content,
+        moderation.get("blocked_words") or [],
+    )
+    if blocked:
+        record_content_moderation_event(
+            message.guild.id,
+            message.author.id,
+            message.author,
+            category,
+            "blocked_word",
+            "rejected",
+            f"Matched `{blocked}`.",
+        )
+        return "This submission contains a blocked word."
+
+    allowed_types = set(moderation.get("allowed_media_types") or [])
+    if allowed_types:
+        bad_types = [
+            attachment.filename
+            for attachment in message.attachments
+            if get_media_type(attachment.filename) not in allowed_types
+        ]
+        if bad_types:
+            record_content_moderation_event(
+                message.guild.id,
+                message.author.id,
+                message.author,
+                category,
+                "blocked_media_type",
+                "rejected",
+                ", ".join(bad_types),
+            )
+            return "One or more attachment media types are not allowed here."
+    return ""
+
+
+def submission_needs_moderation_approval(guild_config, message):
+    moderation = guild_moderation(guild_config)
+    if moderation.get("spoiler_requires_approval"):
+        if any(str(attachment.filename or "").startswith("SPOILER_") for attachment in message.attachments):
+            return True, "Spoiler media requires approval."
+    if moderation.get("require_approval_for_new_users"):
+        try:
+            new_user_days = int(moderation.get("new_user_days") or 7)
+        except (TypeError, ValueError):
+            new_user_days = 7
+        created_at = getattr(message.author, "created_at", None)
+        if created_at:
+            age = datetime.now(timezone.utc) - created_at
+            if age.days < new_user_days:
+                return True, f"Account is newer than {new_user_days} day(s)."
+    return False, ""
+
+
+def answer_recently_used(connection, guild_id, normalized_answer, cooldown_days):
+    try:
+        cooldown_days = int(cooldown_days or 0)
+    except (TypeError, ValueError):
+        cooldown_days = 0
+    if cooldown_days <= 0:
+        return None
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=cooldown_days)).isoformat()
+    return connection.execute("""
+        SELECT answer_display, category, created_at
+        FROM guess_answer_history
+        WHERE guild_id = ?
+          AND answer = ?
+          AND created_at >= ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+    """, (str(guild_id), normalized_answer, cutoff)).fetchone()
+
+
+def support_bundle_payload(guild_id=None):
+    config_guilds = config.get("guilds", {})
+    selected_guild = config_guilds.get(str(guild_id), {}) if guild_id else None
+    with database() as connection:
+        payload = {
+            "created_at": utc_now_iso(),
+            "schema_version": SCHEMA_VERSION,
+            "database_backend": "postgresql" if using_postgres() else "sqlite",
+            "db_file": str(DB_FILE),
+            "media_dir": str(MEDIA_DIR),
+            "guild_count": len(config_guilds),
+            "selected_guild_id": str(guild_id) if guild_id else "",
+            "selected_guild_configured": bool(selected_guild),
+            "submissions": connection.execute(
+                "SELECT COUNT(*) FROM submissions"
+            ).fetchone()[0],
+            "active_games": connection.execute("""
+                SELECT COUNT(*)
+                FROM guess_games
+                WHERE status = 'active'
+            """).fetchone()[0],
+            "rate_limit_events": connection.execute(
+                "SELECT COUNT(*) FROM rate_limit_events"
+            ).fetchone()[0],
+        }
+    if selected_guild:
+        payload["selected_guild"] = {
+            "name": selected_guild.get("guild_name") or selected_guild.get("brand_name") or "",
+            "categories": len(selected_guild.get("categories") or {}),
+            "features": selected_guild.get("features") or {},
+            "limits": selected_guild.get("limits") or {},
+            "public_stats_enabled": selected_guild.get("public_stats_enabled", True),
+        }
+    return payload
 
 
 def configured_limit(name, default):
@@ -4467,6 +4785,207 @@ async def setapproval(
     )
 
 
+@tree.command(name="setlimit", description="Set a per-server SDAC safety limit")
+@app_commands.guild_only()
+@app_commands.choices(limit=LIMIT_CHOICES)
+@app_commands.describe(
+    limit="Limit to update",
+    value="Use 0 to inherit the global/default limit",
+)
+async def setlimit(interaction, limit: app_commands.Choice[str], value: int):
+    if not await require_admin(interaction):
+        return
+    if value < 0:
+        await interaction.response.send_message(
+            "Limits cannot be negative.",
+            ephemeral=True,
+        )
+        return
+    guild_config = get_guild_config(interaction.guild_id)
+    limits = guild_config.setdefault("limits", {})
+    if limit.value == "max_file_mb":
+        limits["max_file_bytes"] = value * 1024 * 1024
+    elif limit.value == "max_total_mb":
+        limits["max_total_bytes"] = value * 1024 * 1024
+    elif limit.value == "monthly_submissions":
+        limits["monthly_submission_limit"] = value
+    elif limit.value == "active_games":
+        limits["active_game_limit"] = value
+    elif limit.value == "storage_mb":
+        limits["storage_limit_bytes"] = value * 1024 * 1024
+    save_config(config)
+    audit_interaction(
+        interaction,
+        "set_guild_limit",
+        "limit",
+        limit.value,
+        f"Set {limit.value} to {value}.",
+    )
+    await interaction.response.send_message(
+        f"{limit.name} set to `{value}` for this server.",
+        ephemeral=True,
+    )
+
+
+@tree.command(name="setmoderation", description="Set content moderation controls")
+@app_commands.guild_only()
+@app_commands.describe(
+    blocked_words="Comma-separated blocked words. Use blank to clear.",
+    allowed_media_types="Comma-separated: image, video, audio. Use blank for all.",
+    require_approval_for_new_users="Require approval for new Discord accounts",
+    new_user_days="Account age threshold for new-user approval",
+    spoiler_requires_approval="Require approval for SPOILER_ files",
+)
+async def setmoderation(
+    interaction,
+    blocked_words: str = "",
+    allowed_media_types: str = "image,video,audio",
+    require_approval_for_new_users: bool = False,
+    new_user_days: int = 7,
+    spoiler_requires_approval: bool = False,
+):
+    if not await require_admin(interaction):
+        return
+    media_types = [
+        item.strip().casefold()
+        for item in allowed_media_types.split(",")
+        if item.strip()
+    ]
+    invalid_types = sorted(set(media_types) - {"image", "video", "audio"})
+    if invalid_types:
+        await interaction.response.send_message(
+            "Allowed media types can only include image, video, and audio.",
+            ephemeral=True,
+        )
+        return
+    if new_user_days < 0 or new_user_days > 365:
+        await interaction.response.send_message(
+            "New-user days must be between 0 and 365.",
+            ephemeral=True,
+        )
+        return
+    words = [
+        item.strip()
+        for item in blocked_words.split(",")
+        if item.strip()
+    ][:100]
+    guild_config = get_guild_config(interaction.guild_id)
+    guild_config["moderation"] = {
+        "blocked_words": words,
+        "allowed_media_types": media_types or ["image", "video", "audio"],
+        "require_approval_for_new_users": bool(require_approval_for_new_users),
+        "new_user_days": int(new_user_days),
+        "spoiler_requires_approval": bool(spoiler_requires_approval),
+    }
+    save_config(config)
+    audit_interaction(
+        interaction,
+        "set_moderation",
+        "guild",
+        interaction.guild_id,
+        f"{len(words)} blocked words; media={','.join(media_types) or 'all'}.",
+    )
+    await interaction.response.send_message(
+        "Moderation settings saved for this server.",
+        ephemeral=True,
+    )
+
+
+@tree.command(name="setgamesettings", description="Set default guessing-game controls")
+@app_commands.guild_only()
+@app_commands.describe(
+    reuse_cooldown_days="Do not reuse the same answer this many days",
+    default_auto_hint_minutes="Default auto-hint minutes when a game uses 0",
+    default_difficulty="Difficulty label stored with future library items",
+)
+async def setgamesettings(
+    interaction,
+    reuse_cooldown_days: int = 30,
+    default_auto_hint_minutes: int = 0,
+    default_difficulty: str = "normal",
+):
+    if not await require_admin(interaction):
+        return
+    if reuse_cooldown_days < 0 or reuse_cooldown_days > 3650:
+        await interaction.response.send_message(
+            "Reuse cooldown must be between 0 and 3650 days.",
+            ephemeral=True,
+        )
+        return
+    if default_auto_hint_minutes < 0 or default_auto_hint_minutes > 1440:
+        await interaction.response.send_message(
+            "Default auto-hint minutes must be between 0 and 1440.",
+            ephemeral=True,
+        )
+        return
+    guild_config = get_guild_config(interaction.guild_id)
+    guild_config["game_settings"] = {
+        "reuse_cooldown_days": int(reuse_cooldown_days),
+        "default_auto_hint_minutes": int(default_auto_hint_minutes),
+        "default_difficulty": (default_difficulty or "normal").strip()[:40],
+    }
+    save_config(config)
+    audit_interaction(
+        interaction,
+        "set_game_settings",
+        "guild",
+        interaction.guild_id,
+        (
+            f"reuse={reuse_cooldown_days}; "
+            f"auto_hint={default_auto_hint_minutes}; "
+            f"difficulty={default_difficulty}"
+        ),
+    )
+    await interaction.response.send_message(
+        "Guessing-game defaults saved.",
+        ephemeral=True,
+    )
+
+
+@tree.command(name="supportbundle", description="Create a small SDAC diagnostic bundle")
+@app_commands.guild_only()
+async def supportbundle(interaction):
+    if not await require_admin(interaction):
+        return
+    payload = support_bundle_payload(interaction.guild_id)
+    summary = (
+        f"backend={payload['database_backend']}; "
+        f"schema={payload['schema_version']}; "
+        f"submissions={payload['submissions']}; "
+        f"active_games={payload['active_games']}"
+    )
+    with database() as connection:
+        cursor = connection.execute("""
+            INSERT INTO support_bundles (
+                guild_id, actor_user_id, actor_username, summary,
+                details_json, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            str(interaction.guild_id),
+            str(interaction.user.id),
+            str(interaction.user),
+            summary,
+            json.dumps(payload, indent=2),
+            utc_now_iso(),
+        ))
+        bundle_id = cursor.lastrowid
+        add_admin_audit_log(
+            connection,
+            interaction.guild_id,
+            "create_support_bundle",
+            interaction.user.id,
+            interaction.user,
+            "support_bundle",
+            bundle_id,
+            summary,
+        )
+    await interaction.response.send_message(
+        f"Support bundle `{bundle_id}` created.\n`{summary}`",
+        ephemeral=True,
+    )
+
+
 def submission_cooldown_message(guild_id, user_id, category):
     now = time.time()
     user_key = f"{guild_id}:{user_id}"
@@ -4498,15 +5017,19 @@ def submission_cooldown_message(guild_id, user_id, category):
     return None, 0, ""
 
 
-def validate_submission_message(message):
+def validate_submission_message(message, guild_config=None, category=""):
     text = message.content.strip()
     attachments = list(message.attachments)
-    limits = config["limits"]
+    guild_config = guild_config or {}
+    moderation_error = moderation_rejection(guild_config, message, category)
+    if moderation_error:
+        return moderation_error
 
     if not attachments:
         return "A submission must include at least one image, audio, or video file."
-    if len(text) > limits["max_text_length"]:
-        return f"Text is limited to {limits['max_text_length']} characters."
+    max_text_length = configured_limit("max_text_length", 1500)
+    if len(text) > max_text_length:
+        return f"Text is limited to {max_text_length} characters."
     if len(attachments) > 5:
         return "A submission can contain at most 5 media files."
 
@@ -4521,13 +5044,13 @@ def validate_submission_message(message):
     oversized = [
         attachment.filename
         for attachment in attachments
-        if attachment.size > limits["max_file_bytes"]
+        if attachment.size > guild_max_file_bytes(guild_config)
     ]
     if oversized:
         return "Files exceed the per-file limit: " + ", ".join(oversized)
 
     total_size = sum(attachment.size for attachment in attachments)
-    if total_size > limits["max_total_bytes"]:
+    if total_size > guild_max_total_bytes(guild_config):
         return "The combined upload exceeds the total submission limit."
     return None
 
@@ -4588,15 +5111,29 @@ async def delete_source_message(message):
 
 async def create_submission(source_message, category):
     guild_config = get_guild_config(source_message.guild.id, create=False)
+    validation_error = validate_submission_message(
+        source_message,
+        guild_config,
+        category,
+    )
+    if validation_error:
+        return False, validation_error
     categories_config = guild_config.get("categories", {})
     target_channel = bot.get_channel(categories_config.get(category))
     if target_channel is None:
         return False, "The category channel could not be found."
 
     approval_channel = None
-    if guild_config["approval_enabled"] and feature_enabled(
+    moderation_approval, moderation_reason = submission_needs_moderation_approval(
         guild_config,
-        "approval_queue",
+        source_message,
+    )
+    if (
+        (guild_config["approval_enabled"] or moderation_approval)
+        and feature_enabled(
+            guild_config,
+            "approval_queue",
+        )
     ):
         approval_channel_id = guild_config.get("approval_channel")
         approval_channel = (
@@ -4626,6 +5163,31 @@ async def create_submission(source_message, category):
 
     text = source_message.content.strip()
     attachments = list(source_message.attachments)
+    total_size = sum(int(attachment.size or 0) for attachment in attachments)
+    with database() as connection:
+        monthly_limit = guild_monthly_submission_limit(guild_config)
+        if monthly_limit:
+            current_count = current_month_submission_count(
+                connection,
+                source_message.guild.id,
+                guild_config,
+            )
+            if current_count >= monthly_limit:
+                return (
+                    False,
+                    "This server has reached its monthly submission limit.",
+                )
+        storage_limit = guild_storage_limit(guild_config)
+        if (
+            storage_limit
+            and guild_media_size(source_message.guild.id) + total_size
+            > storage_limit
+        ):
+            return (
+                False,
+                "This server has reached its configured media storage limit.",
+            )
+
     user_folder = (
         MEDIA_DIR
         / str(source_message.guild.id)
@@ -4714,6 +5276,8 @@ async def create_submission(source_message, category):
             response_text = (
                 f"Submission `{submission_id}` is awaiting approval."
             )
+            if moderation_reason:
+                response_text += f" Reason: {moderation_reason}"
         else:
             created_message = await send_submission_message(
                 target_channel,
@@ -4960,7 +5524,11 @@ async def submit(interaction, category: str):
                 timeout=remaining,
                 check=message_check,
             )
-            validation_error = validate_submission_message(source_message)
+            validation_error = validate_submission_message(
+                source_message,
+                guild_config,
+                category,
+            )
             if not validation_error:
                 break
             await delete_source_message(source_message)
@@ -5038,6 +5606,14 @@ async def startgame(
         auto_hint_minutes = int(auto_hint_minutes or 0)
     except (TypeError, ValueError):
         auto_hint_minutes = 0
+    game_settings = guild_game_settings(guild_config)
+    if auto_hint_minutes == 0:
+        try:
+            auto_hint_minutes = int(
+                game_settings.get("default_auto_hint_minutes") or 0
+            )
+        except (TypeError, ValueError):
+            auto_hint_minutes = 0
     if auto_hint_minutes < 0 or auto_hint_minutes > 1440:
         await interaction.response.send_message(
             "Automatic hint minutes must be between 0 and 1440.",
@@ -5062,12 +5638,50 @@ async def startgame(
             ephemeral=True,
         )
         return
-    if media.size > config["limits"]["max_file_bytes"]:
+    if media.size > guild_max_file_bytes(guild_config):
         await interaction.response.send_message(
             "The game media exceeds the per-file size limit.",
             ephemeral=True,
         )
         return
+    storage_limit = guild_storage_limit(guild_config)
+    if storage_limit and guild_media_size(interaction.guild_id) + int(media.size or 0) > storage_limit:
+        await interaction.response.send_message(
+            "This server has reached its configured media storage limit.",
+            ephemeral=True,
+        )
+        return
+
+    with database() as connection:
+        limit = guild_active_game_limit(guild_config)
+        active_same_channel = connection.execute("""
+            SELECT 1
+            FROM guess_games
+            WHERE guild_id = ? AND channel_id = ? AND status = 'active'
+            LIMIT 1
+        """, (str(interaction.guild_id), str(channel.id))).fetchone()
+        if limit and active_game_count(connection, interaction.guild_id) >= limit and not active_same_channel:
+            await interaction.response.send_message(
+                "This server has reached its active game limit.",
+                ephemeral=True,
+            )
+            return
+        recent_answer = answer_recently_used(
+            connection,
+            interaction.guild_id,
+            normalized_answer,
+            game_settings.get("reuse_cooldown_days", 30),
+        )
+        if recent_answer:
+            await interaction.response.send_message(
+                (
+                    "That answer was used recently "
+                    f"({recent_answer['created_at']}). Pick another answer "
+                    "or lower the reuse cooldown with `/setgamesettings`."
+                ),
+                ephemeral=True,
+            )
+            return
 
     bot_member = interaction.guild.me
     if bot_member is None and bot.user is not None:
@@ -5278,8 +5892,26 @@ async def startlibrarygame(
         return
 
     category_filter = (category or "").strip()
+    game_settings = guild_game_settings(guild_config)
+    try:
+        reuse_cooldown_days = int(game_settings.get("reuse_cooldown_days") or 0)
+    except (TypeError, ValueError):
+        reuse_cooldown_days = 0
 
     with database() as connection:
+        limit = guild_active_game_limit(guild_config)
+        active_same_channel = connection.execute("""
+            SELECT 1
+            FROM guess_games
+            WHERE guild_id = ? AND channel_id = ? AND status = 'active'
+            LIMIT 1
+        """, (str(interaction.guild_id), str(channel.id))).fetchone()
+        if limit and active_game_count(connection, interaction.guild_id) >= limit and not active_same_channel:
+            await interaction.response.send_message(
+                "This server has reached its active game limit.",
+                ephemeral=True,
+            )
+            return
         if item_id > 0:
             item = connection.execute("""
                 SELECT *
@@ -5300,6 +5932,14 @@ async def startlibrarygame(
             if category_filter:
                 where.append("LOWER(category) = LOWER(?)")
                 parameters.append(category_filter)
+            if reuse_cooldown_days > 0:
+                where.append("(last_used_at IS NULL OR last_used_at = '' OR last_used_at < ?)")
+                parameters.append(
+                    (
+                        datetime.now(timezone.utc)
+                        - timedelta(days=reuse_cooldown_days)
+                    ).isoformat()
+                )
             order_sql = (
                 "RANDOM()"
                 if random_item
@@ -5347,6 +5987,23 @@ async def startlibrarygame(
 
     answer_display = item["answer_display"] or answer_aliases[0]["display"]
     normalized_answer = item["answer"] or answer_aliases[0]["normalized"]
+    with database() as connection:
+        recent_answer = answer_recently_used(
+            connection,
+            interaction.guild_id,
+            normalized_answer,
+            reuse_cooldown_days,
+        )
+    if recent_answer:
+        await interaction.response.send_message(
+            (
+                "That library answer was used recently "
+                f"({recent_answer['created_at']}). Pick another item "
+                "or lower the reuse cooldown with `/setgamesettings`."
+            ),
+            ephemeral=True,
+        )
+        return
     media_name = item["media_name"] or Path(item["media_path"] or "").name
     if not media_name or not is_allowed_file(media_name):
         await interaction.response.send_message(
@@ -5375,9 +6032,16 @@ async def startlibrarygame(
         return
 
     media_size = source_path.stat().st_size
-    if media_size > config["limits"]["max_file_bytes"]:
+    if media_size > guild_max_file_bytes(guild_config):
         await interaction.response.send_message(
             f"Library item `{item['id']}` exceeds the per-file size limit.",
+            ephemeral=True,
+        )
+        return
+    storage_limit = guild_storage_limit(guild_config)
+    if storage_limit and guild_media_size(interaction.guild_id) + media_size > storage_limit:
+        await interaction.response.send_message(
+            "This server has reached its configured media storage limit.",
             ephemeral=True,
         )
         return
@@ -5418,6 +6082,13 @@ async def startlibrarygame(
         if prompt_text:
             game_lines.append(prompt_text)
         auto_hint_minutes = int(item["auto_hint_minutes"] or 0)
+        if auto_hint_minutes == 0:
+            try:
+                auto_hint_minutes = int(
+                    game_settings.get("default_auto_hint_minutes") or 0
+                )
+            except (TypeError, ValueError):
+                auto_hint_minutes = 0
         if auto_hint_minutes > 0:
             game_lines.append(
                 f"Automatic hints are enabled every {auto_hint_minutes} minute(s)."

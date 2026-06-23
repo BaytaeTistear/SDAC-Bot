@@ -1,3 +1,34 @@
+# SDAC Bot Version 2.7.1 Experimental
+
+Date: 2026-06-23
+
+Version 2.7.1 is an experimental production-readiness build.
+
+Included:
+
+- experimental PostgreSQL runtime mode with `SDAC_DATABASE_URL`
+- optional cloud media URL prefix with `SDAC_MEDIA_PUBLIC_BASE_URL`
+- rclone media mirror script for cloud buckets/drives
+- per-server limits for upload size, monthly submissions, active games, and storage
+- content moderation settings for blocked words, media types, new-user approval,
+  and spoiler approval
+- game reuse cooldown/default auto-hint settings
+- `/setlimit`, `/setmoderation`, `/setgamesettings`, and `/supportbundle`
+- public `/stats` page
+- admin `/admin/production-health` score page
+- support bundle shell script for logs/config/service diagnostics
+- offsite backup guidance with free options: Google Drive, Mega, Backblaze B2
+  free allowance, another VPS/SSH target, or encrypted config-only GitHub storage
+- release CI checks for the new commands and production-health/stats routes
+
+Release channel:
+
+- `version-2.7.1` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+---
+
 # SDAC Bot Version 2.7.0 Experimental
 
 Date: 2026-06-23

@@ -36,6 +36,7 @@ jobs:
             bot.py \
             dashboard.py \
             config.py \
+            database_backend.py \
             database_migrations.py \
             observability.py \
             scripts/migrate_database.py \
@@ -52,7 +53,17 @@ jobs:
           from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
 
           names = {command.name for command in bot.tree.get_commands()}
-          required = {"submit", "setup", "sdacpanic", "diagnose", "setnotification"}
+          required = {
+              "submit",
+              "setup",
+              "sdacpanic",
+              "diagnose",
+              "setnotification",
+              "setlimit",
+              "setmoderation",
+              "setgamesettings",
+              "supportbundle",
+          }
           missing = sorted(required - names)
           if missing:
               raise SystemExit(f"Missing slash command(s): {missing}")
@@ -78,6 +89,8 @@ jobs:
               "/admin/maintenance?key=ImTheBestAdmin",
               "/admin/media?key=ImTheBestAdmin",
               "/admin/analytics?key=ImTheBestAdmin",
+              "/admin/production-health?key=ImTheBestAdmin",
+              "/stats",
           ):
               response = client.get(path)
               if response.status_code != 200:

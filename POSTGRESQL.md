@@ -3,8 +3,8 @@
 SDAC still runs on SQLite by default. That keeps single-server installs simple
 and compatible with the existing backup/restore tools.
 
-Version 2.7 adds a PostgreSQL migration utility so you can test a move before
-the runtime is fully switched to a database repository layer.
+Version 2.7.1 adds a PostgreSQL migration utility plus experimental runtime
+support through `SDAC_DATABASE_URL`.
 
 ## Start A Test PostgreSQL Container
 
@@ -30,16 +30,32 @@ venv/bin/python scripts/export_sqlite_to_postgres.py \
 ```
 
 The tool introspects the SQLite tables, creates matching PostgreSQL tables, and
-copies rows. It is intended for migration testing and reporting, not as the live
-runtime switch yet.
+copies rows.
+
+## Experimental Runtime Mode
+
+Set `SDAC_DATABASE_URL` in `/etc/sdac-bot/sdac.env` to make the bot and
+dashboard use PostgreSQL through the compatibility backend:
+
+```text
+SDAC_DATABASE_URL=postgresql://sdac:sdac-change-me@localhost:5432/sdac
+```
+
+Then restart both services:
+
+```bash
+sudo systemctl restart sdac-dashboard sdac-bot
+```
+
+Use this mode on a test server first. SQLite remains the default and safest
+single-server runtime.
 
 ## Current Status
 
-- SQLite remains the live supported runtime database for Version 2.x.
-- `SDAC_DATABASE_URL` is reserved for future runtime Postgres support.
+- SQLite remains the default live runtime database for Version 2.x.
+- `SDAC_DATABASE_URL` enables experimental runtime Postgres support.
 - `psycopg` is included so migration/export tooling works out of the box.
 - Docker compose includes an optional Postgres profile for testing.
 
-Before making PostgreSQL the live database, SDAC still needs a repository layer
-to replace direct SQLite calls, SQLite backup APIs, and SQLite-specific restore
-tests.
+Long term, SDAC should still move direct SQL calls behind a repository layer.
+That will make PostgreSQL support cleaner and easier to optimize.

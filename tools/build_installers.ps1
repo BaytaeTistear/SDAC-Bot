@@ -28,6 +28,7 @@ function Copy-PayloadFiles {
         "bot.py",
         "dashboard.py",
         "config.py",
+        "database_backend.py",
         "database_migrations.py",
         "observability.py",
         "requirements.txt",
@@ -39,6 +40,8 @@ function Copy-PayloadFiles {
         "scripts\install_nginx_site.sh",
         "scripts\standardize_env_file.sh",
         "scripts\backup_offsite.sh",
+        "scripts\sync_media_rclone.sh",
+        "scripts\support_bundle.sh",
         "scripts\check_production.sh",
         "scripts\migrate_database.py",
         "scripts\export_sqlite_to_postgres.py",
@@ -293,7 +296,7 @@ mkdir -p "`$APP_DIR/media" "`$APP_DIR/backups"
 
 if [[ "`$SKIP_SERVICES" == "1" ]]; then
     say "Compiling Python files without installing services"
-    python3 -m py_compile "`$APP_DIR/bot.py" "`$APP_DIR/dashboard.py" "`$APP_DIR/config.py"
+    python3 -m py_compile "`$APP_DIR/bot.py" "`$APP_DIR/dashboard.py" "`$APP_DIR/config.py" "`$APP_DIR/database_backend.py"
     python3 -m py_compile "`$APP_DIR/database_migrations.py" "`$APP_DIR/observability.py" "`$APP_DIR/scripts/migrate_database.py" "`$APP_DIR/scripts/export_sqlite_to_postgres.py"
     echo "SDAC files extracted to `$APP_DIR"
     exit 0
@@ -679,7 +682,7 @@ if not exist ""venv\Scripts\python.exe"" (
 )
 ""%~dp0venv\Scripts\python.exe"" -m pip install --upgrade pip
 ""%~dp0venv\Scripts\python.exe"" -m pip install -r requirements.txt
-""%~dp0venv\Scripts\python.exe"" -m py_compile bot.py dashboard.py config.py database_migrations.py scripts\migrate_database.py scripts\export_sqlite_to_postgres.py
+""%~dp0venv\Scripts\python.exe"" -m py_compile bot.py dashboard.py config.py database_backend.py database_migrations.py scripts\migrate_database.py scripts\export_sqlite_to_postgres.py
 pause
 ", new UTF8Encoding(false));
 
@@ -710,7 +713,7 @@ pause
         Run(pythonCommand, "-m venv \"" + Path.Combine(appDir, "venv") + "\"", appDir, true);
         Run(venvPython, "-m pip install --upgrade pip", appDir, false);
         Run(venvPython, "-m pip install \"discord.py>=2.3.2\" \"Flask>=3.0.0\" \"sentry-sdk>=2.0.0\"", appDir, false);
-        Run(venvPython, "-m py_compile bot.py dashboard.py config.py database_migrations.py observability.py scripts\\migrate_database.py scripts\\export_sqlite_to_postgres.py", appDir, false);
+        Run(venvPython, "-m py_compile bot.py dashboard.py config.py database_backend.py database_migrations.py observability.py scripts\\migrate_database.py scripts\\export_sqlite_to_postgres.py", appDir, false);
     }
 
     static string FindPythonCommand()

@@ -40,8 +40,14 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
   runtime state, public URL, and command sync
 - Website-managed guessing-game seasons with top 10 leaderboard snapshots
 - Emergency `/sdacpanic` pause/resume command for submissions and games
+- Per-server limits for file size, monthly submissions, active games, and storage
+- Content moderation controls for blocked words, allowed media types, new-user
+  approval, and spoiler approval
+- Public stats page, production health score page, and support bundle helper
+- Optional cloud media mirror support through `SDAC_MEDIA_PUBLIC_BASE_URL`
+  plus `scripts/sync_media_rclone.sh`
 - Docker and Docker Compose files for easier self-hosting
-- PostgreSQL export tooling for migration testing
+- PostgreSQL export tooling and experimental `SDAC_DATABASE_URL` runtime mode
 - New-server welcome message that points admins to `/setup`
 - Ubuntu systemd service templates and Nginx helper scripts
 - Linux and Windows single-file installers from GitHub Releases
@@ -52,6 +58,7 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - `dashboard.py` - Flask dashboard
 - `config.py` - environment loading
 - `database_migrations.py` - SQLite schema migrations
+- `database_backend.py` - SQLite default backend plus experimental Postgres mode
 - `config.json` - Discord server/channel/category settings
 - `sdac.db` - production SQLite database, not included in releases
 - `media/` - uploaded media, not included in releases
@@ -209,6 +216,34 @@ Specific backup:
 bash scripts/test_restore.sh /home/ubuntu/discord-screenshot-bot/backups/sdac-BACKUP.db
 ```
 
+Free offsite backup options that work well with `scripts/backup_offsite.sh`:
+
+- Google Drive via `rclone`
+- Mega via `rclone`
+- Backblaze B2 free allowance
+- Another VPS or home server over SSH/rsync
+- Encrypted config-only archives in a private GitHub release
+
+Example offsite backup:
+
+```bash
+sudo apt install rclone
+rclone config
+SDAC_RCLONE_REMOTE=drive:sdac-backups bash scripts/backup_offsite.sh
+```
+
+Mirror media to a cloud/public bucket:
+
+```bash
+SDAC_MEDIA_RCLONE_REMOTE=drive:sdac-media bash scripts/sync_media_rclone.sh
+```
+
+If the mirrored media has a public URL prefix, set:
+
+```text
+SDAC_MEDIA_PUBLIC_BASE_URL=https://cdn.example.com/sdac-media
+```
+
 ### Database Migrations
 
 ```bash
@@ -216,9 +251,11 @@ cd /home/ubuntu/discord-screenshot-bot
 venv/bin/python scripts/migrate_database.py --db sdac.db
 ```
 
-### PostgreSQL Migration Test
+### PostgreSQL
 
-SQLite remains the live default database. To test a PostgreSQL migration:
+SQLite remains the live default database. Version 2.7.1 adds experimental
+runtime support behind `SDAC_DATABASE_URL`; test it before production. To test a
+PostgreSQL migration:
 
 ```bash
 docker compose --profile postgres up -d postgres
@@ -249,6 +286,12 @@ Include Certbot dry-run:
 
 ```bash
 SDAC_DOMAIN=freethefishies.us.to SDAC_RUN_CERTBOT_DRY_RUN=1 bash scripts/check_production.sh
+```
+
+Create a one-command support bundle:
+
+```bash
+bash scripts/support_bundle.sh
 ```
 
 ### Rollback
@@ -286,6 +329,10 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /setgamesummarychannel #channel
 /seterrorchannel #channel
 /setnotification system_errors #channel true
+/setlimit max_file_mb 25
+/setmoderation "badword1,badword2" "image,video,audio" false 7 false
+/setgamesettings 30 10 normal
+/supportbundle
 /sdacpanic true "Cleaning up spam"
 /sdacpanic false
 /startgame #channel answer media text category hint auto_hint_minutes
@@ -308,6 +355,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /guessing                       Guessing leaderboard
 /achievements                   Monthly achievements
 /servers                        Server list
+/stats                          Public stats
 /admin/login?key=ImTheBestAdmin Admin login
 /admin/settings?key=ImTheBestAdmin
 /admin/game-library?key=ImTheBestAdmin
@@ -316,6 +364,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /admin/maintenance?key=ImTheBestAdmin
 /admin/media?key=ImTheBestAdmin
 /admin/analytics?key=ImTheBestAdmin
+/admin/production-health?key=ImTheBestAdmin
 /admin/moderation?key=ImTheBestAdmin
 /audit?key=ImTheBestAdmin
 /export/audit.csv?key=ImTheBestAdmin
