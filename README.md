@@ -46,6 +46,8 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - Public stats page, production health score page, and support bundle helper
 - Optional cloud media mirror support through `SDAC_MEDIA_PUBLIC_BASE_URL`
   plus `scripts/sync_media_rclone.sh`
+- Per-server rclone backup targets with optional public media URL prefixes,
+  guild-scoped database exports, and opt-in local guild media cleanup
 - Docker and Docker Compose files for easier self-hosting
 - PostgreSQL export tooling and experimental `SDAC_DATABASE_URL` runtime mode
 - New-server welcome message that points admins to `/setup`
@@ -244,6 +246,24 @@ If the mirrored media has a public URL prefix, set:
 SDAC_MEDIA_PUBLIC_BASE_URL=https://cdn.example.com/sdac-media
 ```
 
+Per-server alternate backups:
+
+```bash
+# First set the remote from Discord:
+# /setserverbackup true drive:sdac/server-123 https://cdn.example.com/sdac/server-123 true true false
+
+# Then run the guild backup from the host:
+SDAC_GUILD_ID=123456789 bash scripts/backup_guild_offsite.sh
+```
+
+`scripts/backup_guild_offsite.sh` reads the guild's `external_backup` settings
+from `config.json`, exports only that guild's config/database rows, copies only
+that guild's `media/<guild_id>` folder, and records the last status back into
+the same guild config. If `delete_local_media_after_success` is enabled, local
+media for that guild is pruned only after rclone finishes successfully. Keep
+that option disabled unless the remote media is also reachable through a public
+URL or you are comfortable restoring media manually.
+
 ### Database Migrations
 
 ```bash
@@ -332,6 +352,8 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /setlimit max_file_mb 25
 /setmoderation "badword1,badword2" "image,video,audio" false 7 false
 /setgamesettings 30 10 normal
+/setserverbackup true drive:sdac/server https://cdn.example.com/sdac/server true true false
+/serverbackupstatus
 /supportbundle
 /sdacpanic true "Cleaning up spam"
 /sdacpanic false

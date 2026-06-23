@@ -101,6 +101,19 @@ DEFAULT_FEATURES = {
     "cross_server_leaderboard": True,
 }
 
+DEFAULT_GUILD_EXTERNAL_BACKUP = {
+    "enabled": False,
+    "provider": "rclone",
+    "remote": "",
+    "public_base_url": "",
+    "include_media": True,
+    "include_database_export": True,
+    "delete_local_media_after_success": False,
+    "last_success_at": "",
+    "last_status": "",
+    "last_details": "",
+}
+
 DEFAULT_GUILD_CONFIG = {
     "guild_name": "",
     "brand_name": "",
@@ -139,6 +152,7 @@ DEFAULT_GUILD_CONFIG = {
         "default_difficulty": "normal",
     },
     "public_stats_enabled": True,
+    "external_backup": DEFAULT_GUILD_EXTERNAL_BACKUP,
     "categories": {},
     "features": DEFAULT_FEATURES,
 }
@@ -4938,6 +4952,152 @@ async def setgamesettings(
     )
     await interaction.response.send_message(
         "Guessing-game defaults saved.",
+        ephemeral=True,
+    )
+
+
+@tree.command(name="setserverbackup", description="Set this server's external backup target")
+@app_commands.guild_only()
+@app_commands.describe(
+    enabled="Whether per-server offsite backups are enabled",
+    remote="rclone destination, like drive:sdac/server-name. Blank keeps current.",
+    public_base_url="Optional public media URL prefix. Use clear to remove.",
+    include_media="Include this server's media folder in the backup job",
+    include_database_export="Include this server's database rows as JSON",
+    delete_local_media_after_success="Advanced: delete local guild media after a successful copy",
+)
+async def setserverbackup(
+    interaction,
+    enabled: bool,
+    remote: str = "",
+    public_base_url: str = "",
+    include_media: bool = True,
+    include_database_export: bool = True,
+    delete_local_media_after_success: bool = False,
+):
+    if not await require_admin(interaction):
+        return
+
+    guild_config = get_guild_config(interaction.guild_id)
+    backup = guild_config.setdefault(
+        "external_backup",
+        json.loads(json.dumps(DEFAULT_GUILD_EXTERNAL_BACKUP)),
+    )
+
+    remote_value = (remote or "").strip()
+    public_base_value = (public_base_url or "").strip()
+    if remote_value.casefold() in {"clear", "none", "-"}:
+        backup["remote"] = ""
+    elif remote_value:
+        if any(character in remote_value for character in "\r\n"):
+            await interaction.response.send_message(
+                "The backup remote cannot contain line breaks.",
+                ephemeral=True,
+            )
+            return
+        backup["remote"] = remote_value[:300]
+
+    if public_base_value.casefold() in {"clear", "none", "-"}:
+        backup["public_base_url"] = ""
+    elif public_base_value:
+        if not public_base_value.startswith(("https://", "http://")):
+            await interaction.response.send_message(
+                "Public media base URL must start with http:// or https://.",
+                ephemeral=True,
+            )
+            return
+        backup["public_base_url"] = public_base_value.rstrip("/")[:300]
+
+    if enabled and not backup.get("remote"):
+        await interaction.response.send_message(
+            "Set a backup remote before enabling per-server backups.",
+            ephemeral=True,
+        )
+        return
+    if delete_local_media_after_success and not include_media:
+        await interaction.response.send_message(
+            "Local media can only be deleted after a media backup is included.",
+            ephemeral=True,
+        )
+        return
+
+    backup["enabled"] = bool(enabled)
+    backup["provider"] = "rclone"
+    backup["include_media"] = bool(include_media)
+    backup["include_database_export"] = bool(include_database_export)
+    backup["delete_local_media_after_success"] = bool(
+        delete_local_media_after_success
+    )
+    save_config(config)
+
+    audit_interaction(
+        interaction,
+        "set_server_backup",
+        "guild",
+        interaction.guild_id,
+        (
+            f"enabled={enabled}; remote={backup.get('remote') or 'unset'}; "
+            f"include_media={include_media}; "
+            f"delete_local={delete_local_media_after_success}"
+        ),
+    )
+
+    command = (
+        "SDAC_GUILD_ID="
+        f"{interaction.guild_id} bash scripts/backup_guild_offsite.sh"
+    )
+    warnings = []
+    if backup.get("delete_local_media_after_success"):
+        warnings.append(
+            "Advanced cleanup is enabled: local media for this guild is removed "
+            "only after rclone reports a successful copy."
+        )
+    if backup.get("public_base_url"):
+        warnings.append(
+            "Dashboard media links can use this guild's public media URL."
+        )
+    await interaction.response.send_message(
+        "\n".join([
+            f"Per-server backup is now {'enabled' if enabled else 'disabled'}.",
+            f"Remote: `{backup.get('remote') or 'Not set'}`",
+            f"Run on the host with: `{command}`",
+            *warnings,
+        ]),
+        ephemeral=True,
+    )
+
+
+@tree.command(name="serverbackupstatus", description="Show this server's backup settings")
+@app_commands.guild_only()
+async def serverbackupstatus(interaction):
+    if not await require_admin(interaction):
+        return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    backup = {
+        **DEFAULT_GUILD_EXTERNAL_BACKUP,
+        **(guild_config.get("external_backup") or {}),
+    }
+    command = (
+        "SDAC_GUILD_ID="
+        f"{interaction.guild_id} bash scripts/backup_guild_offsite.sh"
+    )
+    await interaction.response.send_message(
+        "\n".join([
+            f"Enabled: `{backup.get('enabled')}`",
+            f"Provider: `{backup.get('provider') or 'rclone'}`",
+            f"Remote: `{backup.get('remote') or 'Not set'}`",
+            f"Public media URL: `{backup.get('public_base_url') or 'Not set'}`",
+            f"Include media: `{backup.get('include_media')}`",
+            f"Include DB export: `{backup.get('include_database_export')}`",
+            (
+                "Delete local media after success: "
+                f"`{backup.get('delete_local_media_after_success')}`"
+            ),
+            f"Last success: `{backup.get('last_success_at') or 'Never'}`",
+            f"Last status: `{backup.get('last_status') or 'Unknown'}`",
+            f"Details: `{backup.get('last_details') or ''}`",
+            f"Host command: `{command}`",
+        ]),
         ephemeral=True,
     )
 

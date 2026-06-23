@@ -40,6 +40,7 @@ function Copy-PayloadFiles {
         "scripts\install_nginx_site.sh",
         "scripts\standardize_env_file.sh",
         "scripts\backup_offsite.sh",
+        "scripts\backup_guild_offsite.sh",
         "scripts\sync_media_rclone.sh",
         "scripts\support_bundle.sh",
         "scripts\check_production.sh",

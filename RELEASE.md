@@ -1,3 +1,30 @@
+# SDAC Bot Version 2.7.2 Experimental
+
+Date: 2026-06-23
+
+Version 2.7.2 is an experimental per-server backup build.
+
+Included:
+
+- per-server external backup settings in `config.json`
+- new `/setserverbackup` and `/serverbackupstatus` Discord admin commands
+- dashboard Settings fields for each guild's backup remote, public media URL,
+  backup includes, and local media cleanup switch
+- Maintenance page status table for per-server backup targets
+- `scripts/backup_guild_offsite.sh` for guild-scoped config/database exports,
+  guild media rclone copies, status recording, and optional local guild media
+  cleanup after successful backup
+- per-guild public media URL support for dashboard media links
+- installer payload and README updates for the new backup workflow
+
+Release channel:
+
+- `version-2.7.2` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+---
+
 # SDAC Bot Version 2.7.1 Experimental
 
 Date: 2026-06-23

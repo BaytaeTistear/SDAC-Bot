@@ -130,6 +130,19 @@ DEFAULT_FEATURES = {
     "cross_server_leaderboard": True,
 }
 
+DEFAULT_GUILD_EXTERNAL_BACKUP = {
+    "enabled": False,
+    "provider": "rclone",
+    "remote": "",
+    "public_base_url": "",
+    "include_media": True,
+    "include_database_export": True,
+    "delete_local_media_after_success": False,
+    "last_success_at": "",
+    "last_status": "",
+    "last_details": "",
+}
+
 FEATURE_LABELS = {
     "submissions": "Submissions",
     "approval_queue": "Approval Queue",
@@ -198,6 +211,7 @@ DEFAULT_GUILD_FIELDS = {
         "default_difficulty": "normal",
     },
     "public_stats_enabled": True,
+    "external_backup": DEFAULT_GUILD_EXTERNAL_BACKUP,
     "categories": {},
     "features": DEFAULT_FEATURES,
 }
@@ -207,6 +221,10 @@ UPDATE_ENV_FILE = Path(os.getenv("SDAC_UPDATE_CONFIG", "/etc/sdac-bot/update.env
 RELEASE_CACHE = {
     "expires_at": 0,
     "status": None,
+}
+GUILD_MEDIA_BASE_CACHE = {
+    "mtime": None,
+    "bases": {},
 }
 
 
@@ -2001,6 +2019,32 @@ SETTINGS_HTML = """
                                 <option value="0" {% if not guild.public_stats_enabled %}selected{% endif %}>Disabled</option>
                             </select>
                         </td></tr>
+                        <tr><th>External backup</th><td>
+                            <select name="external_backup_enabled">
+                                <option value="1" {% if guild.external_backup.enabled %}selected{% endif %}>Enabled</option>
+                                <option value="0" {% if not guild.external_backup.enabled %}selected{% endif %}>Disabled</option>
+                            </select>
+                        </td></tr>
+                        <tr><th>Backup remote</th><td><input name="external_backup_remote" value="{{ guild.external_backup.remote }}" placeholder="drive:sdac/{{ guild.id }}"></td></tr>
+                        <tr><th>Public media base URL</th><td><input name="external_backup_public_base_url" value="{{ guild.external_backup.public_base_url }}" placeholder="https://cdn.example.com/sdac/{{ guild.id }}"></td></tr>
+                        <tr><th>Backup includes media</th><td>
+                            <select name="external_backup_include_media">
+                                <option value="1" {% if guild.external_backup.include_media %}selected{% endif %}>Enabled</option>
+                                <option value="0" {% if not guild.external_backup.include_media %}selected{% endif %}>Disabled</option>
+                            </select>
+                        </td></tr>
+                        <tr><th>Backup includes DB export</th><td>
+                            <select name="external_backup_include_database_export">
+                                <option value="1" {% if guild.external_backup.include_database_export %}selected{% endif %}>Enabled</option>
+                                <option value="0" {% if not guild.external_backup.include_database_export %}selected{% endif %}>Disabled</option>
+                            </select>
+                        </td></tr>
+                        <tr><th>Delete local media after backup</th><td>
+                            <select name="external_backup_delete_local_media_after_success">
+                                <option value="0" {% if not guild.external_backup.delete_local_media_after_success %}selected{% endif %}>Disabled</option>
+                                <option value="1" {% if guild.external_backup.delete_local_media_after_success %}selected{% endif %}>Enabled after successful rclone copy</option>
+                            </select>
+                        </td></tr>
                         <tr><th>Max file bytes override</th><td><input name="guild_max_file_bytes" value="{{ guild.limits.max_file_bytes }}"></td></tr>
                         <tr><th>Max total bytes override</th><td><input name="guild_max_total_bytes" value="{{ guild.limits.max_total_bytes }}"></td></tr>
                         <tr><th>Monthly submission limit</th><td><input name="guild_monthly_submission_limit" value="{{ guild.limits.monthly_submission_limit }}"></td></tr>
@@ -2058,6 +2102,13 @@ SETTINGS_HTML = """
                     <tr><th>Approval</th><td>{{ "Enabled" if guild.approval_enabled else "Disabled" }}</td></tr>
                     <tr><th>Approval channel</th><td>{{ guild.approval_channel or "Not set" }}</td></tr>
                     <tr><th>Emergency pause</th><td>{{ "Enabled" if guild.emergency_paused else "Disabled" }}{% if guild.emergency_reason %}: {{ guild.emergency_reason }}{% endif %}</td></tr>
+                    <tr><th>External backup</th><td>
+                        <div>Enabled: <code>{{ "Yes" if guild.external_backup.enabled else "No" }}</code></div>
+                        <div>Remote: <code>{{ guild.external_backup.remote or "Not set" }}</code></div>
+                        <div>Public media URL: <code>{{ guild.external_backup.public_base_url or "Not set" }}</code></div>
+                        <div>Last status: <code>{{ guild.external_backup.last_status or "Unknown" }}</code></div>
+                        <div>Last success: <code>{{ guild.external_backup.last_success_at or "Never" }}</code></div>
+                    </td></tr>
                     <tr><th>Features</th><td>
                         {% for feature in guild.features %}
                             <div>{{ feature.label }}: <code>{{ "Enabled" if feature.enabled else "Disabled" }}</code></div>
@@ -2263,6 +2314,24 @@ MAINTENANCE_HTML = """
         </p>
         <p><code>bash scripts/backup_offsite.sh remote:sdac-backups</code></p>
         <p><code>bash scripts/sync_media_rclone.sh remote:sdac-media</code></p>
+        <h3>Per-Server Backup Targets</h3>
+        <table>
+            <thead><tr><th>Server</th><th>Remote</th><th>Media URL</th><th>Last status</th><th>Last success</th></tr></thead>
+            <tbody>
+                {% for row in guild_backup_rows %}
+                    <tr>
+                        <td>{{ row.name }}<br><code>{{ row.guild_id }}</code></td>
+                        <td><code>{{ row.remote or "Not set" }}</code></td>
+                        <td><code>{{ row.public_base_url or "Not set" }}</code></td>
+                        <td>{{ row.last_status or "Unknown" }}</td>
+                        <td>{{ row.last_success_at or "Never" }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="muted">No per-server backup targets configured yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p><code>SDAC_GUILD_ID=123456789 bash scripts/backup_guild_offsite.sh</code></p>
     </section>
 
     <section class="panel">
@@ -3326,6 +3395,15 @@ def production_health_report(config_data=None):
     bot_status = read_bot_status()
     warnings = security_warnings() + storage_warnings(config_data)
     offsite = config_data.get("offsite_backup") or {}
+    guild_backups = [
+        (guild_config.get("external_backup") or {})
+        for guild_config in (config_data.get("guilds") or {}).values()
+    ]
+    configured_guild_backups = [
+        backup
+        for backup in guild_backups
+        if backup.get("enabled") and backup.get("remote")
+    ]
     checks = []
 
     def add(label, ok, details):
@@ -3340,6 +3418,15 @@ def production_health_report(config_data=None):
         "Offsite backups",
         bool(offsite.get("last_success_at") or offsite.get("remote")),
         offsite.get("last_success_at") or offsite.get("remote") or "No offsite backup destination recorded.",
+    )
+    add(
+        "Per-server backups",
+        bool(configured_guild_backups),
+        (
+            f"{len(configured_guild_backups)} guild backup target(s) configured."
+            if configured_guild_backups
+            else "No guild-specific backup targets configured."
+        ),
     )
     add("Storage warnings", not storage_warnings(config_data), "No storage warnings." if not storage_warnings(config_data) else "; ".join(storage_warnings(config_data)))
     add("Public URL", bool(os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN")), "Public URL configured." if os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN") else "Set SDAC_PUBLIC_URL.")
@@ -4568,10 +4655,37 @@ def media_relative_path(stored_path):
     return relative_path.as_posix()
 
 
-def media_url(relative_path):
+def guild_media_public_base_url(guild_id, config_data=None):
+    if not guild_id:
+        return ""
+    if config_data is not None:
+        guild_config = (config_data.get("guilds") or {}).get(str(guild_id)) or {}
+        backup = guild_config.get("external_backup") or {}
+        return (backup.get("public_base_url") or "").strip().rstrip("/")
+    try:
+        config_mtime = CONFIG_FILE.stat().st_mtime
+    except OSError:
+        config_mtime = None
+    if GUILD_MEDIA_BASE_CACHE["mtime"] != config_mtime:
+        loaded = load_config()
+        GUILD_MEDIA_BASE_CACHE["mtime"] = config_mtime
+        GUILD_MEDIA_BASE_CACHE["bases"] = {
+            str(cached_guild_id): (
+                ((cached_guild.get("external_backup") or {}).get("public_base_url") or "")
+                .strip()
+                .rstrip("/")
+            )
+            for cached_guild_id, cached_guild in (loaded.get("guilds") or {}).items()
+        }
+    return GUILD_MEDIA_BASE_CACHE["bases"].get(str(guild_id), "")
+
+
+def media_url(relative_path, guild_id=None):
     if not relative_path:
         return None
-    public_base = os.getenv("SDAC_MEDIA_PUBLIC_BASE_URL", "").strip().rstrip("/")
+    public_base = guild_media_public_base_url(guild_id)
+    if not public_base:
+        public_base = os.getenv("SDAC_MEDIA_PUBLIC_BASE_URL", "").strip().rstrip("/")
     if public_base:
         return f"{public_base}/{str(relative_path).lstrip('/')}"
     return url_for("serve_media", filename=relative_path)
@@ -4705,7 +4819,7 @@ def prepare_post(row):
                 metadata.get("media_type")
                 or (types[index] if index < len(types) else "unknown")
             ),
-            "url": media_url(relative_path),
+            "url": media_url(relative_path, post.get("guild_id")),
             "size": size,
             "size_label": format_bytes(size) if size else "",
             "content_type": metadata.get("content_type") or "",
@@ -6071,7 +6185,11 @@ def admin_game_library():
             item.get("guild_id"),
             item.get("guild_id") or "Unknown",
         )
-        item["media_url"] = media_url(relative_path) if relative_path else ""
+        item["media_url"] = (
+            media_url(relative_path, item.get("guild_id"))
+            if relative_path
+            else ""
+        )
         item["size_label"] = format_bytes(size) if size else ""
         item["status"] = item.get("status") or "active"
         items.append(item)
@@ -6469,6 +6587,59 @@ def admin_settings():
                     guild_config["public_stats_enabled"] = (
                         request.form.get("public_stats_enabled") == "1"
                     )
+                    backup_remote = request.form.get(
+                        "external_backup_remote",
+                        "",
+                    ).strip()[:300]
+                    if any(character in backup_remote for character in "\r\n"):
+                        raise ValueError(
+                            "External backup remote cannot contain line breaks."
+                        )
+                    backup_public_base = request.form.get(
+                        "external_backup_public_base_url",
+                        "",
+                    ).strip().rstrip("/")[:300]
+                    if backup_public_base and not backup_public_base.startswith(
+                        ("https://", "http://")
+                    ):
+                        raise ValueError(
+                            "External backup public media URL must start with http:// or https://."
+                        )
+                    include_media = (
+                        request.form.get("external_backup_include_media") == "1"
+                    )
+                    delete_local_media = (
+                        request.form.get(
+                            "external_backup_delete_local_media_after_success"
+                        ) == "1"
+                    )
+                    if delete_local_media and not include_media:
+                        raise ValueError(
+                            "Local media cleanup requires media backup to be enabled."
+                        )
+                    backup_enabled = (
+                        request.form.get("external_backup_enabled") == "1"
+                    )
+                    if backup_enabled and not backup_remote:
+                        raise ValueError(
+                            "External backup remote is required when backups are enabled."
+                        )
+                    existing_backup = guild_config.get("external_backup") or {}
+                    guild_config["external_backup"] = {
+                        **DEFAULT_GUILD_FIELDS["external_backup"],
+                        **existing_backup,
+                        "enabled": backup_enabled,
+                        "provider": "rclone",
+                        "remote": backup_remote,
+                        "public_base_url": backup_public_base,
+                        "include_media": include_media,
+                        "include_database_export": (
+                            request.form.get(
+                                "external_backup_include_database_export"
+                            ) == "1"
+                        ),
+                        "delete_local_media_after_success": delete_local_media,
+                    }
                     guild_limits = guild_config.setdefault("limits", {})
                     for field, form_name in (
                         ("max_file_bytes", "guild_max_file_bytes"),
@@ -6587,6 +6758,10 @@ def admin_settings():
         guild_limits = guild_config.get("limits") or {}
         moderation = guild_config.get("moderation") or {}
         game_settings = guild_config.get("game_settings") or {}
+        external_backup = {
+            **DEFAULT_GUILD_FIELDS["external_backup"],
+            **(guild_config.get("external_backup") or {}),
+        }
         guilds.append({
             "id": guild_id,
             "name": (
@@ -6624,6 +6799,7 @@ def admin_settings():
                 **game_settings,
             },
             "public_stats_enabled": guild_config.get("public_stats_enabled", True),
+            "external_backup": external_backup,
             "game_summary_channel": guild_config.get("game_summary_channel"),
             "error_channel": guild_config.get("error_channel"),
             "admin_role_ids": " ".join(
@@ -6824,6 +7000,31 @@ def admin_maintenance():
 
     bot_status = read_bot_status()
     maybe_notify_stale_bot(bot_status)
+    allowed_guild_ids = current_admin_allowed_guild_ids(config_data)
+    guild_backup_rows = []
+    for guild_id, guild_config in sorted((config_data.get("guilds") or {}).items()):
+        if allowed_guild_ids is not None and str(guild_id) not in allowed_guild_ids:
+            continue
+        backup = {
+            **DEFAULT_GUILD_FIELDS["external_backup"],
+            **(guild_config.get("external_backup") or {}),
+        }
+        if not (
+            backup.get("enabled")
+            or backup.get("remote")
+            or backup.get("last_status")
+            or backup.get("public_base_url")
+        ):
+            continue
+        guild_backup_rows.append({
+            "guild_id": guild_id,
+            "name": (
+                guild_config.get("brand_name")
+                or guild_config.get("guild_name")
+                or f"Discord {guild_id}"
+            ),
+            **backup,
+        })
 
     return render_template_string(
         MAINTENANCE_HTML,
@@ -6836,6 +7037,7 @@ def admin_maintenance():
         db_file=DB_FILE,
         db_size=format_bytes(DB_FILE.stat().st_size) if DB_FILE.exists() else "0 B",
         error=error,
+        guild_backup_rows=guild_backup_rows,
         media_files=media_stats["files"],
         media_size=format_bytes(media_stats["bytes"]),
         notice=notice,
