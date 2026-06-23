@@ -24,11 +24,11 @@ from observability import capture_exception, init_sentry
 
 
 BASE_DIR = Path(__file__).resolve().parent
-CONFIG_FILE = BASE_DIR / "config.json"
-DB_FILE = BASE_DIR / "sdac.db"
-MEDIA_DIR = BASE_DIR / "media"
-BACKUP_DIR = BASE_DIR / "backups"
-BOT_STATUS_FILE = BASE_DIR / "bot_status.json"
+CONFIG_FILE = Path(os.getenv("SDAC_CONFIG_FILE", BASE_DIR / "config.json"))
+DB_FILE = Path(os.getenv("SDAC_DB_FILE", BASE_DIR / "sdac.db"))
+MEDIA_DIR = Path(os.getenv("SDAC_MEDIA_DIR", BASE_DIR / "media"))
+BACKUP_DIR = Path(os.getenv("SDAC_BACKUP_DIR", BASE_DIR / "backups"))
+BOT_STATUS_FILE = Path(os.getenv("SDAC_BOT_STATUS_FILE", BASE_DIR / "bot_status.json"))
 BACKUP_KEEP_COUNT = 30
 SCHEMA_VERSION = DATABASE_SCHEMA_VERSION
 
@@ -105,6 +105,8 @@ DEFAULT_GUILD_CONFIG = {
     "timezone": "UTC",
     "approval_enabled": False,
     "approval_channel": None,
+    "emergency_paused": False,
+    "emergency_reason": "",
     "categories": {},
     "features": DEFAULT_FEATURES,
 }
@@ -179,6 +181,7 @@ REQUIRED_TABLES = {
     "guess_library_items",
     "guess_points",
     "guess_correct_guesses",
+    "guess_answer_history",
     "guess_cooldowns",
     "monthly_guess_runs",
     "daily_guess_runs",
@@ -481,7 +484,8 @@ def initialize_database():
                 disabled INTEGER DEFAULT 0,
                 created_at TEXT,
                 updated_at TEXT,
-                last_login_at TEXT
+                last_login_at TEXT,
+                guild_ids_json TEXT
             )
         """)
         connection.execute("""
@@ -605,6 +609,21 @@ def initialize_database():
                 created_by TEXT,
                 created_at TEXT,
                 updated_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS guess_answer_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                channel_id TEXT,
+                game_id INTEGER,
+                library_item_id INTEGER,
+                answer TEXT,
+                answer_display TEXT,
+                category TEXT,
+                source TEXT,
+                started_by TEXT,
+                created_at TEXT
             )
         """)
         connection.execute("""
@@ -782,6 +801,13 @@ def initialize_database():
                 connection, "guess_games", column, definition
             )
 
+        ensure_column(
+            connection,
+            "dashboard_admin_users",
+            "guild_ids_json",
+            "TEXT",
+        )
+
         connection.execute("""
             UPDATE submissions
             SET status = 'posted'
@@ -814,6 +840,14 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_guess_library_items_last_used
             ON guess_library_items (guild_id, status, last_used_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guess_answer_history_guild_answer
+            ON guess_answer_history (guild_id, answer, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guess_answer_history_library
+            ON guess_answer_history (library_item_id, created_at)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_guess_points_month
@@ -966,6 +1000,13 @@ def feature_enabled(guild_config, feature):
     return bool(features.get(feature, DEFAULT_FEATURES.get(feature, True)))
 
 
+def emergency_pause_message(guild_config):
+    if not (guild_config or {}).get("emergency_paused"):
+        return ""
+    reason = (guild_config or {}).get("emergency_reason") or "No reason provided."
+    return f"SDAC is paused for this server. Reason: {reason}"
+
+
 def parse_answer_aliases(answer):
     aliases = []
     seen = set()
@@ -980,6 +1021,38 @@ def parse_answer_aliases(answer):
         })
         seen.add(normalized)
     return aliases
+
+
+def record_guess_answer_history(
+    connection,
+    guild_id,
+    channel_id,
+    game_id,
+    library_item_id,
+    normalized_answer,
+    answer_display,
+    category,
+    source,
+    started_by,
+):
+    connection.execute("""
+        INSERT INTO guess_answer_history (
+            guild_id, channel_id, game_id, library_item_id, answer,
+            answer_display, category, source, started_by, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        str(guild_id),
+        str(channel_id),
+        game_id,
+        library_item_id,
+        normalized_answer,
+        answer_display,
+        category or "",
+        source,
+        str(started_by),
+        utc_now_iso(),
+    ))
 
 
 def answer_alias_matches(game, normalized_guess):
@@ -1905,6 +1978,11 @@ def settings_lines(guild_config):
         f"Game summary channel: {channel_display(guild_config.get('game_summary_channel'))}",
         f"Error channel: {channel_display(guild_config.get('error_channel'))}",
         f"Admin roles: `{len(guild_config.get('admin_role_ids', []))}`",
+        (
+            "Emergency pause: `Enabled`"
+            if guild_config.get("emergency_paused")
+            else "Emergency pause: `Disabled`"
+        ),
         f"Wrong guess timeout: `{timeout_minutes}` minute(s)",
         f"Categories: `{len(guild_config.get('categories', {}))}`",
         "",
@@ -3957,6 +4035,41 @@ async def setfeature(
     )
 
 
+@tree.command(name="sdacpanic", description="Pause or resume SDAC activity in this server")
+@app_commands.guild_only()
+@app_commands.describe(
+    paused="True pauses submissions, games, and guesses. False resumes them.",
+    reason="Optional reason shown to users while paused",
+)
+async def sdacpanic(
+    interaction,
+    paused: bool = True,
+    reason: str = "",
+):
+    if not await require_admin(interaction):
+        return
+    reason = (reason or "").strip()[:300]
+    guild_config = get_guild_config(interaction.guild_id)
+    guild_config["emergency_paused"] = bool(paused)
+    guild_config["emergency_reason"] = reason if paused else ""
+    save_config(config)
+    audit_interaction(
+        interaction,
+        "sdac_panic_pause" if paused else "sdac_panic_resume",
+        "guild",
+        interaction.guild_id,
+        reason or ("Paused SDAC." if paused else "Resumed SDAC."),
+    )
+    await interaction.response.send_message(
+        (
+            f"SDAC is now paused for this server. Reason: {reason or 'No reason provided.'}"
+            if paused
+            else "SDAC is resumed for this server."
+        ),
+        ephemeral=True,
+    )
+
+
 @tree.command(name="checkpermissions", description="Check SDAC bot channel permissions")
 @app_commands.guild_only()
 @app_commands.describe(channel="Optional channel to check")
@@ -4746,6 +4859,10 @@ class SubmissionConfirmView(discord.ui.View):
 @app_commands.describe(category="Submission category")
 async def submit(interaction, category: str):
     guild_config = get_guild_config(interaction.guild_id, create=False)
+    paused = emergency_pause_message(guild_config)
+    if paused:
+        await interaction.response.send_message(paused, ephemeral=True)
+        return
     if not feature_enabled(guild_config, "submissions"):
         await interaction.response.send_message(
             "Submissions are currently disabled for this server.",
@@ -4894,6 +5011,10 @@ async def startgame(
     if not await require_admin(interaction):
         return
     guild_config = get_guild_config(interaction.guild_id, create=False)
+    paused = emergency_pause_message(guild_config)
+    if paused:
+        await interaction.response.send_message(paused, ephemeral=True)
+        return
     if not feature_enabled(guild_config, "guessing_games"):
         await interaction.response.send_message(
             "Guessing games are currently disabled for this server.",
@@ -5043,6 +5164,18 @@ async def startgame(
                 utc_now_iso(),
             ))
             game_id = cursor.lastrowid
+            record_guess_answer_history(
+                connection,
+                interaction.guild_id,
+                channel.id,
+                game_id,
+                None,
+                normalized_answer,
+                answer_display,
+                category,
+                "manual",
+                interaction.user,
+            )
             add_admin_audit_log(
                 connection,
                 interaction.guild_id,
@@ -5110,6 +5243,10 @@ async def startlibrarygame(
     if not await require_admin(interaction):
         return
     guild_config = get_guild_config(interaction.guild_id, create=False)
+    paused = emergency_pause_message(guild_config)
+    if paused:
+        await interaction.response.send_message(paused, ephemeral=True)
+        return
     if not feature_enabled(guild_config, "guessing_games"):
         await interaction.response.send_message(
             "Guessing games are currently disabled for this server.",
@@ -5330,6 +5467,18 @@ async def startlibrarygame(
                 utc_now_iso(),
             ))
             game_id = cursor.lastrowid
+            record_guess_answer_history(
+                connection,
+                interaction.guild_id,
+                channel.id,
+                game_id,
+                item["id"],
+                normalized_answer,
+                answer_display,
+                item["category"] or "",
+                "library",
+                interaction.user,
+            )
             connection.execute("""
                 UPDATE guess_library_items
                 SET times_used = COALESCE(times_used, 0) + 1,
@@ -5672,6 +5821,10 @@ async def hint(interaction):
 @app_commands.describe(guess="Your guess")
 async def guess(interaction, guess: str):
     guild_config = get_guild_config(interaction.guild_id, create=False)
+    paused = emergency_pause_message(guild_config)
+    if paused:
+        await interaction.response.send_message(paused, ephemeral=True)
+        return
     if not feature_enabled(guild_config, "guessing_games"):
         await interaction.response.send_message(
             "Guessing games are currently disabled for this server.",

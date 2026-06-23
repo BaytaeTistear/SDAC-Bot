@@ -1,3 +1,43 @@
+# SDAC Bot Version 2.7.0 Experimental
+
+Date: 2026-06-23
+
+Version 2.7.0 is an experimental hosting, security, and operations build.
+
+Included:
+
+- optional Discord OAuth dashboard login
+- per-server dashboard admin scoping for OAuth and named dashboard users
+- `/sdacpanic` emergency pause/resume command for submissions, games, and guesses
+- dashboard emergency pause controls in per-guild settings
+- game answer history tracking for manual and library-started games
+- analytics page with submission totals, monthly volume, categories, submitters,
+  active games, and recent answers
+- media cleanup page for orphaned, missing, and oversized media
+- configurable runtime paths for DB, config, media, backups, and bot heartbeat
+- Dockerfile and Docker Compose hosting option
+- optional PostgreSQL compose service plus SQLite-to-Postgres export tool
+- stronger release CI smoke tests for commands, migrations, dashboard routes,
+  Docker build, installer line endings, and the Postgres export tool
+- mobile layout improvements on key dashboard pages
+- README, `.env.example`, and PostgreSQL guide updates
+
+Release channel:
+
+- `version-2.7.0` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+Not included:
+
+- Discord token or `.env`
+- SQLite database files such as `sdac.db`
+- `media/` uploads
+- `backups/`
+- `venv/` or Python cache files
+
+---
+
 # SDAC Bot Version 2.6.2 Experimental
 
 Date: 2026-06-21

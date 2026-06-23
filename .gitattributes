@@ -1,6 +1,8 @@
 * text=auto
 .gitattributes text eol=lf
+.dockerignore text eol=lf
 .env* text eol=lf
+Dockerfile text eol=lf
 
 *.bat text eol=crlf
 *.cmd text eol=crlf

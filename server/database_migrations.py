@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import sqlite3
 
 
-DATABASE_SCHEMA_VERSION = 7
+DATABASE_SCHEMA_VERSION = 8
 
 
 def utc_now_iso():
@@ -276,12 +276,41 @@ def migration_7_operations_tables(connection):
     """)
 
 
+def migration_8_multi_server_and_answer_history(connection):
+    ensure_column(connection, "dashboard_admin_users", "guild_ids_json", "TEXT")
+
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS guess_answer_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT,
+            channel_id TEXT,
+            game_id INTEGER,
+            library_item_id INTEGER,
+            answer TEXT,
+            answer_display TEXT,
+            category TEXT,
+            source TEXT,
+            started_by TEXT,
+            created_at TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_guess_answer_history_guild_answer
+        ON guess_answer_history (guild_id, answer, created_at)
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_guess_answer_history_library
+        ON guess_answer_history (library_item_id, created_at)
+    """)
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
     (5, migration_5_reports_aliases_and_hints),
     (6, migration_6_guess_library),
     (7, migration_7_operations_tables),
+    (8, migration_8_multi_server_and_answer_history),
 )
 
 

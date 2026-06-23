@@ -38,12 +38,67 @@ jobs:
             config.py \
             database_migrations.py \
             observability.py \
-            scripts/migrate_database.py
+            scripts/migrate_database.py \
+            scripts/export_sqlite_to_postgres.py
+      - name: Runtime smoke tests
+        run: |
+          python - <<'PY'
+          import sqlite3
+          import tempfile
+          from pathlib import Path
+
+          import bot
+          import dashboard
+          from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
+
+          names = {command.name for command in bot.tree.get_commands()}
+          required = {"submit", "setup", "sdacpanic", "diagnose", "setnotification"}
+          missing = sorted(required - names)
+          if missing:
+              raise SystemExit(f"Missing slash command(s): {missing}")
+
+          with tempfile.TemporaryDirectory() as temp_dir:
+              db_path = Path(temp_dir) / "sdac.db"
+              connection = sqlite3.connect(db_path)
+              connection.row_factory = sqlite3.Row
+              apply_database_migrations(connection)
+              version = connection.execute("SELECT version FROM schema_version WHERE id = 1").fetchone()[0]
+              if version != DATABASE_SCHEMA_VERSION:
+                  raise SystemExit(f"Schema version mismatch: {version} != {DATABASE_SCHEMA_VERSION}")
+
+          app = dashboard.app
+          client = app.test_client()
+          with client.session_transaction() as session:
+              session["sdac_admin"] = True
+              session["sdac_admin_role"] = "owner"
+              session["sdac_admin_username"] = "ci-owner"
+          for path in (
+              "/health",
+              "/admin/settings?key=ImTheBestAdmin",
+              "/admin/maintenance?key=ImTheBestAdmin",
+              "/admin/media?key=ImTheBestAdmin",
+              "/admin/analytics?key=ImTheBestAdmin",
+          ):
+              response = client.get(path)
+              if response.status_code != 200:
+                  raise SystemExit(f"{path} returned {response.status_code}")
+          PY
+      - name: PostgreSQL export tool help
+        run: python scripts/export_sqlite_to_postgres.py --help
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: python-check
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t sdac-bot:test .
 
   build-installers:
     name: Build Installers
     runs-on: windows-latest
-    needs: python-check
+    needs: [python-check, docker-build]
     steps:
       - uses: actions/checkout@v4
       - name: Check Windows updater help

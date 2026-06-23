@@ -15,7 +15,9 @@ function Copy-PayloadFiles {
 
     $files = @(
         ".env.example",
+        ".dockerignore",
         ".gitignore",
+        "Dockerfile",
         "README.md",
         "DEPLOY.md",
         "HOSTING.md",
@@ -29,6 +31,7 @@ function Copy-PayloadFiles {
         "database_migrations.py",
         "observability.py",
         "requirements.txt",
+        "docker-compose.yml",
         "scripts\install_ubuntu.sh",
         "scripts\update_ubuntu.sh",
         "scripts\rollback_ubuntu.sh",
@@ -38,6 +41,7 @@ function Copy-PayloadFiles {
         "scripts\backup_offsite.sh",
         "scripts\check_production.sh",
         "scripts\migrate_database.py",
+        "scripts\export_sqlite_to_postgres.py",
         "scripts\test_restore.sh",
         "scripts\update_from_github.sh",
         "scripts\update_from_github_windows.ps1",
@@ -76,7 +80,10 @@ function Convert-PayloadTextFilesToLf {
     )
 
     Get-ChildItem -LiteralPath $PayloadRoot -Recurse -File |
-        Where-Object { $textExtensions -contains $_.Extension.ToLowerInvariant() } |
+        Where-Object {
+            ($textExtensions -contains $_.Extension.ToLowerInvariant()) -or
+            ($_.Name -eq "Dockerfile")
+        } |
         ForEach-Object {
             $content = [IO.File]::ReadAllText($_.FullName)
             $content = $content -replace "`r`n", "`n" -replace "`r", "`n"
@@ -287,7 +294,7 @@ mkdir -p "`$APP_DIR/media" "`$APP_DIR/backups"
 if [[ "`$SKIP_SERVICES" == "1" ]]; then
     say "Compiling Python files without installing services"
     python3 -m py_compile "`$APP_DIR/bot.py" "`$APP_DIR/dashboard.py" "`$APP_DIR/config.py"
-    python3 -m py_compile "`$APP_DIR/database_migrations.py" "`$APP_DIR/observability.py" "`$APP_DIR/scripts/migrate_database.py"
+    python3 -m py_compile "`$APP_DIR/database_migrations.py" "`$APP_DIR/observability.py" "`$APP_DIR/scripts/migrate_database.py" "`$APP_DIR/scripts/export_sqlite_to_postgres.py"
     echo "SDAC files extracted to `$APP_DIR"
     exit 0
 fi
@@ -671,8 +678,8 @@ if not exist ""venv\Scripts\python.exe"" (
     exit /b 1
 )
 ""%~dp0venv\Scripts\python.exe"" -m pip install --upgrade pip
-""%~dp0venv\Scripts\python.exe"" -m pip install ""discord.py>=2.3.2"" ""Flask>=3.0.0"" ""sentry-sdk>=2.0.0""
-""%~dp0venv\Scripts\python.exe"" -m py_compile bot.py dashboard.py config.py
+""%~dp0venv\Scripts\python.exe"" -m pip install -r requirements.txt
+""%~dp0venv\Scripts\python.exe"" -m py_compile bot.py dashboard.py config.py database_migrations.py scripts\migrate_database.py scripts\export_sqlite_to_postgres.py
 pause
 ", new UTF8Encoding(false));
 
@@ -703,7 +710,7 @@ pause
         Run(pythonCommand, "-m venv \"" + Path.Combine(appDir, "venv") + "\"", appDir, true);
         Run(venvPython, "-m pip install --upgrade pip", appDir, false);
         Run(venvPython, "-m pip install \"discord.py>=2.3.2\" \"Flask>=3.0.0\" \"sentry-sdk>=2.0.0\"", appDir, false);
-        Run(venvPython, "-m py_compile bot.py dashboard.py config.py database_migrations.py observability.py scripts\\migrate_database.py", appDir, false);
+        Run(venvPython, "-m py_compile bot.py dashboard.py config.py database_migrations.py observability.py scripts\\migrate_database.py scripts\\export_sqlite_to_postgres.py", appDir, false);
     }
 
     static string FindPythonCommand()

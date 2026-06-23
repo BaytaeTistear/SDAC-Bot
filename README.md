@@ -21,10 +21,13 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
   weekly posts, public gallery visibility, and cross-server rankings
 - Per-server dashboard branding with display name, accent color, and logo URL
 - Role-based dashboard admin login on top of the admin key
+- Optional Discord OAuth dashboard login with per-server admin scoping
 - Admin alert routing for system errors, backup/restore failures, storage
   warnings, repost deletion failures, and stale bot heartbeat warnings
 - Public user profiles and submission reports
 - Moderation queue bulk review and submission review flags
+- Media cleanup dashboard for orphaned, missing, and oversized media
+- Submission/game analytics dashboard with recent game answer history
 - Maintenance page for backups, backup downloads, release status, restore tests,
   backup checksums, storage warnings, config backup restore, bot heartbeat
   status, and health
@@ -36,6 +39,9 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - `/diagnose` self-checks for database, folders, channels, permissions, bot
   runtime state, public URL, and command sync
 - Website-managed guessing-game seasons with top 10 leaderboard snapshots
+- Emergency `/sdacpanic` pause/resume command for submissions and games
+- Docker and Docker Compose files for easier self-hosting
+- PostgreSQL export tooling for migration testing
 - New-server welcome message that points admins to `/setup`
 - Ubuntu systemd service templates and Nginx helper scripts
 - Linux and Windows single-file installers from GitHub Releases
@@ -52,6 +58,7 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - `scripts/` - install, update, backup, restore, and production helpers
 - `systemd/` - Ubuntu service templates
 - `nginx/` - dashboard reverse-proxy template
+- `Dockerfile` and `docker-compose.yml` - container hosting option
 
 ## Command Directory
 
@@ -209,6 +216,28 @@ cd /home/ubuntu/discord-screenshot-bot
 venv/bin/python scripts/migrate_database.py --db sdac.db
 ```
 
+### PostgreSQL Migration Test
+
+SQLite remains the live default database. To test a PostgreSQL migration:
+
+```bash
+docker compose --profile postgres up -d postgres
+venv/bin/python scripts/export_sqlite_to_postgres.py \
+  --sqlite sdac.db \
+  --database-url "postgresql://sdac:sdac-change-me@localhost:5432/sdac" \
+  --drop-existing
+```
+
+### Docker
+
+```bash
+cp .env.example .env
+docker compose up -d --build dashboard bot
+```
+
+The compose file stores runtime data in a named `sdac-data` volume and keeps
+the app image separate from uploaded media, backups, and `sdac.db`.
+
 ### Production Check
 
 ```bash
@@ -257,6 +286,8 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /setgamesummarychannel #channel
 /seterrorchannel #channel
 /setnotification system_errors #channel true
+/sdacpanic true "Cleaning up spam"
+/sdacpanic false
 /startgame #channel answer media text category hint auto_hint_minutes
 /startlibrarygame #channel item_id category random_item
 /activegame
@@ -283,6 +314,8 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /admin/seasons?key=ImTheBestAdmin
 /admin/onboarding?key=ImTheBestAdmin
 /admin/maintenance?key=ImTheBestAdmin
+/admin/media?key=ImTheBestAdmin
+/admin/analytics?key=ImTheBestAdmin
 /admin/moderation?key=ImTheBestAdmin
 /audit?key=ImTheBestAdmin
 /export/audit.csv?key=ImTheBestAdmin

@@ -14,6 +14,7 @@ import time
 from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlencode
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -22,6 +23,7 @@ from flask import (
     Flask,
     abort,
     jsonify,
+    has_request_context,
     redirect,
     render_template_string,
     request,
@@ -41,13 +43,26 @@ init_sentry("sdac-dashboard")
 
 ADMIN_KEY = os.getenv("SDAC_ADMIN_KEY", "ImTheBestAdmin")
 ADMIN_PASSWORD = os.getenv("SDAC_ADMIN_PASSWORD", ADMIN_KEY)
+DISCORD_OAUTH_CLIENT_ID = (
+    os.getenv("SDAC_DISCORD_CLIENT_ID")
+    or os.getenv("DISCORD_CLIENT_ID")
+    or os.getenv("SDAC_BOT_CLIENT_ID")
+    or ""
+)
+DISCORD_OAUTH_CLIENT_SECRET = (
+    os.getenv("SDAC_DISCORD_CLIENT_SECRET")
+    or os.getenv("DISCORD_CLIENT_SECRET")
+    or ""
+)
+DISCORD_OAUTH_REDIRECT_URI = os.getenv("SDAC_OAUTH_REDIRECT_URI", "")
+DISCORD_ADMINISTRATOR_PERMISSION = 0x8
 app.secret_key = os.getenv("SDAC_SECRET_KEY", secrets.token_hex(32))
 BASE_DIR = Path(__file__).resolve().parent
-DB_FILE = BASE_DIR / "sdac.db"
-CONFIG_FILE = BASE_DIR / "config.json"
-MEDIA_DIR = (BASE_DIR / "media").resolve()
-BACKUP_DIR = BASE_DIR / "backups"
-BOT_STATUS_FILE = BASE_DIR / "bot_status.json"
+DB_FILE = Path(os.getenv("SDAC_DB_FILE", BASE_DIR / "sdac.db"))
+CONFIG_FILE = Path(os.getenv("SDAC_CONFIG_FILE", BASE_DIR / "config.json"))
+MEDIA_DIR = Path(os.getenv("SDAC_MEDIA_DIR", BASE_DIR / "media")).resolve()
+BACKUP_DIR = Path(os.getenv("SDAC_BACKUP_DIR", BASE_DIR / "backups"))
+BOT_STATUS_FILE = Path(os.getenv("SDAC_BOT_STATUS_FILE", BASE_DIR / "bot_status.json"))
 BACKUP_KEEP_COUNT = 30
 CONFIG_BACKUP_KEEP_COUNT = 30
 SCHEMA_VERSION = DATABASE_SCHEMA_VERSION
@@ -148,6 +163,8 @@ DEFAULT_GUILD_FIELDS = {
     "timezone": "UTC",
     "approval_enabled": False,
     "approval_channel": None,
+    "emergency_paused": False,
+    "emergency_reason": "",
     "categories": {},
     "features": DEFAULT_FEATURES,
 }
@@ -346,6 +363,20 @@ HTML = """
 
         .pagination .disabled {
             color: var(--muted);
+        }
+
+        @media (max-width: 700px) {
+            body { padding: 12px; }
+            .admin-nav, .filter form, .post-header {
+                align-items: stretch;
+                flex-direction: column;
+            }
+            .admin-nav {
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+            select, input, button { width: 100%; }
+            .media-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -594,6 +625,16 @@ LOGIN_HTML = """
             padding: 10px;
             text-align: center;
         }
+        .oauth {
+            display: block;
+            background: #5865f2;
+            border-radius: 8px;
+            color: white;
+            margin: 0 0 18px;
+            padding: 11px;
+            text-align: center;
+            text-decoration: none;
+        }
     </style>
 </head>
 <body>
@@ -601,6 +642,9 @@ LOGIN_HTML = """
     <h1>Admin Login</h1>
     {% if error %}
         <div class="error">{{ error }}</div>
+    {% endif %}
+    {% if oauth_enabled %}
+        <a class="oauth" href="{{ url_for('admin_oauth_start', key=admin_key, next=next_url) }}">Log in with Discord</a>
     {% endif %}
     <form method="post">
         <input type="hidden" name="key" value="{{ admin_key }}">
@@ -677,7 +721,7 @@ USER_PROFILE_HTML = """
         main { margin: 0 auto; width: min(100%, 900px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
         .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; }
@@ -1362,6 +1406,8 @@ GAME_LIBRARY_HTML = """
         <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
         <a href="{{ url_for('admin_seasons', key=admin_key) }}">Seasons</a>
         <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('admin_media_cleanup', key=admin_key) }}">Media</a>
+        <a href="{{ url_for('admin_analytics', key=admin_key) }}">Analytics</a>
         <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
         <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
@@ -1633,6 +1679,8 @@ SETTINGS_HTML = """
         <a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a>
         <a href="{{ url_for('admin_seasons', key=admin_key) }}">Seasons</a>
         <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('admin_media_cleanup', key=admin_key) }}">Media</a>
+        <a href="{{ url_for('admin_analytics', key=admin_key) }}">Analytics</a>
         <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
         <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
@@ -1675,6 +1723,7 @@ SETTINGS_HTML = """
                                 {% endfor %}
                             </select>
                         </td></tr>
+                        <tr><th>Server scope</th><td><input name="guild_ids" placeholder="Blank = all servers; otherwise IDs separated by spaces"></td></tr>
                     </tbody>
                 </table>
                 <button type="submit">Create / Replace Dashboard User</button>
@@ -1683,12 +1732,16 @@ SETTINGS_HTML = """
             <p class="muted">Only owners can create, update, or disable dashboard users.</p>
         {% endif %}
         <table>
-            <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
+            <thead><tr><th>User</th><th>Role</th><th>Scope</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
             <tbody>
                 {% for user in dashboard_users %}
                     <tr>
                         <td><code>{{ user.username }}</code></td>
                         <td>{{ role_labels.get(user.role, user.role) }}</td>
+                        <td>
+                            {% set scope = parse_guild_scope(user.guild_ids_json) %}
+                            {{ scope|join(", ") if scope else "All servers" }}
+                        </td>
                         <td>{{ "Disabled" if user.disabled else "Active" }}</td>
                         <td>{{ user.last_login_at or "Never" }}</td>
                         <td>
@@ -1703,6 +1756,7 @@ SETTINGS_HTML = """
                                             <option value="{{ role_key }}" {% if user.role == role_key %}selected{% endif %}>{{ role_label }}</option>
                                         {% endfor %}
                                     </select>
+                                    <input name="guild_ids" value="{{ parse_guild_scope(user.guild_ids_json)|join(' ') }}" placeholder="Server IDs or blank for all">
                                     <input name="password" type="password" placeholder="New password optional">
                                     <button type="submit">Update</button>
                                 </form>
@@ -1719,7 +1773,7 @@ SETTINGS_HTML = """
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="5" class="muted">No named dashboard users yet. Legacy owner login is still active.</td></tr>
+                    <tr><td colspan="6" class="muted">No named dashboard users yet. Legacy owner login is still active.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -1894,6 +1948,13 @@ SETTINGS_HTML = """
                             </select>
                         </td></tr>
                         <tr><th>Approval channel ID</th><td><input name="approval_channel" value="{{ guild.approval_channel or '' }}"></td></tr>
+                        <tr><th>Emergency pause</th><td>
+                            <select name="emergency_paused">
+                                <option value="0" {% if not guild.emergency_paused %}selected{% endif %}>Disabled</option>
+                                <option value="1" {% if guild.emergency_paused %}selected{% endif %}>Enabled</option>
+                            </select>
+                        </td></tr>
+                        <tr><th>Emergency reason</th><td><input name="emergency_reason" value="{{ guild.emergency_reason }}" placeholder="Shown to users while paused"></td></tr>
                         <tr><th>Game summary channel ID</th><td><input name="game_summary_channel" value="{{ guild.game_summary_channel or '' }}"></td></tr>
                         <tr><th>Error channel ID</th><td><input name="error_channel" value="{{ guild.error_channel or '' }}"></td></tr>
                         <tr><th>Admin role IDs</th><td><input name="admin_role_ids" value="{{ guild.admin_role_ids }}"></td></tr>
@@ -1930,6 +1991,7 @@ SETTINGS_HTML = """
                     <tr><th>Weekly time</th><td>{{ guild.daily_top_time_utc }} {{ guild.timezone }}</td></tr>
                     <tr><th>Approval</th><td>{{ "Enabled" if guild.approval_enabled else "Disabled" }}</td></tr>
                     <tr><th>Approval channel</th><td>{{ guild.approval_channel or "Not set" }}</td></tr>
+                    <tr><th>Emergency pause</th><td>{{ "Enabled" if guild.emergency_paused else "Disabled" }}{% if guild.emergency_reason %}: {{ guild.emergency_reason }}{% endif %}</td></tr>
                     <tr><th>Features</th><td>
                         {% for feature in guild.features %}
                             <div>{{ feature.label }}: <code>{{ "Enabled" if feature.enabled else "Disabled" }}</code></div>
@@ -2028,7 +2090,7 @@ MAINTENANCE_HTML = """
         main { margin: 0 auto; width: min(100%, 1000px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
         .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
@@ -2180,6 +2242,178 @@ MAINTENANCE_HTML = """
 """
 
 
+MEDIA_CLEANUP_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Media Cleanup</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1100px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; word-break: break-word; }
+        button { background: #e45d68; border: 0; border-radius: 7px; color: white; cursor: pointer; font-weight: bold; padding: 9px 10px; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 16px; padding: 12px; text-align: center; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Media Cleanup</h1>
+    <nav>
+        <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
+        <a href="{{ url_for('admin_analytics', key=admin_key) }}">Analytics</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+    {% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
+
+    <section class="panel">
+        <h2>Summary</h2>
+        <p>
+            Orphaned files: <code>{{ report.orphaned_total }}</code> |
+            Missing referenced files: <code>{{ report.missing_total }}</code> |
+            Oversized files: <code>{{ report.oversized_total }}</code>
+        </p>
+        <form method="post" onsubmit="return confirm('Delete all listed orphaned files? This cannot be undone.');">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" name="action" value="delete_orphans">Delete Orphaned Files</button>
+        </form>
+    </section>
+
+    {% for title, rows, total in [
+        ("Orphaned Files", report.orphaned, report.orphaned_total),
+        ("Missing References", report.missing, report.missing_total),
+        ("Oversized Files", report.oversized, report.oversized_total)
+    ] %}
+        <section class="panel">
+            <h2>{{ title }}</h2>
+            <p class="muted">Showing up to {{ rows|length }} of {{ total }}.</p>
+            <table>
+                <thead><tr><th>Path</th><th>Size</th></tr></thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr><td><code>{{ row.relative }}</code></td><td>{{ row.size_label }}</td></tr>
+                    {% else %}
+                        <tr><td colspan="2" class="muted">Nothing found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    {% endfor %}
+</main>
+</body>
+</html>
+"""
+
+
+ANALYTICS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Analytics</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1100px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; }
+        select, button { border: 1px solid #30333b; border-radius: 7px; font-size: 15px; padding: 9px 10px; }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Analytics</h1>
+    <nav>
+        <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_media_cleanup', key=admin_key) }}">Media</a>
+        <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+    <section class="panel">
+        <form method="get">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <select name="guild_id">
+                <option value="all">All available servers</option>
+                {% for guild in guild_options %}
+                    <option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>{{ guild.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit">Filter</button>
+        </form>
+    </section>
+
+    <section class="grid">
+        {% for label, value in totals.items() %}
+            <div class="panel"><h2>{{ label }}</h2><p><code>{{ value }}</code></p></div>
+        {% endfor %}
+    </section>
+
+    <section class="grid">
+        <div class="panel">
+            <h2>Submissions By Month</h2>
+            <table><tbody>
+                {% for row in submissions_by_month %}
+                    <tr><td>{{ row.month }}</td><td>{{ row.count }}</td></tr>
+                {% else %}<tr><td colspan="2" class="muted">No submissions yet.</td></tr>{% endfor %}
+            </tbody></table>
+        </div>
+        <div class="panel">
+            <h2>Top Categories</h2>
+            <table><tbody>
+                {% for row in top_categories %}
+                    <tr><td>{{ row.category or "Uncategorized" }}</td><td>{{ row.count }}</td></tr>
+                {% else %}<tr><td colspan="2" class="muted">No categories yet.</td></tr>{% endfor %}
+            </tbody></table>
+        </div>
+        <div class="panel">
+            <h2>Top Submitters</h2>
+            <table><tbody>
+                {% for row in top_submitters %}
+                    <tr><td>{{ row.username }}</td><td>{{ row.count }}</td></tr>
+                {% else %}<tr><td colspan="2" class="muted">No submitters yet.</td></tr>{% endfor %}
+            </tbody></table>
+        </div>
+        <div class="panel">
+            <h2>Recent Game Answers</h2>
+            <table>
+                <thead><tr><th>Answer</th><th>Category</th><th>Source</th><th>Used</th></tr></thead>
+                <tbody>
+                    {% for row in answer_history %}
+                        <tr><td>{{ row.answer_display }}</td><td>{{ row.category or "-" }}</td><td>{{ row.source }}</td><td>{{ row.created_at }}</td></tr>
+                    {% else %}<tr><td colspan="4" class="muted">No game answers recorded yet.</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
 MODERATION_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -2193,7 +2427,7 @@ MODERATION_HTML = """
         main { margin: 0 auto; width: min(100%, 1100px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
         .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
@@ -3011,8 +3245,28 @@ def guild_id_filter(column, guild_ids):
     return f"{column} IN ({placeholders})", guild_ids
 
 
+def admin_scope_filter(column, config_data=None, include_global=False):
+    if current_admin_role() == "owner":
+        return "", []
+    filter_sql, parameters = guild_id_filter(
+        column,
+        current_admin_allowed_guild_ids(config_data),
+    )
+    if include_global:
+        filter_sql = f"({filter_sql} OR {column} IS NULL OR {column} = '')"
+    return filter_sql, parameters
+
+
 def guild_options(config_data=None, public_only=False):
     config_data = config_data or load_config()
+    allowed_admin_ids = None
+    if (
+        not public_only
+        and has_request_context()
+        and is_admin_logged_in()
+        and current_admin_role() != "owner"
+    ):
+        allowed_admin_ids = current_admin_allowed_guild_ids(config_data)
     options = []
     for guild_id, guild_config in sorted(
         (config_data.get("guilds") or {}).items(),
@@ -3020,6 +3274,8 @@ def guild_options(config_data=None, public_only=False):
             item[1].get("guild_name") or item[0]
         ).casefold(),
     ):
+        if allowed_admin_ids is not None and str(guild_id) not in allowed_admin_ids:
+            continue
         if public_only and not feature_enabled(guild_config, "public_gallery"):
             continue
         display_name = (
@@ -3106,12 +3362,19 @@ def season_leaderboard(connection, season, limit=10):
 def build_onboarding_rows(config_data):
     rows = []
     setup_tests = latest_setup_test_rows()
+    allowed_ids = (
+        current_admin_allowed_guild_ids(config_data)
+        if has_request_context() and is_admin_logged_in()
+        else set((config_data.get("guilds") or {}).keys())
+    )
     for guild_id, guild_config in sorted(
         (config_data.get("guilds") or {}).items(),
         key=lambda item: (
             item[1].get("guild_name") or item[0]
         ).casefold(),
     ):
+        if str(guild_id) not in allowed_ids:
+            continue
         categories = guild_config.get("categories") or {}
         approval_enabled = guild_config.get("approval_enabled", False)
         items = [
@@ -3211,8 +3474,13 @@ def build_onboarding_rows(config_data):
 def selected_guild_id(options):
     valid_ids = {option["id"] for option in options}
     requested = request.values.get("guild_id", "").strip()
+    restricted_admin = is_admin_logged_in() and current_admin_role() != "owner"
     if requested == "all":
         session.pop("sdac_guild_id", None)
+        if restricted_admin and valid_ids:
+            selected = sorted(valid_ids)[0]
+            session["sdac_guild_id"] = selected
+            return selected
         return ""
     if requested in valid_ids:
         session["sdac_guild_id"] = requested
@@ -3222,6 +3490,10 @@ def selected_guild_id(options):
     if stored in valid_ids:
         return stored
     session.pop("sdac_guild_id", None)
+    if restricted_admin and valid_ids:
+        selected = sorted(valid_ids)[0]
+        session["sdac_guild_id"] = selected
+        return selected
     return ""
 
 
@@ -3548,7 +3820,8 @@ def initialize_database():
                 disabled INTEGER DEFAULT 0,
                 created_at TEXT,
                 updated_at TEXT,
-                last_login_at TEXT
+                last_login_at TEXT,
+                guild_ids_json TEXT
             )
         """)
         connection.execute("""
@@ -3664,6 +3937,21 @@ def initialize_database():
                 created_by TEXT,
                 created_at TEXT,
                 updated_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS guess_answer_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                channel_id TEXT,
+                game_id INTEGER,
+                library_item_id INTEGER,
+                answer TEXT,
+                answer_display TEXT,
+                category TEXT,
+                source TEXT,
+                started_by TEXT,
+                created_at TEXT
             )
         """)
         connection.execute("""
@@ -3838,6 +4126,16 @@ def initialize_database():
                 connection.execute(
                     f"ALTER TABLE guess_library_items ADD COLUMN {column} {definition}"
                 )
+        dashboard_user_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(dashboard_admin_users)"
+            ).fetchall()
+        }
+        if "guild_ids_json" not in dashboard_user_columns:
+            connection.execute(
+                "ALTER TABLE dashboard_admin_users ADD COLUMN guild_ids_json TEXT"
+            )
         connection.execute("""
             UPDATE submissions
             SET status = 'posted'
@@ -3866,6 +4164,14 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_guess_library_items_last_used
             ON guess_library_items (guild_id, status, last_used_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guess_answer_history_guild_answer
+            ON guess_answer_history (guild_id, answer, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guess_answer_history_library
+            ON guess_answer_history (library_item_id, created_at)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
@@ -3960,6 +4266,100 @@ def media_relative_path(stored_path):
     except ValueError:
         return None
     return relative_path.as_posix()
+
+
+def referenced_media_paths(connection):
+    paths = set()
+    for row in connection.execute("""
+        SELECT media_paths, file_paths
+        FROM submissions
+    """):
+        for value in split_values(row["media_paths"] or row["file_paths"]):
+            relative_path = media_relative_path(value)
+            if relative_path:
+                paths.add((MEDIA_DIR / relative_path).resolve())
+    for table in ("guess_games", "guess_library_items"):
+        for row in connection.execute(f"""
+            SELECT media_path
+            FROM {table}
+            WHERE media_path IS NOT NULL AND media_path != ''
+        """):
+            relative_path = media_relative_path(row["media_path"])
+            if relative_path:
+                paths.add((MEDIA_DIR / relative_path).resolve())
+    return paths
+
+
+def media_cleanup_report(limit=200):
+    max_file_bytes = int(
+        load_config().get("limits", {}).get(
+            "max_file_bytes",
+            DEFAULT_LIMITS["max_file_bytes"],
+        )
+    )
+    with closing(connect_db()) as connection:
+        referenced = referenced_media_paths(connection)
+    media_root = MEDIA_DIR.resolve()
+    orphaned = []
+    oversized = []
+    seen_files = set()
+    if media_root.exists():
+        for file_path in media_root.rglob("*"):
+            if not file_path.is_file():
+                continue
+            try:
+                resolved = file_path.resolve()
+                resolved.relative_to(media_root)
+                size = resolved.stat().st_size
+            except (OSError, ValueError):
+                continue
+            seen_files.add(resolved)
+            item = {
+                "path": resolved,
+                "relative": resolved.relative_to(media_root).as_posix(),
+                "size": size,
+                "size_label": format_bytes(size),
+            }
+            if resolved not in referenced:
+                orphaned.append(item)
+            if size > max_file_bytes:
+                oversized.append(item)
+    missing = []
+    for referenced_path in sorted(referenced):
+        if referenced_path not in seen_files and not referenced_path.is_file():
+            try:
+                relative = referenced_path.relative_to(media_root).as_posix()
+            except ValueError:
+                relative = str(referenced_path)
+            missing.append({
+                "path": referenced_path,
+                "relative": relative,
+                "size": 0,
+                "size_label": "Missing",
+            })
+    return {
+        "orphaned": orphaned[:limit],
+        "orphaned_total": len(orphaned),
+        "oversized": oversized[:limit],
+        "oversized_total": len(oversized),
+        "missing": missing[:limit],
+        "missing_total": len(missing),
+    }
+
+
+def delete_orphaned_media_files():
+    report = media_cleanup_report(limit=100000)
+    deleted = 0
+    media_root = MEDIA_DIR.resolve()
+    for item in report["orphaned"]:
+        path = Path(item["path"])
+        try:
+            path.resolve().relative_to(media_root)
+            path.unlink()
+            deleted += 1
+        except (OSError, ValueError):
+            continue
+    return deleted
 
 
 def prepare_post(row):
@@ -4209,13 +4609,58 @@ def has_admin_role(required_role):
     return ROLE_LEVELS[current_admin_role()] >= ROLE_LEVELS[normalize_role(required_role)]
 
 
+def parse_guild_scope(raw_value):
+    if raw_value is None:
+        return []
+    if isinstance(raw_value, (list, tuple, set)):
+        return [
+            str(item).strip()
+            for item in raw_value
+            if str(item).strip()
+        ]
+    text = str(raw_value or "").strip()
+    if not text:
+        return []
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, list):
+            return parse_guild_scope(parsed)
+    except json.JSONDecodeError:
+        pass
+    return [
+        item.strip()
+        for item in re.split(r"[\s,]+", text)
+        if item.strip()
+    ]
+
+
+def current_admin_allowed_guild_ids(config_data=None):
+    config_data = config_data or load_config()
+    all_ids = {
+        str(guild_id)
+        for guild_id in (config_data.get("guilds") or {})
+    }
+    if current_admin_role() == "owner":
+        return all_ids
+    scoped_ids = set(parse_guild_scope(session.get("sdac_admin_guild_ids", [])))
+    if not scoped_ids:
+        return all_ids
+    return all_ids & scoped_ids
+
+
+def can_admin_access_guild(guild_id, config_data=None):
+    if current_admin_role() == "owner":
+        return True
+    return str(guild_id) in current_admin_allowed_guild_ids(config_data)
+
+
 def dashboard_user(username):
     username = str(username or "").strip().casefold()
     if not username:
         return None
     with closing(connect_db()) as connection:
         return connection.execute("""
-            SELECT username, password_hash, role, disabled
+            SELECT username, password_hash, role, disabled, guild_ids_json
             FROM dashboard_admin_users
             WHERE username = ?
             LIMIT 1
@@ -4234,20 +4679,25 @@ def dashboard_user_count():
 def dashboard_users():
     with closing(connect_db()) as connection:
         return connection.execute("""
-            SELECT username, role, disabled, created_at, updated_at, last_login_at
+            SELECT username, role, disabled, guild_ids_json,
+                   created_at, updated_at, last_login_at
             FROM dashboard_admin_users
             ORDER BY disabled ASC, role DESC, username ASC
         """).fetchall()
 
 
 def notification_routes(config_data=None):
+    config_data = config_data or load_config()
     guild_names = guild_name_map(config_data)
+    scope_sql, scope_params = admin_scope_filter("guild_id", config_data)
+    where_sql = f"WHERE {scope_sql}" if scope_sql else ""
     with closing(connect_db()) as connection:
-        rows = connection.execute("""
+        rows = connection.execute(f"""
             SELECT guild_id, event_key, channel_id, enabled, updated_at
             FROM admin_notifications
+            {where_sql}
             ORDER BY guild_id, event_key
-        """).fetchall()
+        """, scope_params).fetchall()
     return [
         {
             "guild_id": row["guild_id"],
@@ -4501,6 +4951,200 @@ def release_status():
     return status
 
 
+def oauth_enabled():
+    return bool(DISCORD_OAUTH_CLIENT_ID and DISCORD_OAUTH_CLIENT_SECRET)
+
+
+def oauth_redirect_uri():
+    if DISCORD_OAUTH_REDIRECT_URI:
+        return DISCORD_OAUTH_REDIRECT_URI
+    return url_for("admin_oauth_callback", key=ADMIN_KEY, _external=True)
+
+
+def discord_json_request(url, token, token_type="Bearer"):
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "SDAC-Dashboard/2.7",
+        "Authorization": f"{token_type} {token}",
+    }
+    api_request = Request(url, headers=headers)
+    with urlopen(api_request, timeout=12) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def exchange_discord_oauth_code(code):
+    payload = urlencode({
+        "client_id": DISCORD_OAUTH_CLIENT_ID,
+        "client_secret": DISCORD_OAUTH_CLIENT_SECRET,
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": oauth_redirect_uri(),
+    }).encode("utf-8")
+    api_request = Request(
+        "https://discord.com/api/oauth2/token",
+        data=payload,
+        method="POST",
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+            "User-Agent": "SDAC-Dashboard/2.7",
+        },
+    )
+    with urlopen(api_request, timeout=12) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def discord_user_guilds(access_token):
+    return discord_json_request(
+        "https://discord.com/api/users/@me/guilds",
+        access_token,
+    )
+
+
+def discord_current_user(access_token):
+    return discord_json_request(
+        "https://discord.com/api/users/@me",
+        access_token,
+    )
+
+
+def discord_member_role_ids(guild_id, user_id):
+    if not TOKEN:
+        return []
+    try:
+        member = discord_json_request(
+            f"https://discord.com/api/v10/guilds/{guild_id}/members/{user_id}",
+            TOKEN,
+            token_type="Bot",
+        )
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+        return []
+    return [str(role_id) for role_id in member.get("roles") or []]
+
+
+def oauth_allowed_guild_ids(access_token, user_id, config_data):
+    configured = config_data.get("guilds") or {}
+    try:
+        guilds = discord_user_guilds(access_token)
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+        return []
+    allowed = []
+    for guild in guilds:
+        guild_id = str(guild.get("id") or "")
+        guild_config = configured.get(guild_id)
+        if not guild_config:
+            continue
+        try:
+            permissions = int(guild.get("permissions") or 0)
+        except (TypeError, ValueError):
+            permissions = 0
+        if permissions & DISCORD_ADMINISTRATOR_PERMISSION:
+            allowed.append(guild_id)
+            continue
+        admin_roles = {
+            str(role_id)
+            for role_id in guild_config.get("admin_role_ids", [])
+        }
+        if admin_roles and admin_roles.intersection(
+            discord_member_role_ids(guild_id, user_id)
+        ):
+            allowed.append(guild_id)
+    return sorted(set(allowed))
+
+
+@app.route("/admin/oauth/start")
+def admin_oauth_start():
+    if not oauth_enabled():
+        abort(404)
+    if not has_valid_key():
+        abort(403)
+    state = secrets.token_urlsafe(24)
+    session["sdac_oauth_state"] = state
+    session["sdac_oauth_next"] = request.args.get("next") or url_for(
+        "index",
+        key=ADMIN_KEY,
+    )
+    authorize_url = (
+        "https://discord.com/api/oauth2/authorize?"
+        + urlencode({
+            "client_id": DISCORD_OAUTH_CLIENT_ID,
+            "redirect_uri": oauth_redirect_uri(),
+            "response_type": "code",
+            "scope": "identify guilds",
+            "state": state,
+            "prompt": "none",
+        })
+    )
+    return redirect(authorize_url)
+
+
+@app.route("/admin/oauth/callback")
+def admin_oauth_callback():
+    if not oauth_enabled():
+        abort(404)
+    if not has_valid_key():
+        abort(403)
+    state = request.args.get("state", "")
+    code = request.args.get("code", "")
+    if not code or state != session.get("sdac_oauth_state"):
+        return redirect(url_for(
+            "admin_login",
+            key=ADMIN_KEY,
+            error="Discord login state did not match. Try again.",
+        ))
+    try:
+        token_payload = exchange_discord_oauth_code(code)
+        access_token = token_payload.get("access_token") or ""
+        user = discord_current_user(access_token)
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+        return redirect(url_for(
+            "admin_login",
+            key=ADMIN_KEY,
+            error=f"Discord login failed: {error}",
+        ))
+    user_id = str(user.get("id") or "")
+    username = (
+        user.get("global_name")
+        or user.get("username")
+        or f"discord-{user_id}"
+    )
+    allowed_guilds = oauth_allowed_guild_ids(
+        access_token,
+        user_id,
+        load_config(),
+    )
+    if not allowed_guilds:
+        return redirect(url_for(
+            "admin_login",
+            key=ADMIN_KEY,
+            error="Discord login succeeded, but you are not an SDAC admin in any configured server.",
+        ))
+
+    session["sdac_admin"] = True
+    session["sdac_admin_username"] = username
+    session["sdac_admin_role"] = "admin"
+    session["sdac_admin_auth"] = "discord"
+    session["sdac_admin_guild_ids"] = allowed_guilds
+    session["sdac_discord_user_id"] = user_id
+    session.pop("sdac_oauth_state", None)
+    next_url = session.pop("sdac_oauth_next", None) or url_for(
+        "index",
+        key=ADMIN_KEY,
+    )
+    with database() as connection:
+        add_admin_audit_log(
+            connection,
+            None,
+            "dashboard_discord_oauth_login_success",
+            user_id,
+            username,
+            "dashboard",
+            "admin_oauth",
+            "Discord OAuth admin login succeeded.",
+        )
+    return redirect(next_url)
+
+
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
     if not has_valid_key():
@@ -4510,7 +5154,7 @@ def admin_login():
         "index",
         key=ADMIN_KEY,
     )
-    error = ""
+    error = request.args.get("error", "")
     username = request.values.get("username", "owner").strip() or "owner"
 
     if request.method == "POST":
@@ -4548,6 +5192,12 @@ def admin_login():
                 session["sdac_admin"] = True
                 session["sdac_admin_username"] = username
                 session["sdac_admin_role"] = role
+                session["sdac_admin_auth"] = "password"
+                session["sdac_admin_guild_ids"] = (
+                    parse_guild_scope(user["guild_ids_json"])
+                    if user
+                    else []
+                )
                 if user:
                     with database() as connection:
                         connection.execute("""
@@ -4588,6 +5238,7 @@ def admin_login():
         csrf_token=get_csrf_token(),
         error=error,
         next_url=next_url,
+        oauth_enabled=oauth_enabled(),
         username=username,
     )
 
@@ -4610,6 +5261,9 @@ def admin_logout():
     session.pop("sdac_admin", None)
     session.pop("sdac_admin_username", None)
     session.pop("sdac_admin_role", None)
+    session.pop("sdac_admin_auth", None)
+    session.pop("sdac_admin_guild_ids", None)
+    session.pop("sdac_discord_user_id", None)
     return redirect(url_for("index"))
 
 
@@ -4639,6 +5293,8 @@ def admin_game_library():
         selected_server_id = ""
     if selected_server_id and selected_server_id not in valid_guild_ids:
         selected_server_id = ""
+    if current_admin_role() != "owner" and not selected_server_id and options:
+        selected_server_id = options[0]["id"]
 
     if request.method == "POST":
         require_csrf_token()
@@ -4872,10 +5528,15 @@ def admin_game_library():
                         FROM guess_library_items
                         WHERE id = ?
                     """, (item_id,)).fetchone()
-                if not existing_item:
-                    raise ValueError("Library item was not found.")
-                answer_aliases = parse_answer_aliases(
-                    request.form.get("answer", "")
+                    if not existing_item:
+                        raise ValueError("Library item was not found.")
+                    if not can_admin_access_guild(
+                        existing_item["guild_id"],
+                        config_data,
+                    ):
+                        abort(403)
+                    answer_aliases = parse_answer_aliases(
+                        request.form.get("answer", "")
                 )
                 if not answer_aliases:
                     raise ValueError("Answer is required.")
@@ -5008,6 +5669,8 @@ def admin_game_library():
                     """, (item_id,)).fetchone()
                     if not item:
                         raise ValueError("Library item was not found.")
+                    if not can_admin_access_guild(item["guild_id"], config_data):
+                        abort(403)
                     connection.execute("""
                         UPDATE guess_library_items
                         SET status = ?,
@@ -5039,6 +5702,8 @@ def admin_game_library():
                     """, (item_id,)).fetchone()
                     if not item:
                         raise ValueError("Library item was not found.")
+                    if not can_admin_access_guild(item["guild_id"], config_data):
+                        abort(403)
                     connection.execute(
                         "DELETE FROM guess_library_items WHERE id = ?",
                         (item_id,),
@@ -5155,6 +5820,8 @@ def admin_settings():
             username = request.form.get("username", "").strip().casefold()
             role = normalize_role(request.form.get("role", "moderator"))
             password = request.form.get("password", "")
+            guild_scope = parse_guild_scope(request.form.get("guild_ids", ""))
+            guild_scope_json = json.dumps(guild_scope, separators=(",", ":"))
             if not username or not re.match(r"^[a-z0-9_.-]{3,40}$", username):
                 return redirect(url_for(
                     "admin_settings",
@@ -5175,13 +5842,14 @@ def admin_settings():
                     connection.execute("""
                         INSERT INTO dashboard_admin_users (
                             username, password_hash, role, disabled,
-                            created_at, updated_at
+                            created_at, updated_at, guild_ids_json
                         )
-                        VALUES (?, ?, ?, 0, ?, ?)
+                        VALUES (?, ?, ?, 0, ?, ?, ?)
                         ON CONFLICT(username) DO UPDATE SET
                             password_hash = excluded.password_hash,
                             role = excluded.role,
                             disabled = 0,
+                            guild_ids_json = excluded.guild_ids_json,
                             updated_at = excluded.updated_at
                     """, (
                         username,
@@ -5189,6 +5857,7 @@ def admin_settings():
                         role,
                         now,
                         now,
+                        guild_scope_json,
                     ))
                     message = f"Dashboard user {username} saved as {role}."
                 elif action == "update_dashboard_user":
@@ -5207,21 +5876,24 @@ def admin_settings():
                     if password:
                         connection.execute("""
                             UPDATE dashboard_admin_users
-                            SET password_hash = ?, role = ?, disabled = 0,
+                            SET password_hash = ?, role = ?, guild_ids_json = ?,
+                                disabled = 0,
                                 updated_at = ?
                             WHERE username = ?
                         """, (
                             generate_password_hash(password),
                             role,
+                            guild_scope_json,
                             now,
                             username,
                         ))
                     else:
                         connection.execute("""
                             UPDATE dashboard_admin_users
-                            SET role = ?, disabled = 0, updated_at = ?
+                            SET role = ?, guild_ids_json = ?, disabled = 0,
+                                updated_at = ?
                             WHERE username = ?
-                        """, (role, now, username))
+                        """, (role, guild_scope_json, now, username))
                     message = f"Dashboard user {username} updated."
                 else:
                     connection.execute("""
@@ -5240,13 +5912,6 @@ def admin_settings():
                     username,
                     message,
                 )
-            if not created and message != "Backup already exists.":
-                send_admin_notification(
-                    "backup_failed",
-                    f"Manual dashboard backup failed: `{message}`",
-                    throttle_key="dashboard_backup_failed",
-                    throttle_seconds=900,
-                )
             return redirect(url_for(
                 "admin_settings",
                 key=ADMIN_KEY,
@@ -5262,6 +5927,8 @@ def admin_settings():
                     notice="Unknown guild for notification route.",
                     error=1,
                 ))
+            if not can_admin_access_guild(guild_id, config_data):
+                abort(403)
             event_key = request.form.get("event_key", "").strip()
             if event_key not in NOTIFICATION_EVENT_LABELS:
                 return redirect(url_for(
@@ -5344,6 +6011,13 @@ def admin_settings():
                     backup_path.name if backup_path else "",
                     message,
                 )
+            if not created and message != "Backup already exists.":
+                send_admin_notification(
+                    "backup_failed",
+                    f"Manual dashboard backup failed: `{message}`",
+                    throttle_key="dashboard_backup_failed",
+                    throttle_seconds=900,
+                )
             return redirect(url_for(
                 "admin_settings",
                 key=ADMIN_KEY,
@@ -5421,6 +6095,8 @@ def admin_settings():
                     notice="Unknown guild.",
                     error=1,
                 ))
+            if not can_admin_access_guild(guild_id, config_data):
+                abort(403)
             try:
                 if action == "update_guild":
                     brand_accent = (
@@ -5463,6 +6139,15 @@ def admin_settings():
                     guild_config["approval_channel"] = nullable_channel_id(
                         request.form.get("approval_channel")
                     )
+                    guild_config["emergency_paused"] = (
+                        request.form.get("emergency_paused") == "1"
+                    )
+                    guild_config["emergency_reason"] = request.form.get(
+                        "emergency_reason",
+                        "",
+                    ).strip()[:300]
+                    if not guild_config["emergency_paused"]:
+                        guild_config["emergency_reason"] = ""
                     guild_config["game_summary_channel"] = nullable_channel_id(
                         request.form.get("game_summary_channel")
                     )
@@ -5521,9 +6206,12 @@ def admin_settings():
     limits = config_data.get("limits", {})
     warnings = security_warnings() + storage_warnings(config_data)
     guilds = []
+    allowed_settings_ids = {option["id"] for option in guild_options(config_data)}
     for guild_id, guild_config in sorted(
         (config_data.get("guilds") or {}).items()
     ):
+        if str(guild_id) not in allowed_settings_ids:
+            continue
         features = guild_config.get("features") or {}
         guilds.append({
             "id": guild_id,
@@ -5547,6 +6235,8 @@ def admin_settings():
             "timezone": guild_config.get("timezone", "UTC"),
             "approval_enabled": guild_config.get("approval_enabled", False),
             "approval_channel": guild_config.get("approval_channel"),
+            "emergency_paused": guild_config.get("emergency_paused", False),
+            "emergency_reason": guild_config.get("emergency_reason") or "",
             "game_summary_channel": guild_config.get("game_summary_channel"),
             "error_channel": guild_config.get("error_channel"),
             "admin_role_ids": " ".join(
@@ -5566,34 +6256,39 @@ def admin_settings():
             ],
         })
 
+    scope_sql, scope_params = guild_id_filter("guild_id", allowed_settings_ids)
     with closing(connect_db()) as connection:
         stats = {
             "submissions": connection.execute(
-                "SELECT COUNT(*) FROM submissions"
+                f"SELECT COUNT(*) FROM submissions WHERE {scope_sql}",
+                scope_params,
             ).fetchone()[0],
-            "active_games": connection.execute("""
+            "active_games": connection.execute(f"""
                 SELECT COUNT(*)
                 FROM guess_games
                 WHERE status = 'active'
-            """).fetchone()[0],
-            "audit_entries": connection.execute("""
+                  AND {scope_sql}
+            """, scope_params).fetchone()[0],
+            "audit_entries": connection.execute(f"""
                 SELECT
-                    (SELECT COUNT(*) FROM admin_audit_log)
-                    + (SELECT COUNT(*) FROM moderation_history)
-            """).fetchone()[0],
-            "rate_limit_events": connection.execute("""
+                    (SELECT COUNT(*) FROM admin_audit_log WHERE {scope_sql})
+                    + (SELECT COUNT(*) FROM moderation_history WHERE {scope_sql})
+            """, scope_params + scope_params).fetchone()[0],
+            "rate_limit_events": connection.execute(f"""
                 SELECT COUNT(*)
                 FROM rate_limit_events
-            """).fetchone()[0],
+                WHERE {scope_sql}
+            """, scope_params).fetchone()[0],
             "media_size": format_bytes(media_directory_size()),
         }
-        active_games = connection.execute("""
+        active_games = connection.execute(f"""
             SELECT id, guild_id, channel_id, starter_username,
                    media_name, started_at
             FROM guess_games
             WHERE status = 'active'
+              AND {scope_sql}
             ORDER BY started_at DESC, id DESC
-        """).fetchall()
+        """, scope_params).fetchall()
 
     db_size = format_bytes(DB_FILE.stat().st_size) if DB_FILE.exists() else "0 B"
     return render_template_string(
@@ -5605,7 +6300,7 @@ def admin_settings():
         csrf_token=get_csrf_token(),
         current_admin_role=current_admin_role(),
         current_admin_username=current_admin_username(),
-        dashboard_users=dashboard_users(),
+        dashboard_users=dashboard_users() if has_admin_role("owner") else [],
         db_file=DB_FILE,
         db_size=db_size,
         error=error,
@@ -5614,6 +6309,7 @@ def admin_settings():
         notice=notice,
         notification_event_labels=NOTIFICATION_EVENT_LABELS,
         notification_routes=notification_routes(config_data),
+        parse_guild_scope=parse_guild_scope,
         role_labels=ROLE_LABELS,
         security_warnings=warnings,
         stats=stats,
@@ -5766,6 +6462,125 @@ def admin_maintenance():
     )
 
 
+@app.route("/admin/media", methods=["GET", "POST"])
+def admin_media_cleanup():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+
+    notice = request.args.get("notice", "")
+    actor_id, actor_name = web_actor()
+    if request.method == "POST":
+        require_csrf_token()
+        action = request.form.get("action", "")
+        if action == "delete_orphans":
+            deleted = delete_orphaned_media_files()
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    "dashboard_delete_orphaned_media",
+                    actor_id,
+                    actor_name,
+                    "media",
+                    "",
+                    f"Deleted {deleted} orphaned media file(s).",
+                )
+            return redirect(url_for(
+                "admin_media_cleanup",
+                key=ADMIN_KEY,
+                notice=f"Deleted {deleted} orphaned media file(s).",
+            ))
+
+    return render_template_string(
+        MEDIA_CLEANUP_HTML,
+        admin_key=ADMIN_KEY,
+        csrf_token=get_csrf_token(),
+        notice=notice,
+        report=media_cleanup_report(),
+    )
+
+
+@app.route("/admin/analytics")
+def admin_analytics():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+
+    config_data = load_config()
+    options = guild_options(config_data)
+    selected_server_id = selected_guild_id(options)
+    allowed_ids = (
+        {selected_server_id}
+        if selected_server_id
+        else current_admin_allowed_guild_ids(config_data)
+    )
+    scope_sql, scope_params = guild_id_filter("guild_id", allowed_ids)
+    with closing(connect_db()) as connection:
+        totals = {
+            "Submissions": connection.execute(
+                f"SELECT COUNT(*) FROM submissions WHERE {scope_sql}",
+                scope_params,
+            ).fetchone()[0],
+            "Posted Submissions": connection.execute(
+                f"SELECT COUNT(*) FROM submissions WHERE status = 'posted' AND {scope_sql}",
+                scope_params,
+            ).fetchone()[0],
+            "Active Games": connection.execute(
+                f"SELECT COUNT(*) FROM guess_games WHERE status = 'active' AND {scope_sql}",
+                scope_params,
+            ).fetchone()[0],
+            "Recorded Answers": connection.execute(
+                f"SELECT COUNT(*) FROM guess_answer_history WHERE {scope_sql}",
+                scope_params,
+            ).fetchone()[0],
+        }
+        submissions_by_month = connection.execute(f"""
+            SELECT substr(COALESCE(created_at, submitted_at, ''), 1, 7) AS month,
+                   COUNT(*) AS count
+            FROM submissions
+            WHERE {scope_sql}
+            GROUP BY month
+            ORDER BY month DESC
+            LIMIT 12
+        """, scope_params).fetchall()
+        top_categories = connection.execute(f"""
+            SELECT category, COUNT(*) AS count
+            FROM submissions
+            WHERE {scope_sql}
+            GROUP BY category
+            ORDER BY count DESC, category ASC
+            LIMIT 10
+        """, scope_params).fetchall()
+        top_submitters = connection.execute(f"""
+            SELECT username, COUNT(*) AS count
+            FROM submissions
+            WHERE {scope_sql}
+            GROUP BY user_id, username
+            ORDER BY count DESC, username ASC
+            LIMIT 10
+        """, scope_params).fetchall()
+        answer_history = connection.execute(f"""
+            SELECT answer_display, category, source, created_at
+            FROM guess_answer_history
+            WHERE {scope_sql}
+            ORDER BY created_at DESC, id DESC
+            LIMIT 25
+        """, scope_params).fetchall()
+
+    return render_template_string(
+        ANALYTICS_HTML,
+        admin_key=ADMIN_KEY,
+        answer_history=answer_history,
+        guild_options=options,
+        selected_guild_id=selected_server_id,
+        submissions_by_month=submissions_by_month,
+        top_categories=top_categories,
+        top_submitters=top_submitters,
+        totals=totals,
+    )
+
+
 @app.route("/admin/moderation", methods=["GET", "POST"])
 def admin_moderation():
     login_response = require_admin_login()
@@ -5775,6 +6590,7 @@ def admin_moderation():
     notice = request.args.get("notice", "")
     config_data = load_config()
     guild_names = guild_name_map(config_data)
+    allowed_moderation_ids = current_admin_allowed_guild_ids(config_data)
     if request.method == "POST":
         require_csrf_token()
         action = request.form.get("action", "")
@@ -5793,6 +6609,10 @@ def admin_moderation():
                     notice="Choose at least one report.",
                 ))
             placeholders = ", ".join("?" for _ in report_ids)
+            scope_sql, scope_params = guild_id_filter(
+                "guild_id",
+                allowed_moderation_ids,
+            )
             with database() as connection:
                 connection.execute(f"""
                     UPDATE submission_reports
@@ -5800,7 +6620,8 @@ def admin_moderation():
                         admin_notes = ?,
                         resolved_at = ?
                     WHERE id IN ({placeholders})
-                """, [admin_notes, utc_now_iso()] + report_ids)
+                      AND {scope_sql}
+                """, [admin_notes, utc_now_iso()] + report_ids + scope_params)
                 add_admin_audit_log(
                     connection,
                     None,
@@ -5825,6 +6646,11 @@ def admin_moderation():
                     FROM submission_reports
                     WHERE id = ?
                 """, (report_id,)).fetchone()
+                if report and not can_admin_access_guild(
+                    report["guild_id"],
+                    config_data,
+                ):
+                    abort(403)
                 if report:
                     connection.execute("""
                         UPDATE submission_reports
@@ -5854,28 +6680,39 @@ def admin_moderation():
             ))
 
     with closing(connect_db()) as connection:
-        reports = connection.execute("""
+        scope_sql, scope_params = guild_id_filter(
+            "reports.guild_id",
+            allowed_moderation_ids,
+        )
+        reports = connection.execute(f"""
             SELECT reports.id, reports.submission_id, reports.guild_id,
                    reports.reporter_name, reports.reason, reports.created_at
             FROM submission_reports AS reports
             WHERE reports.status = 'open'
+              AND {scope_sql}
             ORDER BY reports.created_at DESC, reports.id DESC
             LIMIT 50
-        """).fetchall()
-        pending_rows = connection.execute("""
+        """, scope_params).fetchall()
+        scope_sql, scope_params = guild_id_filter(
+            "guild_id",
+            allowed_moderation_ids,
+        )
+        pending_rows = connection.execute(f"""
             SELECT *
             FROM submissions
             WHERE status = 'pending'
+              AND {scope_sql}
             ORDER BY created_at DESC, id DESC
             LIMIT 50
-        """).fetchall()
-        history = connection.execute("""
+        """, scope_params).fetchall()
+        history = connection.execute(f"""
             SELECT guild_id, submission_id, action, actor_username,
                    details, created_at
             FROM moderation_history
+            WHERE {scope_sql}
             ORDER BY created_at DESC, id DESC
             LIMIT 50
-        """).fetchall()
+        """, scope_params).fetchall()
     pending_posts = [prepare_post(row) for row in pending_rows]
     return render_template_string(
         MODERATION_HTML,
@@ -6006,13 +6843,20 @@ def admin_seasons():
             ))
 
     guild_names = guild_name_map(config_data)
+    allowed_season_ids = {option["id"] for option in options}
     with closing(connect_db()) as connection:
-        rows = connection.execute("""
+        where_sql = ""
+        parameters = []
+        if current_admin_role() != "owner":
+            filter_sql, parameters = guild_id_filter("guild_id", allowed_season_ids)
+            where_sql = "WHERE " + filter_sql
+        rows = connection.execute(f"""
             SELECT *
             FROM game_seasons
+            {where_sql}
             ORDER BY starts_at DESC, id DESC
             LIMIT 100
-        """).fetchall()
+        """, parameters).fetchall()
         seasons = []
         for row in rows:
             season = dict(row)
@@ -6489,12 +7333,7 @@ def audit_log():
     page = positive_page(request.args.get("page"))
     config_data = load_config()
     server_options = guild_options(config_data)
-    selected_server_id = request.args.get("guild_id", "").strip()
-    if selected_server_id == "all":
-        selected_server_id = ""
-    valid_server_ids = {option["id"] for option in server_options}
-    if selected_server_id and selected_server_id not in valid_server_ids:
-        selected_server_id = ""
+    selected_server_id = selected_guild_id(server_options)
     action_filter = request.args.get("action", "").strip()
     search_query = request.args.get("q", "").strip()
     actor_filter = request.args.get("actor", "").strip()
@@ -7016,14 +7855,18 @@ def export_submissions():
     login_response = require_admin_login()
     if login_response:
         return login_response
+    config_data = load_config()
+    scope_sql, scope_params = admin_scope_filter("guild_id", config_data)
+    where_sql = f"WHERE {scope_sql}" if scope_sql else ""
     with closing(connect_db()) as connection:
-        rows = connection.execute("""
+        rows = connection.execute(f"""
             SELECT id, guild_id, user_id, username, category, stars,
                    status, media_sizes, media_metadata_json,
                    created_at, submitted_at
             FROM submissions
+            {where_sql}
             ORDER BY created_at DESC, id DESC
-        """).fetchall()
+        """, scope_params).fetchall()
     return csv_response(
         "sdac-submissions.csv",
         rows,
@@ -7048,13 +7891,17 @@ def export_guessing():
     login_response = require_admin_login()
     if login_response:
         return login_response
+    config_data = load_config()
+    scope_sql, scope_params = admin_scope_filter("guild_id", config_data)
+    where_sql = f"WHERE {scope_sql}" if scope_sql else ""
     with closing(connect_db()) as connection:
-        rows = connection.execute("""
+        rows = connection.execute(f"""
             SELECT guild_id, channel_id, user_id, username, month, points,
                    updated_at
             FROM guess_points
+            {where_sql}
             ORDER BY month DESC, points DESC
-        """).fetchall()
+        """, scope_params).fetchall()
     return csv_response(
         "sdac-guessing.csv",
         rows,
@@ -7067,8 +7914,15 @@ def export_audit():
     login_response = require_admin_login()
     if login_response:
         return login_response
+    config_data = load_config()
+    scope_sql, scope_params = admin_scope_filter(
+        "guild_id",
+        config_data,
+        include_global=True,
+    )
+    where_sql = f"WHERE {scope_sql}" if scope_sql else ""
     with closing(connect_db()) as connection:
-        rows = connection.execute("""
+        rows = connection.execute(f"""
             SELECT guild_id, action, actor_user_id, actor_username,
                    target_type, target_id, details, created_at
             FROM (
@@ -7090,8 +7944,9 @@ def export_audit():
                        details, created_at
                 FROM rate_limit_events
             )
+            {where_sql}
             ORDER BY created_at DESC, sort_id DESC
-        """).fetchall()
+        """, scope_params).fetchall()
     return csv_response(
         "sdac-audit.csv",
         rows,

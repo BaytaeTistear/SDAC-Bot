@@ -1,0 +1,15 @@
+.git
+.github
+.env
+*.db
+*.db-shm
+*.db-wal
+__pycache__/
+venv/
+.venv/
+media/
+backups/
+deploy-backups/
+dist/
+server/
+screenshots/
