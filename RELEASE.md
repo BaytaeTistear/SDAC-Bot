@@ -1,3 +1,36 @@
+# SDAC Bot Version 2.7.3 Experimental
+
+Date: 2026-06-23
+
+Version 2.7.3 is an experimental storage and usability build.
+
+Included:
+
+- generated WebP thumbnails for images when Pillow is installed
+- lightweight public gallery image loading with thumbnail-first previews
+- optional image compression controls for JPEG/PNG/WebP uploads
+- `/submit` guidance showing accepted media, file limits, storage remaining,
+  compression status, and retention behavior
+- per-server storage dashboard under `/admin/media`
+- backup health badges, prune buttons, and rclone restore buttons for each
+  server with a configured backup remote
+- automatic cleanup of old local originals after successful per-server backup
+  and public media URL setup, while keeping thumbnails local
+- manual dashboard action to generate missing thumbnails for older uploads
+- `/my-submissions` and `/me` page for users to find their public submissions
+- old-history archive actions in Maintenance that preserve monthly top 10
+  snapshots before optional live-row removal
+- `scripts/archive_old_history.py` and `scripts/restore_guild_media_rclone.sh`
+- updated installer defaults, requirements, README, and release assets
+
+Release channel:
+
+- `version-2.7.3` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+---
+
 # SDAC Bot Version 2.7.2 Experimental
 
 Date: 2026-06-23

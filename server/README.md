@@ -27,6 +27,9 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - Public user profiles and submission reports
 - Moderation queue bulk review and submission review flags
 - Media cleanup dashboard for orphaned, missing, and oversized media
+- Lightweight gallery mode with generated thumbnails and remote-original badges
+- Media lifecycle controls for local original retention, thumbnail size, image
+  compression, backed-up original pruning, and old-history archives
 - Submission/game analytics dashboard with recent game answer history
 - Maintenance page for backups, backup downloads, release status, restore tests,
   backup checksums, storage warnings, config backup restore, bot heartbeat
@@ -46,6 +49,10 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - Public stats page, production health score page, and support bundle helper
 - Optional cloud media mirror support through `SDAC_MEDIA_PUBLIC_BASE_URL`
   plus `scripts/sync_media_rclone.sh`
+- Per-server rclone backup targets with optional public media URL prefixes,
+  guild-scoped database exports, and opt-in local guild media cleanup
+- Per-server storage dashboard with restore/prune buttons and backup health
+  badges
 - Docker and Docker Compose files for easier self-hosting
 - PostgreSQL export tooling and experimental `SDAC_DATABASE_URL` runtime mode
 - New-server welcome message that points admins to `/setup`
@@ -244,6 +251,50 @@ If the mirrored media has a public URL prefix, set:
 SDAC_MEDIA_PUBLIC_BASE_URL=https://cdn.example.com/sdac-media
 ```
 
+Per-server alternate backups:
+
+```bash
+# First set the remote from Discord:
+# /setserverbackup true drive:sdac/server-123 https://cdn.example.com/sdac/server-123 true true false
+
+# Then run the guild backup from the host:
+SDAC_GUILD_ID=123456789 bash scripts/backup_guild_offsite.sh
+```
+
+`scripts/backup_guild_offsite.sh` reads the guild's `external_backup` settings
+from `config.json`, exports only that guild's config/database rows, copies only
+that guild's `media/<guild_id>` folder, and records the last status back into
+the same guild config. If `delete_local_media_after_success` is enabled, local
+media for that guild is pruned only after rclone finishes successfully. Keep
+that option disabled unless the remote media is also reachable through a public
+URL or you are comfortable restoring media manually.
+
+Restore one server's media from its configured rclone remote:
+
+```bash
+SDAC_GUILD_ID=123456789 bash scripts/restore_guild_media_rclone.sh
+```
+
+Archive old full submission history while preserving monthly top 10 snapshots:
+
+```bash
+venv/bin/python scripts/archive_old_history.py --months 18
+```
+
+Archive and remove exported full rows from the live `submissions` table:
+
+```bash
+venv/bin/python scripts/archive_old_history.py --months 18 --delete-exported
+```
+
+The dashboard also exposes these operations under:
+
+```text
+/admin/media?key=ImTheBestAdmin
+/admin/maintenance?key=ImTheBestAdmin
+/my-submissions
+```
+
 ### Database Migrations
 
 ```bash
@@ -332,6 +383,8 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /setlimit max_file_mb 25
 /setmoderation "badword1,badword2" "image,video,audio" false 7 false
 /setgamesettings 30 10 normal
+/setserverbackup true drive:sdac/server https://cdn.example.com/sdac/server true true false
+/serverbackupstatus
 /supportbundle
 /sdacpanic true "Cleaning up spam"
 /sdacpanic false

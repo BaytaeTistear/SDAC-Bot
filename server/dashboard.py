@@ -1,4 +1,5 @@
 import csv
+import gzip
 import hashlib
 import io
 import math
@@ -9,10 +10,11 @@ import shlex
 import shutil
 import sqlite3
 import secrets
+import subprocess
 import tempfile
 import time
 from contextlib import closing, contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.error import HTTPError, URLError
@@ -111,6 +113,11 @@ DEFAULT_LIMITS = {
     "active_game_limit_per_guild": 0,
     "guild_storage_limit_bytes": 0,
     "offsite_backup_warning_hours": 72,
+    "local_original_retention_days": 30,
+    "thumbnail_max_dimension": 640,
+    "image_compression_enabled": False,
+    "image_compression_quality": 85,
+    "archive_full_history_after_months": 18,
 }
 
 DEFAULT_OFFSITE_BACKUP = {
@@ -128,6 +135,19 @@ DEFAULT_FEATURES = {
     "weekly_posts": True,
     "public_gallery": True,
     "cross_server_leaderboard": True,
+}
+
+DEFAULT_GUILD_EXTERNAL_BACKUP = {
+    "enabled": False,
+    "provider": "rclone",
+    "remote": "",
+    "public_base_url": "",
+    "include_media": True,
+    "include_database_export": True,
+    "delete_local_media_after_success": False,
+    "last_success_at": "",
+    "last_status": "",
+    "last_details": "",
 }
 
 FEATURE_LABELS = {
@@ -198,6 +218,7 @@ DEFAULT_GUILD_FIELDS = {
         "default_difficulty": "normal",
     },
     "public_stats_enabled": True,
+    "external_backup": DEFAULT_GUILD_EXTERNAL_BACKUP,
     "categories": {},
     "features": DEFAULT_FEATURES,
 }
@@ -207,6 +228,10 @@ UPDATE_ENV_FILE = Path(os.getenv("SDAC_UPDATE_CONFIG", "/etc/sdac-bot/update.env
 RELEASE_CACHE = {
     "expires_at": 0,
     "status": None,
+}
+GUILD_MEDIA_BASE_CACHE = {
+    "mtime": None,
+    "bases": {},
 }
 
 
@@ -426,6 +451,7 @@ HTML = """
 
     <nav class="admin-nav">
         <a href="{{ url_for('index', key=admin_key if is_admin else None) }}">Submissions</a>
+        <a href="{{ url_for('my_submissions', key=admin_key if is_admin else None) }}">My submissions</a>
         <a href="{{ url_for('servers') }}">Servers</a>
         <a href="{{ url_for('guessing_leaderboard', key=admin_key if is_admin else None) }}">Guessing leaderboard</a>
         <a href="{{ url_for('achievements', key=admin_key if is_admin else None) }}">Achievements</a>
@@ -561,7 +587,7 @@ HTML = """
                                     <div>
                                         {% if item.type == "image" %}
                                             <a href="{{ item.url }}" target="_blank" rel="noopener">
-                                                <img src="{{ item.url }}" alt="{{ item.name }}" loading="lazy">
+                                                <img src="{{ item.thumbnail_url or item.url }}" alt="{{ item.name }}" loading="lazy">
                                             </a>
                                         {% elif item.type == "video" %}
                                             <video src="{{ item.url }}" controls preload="metadata"></video>
@@ -574,6 +600,7 @@ HTML = """
                                             <strong>{{ item.name }}</strong><br>
                                             <span class="pill">{{ item.type }}</span>
                                             {% if item.size_label %}<span class="pill">{{ item.size_label }}</span>{% endif %}
+                                            {% if not item.local_original_available %}<span class="pill">remote original</span>{% endif %}
                                             {% if item.content_type %}<span class="pill">{{ item.content_type }}</span>{% endif %}
                                             {% if item.duration_label %}<span class="pill">{{ item.duration_label }}</span>{% endif %}
                                         </div>
@@ -803,6 +830,76 @@ USER_PROFILE_HTML = """
                     <tr><td>{{ row.month }}</td><td>{{ row.points }}</td></tr>
                 {% else %}
                     <tr><td colspan="2" class="muted">No points yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+MY_SUBMISSIONS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>My SDAC Submissions</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 900px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav, form { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-bottom: 20px; }
+        input, select, button { border: 1px solid #30333b; border-radius: 7px; font-size: 16px; padding: 10px 12px; }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; }
+        .muted { color: #a8adb8; }
+        .status { border: 1px solid #30333b; border-radius: 999px; display: inline-block; padding: 2px 7px; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>My Submissions</h1>
+    <nav>
+        <a href="{{ url_for('index', key=admin_key if is_admin else None) }}">Gallery</a>
+        <a href="{{ url_for('guessing_leaderboard', key=admin_key if is_admin else None) }}">Guessing leaderboard</a>
+    </nav>
+    <section class="panel">
+        <form method="get">
+            {% if is_admin %}<input type="hidden" name="key" value="{{ admin_key }}">{% endif %}
+            <input name="q" value="{{ search_query }}" placeholder="Discord user ID or username">
+            <select name="guild_id">
+                <option value="all">All public servers</option>
+                {% for guild in guild_options %}
+                    <option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>{{ guild.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit">Find Submissions</button>
+        </form>
+        <p class="muted">Tip: Discord user ID is the most accurate search. Public users only see posted submissions.</p>
+    </section>
+    <section class="panel">
+        <h2>Results</h2>
+        <table>
+            <thead><tr><th>ID</th><th>Server</th><th>Category</th><th>Votes</th><th>Status</th><th>Created</th></tr></thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td><a href="{{ url_for('index', q=row.id, guild_id=row.guild_id or 'all', key=admin_key if is_admin else None) }}">{{ row.id }}</a></td>
+                        <td>{{ guild_names.get(row.guild_id, row.guild_id) }}</td>
+                        <td>{{ row.category }}</td>
+                        <td>{{ row.stars or 0 }}</td>
+                        <td><span class="status">{{ row.status }}</span></td>
+                        <td>{{ row.created_at or row.submitted_at }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="6" class="muted">No matching submissions yet.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -1918,6 +2015,10 @@ SETTINGS_HTML = """
                     <tr><th>Active games per guild</th><td><input name="active_game_limit_per_guild" value="{{ limits.get('active_game_limit_per_guild', 0) }}"></td></tr>
                     <tr><th>Guild storage limit bytes</th><td><input name="guild_storage_limit_bytes" value="{{ limits.get('guild_storage_limit_bytes', 0) }}"></td></tr>
                     <tr><th>Offsite backup warning hours</th><td><input name="offsite_backup_warning_hours" value="{{ limits.get('offsite_backup_warning_hours', 72) }}"></td></tr>
+                    <tr><th>Local original retention days</th><td><input name="local_original_retention_days" value="{{ limits.get('local_original_retention_days', 30) }}"></td></tr>
+                    <tr><th>Thumbnail max dimension</th><td><input name="thumbnail_max_dimension" value="{{ limits.get('thumbnail_max_dimension', 640) }}"></td></tr>
+                    <tr><th>Image compression quality</th><td><input name="image_compression_quality" value="{{ limits.get('image_compression_quality', 85) }}"></td></tr>
+                    <tr><th>Archive full history after months</th><td><input name="archive_full_history_after_months" value="{{ limits.get('archive_full_history_after_months', 18) }}"></td></tr>
                     <tr><th>Restore test weekday</th><td>
                         <select name="restore_test_weekday">
                             {% for day in weekdays %}
@@ -1936,6 +2037,12 @@ SETTINGS_HTML = """
                         <select name="orphan_media_cleanup_enabled">
                             <option value="1" {% if limits.get('orphan_media_cleanup_enabled', True) %}selected{% endif %}>Enabled</option>
                             <option value="0" {% if not limits.get('orphan_media_cleanup_enabled', True) %}selected{% endif %}>Disabled</option>
+                        </select>
+                    </td></tr>
+                    <tr><th>Image compression</th><td>
+                        <select name="image_compression_enabled">
+                            <option value="0" {% if not limits.get('image_compression_enabled', False) %}selected{% endif %}>Disabled</option>
+                            <option value="1" {% if limits.get('image_compression_enabled', False) %}selected{% endif %}>Enabled</option>
                         </select>
                     </td></tr>
                 </tbody>
@@ -2001,6 +2108,32 @@ SETTINGS_HTML = """
                                 <option value="0" {% if not guild.public_stats_enabled %}selected{% endif %}>Disabled</option>
                             </select>
                         </td></tr>
+                        <tr><th>External backup</th><td>
+                            <select name="external_backup_enabled">
+                                <option value="1" {% if guild.external_backup.enabled %}selected{% endif %}>Enabled</option>
+                                <option value="0" {% if not guild.external_backup.enabled %}selected{% endif %}>Disabled</option>
+                            </select>
+                        </td></tr>
+                        <tr><th>Backup remote</th><td><input name="external_backup_remote" value="{{ guild.external_backup.remote }}" placeholder="drive:sdac/{{ guild.id }}"></td></tr>
+                        <tr><th>Public media base URL</th><td><input name="external_backup_public_base_url" value="{{ guild.external_backup.public_base_url }}" placeholder="https://cdn.example.com/sdac/{{ guild.id }}"></td></tr>
+                        <tr><th>Backup includes media</th><td>
+                            <select name="external_backup_include_media">
+                                <option value="1" {% if guild.external_backup.include_media %}selected{% endif %}>Enabled</option>
+                                <option value="0" {% if not guild.external_backup.include_media %}selected{% endif %}>Disabled</option>
+                            </select>
+                        </td></tr>
+                        <tr><th>Backup includes DB export</th><td>
+                            <select name="external_backup_include_database_export">
+                                <option value="1" {% if guild.external_backup.include_database_export %}selected{% endif %}>Enabled</option>
+                                <option value="0" {% if not guild.external_backup.include_database_export %}selected{% endif %}>Disabled</option>
+                            </select>
+                        </td></tr>
+                        <tr><th>Delete local media after backup</th><td>
+                            <select name="external_backup_delete_local_media_after_success">
+                                <option value="0" {% if not guild.external_backup.delete_local_media_after_success %}selected{% endif %}>Disabled</option>
+                                <option value="1" {% if guild.external_backup.delete_local_media_after_success %}selected{% endif %}>Enabled after successful rclone copy</option>
+                            </select>
+                        </td></tr>
                         <tr><th>Max file bytes override</th><td><input name="guild_max_file_bytes" value="{{ guild.limits.max_file_bytes }}"></td></tr>
                         <tr><th>Max total bytes override</th><td><input name="guild_max_total_bytes" value="{{ guild.limits.max_total_bytes }}"></td></tr>
                         <tr><th>Monthly submission limit</th><td><input name="guild_monthly_submission_limit" value="{{ guild.limits.monthly_submission_limit }}"></td></tr>
@@ -2058,6 +2191,13 @@ SETTINGS_HTML = """
                     <tr><th>Approval</th><td>{{ "Enabled" if guild.approval_enabled else "Disabled" }}</td></tr>
                     <tr><th>Approval channel</th><td>{{ guild.approval_channel or "Not set" }}</td></tr>
                     <tr><th>Emergency pause</th><td>{{ "Enabled" if guild.emergency_paused else "Disabled" }}{% if guild.emergency_reason %}: {{ guild.emergency_reason }}{% endif %}</td></tr>
+                    <tr><th>External backup</th><td>
+                        <div>Enabled: <code>{{ "Yes" if guild.external_backup.enabled else "No" }}</code></div>
+                        <div>Remote: <code>{{ guild.external_backup.remote or "Not set" }}</code></div>
+                        <div>Public media URL: <code>{{ guild.external_backup.public_base_url or "Not set" }}</code></div>
+                        <div>Last status: <code>{{ guild.external_backup.last_status or "Unknown" }}</code></div>
+                        <div>Last success: <code>{{ guild.external_backup.last_success_at or "Never" }}</code></div>
+                    </td></tr>
                     <tr><th>Features</th><td>
                         {% for feature in guild.features %}
                             <div>{{ feature.label }}: <code>{{ "Enabled" if feature.enabled else "Disabled" }}</code></div>
@@ -2242,6 +2382,8 @@ MAINTENANCE_HTML = """
             <button name="action" value="backup_now" type="submit">Create Backup Now</button>
             <button name="action" value="restore_test" type="submit">Run Restore Test</button>
             <button name="action" value="restore_config" type="submit">Restore Latest Config Backup</button>
+            <button name="action" value="archive_history" type="submit">Archive Old History</button>
+            <button name="action" value="archive_history_delete" type="submit" onclick="return confirm('Archive and remove old full submission rows from the live database? Monthly top snapshots stay preserved.');">Archive And Remove Old Full History</button>
         </form>
     </section>
 
@@ -2263,6 +2405,24 @@ MAINTENANCE_HTML = """
         </p>
         <p><code>bash scripts/backup_offsite.sh remote:sdac-backups</code></p>
         <p><code>bash scripts/sync_media_rclone.sh remote:sdac-media</code></p>
+        <h3>Per-Server Backup Targets</h3>
+        <table>
+            <thead><tr><th>Server</th><th>Remote</th><th>Media URL</th><th>Last status</th><th>Last success</th></tr></thead>
+            <tbody>
+                {% for row in guild_backup_rows %}
+                    <tr>
+                        <td>{{ row.name }}<br><code>{{ row.guild_id }}</code></td>
+                        <td><code>{{ row.remote or "Not set" }}</code></td>
+                        <td><code>{{ row.public_base_url or "Not set" }}</code></td>
+                        <td>{{ row.last_status or "Unknown" }}</td>
+                        <td>{{ row.last_success_at or "Never" }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="muted">No per-server backup targets configured yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p><code>SDAC_GUILD_ID=123456789 bash scripts/backup_guild_offsite.sh</code></p>
     </section>
 
     <section class="panel">
@@ -2376,7 +2536,60 @@ MEDIA_CLEANUP_HTML = """
             <input type="hidden" name="key" value="{{ admin_key }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button type="submit" name="action" value="delete_orphans">Delete Orphaned Files</button>
+            <button type="submit" name="action" value="generate_thumbnails">Generate Missing Thumbnails</button>
+            <button type="submit" name="action" value="prune_backed_up_originals" onclick="return confirm('Prune old backed-up originals for all safe servers? Thumbnails stay local.');">Prune Backed-Up Originals</button>
         </form>
+    </section>
+
+    <section class="panel">
+        <h2>Per-Server Storage</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Server</th>
+                    <th>Originals</th>
+                    <th>Thumbnails</th>
+                    <th>Limit</th>
+                    <th>Oldest</th>
+                    <th>Backup</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in guild_storage_rows %}
+                    <tr>
+                        <td>{{ row.name }}<br><code>{{ row.guild_id }}</code></td>
+                        <td>{{ row.size_label }}<br><span class="muted">{{ row.files }} file(s)</span></td>
+                        <td>{{ row.thumbnail_size_label }}<br><span class="muted">{{ row.thumbnail_files }} file(s)</span></td>
+                        <td>{{ row.limit_label }}{% if row.limit_percent %}<br><span class="muted">{{ row.limit_percent }}%</span>{% endif %}</td>
+                        <td>{{ row.oldest }}</td>
+                        <td>
+                            {% if row.safe_to_prune %}
+                                <strong>Safe to prune</strong>
+                            {% else %}
+                                <span class="muted">Not safe yet</span>
+                            {% endif %}
+                            <br><code>{{ row.backup.remote or "No remote" }}</code>
+                            {% if row.backup.last_success_at %}<br><span class="muted">{{ row.backup.last_success_at }}</span>{% endif %}
+                        </td>
+                        <td>
+                            <form method="post">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="guild_id" value="{{ row.guild_id }}">
+                                <button type="submit" name="action" value="restore_guild_media">Restore</button>
+                                <button type="submit" name="action" value="prune_guild_originals" onclick="return confirm('Prune old backed-up originals for this server?');">Prune</button>
+                            </form>
+                            {% if row.restore_command %}
+                                <p class="muted"><code>{{ row.restore_command }}</code></p>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="7" class="muted">No configured servers found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </section>
 
     {% for title, rows, total in [
@@ -3248,6 +3461,66 @@ def run_manual_restore_test():
     return passed, backup_path, details
 
 
+def archive_old_submission_history(delete_exported=False):
+    config_data = load_config()
+    limits = config_data.get("limits") or {}
+    try:
+        months = int(limits.get("archive_full_history_after_months") or 18)
+    except (TypeError, ValueError):
+        months = 18
+    months = max(1, months)
+    now = datetime.now(timezone.utc)
+    cutoff_year = now.year
+    cutoff_month = now.month - months
+    while cutoff_month <= 0:
+        cutoff_month += 12
+        cutoff_year -= 1
+    cutoff = f"{cutoff_year:04d}-{cutoff_month:02d}"
+    archive_dir = BACKUP_DIR / "history-archives"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = archive_dir / (
+        f"submissions-before-{cutoff}"
+        f"{'-removed' if delete_exported else ''}.json.gz"
+    )
+    with closing(connect_db()) as connection:
+        month_rows = connection.execute("""
+            SELECT DISTINCT substr(COALESCE(created_at, submitted_at), 1, 7) AS month
+            FROM submissions
+            WHERE COALESCE(created_at, submitted_at, '') != ''
+              AND substr(COALESCE(created_at, submitted_at), 1, 7) < ?
+            ORDER BY month
+        """, (cutoff,)).fetchall()
+        for row in month_rows:
+            preserve_monthly_submission_top(connection, row["month"])
+        rows = connection.execute("""
+            SELECT *
+            FROM submissions
+            WHERE COALESCE(created_at, submitted_at, '') != ''
+              AND substr(COALESCE(created_at, submitted_at), 1, 7) < ?
+            ORDER BY created_at, id
+        """, (cutoff,)).fetchall()
+        payload = {
+            "created_at": utc_now_iso(),
+            "cutoff_month": cutoff,
+            "delete_exported": bool(delete_exported),
+            "rows": [
+                {key: row[key] for key in row.keys()}
+                for row in rows
+            ],
+        }
+        with gzip.open(archive_path, "wt", encoding="utf-8") as archive_file:
+            json.dump(payload, archive_file, indent=2)
+            archive_file.write("\n")
+        if delete_exported and rows:
+            connection.execute("""
+                DELETE FROM submissions
+                WHERE COALESCE(created_at, submitted_at, '') != ''
+                  AND substr(COALESCE(created_at, submitted_at), 1, 7) < ?
+            """, (cutoff,))
+        connection.commit()
+    return archive_path, len(rows), cutoff
+
+
 def storage_warnings(config_data=None):
     config_data = config_data or load_config()
     limits = config_data.get("limits", {})
@@ -3326,6 +3599,15 @@ def production_health_report(config_data=None):
     bot_status = read_bot_status()
     warnings = security_warnings() + storage_warnings(config_data)
     offsite = config_data.get("offsite_backup") or {}
+    guild_backups = [
+        (guild_config.get("external_backup") or {})
+        for guild_config in (config_data.get("guilds") or {}).values()
+    ]
+    configured_guild_backups = [
+        backup
+        for backup in guild_backups
+        if backup.get("enabled") and backup.get("remote")
+    ]
     checks = []
 
     def add(label, ok, details):
@@ -3340,6 +3622,15 @@ def production_health_report(config_data=None):
         "Offsite backups",
         bool(offsite.get("last_success_at") or offsite.get("remote")),
         offsite.get("last_success_at") or offsite.get("remote") or "No offsite backup destination recorded.",
+    )
+    add(
+        "Per-server backups",
+        bool(configured_guild_backups),
+        (
+            f"{len(configured_guild_backups)} guild backup target(s) configured."
+            if configured_guild_backups
+            else "No guild-specific backup targets configured."
+        ),
     )
     add("Storage warnings", not storage_warnings(config_data), "No storage warnings." if not storage_warnings(config_data) else "; ".join(storage_warnings(config_data)))
     add("Public URL", bool(os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN")), "Public URL configured." if os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN") else "Set SDAC_PUBLIC_URL.")
@@ -3458,6 +3749,7 @@ def guess_library_media_metadata(filename, path, content_type=""):
         "size": int(size or 0),
         "size_label": format_bytes(int(size or 0)),
         "content_type": content_type or "",
+        "thumbnail_path": create_media_thumbnail(path, filename),
     }
 
 
@@ -3473,6 +3765,7 @@ def save_guess_library_upload(guild_id, upload, limits):
     stored_name = f"{int(time.time())}-{secrets.token_hex(4)}-{filename}"
     path = folder / stored_name
     upload.save(path)
+    maybe_compress_image(path, filename)
 
     size = path.stat().st_size if path.exists() else 0
     max_file_bytes = int(limits.get("max_file_bytes", 25 * 1024 * 1024))
@@ -3515,6 +3808,12 @@ def delete_guess_library_media(stored_path):
     if file_path.is_file():
         try:
             file_path.unlink()
+        except OSError:
+            pass
+    thumb_path = thumbnail_path_for_media(file_path)
+    if thumb_path and thumb_path.is_file():
+        try:
+            thumb_path.unlink()
         except OSError:
             pass
 
@@ -4568,13 +4867,139 @@ def media_relative_path(stored_path):
     return relative_path.as_posix()
 
 
-def media_url(relative_path):
+def guild_media_public_base_url(guild_id, config_data=None):
+    if not guild_id:
+        return ""
+    if config_data is not None:
+        guild_config = (config_data.get("guilds") or {}).get(str(guild_id)) or {}
+        backup = guild_config.get("external_backup") or {}
+        return (backup.get("public_base_url") or "").strip().rstrip("/")
+    try:
+        config_mtime = CONFIG_FILE.stat().st_mtime
+    except OSError:
+        config_mtime = None
+    if GUILD_MEDIA_BASE_CACHE["mtime"] != config_mtime:
+        loaded = load_config()
+        GUILD_MEDIA_BASE_CACHE["mtime"] = config_mtime
+        GUILD_MEDIA_BASE_CACHE["bases"] = {
+            str(cached_guild_id): (
+                ((cached_guild.get("external_backup") or {}).get("public_base_url") or "")
+                .strip()
+                .rstrip("/")
+            )
+            for cached_guild_id, cached_guild in (loaded.get("guilds") or {}).items()
+        }
+    return GUILD_MEDIA_BASE_CACHE["bases"].get(str(guild_id), "")
+
+
+def media_url(relative_path, guild_id=None):
     if not relative_path:
         return None
-    public_base = os.getenv("SDAC_MEDIA_PUBLIC_BASE_URL", "").strip().rstrip("/")
+    public_base = guild_media_public_base_url(guild_id)
+    if not public_base:
+        public_base = os.getenv("SDAC_MEDIA_PUBLIC_BASE_URL", "").strip().rstrip("/")
     if public_base:
         return f"{public_base}/{str(relative_path).lstrip('/')}"
     return url_for("serve_media", filename=relative_path)
+
+
+def local_media_url(relative_path):
+    if not relative_path:
+        return None
+    return url_for("serve_media", filename=relative_path)
+
+
+def thumbnail_path_for_media(path):
+    try:
+        relative_path = Path(path).resolve().relative_to(MEDIA_DIR.resolve())
+    except (OSError, ValueError):
+        return None
+    if relative_path.parts and relative_path.parts[0] == "_thumbs":
+        return None
+    return (MEDIA_DIR / "_thumbs" / relative_path).with_suffix(".webp")
+
+
+def create_media_thumbnail(path, filename, max_dimension=None):
+    if get_media_type(filename) != "image":
+        return ""
+    if Path(filename).suffix.lower() == ".gif":
+        return ""
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return ""
+    thumb_path = thumbnail_path_for_media(path)
+    if thumb_path is None:
+        return ""
+    if max_dimension is None:
+        try:
+            max_dimension = int(
+                load_config().get("limits", {}).get("thumbnail_max_dimension", 640)
+            )
+        except (TypeError, ValueError):
+            max_dimension = 640
+    max_dimension = max(160, min(2048, int(max_dimension or 640)))
+    try:
+        thumb_path.parent.mkdir(parents=True, exist_ok=True)
+        with Image.open(path) as image:
+            image = ImageOps.exif_transpose(image)
+            image.thumbnail((max_dimension, max_dimension))
+            if image.mode not in {"RGB", "RGBA"}:
+                image = image.convert("RGB")
+            image.save(thumb_path, "WEBP", quality=82, method=4)
+        return str(thumb_path)
+    except (OSError, ValueError):
+        return ""
+
+
+def maybe_compress_image(path, filename):
+    limits = load_config().get("limits", {})
+    if not limits.get("image_compression_enabled", False):
+        return False
+    if get_media_type(filename) != "image":
+        return False
+    if Path(filename).suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+        return False
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return False
+    try:
+        quality = int(limits.get("image_compression_quality") or 85)
+    except (TypeError, ValueError):
+        quality = 85
+    quality = max(40, min(95, quality))
+    image_path = Path(path)
+    try:
+        with Image.open(image_path) as image:
+            image = ImageOps.exif_transpose(image)
+            save_kwargs = {"optimize": True}
+            if image_path.suffix.lower() in {".jpg", ".jpeg", ".webp"}:
+                save_kwargs["quality"] = quality
+            if image_path.suffix.lower() in {".jpg", ".jpeg"}:
+                image = image.convert("RGB")
+            image.save(image_path, **save_kwargs)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def thumbnail_url_from_metadata(metadata, fallback_path, filename):
+    thumbnail_path = metadata.get("thumbnail_path") if isinstance(metadata, dict) else ""
+    thumbnail_relative = media_relative_path(thumbnail_path) if thumbnail_path else None
+    if thumbnail_relative and (MEDIA_DIR / thumbnail_relative).is_file():
+        return local_media_url(thumbnail_relative)
+    predicted_thumb = thumbnail_path_for_media(fallback_path) if fallback_path else None
+    if predicted_thumb and predicted_thumb.is_file():
+        predicted_relative = media_relative_path(predicted_thumb)
+        if predicted_relative:
+            return local_media_url(predicted_relative)
+    if fallback_path and Path(fallback_path).is_file():
+        created = create_media_thumbnail(fallback_path, filename)
+        created_relative = media_relative_path(created) if created else None
+        if created_relative:
+            return local_media_url(created_relative)
+    return ""
 
 
 def referenced_media_paths(connection):
@@ -4671,6 +5096,224 @@ def delete_orphaned_media_files():
     return deleted
 
 
+def path_tree_stats(path):
+    path = Path(path)
+    total = 0
+    files = 0
+    oldest = None
+    if not path.exists():
+        return {"bytes": 0, "files": 0, "oldest": ""}
+    for file_path in path.rglob("*"):
+        if not file_path.is_file():
+            continue
+        try:
+            stat = file_path.stat()
+        except OSError:
+            continue
+        total += stat.st_size
+        files += 1
+        if oldest is None or stat.st_mtime < oldest:
+            oldest = stat.st_mtime
+    oldest_label = (
+        datetime.fromtimestamp(oldest, timezone.utc).strftime("%Y-%m-%d")
+        if oldest
+        else ""
+    )
+    return {"bytes": total, "files": files, "oldest": oldest_label}
+
+
+def backup_safe_for_pruning(backup):
+    backup = backup or {}
+    return bool(
+        backup.get("enabled")
+        and backup.get("remote")
+        and backup.get("public_base_url")
+        and backup.get("last_status") == "success"
+        and backup.get("last_success_at")
+    )
+
+
+def delete_original_files_keep_thumbnails(paths):
+    deleted = 0
+    media_root = MEDIA_DIR.resolve()
+    for raw_path in paths:
+        try:
+            path = Path(raw_path).resolve()
+            path.relative_to(media_root)
+        except (OSError, ValueError):
+            continue
+        try:
+            relative_parts = path.relative_to(media_root).parts
+        except ValueError:
+            continue
+        if relative_parts and relative_parts[0] == "_thumbs":
+            continue
+        if path.is_file():
+            try:
+                path.unlink()
+                deleted += 1
+            except OSError:
+                pass
+    return deleted
+
+
+def prune_backed_up_originals(config_data, guild_id=None):
+    limits = config_data.get("limits") or {}
+    try:
+        retention_days = int(limits.get("local_original_retention_days") or 30)
+    except (TypeError, ValueError):
+        retention_days = 30
+    if retention_days <= 0:
+        return 0
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=retention_days)
+    ).isoformat()
+    deleted = 0
+    guilds = config_data.get("guilds") or {}
+    with closing(connect_db()) as connection:
+        for current_guild_id, guild_config in guilds.items():
+            if guild_id and str(current_guild_id) != str(guild_id):
+                continue
+            if not can_admin_access_guild(current_guild_id, config_data):
+                continue
+            if not backup_safe_for_pruning(guild_config.get("external_backup")):
+                continue
+            rows = connection.execute("""
+                SELECT media_paths, file_paths
+                FROM submissions
+                WHERE guild_id = ?
+                  AND status IN ('posted', 'removed')
+                  AND COALESCE(created_at, submitted_at, '') < ?
+            """, (str(current_guild_id), cutoff)).fetchall()
+            for row in rows:
+                deleted += delete_original_files_keep_thumbnails(
+                    split_values(row["media_paths"] or row["file_paths"])
+                )
+            game_rows = connection.execute("""
+                SELECT media_path
+                FROM guess_games
+                WHERE guild_id = ?
+                  AND status != 'active'
+                  AND COALESCE(started_at, '') < ?
+            """, (str(current_guild_id), cutoff)).fetchall()
+            for row in game_rows:
+                deleted += delete_original_files_keep_thumbnails([row["media_path"]])
+    return deleted
+
+
+def generate_missing_thumbnails(limit=5000):
+    generated = 0
+    media_root = MEDIA_DIR.resolve()
+    if not media_root.exists():
+        return 0
+    for file_path in media_root.rglob("*"):
+        if generated >= limit:
+            break
+        if not file_path.is_file():
+            continue
+        try:
+            relative_parts = file_path.resolve().relative_to(media_root).parts
+        except (OSError, ValueError):
+            continue
+        if relative_parts and relative_parts[0] == "_thumbs":
+            continue
+        if get_media_type(file_path.name) != "image":
+            continue
+        thumb_path = thumbnail_path_for_media(file_path)
+        if thumb_path and thumb_path.is_file():
+            continue
+        if create_media_thumbnail(file_path, file_path.name):
+            generated += 1
+    return generated
+
+
+def guild_storage_rows(config_data):
+    rows = []
+    for guild_id, guild_config in sorted((config_data.get("guilds") or {}).items()):
+        if not can_admin_access_guild(guild_id, config_data):
+            continue
+        guild_media = path_tree_stats(MEDIA_DIR / str(guild_id))
+        guild_thumbs = path_tree_stats(MEDIA_DIR / "_thumbs" / str(guild_id))
+        limits = guild_config.get("limits") or {}
+        try:
+            limit_bytes = int(
+                limits.get("storage_limit_bytes")
+                or (config_data.get("limits") or {}).get("guild_storage_limit_bytes")
+                or 0
+            )
+        except (TypeError, ValueError):
+            limit_bytes = 0
+        backup = {
+            **DEFAULT_GUILD_FIELDS["external_backup"],
+            **(guild_config.get("external_backup") or {}),
+        }
+        rows.append({
+            "guild_id": guild_id,
+            "name": (
+                guild_config.get("brand_name")
+                or guild_config.get("guild_name")
+                or f"Discord {guild_id}"
+            ),
+            "files": guild_media["files"],
+            "size_bytes": guild_media["bytes"],
+            "size_label": format_bytes(guild_media["bytes"]),
+            "thumbnail_files": guild_thumbs["files"],
+            "thumbnail_size_label": format_bytes(guild_thumbs["bytes"]),
+            "oldest": guild_media["oldest"] or "None",
+            "limit_label": format_bytes(limit_bytes) if limit_bytes else "No limit",
+            "limit_percent": (
+                round((guild_media["bytes"] / limit_bytes) * 100, 1)
+                if limit_bytes
+                else 0
+            ),
+            "backup": backup,
+            "safe_to_prune": backup_safe_for_pruning(backup),
+            "restore_command": (
+                f"rclone copy {backup.get('remote', '').rstrip('/')}/media "
+                f"{MEDIA_DIR / str(guild_id)}"
+                if backup.get("remote")
+                else ""
+            ),
+        })
+    return rows
+
+
+def restore_guild_media_from_remote(config_data, guild_id):
+    guild_config = (config_data.get("guilds") or {}).get(str(guild_id)) or {}
+    backup = guild_config.get("external_backup") or {}
+    remote = str(backup.get("remote") or "").strip().rstrip("/")
+    if not remote:
+        return False, "No remote is configured for that server."
+    if not can_admin_access_guild(guild_id, config_data):
+        abort(403)
+    destination = (MEDIA_DIR / str(guild_id)).resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.relative_to(MEDIA_DIR.resolve())
+    try:
+        result = subprocess.run(
+            [
+                "rclone",
+                "copy",
+                f"{remote}/media",
+                str(destination),
+                "--copy-links",
+                "--fast-list",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+    except FileNotFoundError:
+        return False, "rclone is not installed on this server."
+    except (OSError, subprocess.SubprocessError) as error:
+        return False, f"Restore failed: {error}"
+    if result.returncode != 0:
+        details = (result.stderr or result.stdout or "rclone failed").strip()
+        return False, details[-500:]
+    return True, f"Restored media for guild {guild_id} from {remote}/media."
+
+
 def prepare_post(row):
     post = dict(row)
     paths = split_values(post.get("media_paths") or post.get("file_paths"))
@@ -4695,6 +5338,12 @@ def prepare_post(row):
             size = int(size or 0)
         except (TypeError, ValueError):
             size = 0
+        original_path = (MEDIA_DIR / relative_path).resolve()
+        thumbnail_url = thumbnail_url_from_metadata(
+            metadata,
+            original_path,
+            names[index] if index < len(names) else Path(relative_path).name,
+        )
         media.append({
             "name": (
                 names[index]
@@ -4705,7 +5354,9 @@ def prepare_post(row):
                 metadata.get("media_type")
                 or (types[index] if index < len(types) else "unknown")
             ),
-            "url": media_url(relative_path),
+            "url": media_url(relative_path, post.get("guild_id")),
+            "thumbnail_url": thumbnail_url,
+            "local_original_available": original_path.is_file(),
             "size": size,
             "size_label": format_bytes(size) if size else "",
             "content_type": metadata.get("content_type") or "",
@@ -6071,7 +6722,11 @@ def admin_game_library():
             item.get("guild_id"),
             item.get("guild_id") or "Unknown",
         )
-        item["media_url"] = media_url(relative_path) if relative_path else ""
+        item["media_url"] = (
+            media_url(relative_path, item.get("guild_id"))
+            if relative_path
+            else ""
+        )
         item["size_label"] = format_bytes(size) if size else ""
         item["status"] = item.get("status") or "active"
         items.append(item)
@@ -6348,11 +7003,27 @@ def admin_settings():
                     "active_game_limit_per_guild",
                     "guild_storage_limit_bytes",
                     "offsite_backup_warning_hours",
+                    "local_original_retention_days",
+                    "thumbnail_max_dimension",
+                    "image_compression_quality",
+                    "archive_full_history_after_months",
                 ):
                     value = int(request.form.get(field, "0"))
                     if value < 0:
                         raise ValueError("Limits cannot be negative.")
                     limits[field] = value
+                if limits["thumbnail_max_dimension"] and not (
+                    160 <= limits["thumbnail_max_dimension"] <= 2048
+                ):
+                    raise ValueError(
+                        "Thumbnail max dimension must be between 160 and 2048."
+                    )
+                if limits["image_compression_quality"] and not (
+                    40 <= limits["image_compression_quality"] <= 95
+                ):
+                    raise ValueError(
+                        "Image compression quality must be between 40 and 95."
+                    )
                 restore_weekday = request.form.get(
                     "restore_test_weekday",
                     "sunday",
@@ -6368,6 +7039,9 @@ def admin_settings():
                 )
                 limits["orphan_media_cleanup_enabled"] = (
                     request.form.get("orphan_media_cleanup_enabled") == "1"
+                )
+                limits["image_compression_enabled"] = (
+                    request.form.get("image_compression_enabled") == "1"
                 )
             except ValueError as form_error:
                 return redirect(url_for(
@@ -6469,6 +7143,59 @@ def admin_settings():
                     guild_config["public_stats_enabled"] = (
                         request.form.get("public_stats_enabled") == "1"
                     )
+                    backup_remote = request.form.get(
+                        "external_backup_remote",
+                        "",
+                    ).strip()[:300]
+                    if any(character in backup_remote for character in "\r\n"):
+                        raise ValueError(
+                            "External backup remote cannot contain line breaks."
+                        )
+                    backup_public_base = request.form.get(
+                        "external_backup_public_base_url",
+                        "",
+                    ).strip().rstrip("/")[:300]
+                    if backup_public_base and not backup_public_base.startswith(
+                        ("https://", "http://")
+                    ):
+                        raise ValueError(
+                            "External backup public media URL must start with http:// or https://."
+                        )
+                    include_media = (
+                        request.form.get("external_backup_include_media") == "1"
+                    )
+                    delete_local_media = (
+                        request.form.get(
+                            "external_backup_delete_local_media_after_success"
+                        ) == "1"
+                    )
+                    if delete_local_media and not include_media:
+                        raise ValueError(
+                            "Local media cleanup requires media backup to be enabled."
+                        )
+                    backup_enabled = (
+                        request.form.get("external_backup_enabled") == "1"
+                    )
+                    if backup_enabled and not backup_remote:
+                        raise ValueError(
+                            "External backup remote is required when backups are enabled."
+                        )
+                    existing_backup = guild_config.get("external_backup") or {}
+                    guild_config["external_backup"] = {
+                        **DEFAULT_GUILD_FIELDS["external_backup"],
+                        **existing_backup,
+                        "enabled": backup_enabled,
+                        "provider": "rclone",
+                        "remote": backup_remote,
+                        "public_base_url": backup_public_base,
+                        "include_media": include_media,
+                        "include_database_export": (
+                            request.form.get(
+                                "external_backup_include_database_export"
+                            ) == "1"
+                        ),
+                        "delete_local_media_after_success": delete_local_media,
+                    }
                     guild_limits = guild_config.setdefault("limits", {})
                     for field, form_name in (
                         ("max_file_bytes", "guild_max_file_bytes"),
@@ -6587,6 +7314,10 @@ def admin_settings():
         guild_limits = guild_config.get("limits") or {}
         moderation = guild_config.get("moderation") or {}
         game_settings = guild_config.get("game_settings") or {}
+        external_backup = {
+            **DEFAULT_GUILD_FIELDS["external_backup"],
+            **(guild_config.get("external_backup") or {}),
+        }
         guilds.append({
             "id": guild_id,
             "name": (
@@ -6624,6 +7355,7 @@ def admin_settings():
                 **game_settings,
             },
             "public_stats_enabled": guild_config.get("public_stats_enabled", True),
+            "external_backup": external_backup,
             "game_summary_channel": guild_config.get("game_summary_channel"),
             "error_channel": guild_config.get("error_channel"),
             "admin_role_ids": " ".join(
@@ -6804,6 +7536,40 @@ def admin_maintenance():
                 notice=message,
                 error=0 if restored else 1,
             ))
+        if action in {"archive_history", "archive_history_delete"}:
+            delete_exported = action == "archive_history_delete"
+            try:
+                archive_path, row_count, cutoff = archive_old_submission_history(
+                    delete_exported=delete_exported,
+                )
+                archived = True
+                message = (
+                    f"Archived {row_count} old submission row(s) before "
+                    f"{cutoff} to {archive_path.name}."
+                )
+                if delete_exported:
+                    message += " Exported rows were removed from live submissions."
+            except (OSError, sqlite3.Error, ValueError) as archive_error:
+                archived = False
+                archive_path = None
+                message = f"History archive failed: {archive_error}"
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    "maintenance_archive_history",
+                    actor_id,
+                    actor_name,
+                    "history_archive",
+                    archive_path.name if archive_path else "",
+                    message,
+                )
+            return redirect(url_for(
+                "admin_maintenance",
+                key=ADMIN_KEY,
+                notice=message,
+                error=0 if archived else 1,
+            ))
 
     media_stats = media_directory_stats()
     config_data = load_config()
@@ -6824,6 +7590,31 @@ def admin_maintenance():
 
     bot_status = read_bot_status()
     maybe_notify_stale_bot(bot_status)
+    allowed_guild_ids = current_admin_allowed_guild_ids(config_data)
+    guild_backup_rows = []
+    for guild_id, guild_config in sorted((config_data.get("guilds") or {}).items()):
+        if allowed_guild_ids is not None and str(guild_id) not in allowed_guild_ids:
+            continue
+        backup = {
+            **DEFAULT_GUILD_FIELDS["external_backup"],
+            **(guild_config.get("external_backup") or {}),
+        }
+        if not (
+            backup.get("enabled")
+            or backup.get("remote")
+            or backup.get("last_status")
+            or backup.get("public_base_url")
+        ):
+            continue
+        guild_backup_rows.append({
+            "guild_id": guild_id,
+            "name": (
+                guild_config.get("brand_name")
+                or guild_config.get("guild_name")
+                or f"Discord {guild_id}"
+            ),
+            **backup,
+        })
 
     return render_template_string(
         MAINTENANCE_HTML,
@@ -6836,6 +7627,7 @@ def admin_maintenance():
         db_file=DB_FILE,
         db_size=format_bytes(DB_FILE.stat().st_size) if DB_FILE.exists() else "0 B",
         error=error,
+        guild_backup_rows=guild_backup_rows,
         media_files=media_stats["files"],
         media_size=format_bytes(media_stats["bytes"]),
         notice=notice,
@@ -6861,6 +7653,7 @@ def admin_media_cleanup():
     if request.method == "POST":
         require_csrf_token()
         action = request.form.get("action", "")
+        config_data = load_config()
         if action == "delete_orphans":
             deleted = delete_orphaned_media_files()
             with database() as connection:
@@ -6879,11 +7672,74 @@ def admin_media_cleanup():
                 key=ADMIN_KEY,
                 notice=f"Deleted {deleted} orphaned media file(s).",
             ))
+        if action == "generate_thumbnails":
+            generated = generate_missing_thumbnails()
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    "dashboard_generate_thumbnails",
+                    actor_id,
+                    actor_name,
+                    "media",
+                    "",
+                    f"Generated {generated} missing thumbnail(s).",
+                )
+            return redirect(url_for(
+                "admin_media_cleanup",
+                key=ADMIN_KEY,
+                notice=f"Generated {generated} missing thumbnail(s).",
+            ))
+        if action in {"prune_backed_up_originals", "prune_guild_originals"}:
+            guild_id = (
+                request.form.get("guild_id", "").strip()
+                if action == "prune_guild_originals"
+                else None
+            )
+            deleted = prune_backed_up_originals(config_data, guild_id)
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    guild_id,
+                    "dashboard_prune_backed_up_originals",
+                    actor_id,
+                    actor_name,
+                    "media",
+                    guild_id or "all",
+                    f"Pruned {deleted} backed-up original media file(s).",
+                )
+            return redirect(url_for(
+                "admin_media_cleanup",
+                key=ADMIN_KEY,
+                notice=f"Pruned {deleted} backed-up original media file(s).",
+            ))
+        if action == "restore_guild_media":
+            guild_id = request.form.get("guild_id", "").strip()
+            ok, message = restore_guild_media_from_remote(config_data, guild_id)
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    guild_id,
+                    "dashboard_restore_guild_media",
+                    actor_id,
+                    actor_name,
+                    "media",
+                    guild_id,
+                    message,
+                )
+            return redirect(url_for(
+                "admin_media_cleanup",
+                key=ADMIN_KEY,
+                notice=message,
+                error=0 if ok else 1,
+            ))
 
+    config_data = load_config()
     return render_template_string(
         MEDIA_CLEANUP_HTML,
         admin_key=ADMIN_KEY,
         csrf_token=get_csrf_token(),
+        guild_storage_rows=guild_storage_rows(config_data),
         notice=notice,
         report=media_cleanup_report(),
     )
@@ -7724,6 +8580,73 @@ def user_profile(user_id):
         monthly_points=monthly_points,
         posts=posts,
         profile=profile,
+        selected_guild_id=selected_server_id,
+    )
+
+
+@app.route("/my-submissions")
+@app.route("/me")
+def my_submissions():
+    config_data = load_config()
+    has_key = request.args.get("key") == ADMIN_KEY
+    is_admin = has_key and is_admin_logged_in()
+    if has_key and not is_admin:
+        return redirect(url_for(
+            "admin_login",
+            key=ADMIN_KEY,
+            next=request.full_path,
+        ))
+
+    search_query = (
+        request.args.get("q", "").strip()
+        or session.get("sdac_discord_user_id", "")
+    )
+    server_options = guild_options(config_data, public_only=not is_admin)
+    guild_names = guild_name_map(config_data)
+    selected_server_id = selected_guild_id(server_options)
+    visible_guild_ids = {option["id"] for option in server_options}
+    rows = []
+
+    if search_query:
+        where = []
+        parameters = []
+        if search_query.isdigit():
+            where.append("user_id = ?")
+            parameters.append(search_query)
+        else:
+            where.append("username LIKE ?")
+            parameters.append(f"%{search_query}%")
+        if not is_admin:
+            where.append("status = 'posted'")
+        if selected_server_id:
+            where.append("guild_id = ?")
+            parameters.append(selected_server_id)
+        elif not is_admin:
+            visible_filter, visible_params = guild_id_filter(
+                "guild_id",
+                visible_guild_ids,
+            )
+            where.append(visible_filter)
+            parameters.extend(visible_params)
+
+        with closing(connect_db()) as connection:
+            rows = connection.execute(f"""
+                SELECT id, guild_id, user_id, username, category, stars,
+                       status, created_at, submitted_at
+                FROM submissions
+                WHERE {" AND ".join(where)}
+                ORDER BY created_at DESC, id DESC
+                LIMIT 100
+            """, parameters).fetchall()
+
+    return render_template_string(
+        MY_SUBMISSIONS_HTML,
+        admin_key=ADMIN_KEY,
+        guild_names=guild_names,
+        guild_options=server_options,
+        is_admin=is_admin,
+        rows=rows,
+        search_query=search_query,
         selected_guild_id=selected_server_id,
     )
 

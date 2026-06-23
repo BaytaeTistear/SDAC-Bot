@@ -61,7 +61,16 @@ if [[ ! -f "$APP_DIR/config.json" ]]; then
         "database_warning_bytes": 536870912,
         "restore_test_enabled": true,
         "restore_test_weekday": "sunday",
-        "restore_test_time_utc": "03:30"
+        "restore_test_time_utc": "03:30",
+        "monthly_submission_limit_per_guild": 0,
+        "active_game_limit_per_guild": 0,
+        "guild_storage_limit_bytes": 0,
+        "offsite_backup_warning_hours": 72,
+        "local_original_retention_days": 30,
+        "thumbnail_max_dimension": 640,
+        "image_compression_enabled": false,
+        "image_compression_quality": 85,
+        "archive_full_history_after_months": 18
     }
 }
 JSON

@@ -82,6 +82,11 @@ DEFAULT_CONFIG = {
         "active_game_limit_per_guild": 0,
         "guild_storage_limit_bytes": 0,
         "offsite_backup_warning_hours": 72,
+        "local_original_retention_days": 30,
+        "thumbnail_max_dimension": 640,
+        "image_compression_enabled": False,
+        "image_compression_quality": 85,
+        "archive_full_history_after_months": 18,
     },
     "offsite_backup": {
         "provider": "",
@@ -1514,6 +1519,85 @@ def cleanup_orphaned_media(connection):
     return removed
 
 
+def parse_iso_datetime(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def guild_backup_safe_for_pruning(guild_config):
+    backup = guild_config.get("external_backup") or {}
+    return bool(
+        backup.get("enabled")
+        and backup.get("remote")
+        and backup.get("public_base_url")
+        and backup.get("last_status") == "success"
+        and backup.get("last_success_at")
+    )
+
+
+def delete_original_files_keep_thumbnails(paths):
+    removed = 0
+    media_root = MEDIA_DIR.resolve()
+    for raw_path in paths:
+        try:
+            path = Path(raw_path).resolve()
+            path.relative_to(media_root)
+        except (OSError, ValueError):
+            continue
+        try:
+            relative_parts = path.relative_to(media_root).parts
+        except ValueError:
+            continue
+        if relative_parts and relative_parts[0] == "_thumbs":
+            continue
+        if path.is_file():
+            try:
+                path.unlink()
+                removed += 1
+            except OSError:
+                pass
+    return removed
+
+
+def cleanup_old_local_originals(connection):
+    retention_days = configured_limit("local_original_retention_days", 30)
+    if retention_days <= 0:
+        return 0
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=retention_days)
+    ).isoformat()
+    removed = 0
+    guilds = config.get("guilds") or {}
+    for guild_id, guild_config in guilds.items():
+        if not guild_backup_safe_for_pruning(guild_config):
+            continue
+        rows = connection.execute("""
+            SELECT id, media_paths, file_paths
+            FROM submissions
+            WHERE guild_id = ?
+              AND status IN ('posted', 'removed')
+              AND COALESCE(created_at, submitted_at, '') < ?
+        """, (str(guild_id), cutoff)).fetchall()
+        for row in rows:
+            removed += delete_original_files_keep_thumbnails(
+                split_values(row["media_paths"] or row["file_paths"])
+            )
+        game_rows = connection.execute("""
+            SELECT media_path
+            FROM guess_games
+            WHERE guild_id = ?
+              AND status != 'active'
+              AND COALESCE(started_at, '') < ?
+        """, (str(guild_id), cutoff)).fetchall()
+        for row in game_rows:
+            removed += delete_original_files_keep_thumbnails([row["media_path"]])
+    return removed
+
+
 def cleanup_background_data():
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
@@ -1559,7 +1643,8 @@ def cleanup_background_data():
                 WHERE created_at IS NOT NULL AND created_at < ?
             """, (rate_limit_cutoff,))
         removed_media = cleanup_orphaned_media(connection)
-        if pending_rows or removed_media:
+        removed_originals = cleanup_old_local_originals(connection)
+        if pending_rows or removed_media or removed_originals:
             add_admin_audit_log(
                 connection,
                 None,
@@ -1570,7 +1655,8 @@ def cleanup_background_data():
                 "",
                 (
                     f"Removed {len(pending_rows)} stale pending submission(s) "
-                    f"and {removed_media} orphan media file(s)."
+                    f"{removed_media} orphan media file(s), and "
+                    f"{removed_originals} backed-up local original(s)."
                 ),
             )
 
@@ -1651,6 +1737,73 @@ def get_media_type(filename):
     return "unknown"
 
 
+def lifecycle_limit(name, default):
+    return configured_limit(name, default)
+
+
+def thumbnail_path_for_media(path):
+    try:
+        relative_path = Path(path).resolve().relative_to(MEDIA_DIR.resolve())
+    except (OSError, ValueError):
+        return None
+    if relative_path.parts and relative_path.parts[0] == "_thumbs":
+        return None
+    return (MEDIA_DIR / "_thumbs" / relative_path).with_suffix(".webp")
+
+
+def maybe_compress_image(path, filename):
+    if not config["limits"].get("image_compression_enabled", False):
+        return False
+    if get_media_type(filename) != "image":
+        return False
+    if Path(filename).suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+        return False
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return False
+    quality = max(40, min(95, lifecycle_limit("image_compression_quality", 85)))
+    image_path = Path(path)
+    try:
+        with Image.open(image_path) as image:
+            image = ImageOps.exif_transpose(image)
+            save_kwargs = {"optimize": True}
+            if image_path.suffix.lower() in {".jpg", ".jpeg", ".webp"}:
+                save_kwargs["quality"] = quality
+            if image_path.suffix.lower() in {".jpg", ".jpeg"}:
+                image = image.convert("RGB")
+            image.save(image_path, **save_kwargs)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def create_media_thumbnail(path, filename):
+    if get_media_type(filename) != "image":
+        return ""
+    if Path(filename).suffix.lower() == ".gif":
+        return ""
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return ""
+    thumb_path = thumbnail_path_for_media(path)
+    if thumb_path is None:
+        return ""
+    max_dimension = max(160, min(2048, lifecycle_limit("thumbnail_max_dimension", 640)))
+    try:
+        thumb_path.parent.mkdir(parents=True, exist_ok=True)
+        with Image.open(path) as image:
+            image = ImageOps.exif_transpose(image)
+            image.thumbnail((max_dimension, max_dimension))
+            if image.mode not in {"RGB", "RGBA"}:
+                image = image.convert("RGB")
+            image.save(thumb_path, "WEBP", quality=82, method=4)
+        return str(thumb_path)
+    except (OSError, ValueError):
+        return ""
+
+
 def format_bytes(size):
     if size < 1024:
         return f"{size} B"
@@ -1690,6 +1843,23 @@ def storage_warning_lines():
             f"Database is {format_bytes(database_size)} "
             f"(warning at {format_bytes(database_limit)})."
         )
+    for guild_id, guild_config in sorted((config.get("guilds") or {}).items()):
+        limit = guild_storage_limit(guild_config)
+        if not limit:
+            limit = configured_limit("guild_storage_limit_bytes", 0)
+        if not limit:
+            continue
+        used = guild_media_size(guild_id)
+        if used >= limit * 0.8:
+            guild_name = (
+                guild_config.get("brand_name")
+                or guild_config.get("guild_name")
+                or f"Discord {guild_id}"
+            )
+            lines.append(
+                f"{guild_name} media storage is {format_bytes(used)} / "
+                f"{format_bytes(limit)} ({(used / limit) * 100:.1f}%)."
+            )
     return lines
 
 
@@ -1726,13 +1896,18 @@ def probe_media_duration(path):
 
 def attachment_metadata(attachment, path):
     media_type = get_media_type(attachment.filename)
+    try:
+        size = Path(path).stat().st_size
+    except OSError:
+        size = int(attachment.size or 0)
     metadata = {
         "filename": attachment.filename,
         "media_type": media_type,
-        "size": int(attachment.size or 0),
-        "size_label": format_bytes(int(attachment.size or 0)),
+        "size": int(size or 0),
+        "size_label": format_bytes(int(size or 0)),
         "content_type": getattr(attachment, "content_type", "") or "",
         "duration_seconds": None,
+        "thumbnail_path": create_media_thumbnail(path, attachment.filename),
     }
     if media_type in {"audio", "video"}:
         metadata["duration_seconds"] = probe_media_duration(path)
@@ -1752,6 +1927,7 @@ def stored_media_metadata(filename, path, content_type=""):
         "size_label": format_bytes(int(size or 0)),
         "content_type": content_type or "",
         "duration_seconds": None,
+        "thumbnail_path": create_media_thumbnail(path, filename),
     }
     if media_type in {"audio", "video"}:
         metadata["duration_seconds"] = probe_media_duration(path)
@@ -1782,6 +1958,9 @@ def cleanup_files(paths):
             resolved.relative_to(MEDIA_DIR.resolve())
             if resolved.is_file():
                 resolved.unlink()
+            thumb_path = thumbnail_path_for_media(resolved)
+            if thumb_path and thumb_path.is_file():
+                thumb_path.unlink()
         except (OSError, ValueError):
             continue
 
@@ -2016,6 +2195,41 @@ def guild_media_size(guild_id):
         except OSError:
             pass
     return total
+
+
+def submission_guidance_lines(guild_id, guild_config):
+    moderation = guild_moderation(guild_config)
+    allowed_types = moderation.get("allowed_media_types") or [
+        "image",
+        "video",
+        "audio",
+    ]
+    storage_limit = guild_storage_limit(guild_config)
+    storage_used = guild_media_size(guild_id)
+    lines = [
+        f"Accepted media: `{', '.join(allowed_types)}`.",
+        f"Max per file: `{format_bytes(guild_max_file_bytes(guild_config))}`.",
+        f"Max per submission: `{format_bytes(guild_max_total_bytes(guild_config))}`.",
+        "Files per submission: `1-5`.",
+    ]
+    if storage_limit:
+        remaining = max(0, storage_limit - storage_used)
+        percent = (storage_used / storage_limit) * 100 if storage_limit else 0
+        lines.append(
+            f"Server storage: `{format_bytes(storage_used)} / "
+            f"{format_bytes(storage_limit)}` ({percent:.1f}%, "
+            f"{format_bytes(remaining)} free)."
+        )
+    if config["limits"].get("image_compression_enabled", False):
+        lines.append(
+            "Large JPEG/PNG/WebP images may be compressed after upload."
+        )
+    retention_days = configured_limit("local_original_retention_days", 30)
+    if retention_days > 0 and guild_backup_safe_for_pruning(guild_config):
+        lines.append(
+            f"Older originals may move to remote storage after {retention_days} day(s)."
+        )
+    return lines
 
 
 def current_month_submission_count(connection, guild_id, guild_config):
@@ -5372,10 +5586,15 @@ async def create_submission(source_message, category):
             )
             path = user_folder / filename
             await attachment.save(path)
+            maybe_compress_image(path, attachment.filename)
+            try:
+                stored_size = path.stat().st_size
+            except OSError:
+                stored_size = int(attachment.size or 0)
             saved_paths.append(str(path))
             media_names.append(attachment.filename)
             media_types.append(get_media_type(attachment.filename))
-            media_sizes.append(str(int(attachment.size or 0)))
+            media_sizes.append(str(int(stored_size or 0)))
             media_metadata.append(attachment_metadata(attachment, path))
 
         status = "pending" if approval_channel else "posted"
@@ -5654,11 +5873,16 @@ async def submit(interaction, category: str):
         return
 
     active_submission_sessions.add(session_key)
+    guidance = "\n".join(
+        f"- {line}"
+        for line in submission_guidance_lines(interaction.guild_id, guild_config)
+    )
     await interaction.response.send_message(
         "**Step 2 of 3: Send your content**\n"
         "Send one normal message in this channel with at least one image, "
         "audio, or video attachment. Text is optional. You can attach up "
         "to 5 files.\n\n"
+        f"{guidance}\n\n"
         "You have 5 minutes.",
         ephemeral=True,
     )
@@ -5695,7 +5919,8 @@ async def submit(interaction, category: str):
             await interaction.edit_original_response(
                 content=(
                     f"**Step 2 of 3: Try again**\n{validation_error}\n\n"
-                    "Send another message with valid text and/or media."
+                    "Send another message with valid text and/or media.\n\n"
+                    f"{guidance}"
                 )
             )
     except asyncio.TimeoutError:
@@ -5887,6 +6112,7 @@ async def startgame(
 
     try:
         await media.save(media_path)
+        maybe_compress_image(media_path, media.filename)
         media_metadata = attachment_metadata(media, media_path)
         discord_file = discord.File(media_path, filename=media.filename)
         game_lines = ["**Guessing Game Started**"]
@@ -6227,6 +6453,7 @@ async def startlibrarygame(
 
     try:
         shutil.copy2(source_path, media_path)
+        maybe_compress_image(media_path, media_name)
         try:
             stored_metadata = json.loads(item["media_metadata_json"] or "{}")
         except (TypeError, json.JSONDecodeError):

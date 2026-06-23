@@ -1,3 +1,63 @@
+# SDAC Bot Version 2.7.3 Experimental
+
+Date: 2026-06-23
+
+Version 2.7.3 is an experimental storage and usability build.
+
+Included:
+
+- generated WebP thumbnails for images when Pillow is installed
+- lightweight public gallery image loading with thumbnail-first previews
+- optional image compression controls for JPEG/PNG/WebP uploads
+- `/submit` guidance showing accepted media, file limits, storage remaining,
+  compression status, and retention behavior
+- per-server storage dashboard under `/admin/media`
+- backup health badges, prune buttons, and rclone restore buttons for each
+  server with a configured backup remote
+- automatic cleanup of old local originals after successful per-server backup
+  and public media URL setup, while keeping thumbnails local
+- manual dashboard action to generate missing thumbnails for older uploads
+- `/my-submissions` and `/me` page for users to find their public submissions
+- old-history archive actions in Maintenance that preserve monthly top 10
+  snapshots before optional live-row removal
+- `scripts/archive_old_history.py` and `scripts/restore_guild_media_rclone.sh`
+- updated installer defaults, requirements, README, and release assets
+
+Release channel:
+
+- `version-2.7.3` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+---
+
+# SDAC Bot Version 2.7.2 Experimental
+
+Date: 2026-06-23
+
+Version 2.7.2 is an experimental per-server backup build.
+
+Included:
+
+- per-server external backup settings in `config.json`
+- new `/setserverbackup` and `/serverbackupstatus` Discord admin commands
+- dashboard Settings fields for each guild's backup remote, public media URL,
+  backup includes, and local media cleanup switch
+- Maintenance page status table for per-server backup targets
+- `scripts/backup_guild_offsite.sh` for guild-scoped config/database exports,
+  guild media rclone copies, status recording, and optional local guild media
+  cleanup after successful backup
+- per-guild public media URL support for dashboard media links
+- installer payload and README updates for the new backup workflow
+
+Release channel:
+
+- `version-2.7.2` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+---
+
 # SDAC Bot Version 2.7.1 Experimental
 
 Date: 2026-06-23

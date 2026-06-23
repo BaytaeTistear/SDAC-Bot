@@ -27,6 +27,9 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - Public user profiles and submission reports
 - Moderation queue bulk review and submission review flags
 - Media cleanup dashboard for orphaned, missing, and oversized media
+- Lightweight gallery mode with generated thumbnails and remote-original badges
+- Media lifecycle controls for local original retention, thumbnail size, image
+  compression, backed-up original pruning, and old-history archives
 - Submission/game analytics dashboard with recent game answer history
 - Maintenance page for backups, backup downloads, release status, restore tests,
   backup checksums, storage warnings, config backup restore, bot heartbeat
@@ -48,6 +51,8 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
   plus `scripts/sync_media_rclone.sh`
 - Per-server rclone backup targets with optional public media URL prefixes,
   guild-scoped database exports, and opt-in local guild media cleanup
+- Per-server storage dashboard with restore/prune buttons and backup health
+  badges
 - Docker and Docker Compose files for easier self-hosting
 - PostgreSQL export tooling and experimental `SDAC_DATABASE_URL` runtime mode
 - New-server welcome message that points admins to `/setup`
@@ -263,6 +268,32 @@ the same guild config. If `delete_local_media_after_success` is enabled, local
 media for that guild is pruned only after rclone finishes successfully. Keep
 that option disabled unless the remote media is also reachable through a public
 URL or you are comfortable restoring media manually.
+
+Restore one server's media from its configured rclone remote:
+
+```bash
+SDAC_GUILD_ID=123456789 bash scripts/restore_guild_media_rclone.sh
+```
+
+Archive old full submission history while preserving monthly top 10 snapshots:
+
+```bash
+venv/bin/python scripts/archive_old_history.py --months 18
+```
+
+Archive and remove exported full rows from the live `submissions` table:
+
+```bash
+venv/bin/python scripts/archive_old_history.py --months 18 --delete-exported
+```
+
+The dashboard also exposes these operations under:
+
+```text
+/admin/media?key=ImTheBestAdmin
+/admin/maintenance?key=ImTheBestAdmin
+/my-submissions
+```
 
 ### Database Migrations
 
