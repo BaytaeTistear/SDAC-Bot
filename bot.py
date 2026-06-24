@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -87,6 +88,9 @@ DEFAULT_CONFIG = {
         "image_compression_enabled": False,
         "image_compression_quality": 85,
         "archive_full_history_after_months": 18,
+        "spam_review_threshold": 40,
+        "spam_burst_count": 5,
+        "spam_burst_window_minutes": 10,
     },
     "offsite_backup": {
         "provider": "",
@@ -150,6 +154,10 @@ DEFAULT_GUILD_CONFIG = {
         "require_approval_for_new_users": False,
         "new_user_days": 7,
         "spoiler_requires_approval": False,
+        "duplicate_requires_approval": True,
+        "spam_burst_count": 5,
+        "spam_burst_window_minutes": 10,
+        "spam_review_threshold": 40,
     },
     "game_settings": {
         "reuse_cooldown_days": 30,
@@ -237,6 +245,7 @@ REQUIRED_TABLES = {
     "moderation_history",
     "admin_audit_log",
     "admin_notifications",
+    "background_jobs",
     "backup_integrity",
     "daily_runs",
     "dashboard_admin_users",
@@ -258,6 +267,8 @@ REQUIRED_TABLES = {
     "support_bundles",
     "content_moderation_events",
     "offsite_backup_runs",
+    "privacy_actions",
+    "media_fingerprints",
 }
 
 NOTIFICATION_EVENT_LABELS = {
@@ -563,6 +574,22 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS background_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_type TEXT,
+                guild_id TEXT,
+                status TEXT DEFAULT 'queued',
+                requested_by TEXT,
+                requested_by_name TEXT,
+                payload_json TEXT,
+                result_json TEXT,
+                error TEXT,
+                created_at TEXT,
+                started_at TEXT,
+                finished_at TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS dashboard_admin_users (
                 username TEXT PRIMARY KEY,
                 password_hash TEXT NOT NULL,
@@ -804,6 +831,30 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS media_fingerprints (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                media_hash TEXT,
+                guild_id TEXT,
+                submission_id INTEGER,
+                media_path TEXT,
+                media_name TEXT,
+                size_bytes INTEGER DEFAULT 0,
+                created_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS privacy_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                user_id TEXT,
+                action TEXT,
+                actor_user_id TEXT,
+                actor_username TEXT,
+                details_json TEXT,
+                created_at TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS schema_version (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 version INTEGER NOT NULL,
@@ -828,6 +879,9 @@ def initialize_database():
             "media_types": "TEXT",
             "media_sizes": "TEXT",
             "media_metadata_json": "TEXT",
+            "media_hashes": "TEXT",
+            "spam_score": "INTEGER DEFAULT 0",
+            "spam_reasons_json": "TEXT",
             "stars": "INTEGER DEFAULT 0",
             "voters": "TEXT DEFAULT ''",
             "status": "TEXT DEFAULT 'posted'",
@@ -914,6 +968,26 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_submissions_repost
             ON submissions (repost_message_id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submissions_user_created
+            ON submissions (guild_id, user_id, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_background_jobs_status_created
+            ON background_jobs (status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_background_jobs_guild_created
+            ON background_jobs (guild_id, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_media_fingerprints_guild_hash
+            ON media_fingerprints (guild_id, media_hash)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_privacy_actions_guild_user_created
+            ON privacy_actions (guild_id, user_id, created_at)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_guess_games_active
@@ -1940,6 +2014,130 @@ def split_values(raw_value):
     return [value for value in raw_value.split(";") if value]
 
 
+def file_sha256(path):
+    digest = hashlib.sha256()
+    try:
+        with Path(path).open("rb") as file:
+            for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return ""
+    return digest.hexdigest()
+
+
+def dynamic_placeholders(values):
+    return ",".join("?" for _ in values)
+
+
+def configured_moderation_int(guild_config, key, fallback):
+    moderation = guild_config.get("moderation") or {}
+    limits = config.get("limits") or {}
+    try:
+        value = moderation.get(key, limits.get(key, fallback))
+        return int(value)
+    except (TypeError, ValueError):
+        return int(fallback)
+
+
+def submission_spam_signal(connection, guild_id, user_id, guild_config, media_hashes, source_message):
+    moderation = guild_config.get("moderation") or {}
+    unique_hashes = sorted({item for item in media_hashes if item})
+    score = 0
+    reasons = []
+
+    if unique_hashes and moderation.get("duplicate_requires_approval", True):
+        placeholders = dynamic_placeholders(unique_hashes)
+        duplicate_rows = connection.execute(f"""
+            SELECT media_hash, submission_id, media_name
+            FROM media_fingerprints
+            WHERE guild_id = ?
+              AND media_hash IN ({placeholders})
+            LIMIT 5
+        """, [str(guild_id)] + unique_hashes).fetchall()
+        if duplicate_rows:
+            score += 40
+            duplicate_ids = sorted({
+                str(row["submission_id"])
+                for row in duplicate_rows
+                if row["submission_id"] is not None
+            })
+            if duplicate_ids:
+                reasons.append(
+                    "duplicate media seen in submission(s) "
+                    + ", ".join(duplicate_ids[:3])
+                )
+            else:
+                reasons.append("duplicate media fingerprint")
+
+    burst_count = configured_moderation_int(
+        guild_config,
+        "spam_burst_count",
+        5,
+    )
+    burst_window = configured_moderation_int(
+        guild_config,
+        "spam_burst_window_minutes",
+        10,
+    )
+    if burst_count > 0 and burst_window > 0:
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(minutes=burst_window)
+        ).isoformat()
+        recent_count = connection.execute("""
+            SELECT COUNT(*)
+            FROM submissions
+            WHERE guild_id = ?
+              AND user_id = ?
+              AND COALESCE(created_at, submitted_at, '') >= ?
+              AND status != 'removed'
+        """, (str(guild_id), str(user_id), cutoff)).fetchone()[0]
+        if recent_count >= burst_count:
+            score += 25
+            reasons.append(
+                f"{recent_count} recent submission(s) in {burst_window} minutes"
+            )
+
+    created_at = getattr(source_message.author, "created_at", None)
+    if created_at and moderation.get("require_approval_for_new_users"):
+        account_age = datetime.now(timezone.utc) - created_at
+        new_user_days = configured_moderation_int(
+            guild_config,
+            "new_user_days",
+            7,
+        )
+        if account_age < timedelta(days=max(1, new_user_days)):
+            score += 15
+            reasons.append(f"account newer than {new_user_days} day(s)")
+
+    return score, reasons
+
+
+def register_media_fingerprints(connection, guild_id, submission_id, paths, names, hashes, sizes):
+    now = utc_now_iso()
+    for index, media_hash in enumerate(hashes):
+        if not media_hash:
+            continue
+        try:
+            size_bytes = int(sizes[index]) if index < len(sizes) else 0
+        except (TypeError, ValueError):
+            size_bytes = 0
+        connection.execute("""
+            INSERT INTO media_fingerprints (
+                media_hash, guild_id, submission_id, media_path,
+                media_name, size_bytes, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            media_hash,
+            str(guild_id),
+            submission_id,
+            paths[index] if index < len(paths) else "",
+            names[index] if index < len(names) else "",
+            size_bytes,
+            now,
+        ))
+
+
 def get_voters(raw_value):
     if not raw_value:
         return set()
@@ -2497,6 +2695,23 @@ async def category_autocomplete(interaction, current):
 
 def channel_display(channel_id):
     return f"<#{channel_id}>" if channel_id else "Not set"
+
+
+def bot_invite_url():
+    client_id = (
+        os.getenv("SDAC_BOT_CLIENT_ID")
+        or os.getenv("DISCORD_CLIENT_ID")
+        or (str(bot.user.id) if bot.user else "")
+    )
+    if not client_id:
+        return ""
+    permissions = os.getenv("SDAC_BOT_PERMISSIONS", "274878221376")
+    return (
+        "https://discord.com/api/oauth2/authorize"
+        f"?client_id={client_id}"
+        f"&permissions={permissions}"
+        "&scope=bot%20applications.commands"
+    )
 
 
 def settings_lines(guild_config):
@@ -4667,6 +4882,67 @@ async def checkpermissions(
     )
 
 
+@tree.command(name="repairpermissions", description="Show missing SDAC bot permissions and repair link")
+@app_commands.guild_only()
+async def repairpermissions(interaction):
+    if not await require_admin(interaction):
+        return
+
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    channel_ids = configured_channel_ids(guild_config)
+    if not channel_ids and isinstance(interaction.channel, discord.TextChannel):
+        channel_ids.append(interaction.channel.id)
+
+    lines = ["**SDAC Permission Repair**"]
+    missing_count = 0
+    if not channel_ids:
+        lines.append("No configured channels are set yet. Run `/setup` first.")
+
+    seen = set()
+    for channel_id in channel_ids:
+        if str(channel_id) in seen:
+            continue
+        seen.add(str(channel_id))
+        guild_channel = await resolve_guild_channel(
+            interaction.guild,
+            channel_id,
+        )
+        if guild_channel is None:
+            missing_count += 1
+            lines.append(
+                f"- `{channel_id}`: I cannot see this channel. Check View Channel."
+            )
+            continue
+        summary = bot_permission_summary(interaction.guild, guild_channel)
+        if summary != "OK":
+            missing_count += 1
+        lines.append(f"- {guild_channel.mention}: {summary}")
+
+    invite_url = bot_invite_url()
+    lines.append("")
+    if missing_count:
+        lines.append(
+            "Fix by editing the channel/role overwrite for the bot, or "
+            "re-authorize it with the permissions integer from your setup."
+        )
+    else:
+        lines.append("No missing SDAC channel permissions were found.")
+    if invite_url:
+        lines.append(f"Re-authorize link: {invite_url}")
+
+    audit_interaction(
+        interaction,
+        "repair_permissions",
+        "guild",
+        interaction.guild_id,
+        f"Checked {len(seen)} channel(s); {missing_count} issue(s).",
+    )
+    await interaction.response.send_message(
+        "\n".join(lines)[:1900],
+        ephemeral=True,
+    )
+
+
 @tree.command(name="setweeklychannel", description="Set weekly top channel")
 @app_commands.guild_only()
 async def setweeklychannel(
@@ -5098,13 +5374,14 @@ async def setmoderation(
         if item.strip()
     ][:100]
     guild_config = get_guild_config(interaction.guild_id)
-    guild_config["moderation"] = {
+    moderation = guild_config.setdefault("moderation", {})
+    moderation.update({
         "blocked_words": words,
         "allowed_media_types": media_types or ["image", "video", "audio"],
         "require_approval_for_new_users": bool(require_approval_for_new_users),
         "new_user_days": int(new_user_days),
         "spoiler_requires_approval": bool(spoiler_requires_approval),
-    }
+    })
     save_config(config)
     audit_interaction(
         interaction,
@@ -5575,6 +5852,7 @@ async def create_submission(source_message, category):
     media_types = []
     media_sizes = []
     media_metadata = []
+    media_hashes = []
     created_message = None
     submission_id = None
 
@@ -5595,19 +5873,54 @@ async def create_submission(source_message, category):
             media_names.append(attachment.filename)
             media_types.append(get_media_type(attachment.filename))
             media_sizes.append(str(int(stored_size or 0)))
-            media_metadata.append(attachment_metadata(attachment, path))
+            metadata = attachment_metadata(attachment, path)
+            media_hash = file_sha256(path)
+            if media_hash:
+                metadata["sha256"] = media_hash
+            media_hashes.append(media_hash)
+            media_metadata.append(metadata)
 
         status = "pending" if approval_channel else "posted"
+        spam_score = 0
+        spam_reasons = []
         with database() as connection:
+            spam_score, spam_reasons = submission_spam_signal(
+                connection,
+                source_message.guild.id,
+                source_message.author.id,
+                guild_config,
+                media_hashes,
+                source_message,
+            )
+            spam_threshold = configured_moderation_int(
+                guild_config,
+                "spam_review_threshold",
+                40,
+            )
+            if spam_score >= spam_threshold:
+                moderation_approval = True
+                moderation_reason = "; ".join(spam_reasons[:3])
+                if approval_channel is None and feature_enabled(
+                    guild_config,
+                    "approval_queue",
+                ):
+                    approval_channel_id = guild_config.get("approval_channel")
+                    approval_channel = (
+                        bot.get_channel(approval_channel_id)
+                        if approval_channel_id
+                        else None
+                    )
+                status = "pending" if approval_channel else "posted"
             cursor = connection.execute("""
                 INSERT INTO submissions (
                     guild_id, original_message_id, repost_channel_id,
                     user_id, username, category, message_text,
                     file_paths, media_paths, media_names, media_types,
-                    media_sizes, media_metadata_json,
+                    media_sizes, media_metadata_json, media_hashes,
+                    spam_score, spam_reasons_json,
                     stars, voters, status, submitted_at, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?)
             """, (
                 str(source_message.guild.id),
                 str(source_message.id),
@@ -5622,11 +5935,23 @@ async def create_submission(source_message, category):
                 ";".join(media_types),
                 ";".join(media_sizes),
                 json.dumps(media_metadata, separators=(",", ":")),
+                ";".join(media_hashes),
+                int(spam_score),
+                json.dumps(spam_reasons, separators=(",", ":")),
                 status,
                 utc_now_iso(),
                 utc_now_iso(),
             ))
             submission_id = cursor.lastrowid
+            register_media_fingerprints(
+                connection,
+                source_message.guild.id,
+                submission_id,
+                saved_paths,
+                media_names,
+                media_hashes,
+                media_sizes,
+            )
             row = connection.execute(
                 "SELECT * FROM submissions WHERE id = ?",
                 (submission_id,),
@@ -5700,6 +6025,10 @@ async def create_submission(source_message, category):
             with database() as connection:
                 connection.execute(
                     "DELETE FROM submissions WHERE id = ?",
+                    (submission_id,),
+                )
+                connection.execute(
+                    "DELETE FROM media_fingerprints WHERE submission_id = ?",
                     (submission_id,),
                 )
         cleanup_files(saved_paths)

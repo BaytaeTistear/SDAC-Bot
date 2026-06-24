@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import sqlite3
 
 
-DATABASE_SCHEMA_VERSION = 9
+DATABASE_SCHEMA_VERSION = 10
 
 
 def utc_now_iso():
@@ -363,6 +363,71 @@ def migration_9_production_operations(connection):
     """)
 
 
+def migration_10_jobs_duplicates_and_privacy(connection):
+    ensure_column(connection, "submissions", "media_hashes", "TEXT")
+    ensure_column(connection, "submissions", "spam_score", "INTEGER DEFAULT 0")
+    ensure_column(connection, "submissions", "spam_reasons_json", "TEXT")
+
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS background_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_type TEXT,
+            guild_id TEXT,
+            status TEXT DEFAULT 'queued',
+            requested_by TEXT,
+            requested_by_name TEXT,
+            payload_json TEXT,
+            result_json TEXT,
+            error TEXT,
+            created_at TEXT,
+            started_at TEXT,
+            finished_at TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_background_jobs_status_created
+        ON background_jobs (status, created_at)
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_background_jobs_guild_created
+        ON background_jobs (guild_id, created_at)
+    """)
+
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS media_fingerprints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            media_hash TEXT,
+            guild_id TEXT,
+            submission_id INTEGER,
+            media_path TEXT,
+            media_name TEXT,
+            size_bytes INTEGER DEFAULT 0,
+            created_at TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_media_fingerprints_guild_hash
+        ON media_fingerprints (guild_id, media_hash)
+    """)
+
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS privacy_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT,
+            user_id TEXT,
+            action TEXT,
+            actor_user_id TEXT,
+            actor_username TEXT,
+            details_json TEXT,
+            created_at TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_privacy_actions_guild_user_created
+        ON privacy_actions (guild_id, user_id, created_at)
+    """)
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -371,6 +436,7 @@ MIGRATIONS = (
     (7, migration_7_operations_tables),
     (8, migration_8_multi_server_and_answer_history),
     (9, migration_9_production_operations),
+    (10, migration_10_jobs_duplicates_and_privacy),
 )
 
 

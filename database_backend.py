@@ -9,6 +9,7 @@ ID_TABLES = {
     "category_history",
     "moderation_history",
     "admin_audit_log",
+    "background_jobs",
     "setup_test_runs",
     "admin_notifications",
     "game_seasons",
@@ -16,11 +17,13 @@ ID_TABLES = {
     "guess_library_items",
     "guess_answer_history",
     "guess_points",
+    "media_fingerprints",
     "rate_limit_events",
     "submission_reports",
     "support_bundles",
     "content_moderation_events",
     "offsite_backup_runs",
+    "privacy_actions",
 }
 
 

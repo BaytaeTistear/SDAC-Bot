@@ -12,6 +12,7 @@ import sqlite3
 import secrets
 import subprocess
 import tempfile
+import threading
 import time
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
@@ -118,6 +119,9 @@ DEFAULT_LIMITS = {
     "image_compression_enabled": False,
     "image_compression_quality": 85,
     "archive_full_history_after_months": 18,
+    "spam_review_threshold": 40,
+    "spam_burst_count": 5,
+    "spam_burst_window_minutes": 10,
 }
 
 DEFAULT_OFFSITE_BACKUP = {
@@ -211,6 +215,10 @@ DEFAULT_GUILD_FIELDS = {
         "require_approval_for_new_users": False,
         "new_user_days": 7,
         "spoiler_requires_approval": False,
+        "duplicate_requires_approval": True,
+        "spam_burst_count": 5,
+        "spam_burst_window_minutes": 10,
+        "spam_review_threshold": 40,
     },
     "game_settings": {
         "reuse_cooldown_days": 30,
@@ -233,6 +241,8 @@ GUILD_MEDIA_BASE_CACHE = {
     "mtime": None,
     "bases": {},
 }
+BACKGROUND_JOB_THREADS = {}
+BACKGROUND_JOB_LOCK = threading.Lock()
 
 
 HTML = """
@@ -453,6 +463,7 @@ HTML = """
         <a href="{{ url_for('index', key=admin_key if is_admin else None) }}">Submissions</a>
         <a href="{{ url_for('my_submissions', key=admin_key if is_admin else None) }}">My submissions</a>
         <a href="{{ url_for('servers') }}">Servers</a>
+        <a href="{{ url_for('setup_guide') }}">Setup guide</a>
         <a href="{{ url_for('guessing_leaderboard', key=admin_key if is_admin else None) }}">Guessing leaderboard</a>
         <a href="{{ url_for('achievements', key=admin_key if is_admin else None) }}">Achievements</a>
         {% if is_admin %}
@@ -461,6 +472,8 @@ HTML = """
             <a href="{{ url_for('admin_seasons', key=admin_key) }}">Seasons</a>
             <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
             <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
+            <a href="{{ url_for('admin_jobs', key=admin_key) }}">Jobs</a>
+            <a href="{{ url_for('admin_privacy', key=admin_key) }}">Privacy</a>
             <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
             <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
             <a href="{{ url_for('admin_logout') }}">Log out</a>
@@ -541,6 +554,9 @@ HTML = """
                                 &middot; <span class="stars">{{ post.stars or 0 }} votes</span>
                                 {% if is_admin %}
                                     <span class="status status-{{ post.status }}">{{ post.status }}</span>
+                                    {% if post.spam_score %}
+                                        <span class="status status-pending" title="{{ post.spam_reasons|join('; ') }}">score {{ post.spam_score }}</span>
+                                    {% endif %}
                                 {% endif %}
                             </div>
                             {% if is_admin %}
@@ -600,7 +616,16 @@ HTML = """
                                             <strong>{{ item.name }}</strong><br>
                                             <span class="pill">{{ item.type }}</span>
                                             {% if item.size_label %}<span class="pill">{{ item.size_label }}</span>{% endif %}
-                                            {% if not item.local_original_available %}<span class="pill">remote original</span>{% endif %}
+                                            {% if not item.local_original_available %}
+                                                <span class="pill">remote original</span>
+                                                {% if is_admin and post.guild_id %}
+                                                    <form method="post" action="{{ url_for('admin_media_cleanup', key=admin_key) }}">
+                                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                                        <input type="hidden" name="guild_id" value="{{ post.guild_id }}">
+                                                        <button type="submit" name="action" value="restore_guild_media">Restore Server Media</button>
+                                                    </form>
+                                                {% endif %}
+                                            {% endif %}
                                             {% if item.content_type %}<span class="pill">{{ item.content_type }}</span>{% endif %}
                                             {% if item.duration_label %}<span class="pill">{{ item.duration_label }}</span>{% endif %}
                                         </div>
@@ -952,12 +977,13 @@ AUDIT_HTML = """
             justify-content: center;
             margin-bottom: 24px;
         }
-        input, select, button {
+        input, select, button, textarea {
             border: 1px solid #30333b;
             border-radius: 7px;
             font-size: 15px;
             padding: 9px 10px;
         }
+        textarea { box-sizing: border-box; min-height: 120px; width: 100%; }
         button {
             background: #7c9cff;
             color: #0b1020;
@@ -1053,6 +1079,7 @@ GUESSING_HTML = """
         a { color: #7c9cff; }
         nav {
             display: flex;
+            flex-wrap: wrap;
             gap: 14px;
             justify-content: center;
             margin-bottom: 24px;
@@ -1539,6 +1566,8 @@ GAME_LIBRARY_HTML = """
         <a href="{{ url_for('admin_media_cleanup', key=admin_key) }}">Media</a>
         <a href="{{ url_for('admin_analytics', key=admin_key) }}">Analytics</a>
         <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
+        <a href="{{ url_for('admin_jobs', key=admin_key) }}">Jobs</a>
+        <a href="{{ url_for('admin_privacy', key=admin_key) }}">Privacy</a>
         <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
@@ -1798,6 +1827,14 @@ SETTINGS_HTML = """
         .notice.error { border-color: #e45d68; }
         .muted { color: #a8adb8; }
         code { color: #cdd7ff; }
+        @media (max-width: 760px) {
+            body { padding: 12px; }
+            input, select, button, textarea { box-sizing: border-box; width: 100%; }
+            table, thead, tbody, tr, th, td { display: block; }
+            thead { display: none; }
+            tr { border-bottom: 1px solid #30333b; padding: 10px 0; }
+            th, td { border-bottom: 0; padding: 6px 0; }
+        }
     </style>
 </head>
 <body>
@@ -2019,6 +2056,9 @@ SETTINGS_HTML = """
                     <tr><th>Thumbnail max dimension</th><td><input name="thumbnail_max_dimension" value="{{ limits.get('thumbnail_max_dimension', 640) }}"></td></tr>
                     <tr><th>Image compression quality</th><td><input name="image_compression_quality" value="{{ limits.get('image_compression_quality', 85) }}"></td></tr>
                     <tr><th>Archive full history after months</th><td><input name="archive_full_history_after_months" value="{{ limits.get('archive_full_history_after_months', 18) }}"></td></tr>
+                    <tr><th>Spam review score threshold</th><td><input name="spam_review_threshold" value="{{ limits.get('spam_review_threshold', 40) }}"></td></tr>
+                    <tr><th>Spam burst count</th><td><input name="spam_burst_count" value="{{ limits.get('spam_burst_count', 5) }}"></td></tr>
+                    <tr><th>Spam burst window minutes</th><td><input name="spam_burst_window_minutes" value="{{ limits.get('spam_burst_window_minutes', 10) }}"></td></tr>
                     <tr><th>Restore test weekday</th><td>
                         <select name="restore_test_weekday">
                             {% for day in weekdays %}
@@ -2064,6 +2104,18 @@ SETTINGS_HTML = """
         <h2>Guild Settings</h2>
         {% for guild in guilds %}
             <h3>{{ guild.name }} ({{ guild.id }})</h3>
+            <div class="panel">
+                <h4>Config Portability</h4>
+                <p class="muted">Export this server's SDAC settings or paste a previous export to restore/copy setup.</p>
+                <p><a href="{{ url_for('admin_export_guild_config', guild_id=guild.id, key=admin_key) }}">Download server config JSON</a></p>
+                <form method="post" action="{{ url_for('admin_import_guild_config') }}">
+                    <input type="hidden" name="key" value="{{ admin_key }}">
+                    <input type="hidden" name="guild_id" value="{{ guild.id }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <textarea name="config_json" placeholder="Paste exported sdac-guild-config JSON here"></textarea>
+                    <button type="submit">Import Server Config</button>
+                </form>
+            </div>
             <form method="post">
                 <input type="hidden" name="key" value="{{ admin_key }}">
                 <input type="hidden" name="action" value="update_guild">
@@ -2154,6 +2206,15 @@ SETTINGS_HTML = """
                                 <option value="1" {% if guild.moderation.spoiler_requires_approval %}selected{% endif %}>Enabled</option>
                             </select>
                         </td></tr>
+                        <tr><th>Duplicate media review</th><td>
+                            <select name="duplicate_requires_approval">
+                                <option value="1" {% if guild.moderation.duplicate_requires_approval %}selected{% endif %}>Enabled</option>
+                                <option value="0" {% if not guild.moderation.duplicate_requires_approval %}selected{% endif %}>Disabled</option>
+                            </select>
+                        </td></tr>
+                        <tr><th>Spam burst count</th><td><input name="spam_burst_count" value="{{ guild.moderation.spam_burst_count }}"></td></tr>
+                        <tr><th>Spam burst window minutes</th><td><input name="spam_burst_window_minutes" value="{{ guild.moderation.spam_burst_window_minutes }}"></td></tr>
+                        <tr><th>Spam review score threshold</th><td><input name="spam_review_threshold" value="{{ guild.moderation.spam_review_threshold }}"></td></tr>
                         <tr><th>Answer reuse cooldown days</th><td><input name="reuse_cooldown_days" value="{{ guild.game_settings.reuse_cooldown_days }}"></td></tr>
                         <tr><th>Default auto-hint minutes</th><td><input name="default_auto_hint_minutes" value="{{ guild.game_settings.default_auto_hint_minutes }}"></td></tr>
                         <tr><th>Default difficulty</th><td><input name="default_difficulty" value="{{ guild.game_settings.default_difficulty }}"></td></tr>
@@ -2320,6 +2381,7 @@ MAINTENANCE_HTML = """
         <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
         <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
+        <a href="{{ url_for('admin_jobs', key=admin_key) }}">Jobs</a>
         <a href="{{ url_for('admin_production_health', key=admin_key) }}">Health Score</a>
         <a href="{{ url_for('admin_health', key=admin_key) }}">Health JSON</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
@@ -2510,6 +2572,14 @@ MEDIA_CLEANUP_HTML = """
         .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 16px; padding: 12px; text-align: center; }
         .muted { color: #a8adb8; }
         code { color: #cdd7ff; }
+        @media (max-width: 760px) {
+            body { padding: 12px; }
+            table, thead, tbody, tr, th, td { display: block; }
+            thead { display: none; }
+            tr { border-bottom: 1px solid #30333b; padding: 10px 0; }
+            th, td { border-bottom: 0; padding: 6px 0; }
+            button { margin-top: 6px; width: 100%; }
+        }
     </style>
 </head>
 <body>
@@ -2521,6 +2591,7 @@ MEDIA_CLEANUP_HTML = """
         <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
         <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
         <a href="{{ url_for('admin_analytics', key=admin_key) }}">Analytics</a>
+        <a href="{{ url_for('admin_jobs', key=admin_key) }}">Jobs</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
     </nav>
     {% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
@@ -2537,6 +2608,7 @@ MEDIA_CLEANUP_HTML = """
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button type="submit" name="action" value="delete_orphans">Delete Orphaned Files</button>
             <button type="submit" name="action" value="generate_thumbnails">Generate Missing Thumbnails</button>
+            <button type="submit" name="action" value="rebuild_media_fingerprints">Rebuild Duplicate Index</button>
             <button type="submit" name="action" value="prune_backed_up_originals" onclick="return confirm('Prune old backed-up originals for all safe servers? Thumbnails stay local.');">Prune Backed-Up Originals</button>
         </form>
     </section>
@@ -2612,6 +2684,194 @@ MEDIA_CLEANUP_HTML = """
             </table>
         </section>
     {% endfor %}
+</main>
+</body>
+</html>
+"""
+
+
+JOBS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Jobs</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1100px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; word-break: break-word; }
+        .queued { color: #ffd75e; }
+        .running { color: #7c9cff; }
+        .complete { color: #63c174; }
+        .failed { color: #e45d68; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+        @media (max-width: 760px) {
+            body { padding: 12px; }
+            table, thead, tbody, tr, th, td { display: block; }
+            thead { display: none; }
+            tr { border-bottom: 1px solid #30333b; padding: 10px 0; }
+            th, td { border-bottom: 0; padding: 6px 0; }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Background Jobs</h1>
+    <nav>
+        <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_media_cleanup', key=admin_key) }}">Media</a>
+        <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('admin_privacy', key=admin_key) }}">Privacy</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+    <section class="panel">
+        <h2>Recent Work</h2>
+        <p class="muted">Long-running maintenance tasks are tracked here so the dashboard stays responsive.</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Job</th>
+                    <th>Server</th>
+                    <th>Status</th>
+                    <th>Requested By</th>
+                    <th>Created</th>
+                    <th>Finished</th>
+                    <th>Result / Error</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                    <tr>
+                        <td><code>#{{ job.id }}</code></td>
+                        <td>{{ job.label }}<br><code>{{ job.job_type }}</code></td>
+                        <td><code>{{ job.guild_id or "all" }}</code></td>
+                        <td class="{{ job.status }}">{{ job.status }}</td>
+                        <td>{{ job.requested_by_name or job.requested_by or "unknown" }}</td>
+                        <td>{{ job.created_at or "" }}</td>
+                        <td>{{ job.finished_at or "" }}</td>
+                        <td>
+                            {% if job.error %}
+                                <span class="failed">{{ job.error }}</span>
+                            {% elif job.result %}
+                                <code>{{ job.result }}</code>
+                            {% else %}
+                                <span class="muted">{{ job.payload }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="8" class="muted">No background jobs yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+PRIVACY_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Privacy Tools</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1000px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        input, select, button, textarea { border: 1px solid #30333b; border-radius: 7px; font-size: 15px; padding: 9px 10px; }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; }
+        .danger { background: #e45d68; color: white; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 16px; padding: 12px; text-align: center; }
+        .notice.error { border-color: #e45d68; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+        @media (max-width: 760px) {
+            body { padding: 12px; }
+            input, select, button { box-sizing: border-box; width: 100%; }
+            table, thead, tbody, tr, th, td { display: block; }
+            thead { display: none; }
+            tr { border-bottom: 1px solid #30333b; padding: 10px 0; }
+            th, td { border-bottom: 0; padding: 6px 0; }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Privacy Tools</h1>
+    <nav>
+        <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_media_cleanup', key=admin_key) }}">Media</a>
+        <a href="{{ url_for('admin_jobs', key=admin_key) }}">Jobs</a>
+        <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+    {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
+
+    <section class="panel">
+        <h2>User Data Request</h2>
+        <p class="muted">Exports and deletes are scoped to one Discord server. Deleting removes submissions, local media, duplicate fingerprints, points, correct guesses, and cooldown rows for that user.</p>
+        <form method="post">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <table>
+                <tbody>
+                    <tr><th>Server</th><td>
+                        <select name="guild_id">
+                            {% for guild in guild_options %}
+                                <option value="{{ guild.id }}">{{ guild.name }} ({{ guild.id }})</option>
+                            {% endfor %}
+                        </select>
+                    </td></tr>
+                    <tr><th>User ID</th><td><input name="user_id" placeholder="Discord user ID" required></td></tr>
+                    <tr><th>Delete confirmation</th><td><input name="confirm_delete" placeholder="Type DELETE before deleting"></td></tr>
+                </tbody>
+            </table>
+            <button type="submit" name="action" value="export">Export User Data</button>
+            <button class="danger" type="submit" name="action" value="delete" onclick="return confirm('Delete this user data from the selected server?');">Delete User Data</button>
+        </form>
+    </section>
+
+    <section class="panel">
+        <h2>Recent Privacy Actions</h2>
+        <table>
+            <thead><tr><th>Server</th><th>User</th><th>Action</th><th>Actor</th><th>Details</th><th>Created</th></tr></thead>
+            <tbody>
+                {% for action in actions %}
+                    <tr>
+                        <td><code>{{ action.guild_id }}</code></td>
+                        <td><code>{{ action.user_id }}</code></td>
+                        <td>{{ action.action }}</td>
+                        <td>{{ action.actor_username }}</td>
+                        <td><code>{{ action.details_json }}</code></td>
+                        <td>{{ action.created_at }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="6" class="muted">No privacy actions have been recorded yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
 </main>
 </body>
 </html>
@@ -3130,6 +3390,74 @@ ONBOARDING_HTML = """
 """
 
 
+SETUP_GUIDE_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Setup Guide</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 900px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        li { margin: 8px 0; }
+        code { color: #cdd7ff; }
+        .muted { color: #a8adb8; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Set Up SDAC In Your Discord</h1>
+    <nav>
+        <a href="{{ url_for('index') }}">Gallery</a>
+        <a href="{{ url_for('servers') }}">Servers</a>
+        <a href="{{ url_for('guessing_leaderboard') }}">Guessing leaderboard</a>
+    </nav>
+    <section class="panel">
+        <h2>Fast Path</h2>
+        {% if invite_url %}
+            <p><a href="{{ invite_url }}" target="_blank" rel="noopener">Invite SDAC Bot</a></p>
+        {% else %}
+            <p class="muted">The bot invite link is not configured on this dashboard yet.</p>
+        {% endif %}
+        <ol>
+            <li>Invite the bot with <code>bot</code> and <code>applications.commands</code> scopes.</li>
+            <li>In Discord, run <code>/setup</code> and walk through the buttons.</li>
+            <li>Run <code>/repairpermissions</code> if any channel is missing bot access.</li>
+            <li>Run <code>/setuptest</code> to confirm the database, folders, channels, and slash commands are healthy.</li>
+            <li>Use <code>/submit category</code> for submissions and <code>/startgame</code> / <code>/guess</code> for guessing games.</li>
+        </ol>
+    </section>
+    <section class="panel">
+        <h2>Recommended Channels</h2>
+        <ol>
+            <li>Submit channel: where users start <code>/submit</code>.</li>
+            <li>Category channels: where approved submissions are reposted.</li>
+            <li>Approval channel: optional queue for admin review.</li>
+            <li>Game summary channel: optional place for daily/monthly guessing results.</li>
+            <li>Error channel: private admin channel for bot alerts.</li>
+        </ol>
+    </section>
+    <section class="panel">
+        <h2>Admin Commands</h2>
+        <p>
+            The Discord setup wizard writes the same config as the dashboard.
+            If a server is already configured elsewhere, an owner can also export/import
+            that server config from the dashboard Settings page.
+        </p>
+        <p><code>/setup</code> <code>/setupstatus</code> <code>/setuptest</code> <code>/repairpermissions</code></p>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
 SEASONS_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -3415,6 +3743,9 @@ def validate_database_backup(backup_path):
             required = {
                 "submissions",
                 "admin_audit_log",
+                "background_jobs",
+                "media_fingerprints",
+                "privacy_actions",
                 "schema_version",
             }
             missing = sorted(required - tables)
@@ -4412,6 +4743,22 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS background_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_type TEXT,
+                guild_id TEXT,
+                status TEXT DEFAULT 'queued',
+                requested_by TEXT,
+                requested_by_name TEXT,
+                payload_json TEXT,
+                result_json TEXT,
+                error TEXT,
+                created_at TEXT,
+                started_at TEXT,
+                finished_at TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS dashboard_admin_users (
                 username TEXT PRIMARY KEY,
                 password_hash TEXT NOT NULL,
@@ -4645,6 +4992,30 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS media_fingerprints (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                media_hash TEXT,
+                guild_id TEXT,
+                submission_id INTEGER,
+                media_path TEXT,
+                media_name TEXT,
+                size_bytes INTEGER DEFAULT 0,
+                created_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS privacy_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                user_id TEXT,
+                action TEXT,
+                actor_user_id TEXT,
+                actor_username TEXT,
+                details_json TEXT,
+                created_at TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS schema_version (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 version INTEGER NOT NULL,
@@ -4665,6 +5036,9 @@ def initialize_database():
             "approved_at": "TEXT",
             "media_sizes": "TEXT",
             "media_metadata_json": "TEXT",
+            "media_hashes": "TEXT",
+            "spam_score": "INTEGER DEFAULT 0",
+            "spam_reasons_json": "TEXT",
         }.items():
             if column not in columns:
                 connection.execute(
@@ -4751,6 +5125,26 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_submissions_search
             ON submissions (guild_id, status, username, message_text, category)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submissions_user_created
+            ON submissions (guild_id, user_id, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_background_jobs_status_created
+            ON background_jobs (status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_background_jobs_guild_created
+            ON background_jobs (guild_id, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_media_fingerprints_guild_hash
+            ON media_fingerprints (guild_id, media_hash)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_privacy_actions_guild_user_created
+            ON privacy_actions (guild_id, user_id, created_at)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_guess_points_global_month
@@ -5316,6 +5710,10 @@ def restore_guild_media_from_remote(config_data, guild_id):
 
 def prepare_post(row):
     post = dict(row)
+    try:
+        post["spam_reasons"] = json.loads(post.get("spam_reasons_json") or "[]")
+    except (TypeError, ValueError):
+        post["spam_reasons"] = []
     paths = split_values(post.get("media_paths") or post.get("file_paths"))
     names = split_values(post.get("media_names"))
     types = split_values(post.get("media_types"))
@@ -5479,6 +5877,540 @@ def maybe_notify_stale_bot(bot_status):
     )
 
 
+def file_sha256(path):
+    digest = hashlib.sha256()
+    try:
+        with Path(path).open("rb") as file:
+            for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return ""
+    return digest.hexdigest()
+
+
+def rebuild_media_fingerprints(guild_id=None, limit=10000):
+    scanned = 0
+    inserted = 0
+    updated = 0
+    where = []
+    params = []
+    if guild_id:
+        where.append("guild_id = ?")
+        params.append(str(guild_id))
+    where_sql = "WHERE " + " AND ".join(where) if where else ""
+    with database() as connection:
+        rows = connection.execute(f"""
+            SELECT id, guild_id, media_paths, file_paths, media_names,
+                   media_sizes, media_hashes
+            FROM submissions
+            {where_sql}
+            ORDER BY id DESC
+            LIMIT ?
+        """, params + [int(limit)]).fetchall()
+        for row in rows:
+            paths = split_values(row["media_paths"] or row["file_paths"])
+            names = split_values(row["media_names"])
+            sizes = split_values(row["media_sizes"])
+            existing_hashes = split_values(row["media_hashes"])
+            hashes = []
+            for index, raw_path in enumerate(paths):
+                if scanned >= limit:
+                    break
+                relative_path = media_relative_path(raw_path)
+                media_path = (
+                    (MEDIA_DIR / relative_path)
+                    if relative_path
+                    else Path(raw_path)
+                )
+                media_hash = file_sha256(media_path) if media_path.is_file() else ""
+                hashes.append(media_hash)
+                if media_hash:
+                    try:
+                        size_bytes = (
+                            int(sizes[index])
+                            if index < len(sizes)
+                            else media_path.stat().st_size
+                        )
+                    except (OSError, TypeError, ValueError):
+                        size_bytes = 0
+                    exists = connection.execute("""
+                        SELECT 1
+                        FROM media_fingerprints
+                        WHERE media_hash = ?
+                          AND guild_id = ?
+                          AND submission_id = ?
+                        LIMIT 1
+                    """, (
+                        media_hash,
+                        str(row["guild_id"] or ""),
+                        row["id"],
+                    )).fetchone()
+                    if not exists:
+                        connection.execute("""
+                            INSERT INTO media_fingerprints (
+                                media_hash, guild_id, submission_id,
+                                media_path, media_name, size_bytes, created_at
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            media_hash,
+                            str(row["guild_id"] or ""),
+                            row["id"],
+                            raw_path,
+                            names[index] if index < len(names) else "",
+                            size_bytes,
+                            utc_now_iso(),
+                        ))
+                        inserted += 1
+                scanned += 1
+            if hashes and hashes != existing_hashes:
+                connection.execute(
+                    "UPDATE submissions SET media_hashes = ? WHERE id = ?",
+                    (";".join(hashes), row["id"]),
+                )
+                updated += 1
+    return {
+        "scanned": scanned,
+        "inserted": inserted,
+        "updated_submissions": updated,
+    }
+
+
+def background_job_label(job_type):
+    labels = {
+        "generate_thumbnails": "Generate missing thumbnails",
+        "prune_backed_up_originals": "Prune backed-up originals",
+        "restore_guild_media": "Restore guild media",
+        "archive_history": "Archive old history",
+        "rebuild_media_fingerprints": "Rebuild media fingerprints",
+    }
+    return labels.get(job_type, str(job_type or "").replace("_", " ").title())
+
+
+def create_background_job(job_type, guild_id=None, payload=None, actor_id="", actor_name=""):
+    payload = payload or {}
+    now = utc_now_iso()
+    with database() as connection:
+        cursor = connection.execute("""
+            INSERT INTO background_jobs (
+                job_type, guild_id, status, requested_by,
+                requested_by_name, payload_json, created_at
+            )
+            VALUES (?, ?, 'queued', ?, ?, ?, ?)
+        """, (
+            job_type,
+            str(guild_id) if guild_id else None,
+            str(actor_id or ""),
+            str(actor_name or ""),
+            json.dumps(payload, separators=(",", ":")),
+            now,
+        ))
+        job_id = cursor.lastrowid
+        add_admin_audit_log(
+            connection,
+            guild_id,
+            "background_job_queued",
+            actor_id,
+            actor_name,
+            "background_job",
+            str(job_id),
+            f"Queued {background_job_label(job_type)}.",
+        )
+    return job_id
+
+
+def update_background_job(job_id, **fields):
+    if not fields:
+        return
+    allowed = {
+        "status",
+        "result_json",
+        "error",
+        "started_at",
+        "finished_at",
+    }
+    assignments = []
+    params = []
+    for key, value in fields.items():
+        if key not in allowed:
+            continue
+        assignments.append(f"{key} = ?")
+        params.append(value)
+    if not assignments:
+        return
+    params.append(job_id)
+    with database() as connection:
+        connection.execute(
+            f"UPDATE background_jobs SET {', '.join(assignments)} WHERE id = ?",
+            params,
+        )
+
+
+def load_background_job(job_id):
+    with closing(connect_db()) as connection:
+        return connection.execute("""
+            SELECT *
+            FROM background_jobs
+            WHERE id = ?
+        """, (job_id,)).fetchone()
+
+
+def process_background_job(job_id):
+    with app.app_context():
+        job = load_background_job(job_id)
+        if not job or job["status"] not in {"queued", "retry"}:
+            return
+        update_background_job(
+            job_id,
+            status="running",
+            started_at=utc_now_iso(),
+            error="",
+        )
+        try:
+            payload = json.loads(job["payload_json"] or "{}")
+            config_data = load_config()
+            if job["job_type"] == "generate_thumbnails":
+                result = {"generated": generate_missing_thumbnails()}
+            elif job["job_type"] == "prune_backed_up_originals":
+                result = {
+                    "deleted": prune_backed_up_originals(
+                        config_data,
+                        payload.get("guild_id") or job["guild_id"],
+                    )
+                }
+            elif job["job_type"] == "restore_guild_media":
+                ok, message = restore_guild_media_from_remote(
+                    config_data,
+                    payload.get("guild_id") or job["guild_id"],
+                )
+                result = {"ok": ok, "message": message}
+                if not ok:
+                    raise RuntimeError(message)
+            elif job["job_type"] == "archive_history":
+                archive_path, row_count, cutoff = archive_old_submission_history(
+                    delete_exported=bool(payload.get("delete_exported")),
+                )
+                result = {
+                    "archive": archive_path.name,
+                    "rows": row_count,
+                    "cutoff": cutoff,
+                    "delete_exported": bool(payload.get("delete_exported")),
+                }
+            elif job["job_type"] == "rebuild_media_fingerprints":
+                result = rebuild_media_fingerprints(
+                    guild_id=payload.get("guild_id") or job["guild_id"],
+                    limit=int(payload.get("limit") or 10000),
+                )
+            else:
+                raise ValueError(f"Unknown background job type: {job['job_type']}")
+            update_background_job(
+                job_id,
+                status="complete",
+                result_json=json.dumps(result, separators=(",", ":")),
+                finished_at=utc_now_iso(),
+            )
+        except Exception as error:
+            update_background_job(
+                job_id,
+                status="failed",
+                error=str(error),
+                finished_at=utc_now_iso(),
+            )
+            send_admin_notification(
+                "system_errors",
+                f"Background job `{job_id}` failed: `{error}`",
+                guild_id=job["guild_id"],
+                throttle_key=f"background_job_failed:{job_id}",
+                throttle_seconds=60,
+            )
+        finally:
+            with BACKGROUND_JOB_LOCK:
+                BACKGROUND_JOB_THREADS.pop(job_id, None)
+
+
+def start_background_job(job_id):
+    with BACKGROUND_JOB_LOCK:
+        thread = BACKGROUND_JOB_THREADS.get(job_id)
+        if thread and thread.is_alive():
+            return
+        thread = threading.Thread(
+            target=process_background_job,
+            args=(job_id,),
+            daemon=True,
+            name=f"sdac-job-{job_id}",
+        )
+        BACKGROUND_JOB_THREADS[job_id] = thread
+        thread.start()
+
+
+def queue_background_job(job_type, guild_id=None, payload=None, actor_id="", actor_name=""):
+    job_id = create_background_job(
+        job_type,
+        guild_id=guild_id,
+        payload=payload,
+        actor_id=actor_id,
+        actor_name=actor_name,
+    )
+    start_background_job(job_id)
+    return job_id
+
+
+def recent_background_jobs(limit=50, guild_id=None):
+    where = []
+    params = []
+    if guild_id:
+        where.append("guild_id = ?")
+        params.append(str(guild_id))
+    where_sql = "WHERE " + " AND ".join(where) if where else ""
+    with closing(connect_db()) as connection:
+        rows = connection.execute(f"""
+            SELECT *
+            FROM background_jobs
+            {where_sql}
+            ORDER BY id DESC
+            LIMIT ?
+        """, params + [int(limit)]).fetchall()
+    jobs = []
+    for row in rows:
+        job = dict(row)
+        job["label"] = background_job_label(job.get("job_type"))
+        try:
+            job["payload"] = json.loads(job.get("payload_json") or "{}")
+        except (TypeError, ValueError):
+            job["payload"] = {}
+        try:
+            job["result"] = json.loads(job.get("result_json") or "{}")
+        except (TypeError, ValueError):
+            job["result"] = {}
+        jobs.append(job)
+    return jobs
+
+
+def resume_queued_background_jobs(limit=10):
+    with closing(connect_db()) as connection:
+        rows = connection.execute("""
+            SELECT id
+            FROM background_jobs
+            WHERE status = 'queued'
+            ORDER BY id ASC
+            LIMIT ?
+        """, (int(limit),)).fetchall()
+    for row in rows:
+        start_background_job(row["id"])
+
+
+def exportable_guild_config(config_data, guild_id):
+    guild_id = str(guild_id)
+    guild_config = (config_data.get("guilds") or {}).get(guild_id)
+    if not guild_config:
+        abort(404)
+    return {
+        "format": "sdac-guild-config-v1",
+        "exported_at": utc_now_iso(),
+        "guild_id": guild_id,
+        "guild_config": guild_config,
+    }
+
+
+def normalize_imported_guild_config(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Imported config must be a JSON object.")
+    source = payload.get("guild_config") if "guild_config" in payload else payload
+    if not isinstance(source, dict):
+        raise ValueError("Imported guild_config must be a JSON object.")
+    allowed_keys = set(DEFAULT_GUILD_FIELDS)
+    imported = {
+        key: value
+        for key, value in source.items()
+        if key in allowed_keys
+    }
+    if not imported:
+        raise ValueError("No supported guild settings were found.")
+    merged = json.loads(json.dumps(DEFAULT_GUILD_FIELDS))
+    fill_nested_defaults(imported, merged)
+    for key, value in imported.items():
+        if key in allowed_keys:
+            merged[key] = value
+    if not isinstance(merged.get("categories"), dict):
+        merged["categories"] = {}
+    if not isinstance(merged.get("features"), dict):
+        merged["features"] = dict(DEFAULT_FEATURES)
+    fill_nested_defaults(merged, DEFAULT_GUILD_FIELDS)
+    return merged
+
+
+def sql_placeholders(values):
+    return ",".join("?" for _ in values)
+
+
+def rows_as_dicts(rows):
+    return [dict(row) for row in rows]
+
+
+def user_privacy_export_payload(guild_id, user_id):
+    guild_id = str(guild_id)
+    user_id = str(user_id)
+    with closing(connect_db()) as connection:
+        submissions = connection.execute("""
+            SELECT *
+            FROM submissions
+            WHERE guild_id = ?
+              AND user_id = ?
+            ORDER BY created_at DESC, id DESC
+        """, (guild_id, user_id)).fetchall()
+        submission_ids = [row["id"] for row in submissions]
+        reports = []
+        if submission_ids:
+            placeholders = sql_placeholders(submission_ids)
+            reports = connection.execute(f"""
+                SELECT *
+                FROM submission_reports
+                WHERE submission_id IN ({placeholders})
+                ORDER BY created_at DESC, id DESC
+            """, submission_ids).fetchall()
+        return {
+            "exported_at": utc_now_iso(),
+            "guild_id": guild_id,
+            "user_id": user_id,
+            "submissions": rows_as_dicts(submissions),
+            "submission_reports": rows_as_dicts(reports),
+            "guess_points": rows_as_dicts(connection.execute("""
+                SELECT *
+                FROM guess_points
+                WHERE guild_id = ?
+                  AND user_id = ?
+                ORDER BY month DESC, channel_id
+            """, (guild_id, user_id)).fetchall()),
+            "correct_guesses": rows_as_dicts(connection.execute("""
+                SELECT *
+                FROM guess_correct_guesses
+                WHERE guild_id = ?
+                  AND user_id = ?
+                ORDER BY guessed_at DESC
+            """, (guild_id, user_id)).fetchall()),
+            "guess_cooldowns": rows_as_dicts(connection.execute("""
+                SELECT *
+                FROM guess_cooldowns
+                WHERE guild_id = ?
+                  AND user_id = ?
+            """, (guild_id, user_id)).fetchall()),
+            "started_or_won_games": rows_as_dicts(connection.execute("""
+                SELECT id, guild_id, channel_id, starter_user_id,
+                       starter_username, winner_user_id, winner_username,
+                       started_at, solved_at, status
+                FROM guess_games
+                WHERE guild_id = ?
+                  AND (starter_user_id = ? OR winner_user_id = ?)
+                ORDER BY started_at DESC, id DESC
+            """, (guild_id, user_id, user_id)).fetchall()),
+        }
+
+
+def delete_user_privacy_data(guild_id, user_id, actor_id, actor_name):
+    guild_id = str(guild_id)
+    user_id = str(user_id)
+    payload = user_privacy_export_payload(guild_id, user_id)
+    submissions = payload["submissions"]
+    discord_deleted = 0
+    discord_errors = []
+    for row in submissions:
+        for channel_id, message_id in (
+            (row.get("repost_channel_id"), row.get("repost_message_id")),
+            (row.get("approval_channel_id"), row.get("approval_message_id")),
+        ):
+            if not channel_id or not message_id:
+                continue
+            deleted, error_message = delete_discord_message(channel_id, message_id)
+            if deleted:
+                discord_deleted += 1
+            else:
+                discord_errors.append({
+                    "channel_id": channel_id,
+                    "message_id": message_id,
+                    "error": error_message,
+                })
+
+    submission_ids = [row["id"] for row in submissions]
+    with database() as connection:
+        if submission_ids:
+            placeholders = sql_placeholders(submission_ids)
+            connection.execute(
+                f"DELETE FROM submission_reports WHERE submission_id IN ({placeholders})",
+                submission_ids,
+            )
+            connection.execute(
+                f"DELETE FROM media_fingerprints WHERE submission_id IN ({placeholders})",
+                submission_ids,
+            )
+            connection.execute(
+                f"DELETE FROM submissions WHERE id IN ({placeholders})",
+                submission_ids,
+            )
+        connection.execute("""
+            DELETE FROM guess_points
+            WHERE guild_id = ?
+              AND user_id = ?
+        """, (guild_id, user_id))
+        connection.execute("""
+            DELETE FROM guess_correct_guesses
+            WHERE guild_id = ?
+              AND user_id = ?
+        """, (guild_id, user_id))
+        connection.execute("""
+            DELETE FROM guess_cooldowns
+            WHERE guild_id = ?
+              AND user_id = ?
+        """, (guild_id, user_id))
+        connection.execute("""
+            UPDATE guess_games
+            SET starter_username = 'Deleted User',
+                starter_user_id = ''
+            WHERE guild_id = ?
+              AND starter_user_id = ?
+        """, (guild_id, user_id))
+        connection.execute("""
+            UPDATE guess_games
+            SET winner_username = 'Deleted User',
+                winner_user_id = ''
+            WHERE guild_id = ?
+              AND winner_user_id = ?
+        """, (guild_id, user_id))
+        details = {
+            "submissions_deleted": len(submissions),
+            "discord_messages_deleted": discord_deleted,
+            "discord_errors": discord_errors[:10],
+        }
+        connection.execute("""
+            INSERT INTO privacy_actions (
+                guild_id, user_id, action, actor_user_id,
+                actor_username, details_json, created_at
+            )
+            VALUES (?, ?, 'delete_user_data', ?, ?, ?, ?)
+        """, (
+            guild_id,
+            user_id,
+            actor_id,
+            actor_name,
+            json.dumps(details, separators=(",", ":")),
+            utc_now_iso(),
+        ))
+        add_admin_audit_log(
+            connection,
+            guild_id,
+            "privacy_delete_user_data",
+            actor_id,
+            actor_name,
+            "user",
+            user_id,
+            json.dumps(details, separators=(",", ":")),
+        )
+
+    for row in submissions:
+        delete_local_media(row)
+    PUBLIC_PAGE_CACHE.clear()
+    return details
+
+
 def delete_local_media(row):
     for stored_path in split_values(
         row["media_paths"] or row["file_paths"]
@@ -5609,6 +6541,8 @@ def current_admin_allowed_guild_ids(config_data=None):
 
 
 def can_admin_access_guild(guild_id, config_data=None):
+    if not has_request_context():
+        return True
     if current_admin_role() == "owner":
         return True
     return str(guild_id) in current_admin_allowed_guild_ids(config_data)
@@ -7007,6 +7941,9 @@ def admin_settings():
                     "thumbnail_max_dimension",
                     "image_compression_quality",
                     "archive_full_history_after_months",
+                    "spam_review_threshold",
+                    "spam_burst_count",
+                    "spam_burst_window_minutes",
                 ):
                     value = int(request.form.get(field, "0"))
                     if value < 0:
@@ -7226,7 +8163,23 @@ def admin_settings():
                     new_user_days = int(request.form.get("new_user_days", "7") or 7)
                     if new_user_days < 0 or new_user_days > 365:
                         raise ValueError("New-user days must be 0-365.")
-                    guild_config["moderation"] = {
+                    spam_burst_count = int(
+                        request.form.get("spam_burst_count", "5") or 0
+                    )
+                    spam_burst_window = int(
+                        request.form.get("spam_burst_window_minutes", "10") or 0
+                    )
+                    spam_review_threshold = int(
+                        request.form.get("spam_review_threshold", "40") or 0
+                    )
+                    if spam_burst_count < 0 or spam_burst_count > 100:
+                        raise ValueError("Spam burst count must be 0-100.")
+                    if spam_burst_window < 0 or spam_burst_window > 1440:
+                        raise ValueError("Spam burst window must be 0-1440 minutes.")
+                    if spam_review_threshold < 0 or spam_review_threshold > 1000:
+                        raise ValueError("Spam review threshold must be 0-1000.")
+                    moderation_config = guild_config.setdefault("moderation", {})
+                    moderation_config.update({
                         "blocked_words": [
                             item.strip()
                             for item in request.form.get("blocked_words", "").split(",")
@@ -7240,7 +8193,13 @@ def admin_settings():
                         "spoiler_requires_approval": (
                             request.form.get("spoiler_requires_approval") == "1"
                         ),
-                    }
+                        "duplicate_requires_approval": (
+                            request.form.get("duplicate_requires_approval") == "1"
+                        ),
+                        "spam_burst_count": spam_burst_count,
+                        "spam_burst_window_minutes": spam_burst_window,
+                        "spam_review_threshold": spam_review_threshold,
+                    })
                     reuse_days = int(request.form.get("reuse_cooldown_days", "30") or 0)
                     auto_hint = int(request.form.get("default_auto_hint_minutes", "0") or 0)
                     if reuse_days < 0 or reuse_days > 3650:
@@ -7538,37 +8497,18 @@ def admin_maintenance():
             ))
         if action in {"archive_history", "archive_history_delete"}:
             delete_exported = action == "archive_history_delete"
-            try:
-                archive_path, row_count, cutoff = archive_old_submission_history(
-                    delete_exported=delete_exported,
-                )
-                archived = True
-                message = (
-                    f"Archived {row_count} old submission row(s) before "
-                    f"{cutoff} to {archive_path.name}."
-                )
-                if delete_exported:
-                    message += " Exported rows were removed from live submissions."
-            except (OSError, sqlite3.Error, ValueError) as archive_error:
-                archived = False
-                archive_path = None
-                message = f"History archive failed: {archive_error}"
-            with database() as connection:
-                add_admin_audit_log(
-                    connection,
-                    None,
-                    "maintenance_archive_history",
-                    actor_id,
-                    actor_name,
-                    "history_archive",
-                    archive_path.name if archive_path else "",
-                    message,
-                )
+            job_id = queue_background_job(
+                "archive_history",
+                payload={"delete_exported": delete_exported},
+                actor_id=actor_id,
+                actor_name=actor_name,
+            )
+            message = f"Queued history archive as background job #{job_id}."
             return redirect(url_for(
                 "admin_maintenance",
                 key=ADMIN_KEY,
                 notice=message,
-                error=0 if archived else 1,
+                error=0,
             ))
 
     media_stats = media_directory_stats()
@@ -7673,22 +8613,27 @@ def admin_media_cleanup():
                 notice=f"Deleted {deleted} orphaned media file(s).",
             ))
         if action == "generate_thumbnails":
-            generated = generate_missing_thumbnails()
-            with database() as connection:
-                add_admin_audit_log(
-                    connection,
-                    None,
-                    "dashboard_generate_thumbnails",
-                    actor_id,
-                    actor_name,
-                    "media",
-                    "",
-                    f"Generated {generated} missing thumbnail(s).",
-                )
+            job_id = queue_background_job(
+                "generate_thumbnails",
+                actor_id=actor_id,
+                actor_name=actor_name,
+            )
             return redirect(url_for(
                 "admin_media_cleanup",
                 key=ADMIN_KEY,
-                notice=f"Generated {generated} missing thumbnail(s).",
+                notice=f"Queued thumbnail generation as job #{job_id}.",
+            ))
+        if action == "rebuild_media_fingerprints":
+            job_id = queue_background_job(
+                "rebuild_media_fingerprints",
+                payload={"limit": 10000},
+                actor_id=actor_id,
+                actor_name=actor_name,
+            )
+            return redirect(url_for(
+                "admin_media_cleanup",
+                key=ADMIN_KEY,
+                notice=f"Queued media fingerprint rebuild as job #{job_id}.",
             ))
         if action in {"prune_backed_up_originals", "prune_guild_originals"}:
             guild_id = (
@@ -7696,42 +8641,31 @@ def admin_media_cleanup():
                 if action == "prune_guild_originals"
                 else None
             )
-            deleted = prune_backed_up_originals(config_data, guild_id)
-            with database() as connection:
-                add_admin_audit_log(
-                    connection,
-                    guild_id,
-                    "dashboard_prune_backed_up_originals",
-                    actor_id,
-                    actor_name,
-                    "media",
-                    guild_id or "all",
-                    f"Pruned {deleted} backed-up original media file(s).",
-                )
+            job_id = queue_background_job(
+                "prune_backed_up_originals",
+                guild_id=guild_id,
+                payload={"guild_id": guild_id},
+                actor_id=actor_id,
+                actor_name=actor_name,
+            )
             return redirect(url_for(
                 "admin_media_cleanup",
                 key=ADMIN_KEY,
-                notice=f"Pruned {deleted} backed-up original media file(s).",
+                notice=f"Queued backed-up original pruning as job #{job_id}.",
             ))
         if action == "restore_guild_media":
             guild_id = request.form.get("guild_id", "").strip()
-            ok, message = restore_guild_media_from_remote(config_data, guild_id)
-            with database() as connection:
-                add_admin_audit_log(
-                    connection,
-                    guild_id,
-                    "dashboard_restore_guild_media",
-                    actor_id,
-                    actor_name,
-                    "media",
-                    guild_id,
-                    message,
-                )
+            job_id = queue_background_job(
+                "restore_guild_media",
+                guild_id=guild_id,
+                payload={"guild_id": guild_id},
+                actor_id=actor_id,
+                actor_name=actor_name,
+            )
             return redirect(url_for(
                 "admin_media_cleanup",
                 key=ADMIN_KEY,
-                notice=message,
-                error=0 if ok else 1,
+                notice=f"Queued media restore as job #{job_id}.",
             ))
 
     config_data = load_config()
@@ -7743,6 +8677,189 @@ def admin_media_cleanup():
         notice=notice,
         report=media_cleanup_report(),
     )
+
+
+@app.route("/admin/jobs")
+def admin_jobs():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+    resume_queued_background_jobs()
+    config_data = load_config()
+    options = guild_options(config_data)
+    selected_server_id = selected_guild_id(options)
+    return render_template_string(
+        JOBS_HTML,
+        admin_key=ADMIN_KEY,
+        jobs=recent_background_jobs(
+            limit=75,
+            guild_id=selected_server_id,
+        ),
+    )
+
+
+@app.route("/admin/privacy", methods=["GET", "POST"])
+def admin_privacy():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    config_data = load_config()
+    options = guild_options(config_data)
+    valid_guild_ids = {option["id"] for option in options}
+    actor_id, actor_name = web_actor()
+
+    if request.method == "POST":
+        require_csrf_token()
+        action = request.form.get("action", "")
+        guild_id = request.form.get("guild_id", "").strip()
+        user_id = request.form.get("user_id", "").strip()
+        if guild_id not in valid_guild_ids or not user_id:
+            abort(400)
+        if action == "export":
+            payload = user_privacy_export_payload(guild_id, user_id)
+            with database() as connection:
+                connection.execute("""
+                    INSERT INTO privacy_actions (
+                        guild_id, user_id, action, actor_user_id,
+                        actor_username, details_json, created_at
+                    )
+                    VALUES (?, ?, 'export_user_data', ?, ?, ?, ?)
+                """, (
+                    guild_id,
+                    user_id,
+                    actor_id,
+                    actor_name,
+                    json.dumps({
+                        "submissions": len(payload["submissions"]),
+                        "guess_points": len(payload["guess_points"]),
+                    }, separators=(",", ":")),
+                    utc_now_iso(),
+                ))
+                add_admin_audit_log(
+                    connection,
+                    guild_id,
+                    "privacy_export_user_data",
+                    actor_id,
+                    actor_name,
+                    "user",
+                    user_id,
+                    "Exported user privacy data.",
+                )
+            return Response(
+                json.dumps(payload, indent=2),
+                mimetype="application/json",
+                headers={
+                    "Content-Disposition": (
+                        f"attachment; filename=sdac-user-{guild_id}-{user_id}.json"
+                    )
+                },
+            )
+        if action == "delete":
+            if request.form.get("confirm_delete", "").strip() != "DELETE":
+                return redirect(url_for(
+                    "admin_privacy",
+                    key=ADMIN_KEY,
+                    notice="Type DELETE before deleting user data.",
+                    error=1,
+                ))
+            details = delete_user_privacy_data(
+                guild_id,
+                user_id,
+                actor_id,
+                actor_name,
+            )
+            return redirect(url_for(
+                "admin_privacy",
+                key=ADMIN_KEY,
+                notice=(
+                    f"Deleted {details['submissions_deleted']} submission(s) "
+                    f"and {details['discord_messages_deleted']} Discord message(s)."
+                ),
+            ))
+
+    with closing(connect_db()) as connection:
+        actions = connection.execute("""
+            SELECT *
+            FROM privacy_actions
+            ORDER BY created_at DESC, id DESC
+            LIMIT 50
+        """).fetchall()
+    return render_template_string(
+        PRIVACY_HTML,
+        actions=actions,
+        admin_key=ADMIN_KEY,
+        csrf_token=get_csrf_token(),
+        error=error,
+        guild_options=options,
+        notice=notice,
+    )
+
+
+@app.get("/admin/guild/<guild_id>/config.json")
+def admin_export_guild_config(guild_id):
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    if not can_admin_access_guild(guild_id, config_data):
+        abort(403)
+    payload = exportable_guild_config(config_data, guild_id)
+    return Response(
+        json.dumps(payload, indent=2),
+        mimetype="application/json",
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=sdac-guild-config-{guild_id}.json"
+            )
+        },
+    )
+
+
+@app.post("/admin/guild-config/import")
+def admin_import_guild_config():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+    require_csrf_token()
+    guild_id = request.form.get("guild_id", "").strip()
+    if not guild_id:
+        abort(400)
+    config_data = load_config()
+    if not can_admin_access_guild(guild_id, config_data):
+        abort(403)
+    raw_config = request.form.get("config_json", "").strip()
+    try:
+        payload = json.loads(raw_config)
+        guild_config = normalize_imported_guild_config(payload)
+    except (TypeError, ValueError, json.JSONDecodeError) as import_error:
+        return redirect(url_for(
+            "admin_settings",
+            key=ADMIN_KEY,
+            notice=f"Config import failed: {import_error}",
+            error=1,
+        ))
+    actor_id, actor_name = web_actor()
+    config_data.setdefault("guilds", {})[str(guild_id)] = guild_config
+    save_config(config_data)
+    with database() as connection:
+        add_admin_audit_log(
+            connection,
+            guild_id,
+            "import_guild_config",
+            actor_id,
+            actor_name,
+            "guild_config",
+            guild_id,
+            "Imported guild configuration from dashboard.",
+        )
+    return redirect(url_for(
+        "admin_settings",
+        key=ADMIN_KEY,
+        notice=f"Imported config for guild {guild_id}.",
+    ))
 
 
 @app.route("/admin/analytics")
@@ -8276,6 +9393,9 @@ def index():
                         media_types,
                         media_sizes,
                         media_metadata_json,
+                        NULL AS media_hashes,
+                        0 AS spam_score,
+                        '[]' AS spam_reasons_json,
                         stars,
                         voters,
                         'posted' AS status,
@@ -8402,6 +9522,14 @@ def index():
     if public_cache_key:
         return store_public_page(public_cache_key, rendered)
     return rendered
+
+
+@app.route("/setup-guide")
+def setup_guide():
+    return render_template_string(
+        SETUP_GUIDE_HTML,
+        invite_url=bot_invite_url(),
+    )
 
 
 @app.route("/report/<int:submission_id>", methods=["GET", "POST"])
@@ -9563,6 +10691,10 @@ def delete_submission(submission_id):
         )
         connection.execute(
             "DELETE FROM submissions WHERE id = ?",
+            (submission_id,),
+        )
+        connection.execute(
+            "DELETE FROM media_fingerprints WHERE submission_id = ?",
             (submission_id,),
         )
 

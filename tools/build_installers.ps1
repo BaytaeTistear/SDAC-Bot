@@ -620,7 +620,10 @@ $chunkLiteral
         ""thumbnail_max_dimension"": 640,
         ""image_compression_enabled"": false,
         ""image_compression_quality"": 85,
-        ""archive_full_history_after_months"": 18
+        ""archive_full_history_after_months"": 18,
+        ""spam_review_threshold"": 40,
+        ""spam_burst_count"": 5,
+        ""spam_burst_window_minutes"": 10
     }
 }
 ", new UTF8Encoding(false));

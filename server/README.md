@@ -27,6 +27,8 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - Public user profiles and submission reports
 - Moderation queue bulk review and submission review flags
 - Media cleanup dashboard for orphaned, missing, and oversized media
+- Background job queue and Jobs page for long-running maintenance actions
+- Duplicate media fingerprinting with admin-visible anti-spam review scores
 - Lightweight gallery mode with generated thumbnails and remote-original badges
 - Media lifecycle controls for local original retention, thumbnail size, image
   compression, backed-up original pruning, and old-history archives
@@ -35,6 +37,9 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
   backup checksums, storage warnings, config backup restore, bot heartbeat
   status, and health
 - Moderation page for pending submissions, public reports, and recent decisions
+- Admin Privacy page for per-server user data export/delete requests
+- Per-server config export/import from dashboard Settings
+- Public setup guide for server owners at `/setup-guide`
 - Onboarding page with setup health scores, saved setup-test reports, invite
   link helper, and quick setup commands
 - Discord-native `/setup` wizard with presets, permission checks, and full
@@ -368,6 +373,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /settings
 /setfeature submissions true
 /checkpermissions
+/repairpermissions
 /setbranding "Server Name" #7c9cff https://example.com/logo.png
 /setapproval enabled #channel
 /setadminrole @role
@@ -405,6 +411,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 
 ```text
 /                              Public submissions
+/setup-guide                   Public server-owner setup guide
 /guessing                       Guessing leaderboard
 /achievements                   Monthly achievements
 /servers                        Server list
@@ -416,9 +423,12 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /admin/onboarding?key=ImTheBestAdmin
 /admin/maintenance?key=ImTheBestAdmin
 /admin/media?key=ImTheBestAdmin
+/admin/jobs?key=ImTheBestAdmin
+/admin/privacy?key=ImTheBestAdmin
 /admin/analytics?key=ImTheBestAdmin
 /admin/production-health?key=ImTheBestAdmin
 /admin/moderation?key=ImTheBestAdmin
+/admin/guild/GUILD_ID/config.json?key=ImTheBestAdmin
 /audit?key=ImTheBestAdmin
 /export/audit.csv?key=ImTheBestAdmin
 /admin/health?key=ImTheBestAdmin

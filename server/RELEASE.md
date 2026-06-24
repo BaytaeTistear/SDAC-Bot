@@ -1,3 +1,34 @@
+# SDAC Bot Version 2.7.4 Experimental
+
+Date: 2026-06-23
+
+Version 2.7.4 is an experimental operations and multi-server usability build.
+
+Included:
+
+- schema v10 with background jobs, media fingerprints, and privacy action logs
+- dashboard background job queue plus `/admin/jobs`
+- long-running thumbnail generation, media pruning, media restore, history
+  archive, and duplicate-index rebuild actions now run as background jobs
+- per-server config export/import from dashboard Settings
+- per-server user privacy export/delete tools under `/admin/privacy`
+- duplicate media detection and anti-spam review scoring for submissions
+- admin-visible spam score badges on gallery submissions
+- on-demand media restore buttons for pruned remote originals
+- public server-owner setup guide at `/setup-guide`
+- new Discord `/repairpermissions` helper with missing-permission summary and
+  bot re-authorization link
+- mobile layout improvements for Settings, Jobs, Privacy, and Media pages
+- README and release docs updated for the new pages and command
+
+Release channel:
+
+- `version-2.7.4` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+---
+
 # SDAC Bot Version 2.7.3 Experimental
 
 Date: 2026-06-23
