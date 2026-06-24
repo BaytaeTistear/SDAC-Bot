@@ -1,3 +1,48 @@
+# SDAC Bot Version 2.8 Official
+
+Date: 2026-06-24
+
+Version 2.8 is an official release. It promotes the 2.7 experimental line into
+the stable Version 2 channel with production hosting, media lifecycle,
+per-server backup, privacy, and operations improvements.
+
+Included:
+
+- optional Discord OAuth dashboard login and per-server admin scoping
+- emergency `/sdacpanic` pause/resume command
+- dashboard analytics, public stats, production health score, and support
+  bundle tooling
+- optional PostgreSQL runtime mode and SQLite-to-Postgres export helper
+- Docker, Docker Compose, systemd, Nginx, and updater improvements
+- per-server upload, game, storage, moderation, and backup controls
+- per-server rclone backup targets with public media URL support
+- generated image thumbnails, optional image compression, remote-original
+  gallery badges, and local original retention/pruning controls
+- old-history archiving that preserves monthly top 10 snapshots
+- `/my-submissions`, `/me`, and better public gallery/user usability
+- schema v10 with background jobs, media fingerprints, and privacy action logs
+- `/admin/jobs` for long-running maintenance work
+- `/admin/privacy` for per-server user data export/delete requests
+- per-server config export/import from dashboard Settings
+- duplicate media detection and anti-spam review scoring
+- admin-visible spam score badges on gallery submissions
+- on-demand media restore buttons for pruned remote originals
+- public server-owner setup guide at `/setup-guide`
+- new Discord `/repairpermissions` helper with missing-permission summary and
+  bot re-authorization link
+- mobile layout improvements across key dashboard pages
+- refreshed README, permissions guide, release notes, installer defaults,
+  release assets, and server copy
+
+Release channel:
+
+- `version-2.8` is this official build
+- `latest-official` points to this build
+- `Version 2`, `2`, `v2`, and `version-2` resolve to this official channel
+- `latest-experimental` remains available for future test builds
+
+---
+
 # SDAC Bot Version 2.7.4 Experimental
 
 Date: 2026-06-23

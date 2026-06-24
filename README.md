@@ -125,7 +125,7 @@ sdac-update latest-experimental
 Explicit numbered release:
 
 ```bash
-sdac-update 2.6
+sdac-update 2.8
 ```
 
 Optional checks:
