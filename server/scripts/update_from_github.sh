@@ -30,12 +30,15 @@ RUN_PRODUCTION_CHECK="${SDAC_RUN_PRODUCTION_CHECK:-0}"
 DOMAIN="${SDAC_DOMAIN:-}"
 RELOAD_NGINX="${SDAC_RELOAD_NGINX:-1}"
 INSTALL_COMMAND=0
+ROLLBACK_MODE=0
+ROLLBACK_TARGET=""
 
 usage() {
     cat <<EOF
 Usage:
   $0 [release-tag]
   $0 --install-command
+  $0 rollback [snapshot-path-or-name]
 
 Examples:
   sdac-update "Version 2"
@@ -44,6 +47,7 @@ Examples:
   sdac-update latest-official
   sdac-update latest-experimental
   sdac-update latest-expirimental
+  sdac-update rollback
   SDAC_RUN_RESTORE_TEST=1 sdac-update latest-official
 
 Environment:
@@ -94,6 +98,14 @@ while [[ $# -gt 0 ]]; do
             INSTALL_COMMAND=1
             shift
             ;;
+        rollback|--rollback)
+            ROLLBACK_MODE=1
+            shift
+            if [[ $# -gt 0 && "$1" != -* ]]; then
+                ROLLBACK_TARGET="$1"
+                shift
+            fi
+            ;;
         --run-restore-test)
             RUN_RESTORE_TEST=1
             shift
@@ -118,7 +130,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-RELEASE_TAG="$(normalize_release_tag "$RELEASE_TAG")"
+if [[ "$ROLLBACK_MODE" != "1" ]]; then
+    RELEASE_TAG="$(normalize_release_tag "$RELEASE_TAG")"
+fi
 
 default_app_user() {
     if [[ -n "${SDAC_APP_USER:-}" ]]; then
@@ -264,6 +278,63 @@ run_optional_checks() {
     fi
 }
 
+run_update_health_check() {
+    say "Running post-update health check"
+    local failed=0
+
+    run_health_check() {
+        local label="$1"
+        shift
+        printf 'Checking %-34s' "$label"
+        if "$@" >/dev/null 2>&1; then
+            echo " ok"
+        else
+            echo " failed"
+            failed=1
+        fi
+    }
+
+    run_health_check "sdac-bot service" sudo systemctl is-active --quiet sdac-bot
+    run_health_check "sdac-dashboard service" sudo systemctl is-active --quiet sdac-dashboard
+
+    if [[ -x "$APP_DIR/venv/bin/python" && -f "$APP_DIR/scripts/migrate_database.py" && -f "$APP_DIR/sdac.db" ]]; then
+        run_health_check "database migration check" "$APP_DIR/venv/bin/python" "$APP_DIR/scripts/migrate_database.py" --db "$APP_DIR/sdac.db"
+    fi
+
+    if command -v curl >/dev/null 2>&1; then
+        run_health_check "local dashboard health" curl -fsS "http://$DASHBOARD_BIND/health"
+        if [[ -n "$DOMAIN" ]]; then
+            run_health_check "public HTTPS health" curl -fsS "https://$DOMAIN/health"
+        fi
+    fi
+
+    if [[ "$RELOAD_NGINX" == "1" ]] && systemctl list-unit-files nginx.service >/dev/null 2>&1; then
+        run_health_check "nginx service" systemctl is-active --quiet nginx
+        run_health_check "nginx config" sudo nginx -t
+    fi
+
+    if [[ "$failed" == "1" ]]; then
+        echo "One or more health checks failed. Review the lines above and the service logs."
+        return 1
+    fi
+    echo "All post-update health checks passed."
+}
+
+run_rollback() {
+    local rollback_script="$APP_DIR/scripts/rollback_ubuntu.sh"
+    if [[ ! -f "$rollback_script" ]]; then
+        fail "Rollback script not found: $rollback_script"
+    fi
+    say "Rolling back SDAC"
+    SDAC_APP_DIR="$APP_DIR" \
+    SDAC_APP_USER="$APP_USER" \
+    SDAC_ENV_FILE="$ENV_FILE" \
+    SDAC_DASHBOARD_BIND="$DASHBOARD_BIND" \
+    bash "$rollback_script" "$ROLLBACK_TARGET"
+    run_update_health_check
+    print_summary
+}
+
 print_summary() {
     say "Update complete"
     echo "Repository: $REPO"
@@ -300,6 +371,11 @@ need_command sed
 need_command chmod
 need_command systemctl
 
+if [[ "$ROLLBACK_MODE" == "1" ]]; then
+    run_rollback
+    exit 0
+fi
+
 download_installer
 
 say "Running release installer"
@@ -312,4 +388,5 @@ SDAC_DASHBOARD_BIND="$DASHBOARD_BIND" \
 
 restart_services
 run_optional_checks
+run_update_health_check
 print_summary

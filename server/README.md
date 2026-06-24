@@ -33,15 +33,20 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - Media lifecycle controls for local original retention, thumbnail size, image
   compression, backed-up original pruning, and old-history archives
 - Submission/game analytics dashboard with recent game answer history
+- Monthly admin report page and CSV export for top submissions, guessers,
+  votes, and activity
 - Maintenance page for backups, backup downloads, release status, restore tests,
   backup checksums, storage warnings, config backup restore, bot heartbeat
-  status, and health
+  status, storage forecast, rollback queueing, and health
+- Release channel dashboard for installed, official, and experimental versions
 - Moderation page for pending submissions, public reports, and recent decisions
+- Admin audit log under `/audit` and `/admin/audit`
 - Admin Privacy page for per-server user data export/delete requests
 - Per-server config export/import from dashboard Settings
+- Public bot landing page at `/about`
 - Public setup guide for server owners at `/setup-guide`
 - Onboarding page with setup health scores, saved setup-test reports, invite
-  link helper, and quick setup commands
+  link helper, setup templates, and quick setup commands
 - Discord-native `/setup` wizard with presets, permission checks, and full
   setup test
 - `/diagnose` self-checks for database, folders, channels, permissions, bot
@@ -133,6 +138,10 @@ Optional checks:
 ```bash
 SDAC_RUN_RESTORE_TEST=1 SDAC_RUN_PRODUCTION_CHECK=1 sdac-update latest-official
 ```
+
+The updater always restarts both SDAC services and runs a post-update health
+summary for bot service status, dashboard service status, database migration,
+local dashboard health, optional public HTTPS health, and Nginx when present.
 
 The updater also accepts `latest`, `official`, `2`, `v2`, `version-2`,
 `experimental`, `expirimental`, and `latest-expirimental` as aliases. `Version
@@ -353,6 +362,12 @@ bash scripts/support_bundle.sh
 ### Rollback
 
 ```bash
+sudo sdac-update rollback
+```
+
+Specific deploy snapshot:
+
+```bash
 cd /home/ubuntu/discord-screenshot-bot
 bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backups/SNAPSHOT-NAME
 ```
@@ -411,6 +426,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 
 ```text
 /                              Public submissions
+/about                         Public bot landing page and invite flow
 /setup-guide                   Public server-owner setup guide
 /guessing                       Guessing leaderboard
 /achievements                   Monthly achievements
@@ -426,11 +442,15 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /admin/jobs?key=ImTheBestAdmin
 /admin/privacy?key=ImTheBestAdmin
 /admin/analytics?key=ImTheBestAdmin
+/admin/monthly-report?key=ImTheBestAdmin
+/admin/releases?key=ImTheBestAdmin
 /admin/production-health?key=ImTheBestAdmin
 /admin/moderation?key=ImTheBestAdmin
 /admin/guild/GUILD_ID/config.json?key=ImTheBestAdmin
 /audit?key=ImTheBestAdmin
+/admin/audit?key=ImTheBestAdmin
 /export/audit.csv?key=ImTheBestAdmin
+/export/monthly-report.csv?key=ImTheBestAdmin
 /admin/health?key=ImTheBestAdmin
 ```
 

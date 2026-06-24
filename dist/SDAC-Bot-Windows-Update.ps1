@@ -66,6 +66,7 @@ function Resolve-ReleaseTag {
 function Show-Usage {
     Write-Host "Usage:"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 [release-tag]"
+    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 rollback"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 'Version 2'"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 2"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 2.6"
@@ -81,6 +82,10 @@ function Show-Usage {
 if ($Help) {
     Show-Usage
     exit 0
+}
+
+if ($ReleaseTag.Trim().ToLowerInvariant() -eq "rollback") {
+    Write-Error "Rollback is currently available through the Ubuntu updater only. Restore a Windows deploy backup manually from the deploy-backups folder."
 }
 
 $ReleaseTag = Resolve-ReleaseTag -Value $ReleaseTag
@@ -112,6 +117,22 @@ function Download-WithHttps {
     return (Test-Path -LiteralPath $installerPath)
 }
 
+function Test-SdacHealth {
+    Write-Host ""
+    Write-Host "==> Running local dashboard health check"
+    try {
+        $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:5000/health" -TimeoutSec 8
+        if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
+            Write-Host "Local dashboard health: ok"
+            return
+        }
+        Write-Warning "Local dashboard health returned HTTP $($response.StatusCode)."
+    }
+    catch {
+        Write-Warning "Local dashboard health check failed: $($_.Exception.Message)"
+    }
+}
+
 try {
     New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 
@@ -134,6 +155,7 @@ try {
     Write-Host "Update complete."
     Write-Host "Release tag: $ReleaseTag"
     Write-Host "Installer: $AssetName"
+    Test-SdacHealth
 }
 finally {
     if (Test-Path -LiteralPath $tempDir) {

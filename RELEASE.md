@@ -1,3 +1,39 @@
+# SDAC Bot Version 2.8.1 Experimental
+
+Date: 2026-06-24
+
+Version 2.8.1 is an experimental production-usability build layered on top of
+the official Version 2.8 release.
+
+Included:
+
+- public `/about` bot landing page with setup summary and invite helper
+- `/admin/releases` release-channel page showing installed, official, and
+  experimental release status plus update/rollback commands
+- automatic post-update health summary in the Ubuntu updater
+- `sdac-update rollback` for restoring the latest deploy snapshot
+- dashboard rollback queue action on the Maintenance page
+- storage forecast table on Maintenance and in admin health JSON
+- `/admin/monthly-report` with monthly top submissions, top guessers, activity
+  totals, and CSV export
+- `/export/monthly-report.csv` for monthly report downloads
+- `/admin/audit` alias for the existing audit log
+- onboarding setup template table for common server styles
+- clearer `/repairpermissions` preview with scopes and permission integer
+- production check script now reports all failed checks before exiting
+- Windows updater now runs a local dashboard health check after updates and
+  explains that rollback is Linux-only
+- README updates for the new pages, rollback command, updater health checks,
+  and report export
+
+Release channel:
+
+- `version-2.8.1` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+---
+
 # SDAC Bot Version 2.8 Official
 
 Date: 2026-06-24

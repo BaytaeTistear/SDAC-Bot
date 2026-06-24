@@ -231,6 +231,39 @@ DEFAULT_GUILD_FIELDS = {
     "features": DEFAULT_FEATURES,
 }
 
+SETUP_TEMPLATE_ROWS = [
+    {
+        "key": "simple",
+        "label": "Submission-only server",
+        "description": "Submissions, public gallery, weekly posts, and light game support.",
+        "command": "/setup -> Apply Simple Gallery preset",
+    },
+    {
+        "key": "game",
+        "label": "Game-only server",
+        "description": "Guessing games and cross-server leaderboards with submissions disabled.",
+        "command": "/setup -> Apply Game Night preset",
+    },
+    {
+        "key": "full",
+        "label": "Full community server",
+        "description": "Submissions, approvals, games, reports, analytics, and public stats.",
+        "command": "/setup -> Apply Full Community preset",
+    },
+    {
+        "key": "low_storage",
+        "label": "Low-storage server",
+        "description": "Compression, backups, pruning, and smaller storage limits for cheap hosts.",
+        "command": "/setlimit storage_mb 1024 + /setserverbackup",
+    },
+    {
+        "key": "private",
+        "label": "Private/admin-only server",
+        "description": "Approval-focused setup with public gallery and cross-server visibility disabled.",
+        "command": "/setup -> Apply Private Review preset",
+    },
+]
+
 RELEASE_REPO = os.getenv("SDAC_GITHUB_REPO", "BaytaeTistear/SDAC-Bot")
 UPDATE_ENV_FILE = Path(os.getenv("SDAC_UPDATE_CONFIG", "/etc/sdac-bot/update.env"))
 RELEASE_CACHE = {
@@ -462,6 +495,7 @@ HTML = """
     <nav class="admin-nav">
         <a href="{{ url_for('index', key=admin_key if is_admin else None) }}">Submissions</a>
         <a href="{{ url_for('my_submissions', key=admin_key if is_admin else None) }}">My submissions</a>
+        <a href="{{ url_for('about') }}">About</a>
         <a href="{{ url_for('servers') }}">Servers</a>
         <a href="{{ url_for('setup_guide') }}">Setup guide</a>
         <a href="{{ url_for('guessing_leaderboard', key=admin_key if is_admin else None) }}">Guessing leaderboard</a>
@@ -472,9 +506,11 @@ HTML = """
             <a href="{{ url_for('admin_seasons', key=admin_key) }}">Seasons</a>
             <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
             <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
+            <a href="{{ url_for('admin_monthly_report', key=admin_key) }}">Reports</a>
             <a href="{{ url_for('admin_jobs', key=admin_key) }}">Jobs</a>
             <a href="{{ url_for('admin_privacy', key=admin_key) }}">Privacy</a>
             <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
+            <a href="{{ url_for('admin_releases', key=admin_key) }}">Releases</a>
             <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
             <a href="{{ url_for('admin_logout') }}">Log out</a>
         {% endif %}
@@ -2380,6 +2416,8 @@ MAINTENANCE_HTML = """
         <a href="{{ url_for('admin_seasons', key=admin_key) }}">Seasons</a>
         <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
         <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
+        <a href="{{ url_for('admin_monthly_report', key=admin_key) }}">Monthly Report</a>
+        <a href="{{ url_for('admin_releases', key=admin_key) }}">Releases</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
         <a href="{{ url_for('admin_jobs', key=admin_key) }}">Jobs</a>
         <a href="{{ url_for('admin_production_health', key=admin_key) }}">Health Score</a>
@@ -2409,6 +2447,7 @@ MAINTENANCE_HTML = """
                 <tr><th>Configured update tag</th><td><code>{{ release_status.configured_tag }}</code></td></tr>
                 <tr><th>Latest official</th><td><code>{{ release_status.official.tag }}</code>{% if release_status.official.published_at %} ({{ release_status.official.published_at }}){% endif %}</td></tr>
                 <tr><th>Latest experimental</th><td><code>{{ release_status.experimental.tag }}</code>{% if release_status.experimental.published_at %} ({{ release_status.experimental.published_at }}){% endif %}</td></tr>
+                <tr><th>Release dashboard</th><td><a href="{{ url_for('admin_releases', key=admin_key) }}">Open release channel page</a></td></tr>
                 {% if release_status.error %}<tr><th>Release check</th><td>{{ release_status.error }}</td></tr>{% endif %}
                 <tr><th>Server name</th><td>{{ server_name }}</td></tr>
                 <tr><th>Started</th><td>{{ started_at }}</td></tr>
@@ -2446,7 +2485,34 @@ MAINTENANCE_HTML = """
             <button name="action" value="restore_config" type="submit">Restore Latest Config Backup</button>
             <button name="action" value="archive_history" type="submit">Archive Old History</button>
             <button name="action" value="archive_history_delete" type="submit" onclick="return confirm('Archive and remove old full submission rows from the live database? Monthly top snapshots stay preserved.');">Archive And Remove Old Full History</button>
+            <button name="action" value="rollback_latest_snapshot" type="submit" onclick="return confirm('Queue rollback to the latest deploy snapshot? This can restart SDAC services if the server permissions allow it.');">Rollback Latest Snapshot</button>
         </form>
+        <p class="muted">
+            Monthly report export:
+            <a href="{{ url_for('admin_monthly_report', key=admin_key) }}">open report page</a>
+            or
+            <a href="{{ url_for('export_monthly_report', key=admin_key) }}">download current month CSV</a>.
+        </p>
+    </section>
+
+    <section class="panel">
+        <h2>Storage Forecast</h2>
+        <table>
+            <thead><tr><th>Server</th><th>Current</th><th>Limit</th><th>Recent Growth</th><th>Forecast</th></tr></thead>
+            <tbody>
+                {% for row in storage_forecasts %}
+                    <tr>
+                        <td>{{ row.name }}<br><code>{{ row.guild_id }}</code></td>
+                        <td>{{ row.current }}</td>
+                        <td>{{ row.limit }}</td>
+                        <td>{{ row.average }}</td>
+                        <td>{{ row.forecast }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="muted">No server storage history yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </section>
 
     <section class="panel">
@@ -2909,6 +2975,7 @@ ANALYTICS_HTML = """
         <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
         <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
         <a href="{{ url_for('admin_media_cleanup', key=admin_key) }}">Media</a>
+        <a href="{{ url_for('admin_monthly_report', key=admin_key) }}">Monthly Report</a>
         <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
     </nav>
@@ -2967,6 +3034,183 @@ ANALYTICS_HTML = """
                 </tbody>
             </table>
         </div>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+MONTHLY_REPORT_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Monthly Report</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1100px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav, form { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        select, input, button { border: 1px solid #30333b; border-radius: 7px; font-size: 15px; padding: 9px 10px; }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Monthly Report</h1>
+    <nav>
+        <a href="{{ url_for('admin_analytics', key=admin_key) }}">Analytics</a>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+    <section class="panel">
+        <form method="get">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <select name="guild_id">
+                <option value="all">All available servers</option>
+                {% for guild in guild_options %}
+                    <option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>{{ guild.name }}</option>
+                {% endfor %}
+            </select>
+            <input name="month" value="{{ month }}" pattern="\\d{4}-\\d{2}" placeholder="YYYY-MM">
+            <button type="submit">View Report</button>
+            <a href="{{ url_for('export_monthly_report', key=admin_key, guild_id=selected_guild_id or 'all', month=month) }}">Download CSV</a>
+        </form>
+    </section>
+    <section class="grid">
+        {% for label, value in totals.items() %}
+            <div class="panel"><h2>{{ label }}</h2><p><code>{{ value }}</code></p></div>
+        {% endfor %}
+    </section>
+    <section class="grid">
+        <div class="panel">
+            <h2>Top Submissions</h2>
+            <table>
+                <thead><tr><th>Rank</th><th>User</th><th>Category</th><th>Votes</th><th>Submission</th></tr></thead>
+                <tbody>
+                    {% for row in top_submissions %}
+                        <tr><td>{{ loop.index }}</td><td>{{ row.username }}</td><td>{{ row.category or "Uncategorized" }}</td><td>{{ row.stars }}</td><td><a href="{{ url_for('index', key=admin_key, q=row.id, guild_id=row.guild_id or 'all') }}">#{{ row.id }}</a></td></tr>
+                    {% else %}<tr><td colspan="5" class="muted">No submissions for this month.</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="panel">
+            <h2>Top Guessers</h2>
+            <table>
+                <thead><tr><th>Rank</th><th>User</th><th>Points</th><th>Server</th></tr></thead>
+                <tbody>
+                    {% for row in top_guessers %}
+                        <tr><td>{{ loop.index }}</td><td>{{ row.username }}</td><td>{{ row.points }}</td><td>{{ guild_names.get(row.guild_id, row.guild_id) }}</td></tr>
+                    {% else %}<tr><td colspan="4" class="muted">No guessing points for this month.</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="panel">
+        <h2>Activity</h2>
+        <table>
+            <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+            <tbody>
+                {% for row in activity %}
+                    <tr><td>{{ row.label }}</td><td>{{ row.value }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+RELEASES_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Release Channel</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1000px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        .ok { color: #63c174; font-weight: bold; }
+        .bad { color: #e45d68; font-weight: bold; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Release Channel</h1>
+    <nav>
+        <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('admin_production_health', key=admin_key) }}">Health Score</a>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+    <section class="panel">
+        <h2>Installed And Available</h2>
+        <table>
+            <tbody>
+                <tr><th>Installed release</th><td><code>{{ release_status.installed }}</code></td></tr>
+                <tr><th>Configured update tag</th><td><code>{{ release_status.configured_tag }}</code></td></tr>
+                <tr><th>Repository</th><td><code>{{ release_status.repo }}</code></td></tr>
+                <tr><th>Latest official</th><td><code>{{ release_status.official.tag }}</code>{% if release_status.official.published_at %} ({{ release_status.official.published_at }}){% endif %}</td></tr>
+                <tr><th>Latest experimental</th><td><code>{{ release_status.experimental.tag }}</code>{% if release_status.experimental.published_at %} ({{ release_status.experimental.published_at }}){% endif %}</td></tr>
+                {% if release_status.error %}<tr><th>Release check</th><td class="bad">{{ release_status.error }}</td></tr>{% endif %}
+            </tbody>
+        </table>
+    </section>
+    <section class="panel">
+        <h2>Update Commands</h2>
+        <p>Stable official channel:</p>
+        <p><code>sudo sdac-update latest-official</code></p>
+        <p>Version 2 alias:</p>
+        <p><code>sudo sdac-update "Version 2"</code></p>
+        <p>Exact release:</p>
+        <p><code>sudo sdac-update 2.8</code></p>
+        <p>Experimental test channel:</p>
+        <p><code>sudo sdac-update latest-experimental</code></p>
+    </section>
+    <section class="panel">
+        <h2>Rollback</h2>
+        <p>
+            The updater can restore the latest deploy snapshot with:
+            <code>sudo sdac-update rollback</code>
+        </p>
+        <p class="muted">
+            You can also queue rollback from Maintenance. The dashboard service
+            user must have permission to restart the SDAC systemd services.
+        </p>
+        <table>
+            <thead><tr><th>Snapshot</th><th>Modified</th></tr></thead>
+            <tbody>
+                {% for snapshot in snapshots %}
+                    <tr><td><code>{{ snapshot.name }}</code></td><td>{{ snapshot.modified }}</td></tr>
+                {% else %}
+                    <tr><td colspan="2" class="muted">No deploy snapshots found yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </section>
 </main>
 </body>
@@ -3330,6 +3574,22 @@ ONBOARDING_HTML = """
         </ol>
     </section>
 
+    <section class="server">
+        <h2>Setup Templates</h2>
+        <table>
+            <thead><tr><th>Template</th><th>Best For</th><th>How To Apply</th></tr></thead>
+            <tbody>
+                {% for template in setup_templates %}
+                    <tr>
+                        <td>{{ template.label }}</td>
+                        <td>{{ template.description }}</td>
+                        <td><code>{{ template.command }}</code></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
     {% for server in servers %}
         <article class="server">
             <h2>{{ server.name }} <span class="muted">({{ server.id }})</span></h2>
@@ -3384,6 +3644,95 @@ ONBOARDING_HTML = """
     {% else %}
         <p>No Discord servers are configured yet. Invite the bot and let it start once, then refresh this page.</p>
     {% endfor %}
+</main>
+</body>
+</html>
+"""
+
+
+ABOUT_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>About SDAC Bot</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 900px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+        code { color: #cdd7ff; }
+        .muted { color: #a8adb8; }
+        li { margin: 8px 0; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>About SDAC Bot</h1>
+    <nav>
+        <a href="{{ url_for('index') }}">Submissions</a>
+        <a href="{{ url_for('servers') }}">Servers</a>
+        <a href="{{ url_for('public_stats') }}">Stats</a>
+        <a href="{{ url_for('setup_guide') }}">Setup guide</a>
+    </nav>
+
+    <section class="panel">
+        <h2>What It Does</h2>
+        <p>
+            SDAC Bot lets Discord communities collect media submissions,
+            repost them into organized category channels, vote on favorites,
+            and run media guessing games with monthly and cross-server rankings.
+        </p>
+        <p>
+            It includes a web dashboard for approvals, moderation, game-library
+            management, analytics, backups, privacy tools, setup health, and
+            production maintenance.
+        </p>
+    </section>
+
+    <section class="grid">
+        <div class="panel">
+            <h2>Discord Commands</h2>
+            <ul>
+                <li><code>/submit</code> starts a guided media submission.</li>
+                <li><code>/setup</code> walks admins through server setup.</li>
+                <li><code>/startgame</code>, <code>/guess</code>, and <code>/correct</code> run guessing games.</li>
+                <li><code>/diagnose</code> checks database, folders, permissions, and runtime health.</li>
+            </ul>
+        </div>
+        <div class="panel">
+            <h2>Dashboard</h2>
+            <ul>
+                <li>Public gallery, stats, leaderboards, and server pages.</li>
+                <li>Admin review, moderation, audit log, reports, jobs, and privacy actions.</li>
+                <li>Release channel, backups, storage forecast, and production checks.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Add It To A Server</h2>
+        {% if invite_url %}
+            <p><a href="{{ invite_url }}" target="_blank">Invite SDAC Bot with the required permissions</a></p>
+        {% else %}
+            <p class="muted">
+                The invite link is not configured yet. Set
+                <code>SDAC_BOT_CLIENT_ID</code> or <code>DISCORD_CLIENT_ID</code>
+                on the host.
+            </p>
+        {% endif %}
+        <ol>
+            <li>Invite the bot with the bot and application command scopes.</li>
+            <li>Run <code>/setup</code> in Discord.</li>
+            <li>Run <code>/setuptest</code> or <code>/diagnose</code>.</li>
+            <li>Open the dashboard onboarding page if you want a browser checklist.</li>
+        </ol>
+    </section>
 </main>
 </body>
 </html>
@@ -5516,6 +5865,218 @@ def path_tree_stats(path):
     return {"bytes": total, "files": files, "oldest": oldest_label}
 
 
+def latest_deploy_snapshots(limit=10):
+    deploy_root = BASE_DIR / "deploy-backups"
+    if not deploy_root.exists():
+        return []
+    snapshots = []
+    for path in deploy_root.iterdir():
+        if not path.is_dir():
+            continue
+        try:
+            modified = datetime.fromtimestamp(
+                path.stat().st_mtime,
+                timezone.utc,
+            ).strftime("%Y-%m-%d %H:%M UTC")
+        except OSError:
+            modified = ""
+        snapshots.append({
+            "name": path.name,
+            "path": str(path),
+            "modified": modified,
+        })
+    snapshots.sort(key=lambda item: item["modified"], reverse=True)
+    return snapshots[:limit]
+
+
+def run_latest_rollback():
+    script_path = BASE_DIR / "scripts" / "rollback_ubuntu.sh"
+    if os.name == "nt":
+        return {
+            "ok": False,
+            "message": "Dashboard rollback is only available on Linux hosts.",
+        }
+    if not script_path.is_file():
+        return {
+            "ok": False,
+            "message": f"Rollback script not found: {script_path}",
+        }
+    try:
+        result = subprocess.run(
+            ["bash", str(script_path)],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return {"ok": False, "message": f"Rollback failed to start: {error}"}
+    output = (result.stdout or result.stderr or "").strip()
+    if result.returncode != 0:
+        return {
+            "ok": False,
+            "message": (output or f"Rollback exited with {result.returncode}")[-1000:],
+        }
+    return {
+        "ok": True,
+        "message": (output or "Rollback completed.")[-1000:],
+    }
+
+
+def storage_forecast_rows(config_data=None):
+    config_data = config_data or load_config()
+    rows = []
+    try:
+        global_limit = int(
+            (config_data.get("limits") or {}).get("guild_storage_limit_bytes") or 0
+        )
+    except (TypeError, ValueError):
+        global_limit = 0
+    with closing(connect_db()) as connection:
+        for guild_id, guild_config in sorted((config_data.get("guilds") or {}).items()):
+            if not can_admin_access_guild(guild_id, config_data):
+                continue
+            media_stats = path_tree_stats(MEDIA_DIR / str(guild_id))
+            limits = guild_config.get("limits") or {}
+            try:
+                limit_bytes = int(limits.get("storage_limit_bytes") or global_limit)
+            except (TypeError, ValueError):
+                limit_bytes = 0
+            month_rows = connection.execute("""
+                SELECT substr(COALESCE(created_at, submitted_at), 1, 7) AS month,
+                       SUM(COALESCE(CAST(media_sizes AS INTEGER), 0)) AS bytes,
+                       COUNT(*) AS submissions
+                FROM submissions
+                WHERE guild_id = ?
+                  AND status != 'removed'
+                  AND COALESCE(created_at, submitted_at, '') != ''
+                GROUP BY month
+                ORDER BY month DESC
+                LIMIT 3
+            """, (str(guild_id),)).fetchall()
+            recent_bytes = [
+                int(row["bytes"] or 0)
+                for row in month_rows
+                if row["month"]
+            ]
+            average_monthly_bytes = (
+                int(sum(recent_bytes) / len(recent_bytes))
+                if recent_bytes
+                else 0
+            )
+            if limit_bytes and average_monthly_bytes > 0 and media_stats["bytes"] < limit_bytes:
+                months_left = round(
+                    (limit_bytes - media_stats["bytes"]) / average_monthly_bytes,
+                    1,
+                )
+                forecast = f"About {months_left} month(s) until limit."
+            elif limit_bytes and media_stats["bytes"] >= limit_bytes:
+                forecast = "At or above configured limit."
+            elif average_monthly_bytes > 0:
+                forecast = f"Growing about {format_bytes(average_monthly_bytes)} per month."
+            else:
+                forecast = "Not enough history yet."
+            rows.append({
+                "guild_id": guild_id,
+                "name": (
+                    guild_config.get("brand_name")
+                    or guild_config.get("guild_name")
+                    or f"Discord {guild_id}"
+                ),
+                "current": format_bytes(media_stats["bytes"]),
+                "current_bytes": media_stats["bytes"],
+                "limit": format_bytes(limit_bytes) if limit_bytes else "No limit",
+                "average": (
+                    format_bytes(average_monthly_bytes)
+                    if average_monthly_bytes
+                    else "Unknown"
+                ),
+                "forecast": forecast,
+            })
+    rows.sort(key=lambda row: row["current_bytes"], reverse=True)
+    return rows
+
+
+def month_start_end(month):
+    if not re.match(r"^\d{4}-\d{2}$", str(month or "")):
+        month = current_month_key()
+    return month, f"{month}-01T00:00:00", f"{month}-31T23:59:59"
+
+
+def monthly_report_data(month, guild_id=None):
+    month, start_at, end_at = month_start_end(month)
+    config_data = load_config()
+    allowed_ids = (
+        {str(guild_id)}
+        if guild_id
+        else current_admin_allowed_guild_ids(config_data)
+    )
+    scope_sql, scope_params = guild_id_filter("guild_id", allowed_ids)
+    created_sql = (
+        "COALESCE(created_at, submitted_at, '') >= ? "
+        "AND COALESCE(created_at, submitted_at, '') <= ?"
+    )
+    with closing(connect_db()) as connection:
+        top_submissions = connection.execute(f"""
+            SELECT id, guild_id, username, category, stars, created_at
+            FROM submissions
+            WHERE {scope_sql}
+              AND status = 'posted'
+              AND {created_sql}
+            ORDER BY stars DESC, created_at DESC, id DESC
+            LIMIT 10
+        """, scope_params + [start_at, end_at]).fetchall()
+        top_guessers = connection.execute(f"""
+            SELECT guild_id, user_id, username, SUM(points) AS points
+            FROM guess_points
+            WHERE {scope_sql}
+              AND month = ?
+            GROUP BY guild_id, user_id, username
+            ORDER BY points DESC, username ASC
+            LIMIT 10
+        """, scope_params + [month]).fetchall()
+        totals = {
+            "Submissions": connection.execute(f"""
+                SELECT COUNT(*)
+                FROM submissions
+                WHERE {scope_sql}
+                  AND status = 'posted'
+                  AND {created_sql}
+            """, scope_params + [start_at, end_at]).fetchone()[0],
+            "Votes": connection.execute(f"""
+                SELECT COALESCE(SUM(stars), 0)
+                FROM submissions
+                WHERE {scope_sql}
+                  AND status = 'posted'
+                  AND {created_sql}
+            """, scope_params + [start_at, end_at]).fetchone()[0],
+            "Guess Points": connection.execute(f"""
+                SELECT COALESCE(SUM(points), 0)
+                FROM guess_points
+                WHERE {scope_sql}
+                  AND month = ?
+            """, scope_params + [month]).fetchone()[0],
+            "Correct Guesses": connection.execute(f"""
+                SELECT COUNT(*)
+                FROM guess_correct_guesses
+                WHERE {scope_sql}
+                  AND guessed_at >= ?
+                  AND guessed_at <= ?
+            """, scope_params + [start_at, end_at]).fetchone()[0],
+        }
+    return {
+        "month": month,
+        "totals": totals,
+        "top_submissions": top_submissions,
+        "top_guessers": top_guessers,
+        "activity": [
+            {"label": label, "value": value}
+            for label, value in totals.items()
+        ],
+    }
+
+
 def backup_safe_for_pruning(backup):
     backup = backup or {}
     return bool(
@@ -5983,6 +6544,7 @@ def background_job_label(job_type):
         "restore_guild_media": "Restore guild media",
         "archive_history": "Archive old history",
         "rebuild_media_fingerprints": "Rebuild media fingerprints",
+        "rollback_latest_snapshot": "Rollback latest deploy snapshot",
     }
     return labels.get(job_type, str(job_type or "").replace("_", " ").title())
 
@@ -6101,6 +6663,10 @@ def process_background_job(job_id):
                     guild_id=payload.get("guild_id") or job["guild_id"],
                     limit=int(payload.get("limit") or 10000),
                 )
+            elif job["job_type"] == "rollback_latest_snapshot":
+                result = run_latest_rollback()
+                if not result.get("ok"):
+                    raise RuntimeError(result.get("message") or "Rollback failed.")
             else:
                 raise ValueError(f"Unknown background job type: {job['job_type']}")
             update_background_job(
@@ -8510,6 +9076,22 @@ def admin_maintenance():
                 notice=message,
                 error=0,
             ))
+        if action == "rollback_latest_snapshot":
+            job_id = queue_background_job(
+                "rollback_latest_snapshot",
+                actor_id=actor_id,
+                actor_name=actor_name,
+            )
+            return redirect(url_for(
+                "admin_maintenance",
+                key=ADMIN_KEY,
+                notice=(
+                    f"Queued rollback to the latest deploy snapshot as "
+                    f"background job #{job_id}. Watch the Jobs page; the "
+                    "dashboard may briefly restart if rollback succeeds."
+                ),
+                error=0,
+            ))
 
     media_stats = media_directory_stats()
     config_data = load_config()
@@ -8577,6 +9159,7 @@ def admin_maintenance():
         restore_runs=restore_runs,
         server_name=os.getenv("SDAC_SERVER_NAME") or "local",
         started_at=APP_STARTED_AT.strftime("%Y-%m-%d %H:%M UTC"),
+        storage_forecasts=storage_forecast_rows(config_data),
         uptime=f"{days}d {hours}h {minutes}m",
         warnings=security_warnings() + storage_warnings(config_data),
     )
@@ -8942,6 +9525,46 @@ def admin_analytics():
     )
 
 
+@app.route("/admin/monthly-report")
+def admin_monthly_report():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+
+    config_data = load_config()
+    options = guild_options(config_data)
+    selected_server_id = selected_guild_id(options)
+    month = request.args.get("month", current_month_key()).strip()
+    if not re.match(r"^\d{4}-\d{2}$", month):
+        month = current_month_key()
+    report = monthly_report_data(month, selected_server_id)
+    return render_template_string(
+        MONTHLY_REPORT_HTML,
+        activity=report["activity"],
+        admin_key=ADMIN_KEY,
+        guild_names=guild_name_map(config_data),
+        guild_options=options,
+        month=report["month"],
+        selected_guild_id=selected_server_id,
+        top_guessers=report["top_guessers"],
+        top_submissions=report["top_submissions"],
+        totals=report["totals"],
+    )
+
+
+@app.route("/admin/releases")
+def admin_releases():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+    return render_template_string(
+        RELEASES_HTML,
+        admin_key=ADMIN_KEY,
+        release_status=release_status(),
+        snapshots=latest_deploy_snapshots(),
+    )
+
+
 @app.route("/admin/production-health")
 def admin_production_health():
     login_response = require_admin_login("admin")
@@ -9115,6 +9738,7 @@ def admin_onboarding():
         admin_key=ADMIN_KEY,
         invite_url=bot_invite_url(),
         servers=build_onboarding_rows(config_data),
+        setup_templates=SETUP_TEMPLATE_ROWS,
     )
 
 
@@ -9524,6 +10148,14 @@ def index():
     return rendered
 
 
+@app.route("/about")
+def about():
+    return render_template_string(
+        ABOUT_HTML,
+        invite_url=bot_invite_url(),
+    )
+
+
 @app.route("/setup-guide")
 def setup_guide():
     return render_template_string(
@@ -9780,6 +10412,7 @@ def my_submissions():
 
 
 @app.route("/audit")
+@app.route("/admin/audit")
 def audit_log():
     login_response = require_admin_login()
     if login_response:
@@ -10353,6 +10986,17 @@ def admin_health():
                 row["id"]: row["health_score"]
                 for row in setup_rows
             },
+            "storage_forecast": [
+                {
+                    "guild_id": row["guild_id"],
+                    "current": row["current"],
+                    "limit": row["limit"],
+                    "average": row["average"],
+                    "forecast": row["forecast"],
+                }
+                for row in storage_forecast_rows(config_data)
+            ],
+            "release_status": release_status(),
             "production_health": {
                 "score": production_health["score"],
                 "max_score": production_health["max_score"],
@@ -10431,6 +11075,73 @@ def export_guessing():
         "sdac-guessing.csv",
         rows,
         ["guild_id", "channel_id", "user_id", "username", "month", "points", "updated_at"],
+    )
+
+
+@app.route("/export/monthly-report.csv")
+def export_monthly_report():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+
+    config_data = load_config()
+    options = guild_options(config_data)
+    valid_ids = {option["id"] for option in options}
+    requested_guild_id = request.args.get("guild_id", "").strip()
+    guild_id = requested_guild_id if requested_guild_id in valid_ids else None
+    month = request.args.get("month", current_month_key()).strip()
+    report = monthly_report_data(month, guild_id)
+    rows = []
+    for label, value in report["totals"].items():
+        rows.append({
+            "section": "summary",
+            "rank": "",
+            "guild_id": guild_id or "all",
+            "label": label,
+            "user": "",
+            "category": "",
+            "value": value,
+            "submission_id": "",
+            "month": report["month"],
+        })
+    for rank, row in enumerate(report["top_submissions"], start=1):
+        rows.append({
+            "section": "top_submission",
+            "rank": rank,
+            "guild_id": row["guild_id"],
+            "label": "votes",
+            "user": row["username"],
+            "category": row["category"] or "Uncategorized",
+            "value": row["stars"],
+            "submission_id": row["id"],
+            "month": report["month"],
+        })
+    for rank, row in enumerate(report["top_guessers"], start=1):
+        rows.append({
+            "section": "top_guesser",
+            "rank": rank,
+            "guild_id": row["guild_id"],
+            "label": "points",
+            "user": row["username"],
+            "category": "",
+            "value": row["points"],
+            "submission_id": "",
+            "month": report["month"],
+        })
+    return csv_response(
+        f"sdac-monthly-report-{report['month']}.csv",
+        rows,
+        [
+            "section",
+            "rank",
+            "guild_id",
+            "label",
+            "user",
+            "category",
+            "value",
+            "submission_id",
+            "month",
+        ],
     )
 
 

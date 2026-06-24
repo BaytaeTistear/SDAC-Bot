@@ -4893,7 +4893,15 @@ async def repairpermissions(interaction):
     if not channel_ids and isinstance(interaction.channel, discord.TextChannel):
         channel_ids.append(interaction.channel.id)
 
-    lines = ["**SDAC Permission Repair**"]
+    required_permission_integer = os.getenv("SDAC_BOT_PERMISSIONS", "274878221376")
+    lines = [
+        "**SDAC Permission Repair Preview**",
+        "This command does not change permissions by itself. It previews what SDAC needs.",
+        f"Invite scopes: `bot applications.commands`",
+        f"Permissions integer: `{required_permission_integer}`",
+        "",
+        "**Channel Checks**",
+    ]
     missing_count = 0
     if not channel_ids:
         lines.append("No configured channels are set yet. Run `/setup` first.")
@@ -4922,8 +4930,9 @@ async def repairpermissions(interaction):
     lines.append("")
     if missing_count:
         lines.append(
-            "Fix by editing the channel/role overwrite for the bot, or "
-            "re-authorize it with the permissions integer from your setup."
+            "Recommended fix: edit the channel/role overwrite for the bot, "
+            "then rerun `/repairpermissions`. If guild-level permissions are "
+            "missing, re-authorize the bot with the link below."
         )
     else:
         lines.append("No missing SDAC channel permissions were found.")
