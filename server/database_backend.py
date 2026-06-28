@@ -24,6 +24,9 @@ ID_TABLES = {
     "content_moderation_events",
     "offsite_backup_runs",
     "privacy_actions",
+    "pending_admin_actions",
+    "media_quarantine",
+    "monthly_digest_runs",
 }
 
 

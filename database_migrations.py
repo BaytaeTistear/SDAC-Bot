@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import sqlite3
 
 
-DATABASE_SCHEMA_VERSION = 10
+DATABASE_SCHEMA_VERSION = 11
 
 
 def utc_now_iso():
@@ -428,6 +428,77 @@ def migration_10_jobs_duplicates_and_privacy(connection):
     """)
 
 
+def migration_11_operations_safety_tables(connection):
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS pending_admin_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT,
+            action_type TEXT,
+            target_type TEXT,
+            target_id TEXT,
+            payload_json TEXT,
+            requested_by TEXT,
+            requested_by_name TEXT,
+            approved_by TEXT,
+            approved_by_name TEXT,
+            status TEXT DEFAULT 'pending',
+            result_text TEXT,
+            created_at TEXT,
+            approved_at TEXT,
+            completed_at TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_pending_admin_actions_status_created
+        ON pending_admin_actions (status, created_at)
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_pending_admin_actions_guild_status
+        ON pending_admin_actions (guild_id, status, created_at)
+    """)
+
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS media_quarantine (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT,
+            submission_id INTEGER,
+            original_path TEXT,
+            quarantine_path TEXT,
+            media_name TEXT,
+            reason TEXT,
+            status TEXT DEFAULT 'quarantined',
+            actor_user_id TEXT,
+            actor_username TEXT,
+            created_at TEXT,
+            resolved_at TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_media_quarantine_status_created
+        ON media_quarantine (status, created_at)
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_media_quarantine_submission
+        ON media_quarantine (submission_id, status)
+    """)
+
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS monthly_digest_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT,
+            month TEXT,
+            status TEXT,
+            details_json TEXT,
+            posted_at TEXT,
+            created_at TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_monthly_digest_runs_guild_month
+        ON monthly_digest_runs (guild_id, month, created_at)
+    """)
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -437,6 +508,7 @@ MIGRATIONS = (
     (8, migration_8_multi_server_and_answer_history),
     (9, migration_9_production_operations),
     (10, migration_10_jobs_duplicates_and_privacy),
+    (11, migration_11_operations_safety_tables),
 )
 
 

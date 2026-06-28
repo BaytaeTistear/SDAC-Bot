@@ -1,3 +1,40 @@
+# SDAC Bot Version 2.8.2 Experimental
+
+Date: 2026-06-28
+
+Version 2.8.2 is an experimental operations-safety build for validating the
+next production admin workflow.
+
+Included:
+
+- `/repository` Discord admin command showing the configured user/fork repo and
+  the original upstream repo
+- schema v11 with pending admin approvals, media quarantine, and monthly digest
+  run tracking
+- `/admin/install-doctor` for setup, permissions, updater, Nginx, Certbot,
+  database, and heartbeat checks
+- `/admin/approvals` for two-admin review of dangerous actions
+- `/admin/owner-portal` for a compact per-server operations overview
+- media quarantine controls on submissions and the media cleanup page
+- SQLite optimize action on Maintenance
+- config import diff preview before replacing a server config
+- permission drift monitor for configured Discord channels
+- monthly restore drills and monthly digest posts
+- public read-only JSON endpoints for stats, servers, leaderboards, and server
+  summaries
+- bot/dashboard instance IDs in status pages and health JSON
+- release page guidance for official, experimental, and explicit-version
+  update channels
+- README updates for the new commands, pages, APIs, and exact release example
+
+Release channel:
+
+- `version-2.8.2` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+---
+
 # SDAC Bot Version 2.8.1 Experimental
 
 Date: 2026-06-24

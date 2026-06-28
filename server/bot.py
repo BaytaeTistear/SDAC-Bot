@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import sqlite3
 import subprocess
 import tempfile
@@ -31,6 +32,12 @@ DB_FILE = Path(os.getenv("SDAC_DB_FILE", BASE_DIR / "sdac.db"))
 MEDIA_DIR = Path(os.getenv("SDAC_MEDIA_DIR", BASE_DIR / "media"))
 BACKUP_DIR = Path(os.getenv("SDAC_BACKUP_DIR", BASE_DIR / "backups"))
 BOT_STATUS_FILE = Path(os.getenv("SDAC_BOT_STATUS_FILE", BASE_DIR / "bot_status.json"))
+ORIGINAL_REPO = os.getenv("SDAC_UPSTREAM_GITHUB_REPO", "BaytaeTistear/SDAC-Bot")
+RELEASE_REPO = os.getenv("SDAC_GITHUB_REPO", ORIGINAL_REPO)
+BOT_INSTANCE_ID = (
+    os.getenv("SDAC_INSTANCE_ID")
+    or f"{socket.gethostname()}:{hashlib.sha1(str(BASE_DIR).encode('utf-8')).hexdigest()[:8]}"
+)
 BACKUP_KEEP_COUNT = 30
 SCHEMA_VERSION = DATABASE_SCHEMA_VERSION
 
@@ -79,6 +86,9 @@ DEFAULT_CONFIG = {
         "restore_test_enabled": True,
         "restore_test_weekday": "sunday",
         "restore_test_time_utc": "03:30",
+        "restore_drill_enabled": True,
+        "monthly_digest_enabled": True,
+        "two_admin_approval_enabled": False,
         "monthly_submission_limit_per_guild": 0,
         "active_game_limit_per_guild": 0,
         "guild_storage_limit_bytes": 0,
@@ -269,6 +279,9 @@ REQUIRED_TABLES = {
     "offsite_backup_runs",
     "privacy_actions",
     "media_fingerprints",
+    "pending_admin_actions",
+    "media_quarantine",
+    "monthly_digest_runs",
 }
 
 NOTIFICATION_EVENT_LABELS = {
@@ -278,6 +291,9 @@ NOTIFICATION_EVENT_LABELS = {
     "storage_warning": "Storage Warning",
     "repost_delete_failed": "Discord Repost Delete Failed",
     "heartbeat_stale": "Bot Heartbeat Stale",
+    "permission_drift": "Permission Drift",
+    "restore_drill_failed": "Restore Drill Failed",
+    "monthly_digest": "Monthly Digest",
 }
 
 NOTIFICATION_EVENT_CHOICES = [
@@ -855,6 +871,52 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS pending_admin_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                action_type TEXT,
+                target_type TEXT,
+                target_id TEXT,
+                payload_json TEXT,
+                requested_by TEXT,
+                requested_by_name TEXT,
+                approved_by TEXT,
+                approved_by_name TEXT,
+                status TEXT DEFAULT 'pending',
+                result_text TEXT,
+                created_at TEXT,
+                approved_at TEXT,
+                completed_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS media_quarantine (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                submission_id INTEGER,
+                original_path TEXT,
+                quarantine_path TEXT,
+                media_name TEXT,
+                reason TEXT,
+                status TEXT DEFAULT 'quarantined',
+                actor_user_id TEXT,
+                actor_username TEXT,
+                created_at TEXT,
+                resolved_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS monthly_digest_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                month TEXT,
+                status TEXT,
+                details_json TEXT,
+                posted_at TEXT,
+                created_at TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS schema_version (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 version INTEGER NOT NULL,
@@ -988,6 +1050,26 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_privacy_actions_guild_user_created
             ON privacy_actions (guild_id, user_id, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_pending_admin_actions_status_created
+            ON pending_admin_actions (status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_pending_admin_actions_guild_status
+            ON pending_admin_actions (guild_id, status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_media_quarantine_status_created
+            ON media_quarantine (status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_media_quarantine_submission
+            ON media_quarantine (submission_id, status)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_monthly_digest_runs_guild_month
+            ON monthly_digest_runs (guild_id, month, created_at)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_guess_games_active
@@ -2850,6 +2932,24 @@ def bot_permission_summary(guild, channel):
     return "OK"
 
 
+async def permission_drift_lines_for_guild(guild, guild_config):
+    lines = []
+    seen = set()
+    for channel_id in configured_channel_ids(guild_config):
+        channel_key = str(channel_id)
+        if channel_key in seen:
+            continue
+        seen.add(channel_key)
+        channel = await resolve_guild_channel(guild, channel_id)
+        if channel is None:
+            lines.append(f"`{channel_id}`: channel not visible to the bot.")
+            continue
+        summary = bot_permission_summary(guild, channel)
+        if summary != "OK":
+            lines.append(f"{channel.mention}: {summary}")
+    return lines
+
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
@@ -2864,6 +2964,7 @@ slash_commands_synced = False
 persistent_views_registered = False
 last_backup_date = None
 last_storage_warning_date = None
+last_permission_drift_date = {}
 
 
 def refresh_known_guilds():
@@ -2882,6 +2983,10 @@ def write_bot_status(event="heartbeat"):
         "event": event,
         "updated_at": utc_now_iso(),
         "release": os.getenv("SDAC_RELEASE") or "development",
+        "instance_id": BOT_INSTANCE_ID,
+        "hostname": socket.gethostname(),
+        "pid": os.getpid(),
+        "base_dir": str(BASE_DIR),
         "bot_user": str(bot.user) if bot.user else "",
         "bot_id": str(bot.user.id) if bot.user else "",
         "guild_count": len(bot.guilds),
@@ -4376,6 +4481,37 @@ async def diagnose(interaction):
         f"Ran diagnostics: {summary}",
     )
     lines.insert(1, f"Saved diagnostic result: `{status}`.")
+    await interaction.response.send_message(
+        "\n".join(lines)[:1900],
+        ephemeral=True,
+    )
+
+
+@tree.command(name="repository", description="Show the SDAC GitHub repositories")
+@app_commands.guild_only()
+async def repository(interaction):
+    if not await require_admin(interaction):
+        return
+    configured_repo = RELEASE_REPO
+    original_repo = ORIGINAL_REPO
+    lines = [
+        "**SDAC Repositories**",
+        f"User/fork repository: https://github.com/{configured_repo}",
+        f"Original repository: https://github.com/{original_repo}",
+        f"Current update channel: `{os.getenv('SDAC_RELEASE_TAG') or 'latest-official'}`",
+        f"Current release: `{os.getenv('SDAC_RELEASE') or 'development'}`",
+    ]
+    if configured_repo == original_repo:
+        lines.append("This install is using the original repository directly.")
+    else:
+        lines.append("This install is configured to update from a fork.")
+    audit_interaction(
+        interaction,
+        "show_repository",
+        "guild",
+        interaction.guild_id,
+        f"Displayed repositories: user={configured_repo}; original={original_repo}.",
+    )
     await interaction.response.send_message(
         "\n".join(lines)[:1900],
         ephemeral=True,
@@ -7681,6 +7817,127 @@ async def post_monthly_guess_leaderboards():
                 """, (guild_id, channel_id, month, utc_now_iso()))
 
 
+async def post_monthly_digests():
+    if not config["limits"].get("monthly_digest_enabled", True):
+        return
+    for guild_id, guild_config in config.get("guilds", {}).items():
+        now = guild_now(guild_config)
+        if now.day != 1:
+            continue
+        month = previous_month_key(now)
+        target_channel_id = (
+            guild_config.get("daily_top_channel")
+            or guild_config.get("game_summary_channel")
+            or guild_config.get("error_channel")
+        )
+        if not target_channel_id:
+            continue
+        with database() as connection:
+            already_posted = connection.execute("""
+                SELECT 1
+                FROM monthly_digest_runs
+                WHERE guild_id = ?
+                  AND month = ?
+                  AND status = 'posted'
+                LIMIT 1
+            """, (str(guild_id), month)).fetchone()
+            if already_posted:
+                continue
+            preserve_monthly_submission_top(connection, month)
+            top_submissions = connection.execute("""
+                SELECT username, category, stars
+                FROM submissions
+                WHERE guild_id = ?
+                  AND status = 'posted'
+                  AND substr(COALESCE(created_at, submitted_at), 1, 7) = ?
+                ORDER BY stars DESC, created_at DESC, id DESC
+                LIMIT 3
+            """, (str(guild_id), month)).fetchall()
+            top_guessers = connection.execute("""
+                SELECT username, SUM(points) AS points
+                FROM guess_points
+                WHERE guild_id = ?
+                  AND month = ?
+                GROUP BY user_id, username
+                ORDER BY points DESC, username ASC
+                LIMIT 3
+            """, (str(guild_id), month)).fetchall()
+            totals = {
+                "submissions": connection.execute("""
+                    SELECT COUNT(*)
+                    FROM submissions
+                    WHERE guild_id = ?
+                      AND status = 'posted'
+                      AND substr(COALESCE(created_at, submitted_at), 1, 7) = ?
+                """, (str(guild_id), month)).fetchone()[0],
+                "reports": connection.execute("""
+                    SELECT COUNT(*)
+                    FROM submission_reports
+                    WHERE guild_id = ?
+                      AND substr(created_at, 1, 7) = ?
+                """, (str(guild_id), month)).fetchone()[0],
+            }
+
+        channel = bot.get_channel(int(target_channel_id))
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(int(target_channel_id))
+            except discord.HTTPException:
+                channel = None
+        if channel is None:
+            continue
+
+        lines = [
+            f"**SDAC Monthly Digest - {month}**",
+            f"Submissions: `{totals['submissions']}`",
+            f"Reports handled/opened: `{totals['reports']}`",
+            "",
+            "**Top Submissions**",
+        ]
+        if top_submissions:
+            for index, row in enumerate(top_submissions, start=1):
+                lines.append(
+                    f"{index}. {row['username']} in {row['category'] or 'Uncategorized'} - {row['stars'] or 0} vote(s)"
+                )
+        else:
+            lines.append("No submissions last month.")
+        lines.extend(["", "**Top Guessers**"])
+        if top_guessers:
+            for index, row in enumerate(top_guessers, start=1):
+                lines.append(
+                    f"{index}. {row['username']} - {row['points'] or 0} point(s)"
+                )
+        else:
+            lines.append("No guessing points last month.")
+        try:
+            await channel.send("\n".join(lines)[:1900])
+            status = "posted"
+            details = {"channel_id": str(target_channel_id), **totals}
+        except discord.HTTPException as error:
+            status = "failed"
+            details = {"error": str(error), **totals}
+        with database() as connection:
+            connection.execute("""
+                INSERT INTO monthly_digest_runs (
+                    guild_id, month, status, details_json, posted_at, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                str(guild_id),
+                month,
+                status,
+                json.dumps(details, separators=(",", ":")),
+                utc_now_iso() if status == "posted" else "",
+                utc_now_iso(),
+            ))
+        if status == "failed":
+            await send_error_notification(
+                guild_id,
+                f"Monthly digest failed for `{month}`: `{details.get('error')}`",
+                "monthly_digest",
+            )
+
+
 async def post_daily_guess_summaries():
     with database() as connection:
         games = connection.execute("""
@@ -7863,25 +8120,49 @@ def restore_test_time_minutes():
 @tasks.loop(minutes=30)
 async def restore_test_scheduler():
     try:
-        if not config["limits"].get("restore_test_enabled", True):
+        weekly_enabled = config["limits"].get("restore_test_enabled", True)
+        drill_enabled = config["limits"].get("restore_drill_enabled", True)
+        if not weekly_enabled and not drill_enabled:
             return
         now = datetime.now(timezone.utc)
         if now.weekday() != restore_test_weekday_index():
             return
         if now.hour * 60 + now.minute < restore_test_time_minutes():
             return
-        run_key = f"restore:{now.strftime('%G-W%V')}"
-        if restore_test_has_run(run_key):
-            return
-        passed, backup_path, details = run_restore_test(run_key)
-        if passed:
-            print(f"Restore test passed: {details}", flush=True)
-            return
-        target = backup_path.name if backup_path else "no backup"
-        await send_system_error_notification(
-            f"Weekly restore test failed for `{target}`: `{details}`",
-            "restore_test_failed",
-        )
+        if weekly_enabled:
+            run_key = f"restore:{now.strftime('%G-W%V')}"
+            if not restore_test_has_run(run_key):
+                passed, backup_path, details = run_restore_test(run_key)
+                if passed:
+                    print(f"Restore test passed: {details}", flush=True)
+                else:
+                    target = backup_path.name if backup_path else "no backup"
+                    await send_system_error_notification(
+                        f"Weekly restore test failed for `{target}`: `{details}`",
+                        "restore_test_failed",
+                    )
+        if drill_enabled:
+            drill_key = f"restore-drill:{now.strftime('%Y-%m')}"
+            if restore_test_has_run(drill_key):
+                return
+            drill_passed, drill_backup_path, drill_details = run_restore_test(
+                drill_key
+            )
+            if drill_passed:
+                print(f"Monthly restore drill passed: {drill_details}", flush=True)
+            else:
+                drill_target = (
+                    drill_backup_path.name
+                    if drill_backup_path
+                    else "no backup"
+                )
+                await send_system_error_notification(
+                    (
+                        f"Monthly restore drill failed for `{drill_target}`: "
+                        f"`{drill_details}`"
+                    ),
+                    "restore_drill_failed",
+                )
     except Exception as error:
         await report_background_error("restore_test_scheduler", error)
 
@@ -7921,6 +8202,7 @@ async def before_guess_hint_scheduler():
 async def monthly_leaderboard_scheduler():
     try:
         await post_monthly_guess_leaderboards()
+        await post_monthly_digests()
     except Exception as error:
         await report_background_error("monthly_leaderboard_scheduler", error)
 
@@ -7964,6 +8246,36 @@ async def storage_warning_scheduler():
 
 @storage_warning_scheduler.before_loop
 async def before_storage_warning_scheduler():
+    await bot.wait_until_ready()
+
+
+@tasks.loop(hours=6)
+async def permission_drift_scheduler():
+    try:
+        today = datetime.now(timezone.utc).date().isoformat()
+        for guild_id, guild_config in config.get("guilds", {}).items():
+            guild = bot.get_guild(int(guild_id)) if str(guild_id).isdigit() else None
+            if guild is None:
+                continue
+            lines = await permission_drift_lines_for_guild(guild, guild_config)
+            if not lines:
+                continue
+            if last_permission_drift_date.get(str(guild_id)) == today:
+                continue
+            last_permission_drift_date[str(guild_id)] = today
+            await send_error_notification(
+                guild_id,
+                "Permission drift detected:\n" + "\n".join(
+                    f"- {line}" for line in lines[:12]
+                ) + "\nRun `/repairpermissions` for the full preview.",
+                "permission_drift",
+            )
+    except Exception as error:
+        await report_background_error("permission_drift_scheduler", error)
+
+
+@permission_drift_scheduler.before_loop
+async def before_permission_drift_scheduler():
     await bot.wait_until_ready()
 
 
@@ -8048,6 +8360,8 @@ async def on_ready():
         cleanup_scheduler.start()
     if not storage_warning_scheduler.is_running():
         storage_warning_scheduler.start()
+    if not permission_drift_scheduler.is_running():
+        permission_drift_scheduler.start()
     if not bot_status_scheduler.is_running():
         bot_status_scheduler.start()
     write_bot_status("ready")

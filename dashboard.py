@@ -8,6 +8,7 @@ import json
 import re
 import shlex
 import shutil
+import socket
 import sqlite3
 import secrets
 import subprocess
@@ -65,6 +66,9 @@ BASE_DIR = Path(__file__).resolve().parent
 DB_FILE = Path(os.getenv("SDAC_DB_FILE", BASE_DIR / "sdac.db"))
 CONFIG_FILE = Path(os.getenv("SDAC_CONFIG_FILE", BASE_DIR / "config.json"))
 MEDIA_DIR = Path(os.getenv("SDAC_MEDIA_DIR", BASE_DIR / "media")).resolve()
+MEDIA_QUARANTINE_DIR = Path(
+    os.getenv("SDAC_MEDIA_QUARANTINE_DIR", BASE_DIR / "media_quarantine")
+).resolve()
 BACKUP_DIR = Path(os.getenv("SDAC_BACKUP_DIR", BASE_DIR / "backups"))
 BOT_STATUS_FILE = Path(os.getenv("SDAC_BOT_STATUS_FILE", BASE_DIR / "bot_status.json"))
 BACKUP_KEEP_COUNT = 30
@@ -110,6 +114,9 @@ DEFAULT_LIMITS = {
     "restore_test_enabled": True,
     "restore_test_weekday": "sunday",
     "restore_test_time_utc": "03:30",
+    "restore_drill_enabled": True,
+    "monthly_digest_enabled": True,
+    "two_admin_approval_enabled": False,
     "monthly_submission_limit_per_guild": 0,
     "active_game_limit_per_guild": 0,
     "guild_storage_limit_bytes": 0,
@@ -182,6 +189,9 @@ NOTIFICATION_EVENT_LABELS = {
     "storage_warning": "Storage Warning",
     "repost_delete_failed": "Discord Repost Delete Failed",
     "heartbeat_stale": "Bot Heartbeat Stale",
+    "permission_drift": "Permission Drift",
+    "restore_drill_failed": "Restore Drill Failed",
+    "monthly_digest": "Monthly Digest",
 }
 
 DEFAULT_GUILD_FIELDS = {
@@ -264,7 +274,12 @@ SETUP_TEMPLATE_ROWS = [
     },
 ]
 
-RELEASE_REPO = os.getenv("SDAC_GITHUB_REPO", "BaytaeTistear/SDAC-Bot")
+ORIGINAL_REPO = os.getenv("SDAC_UPSTREAM_GITHUB_REPO", "BaytaeTistear/SDAC-Bot")
+RELEASE_REPO = os.getenv("SDAC_GITHUB_REPO", ORIGINAL_REPO)
+DASHBOARD_INSTANCE_ID = (
+    os.getenv("SDAC_INSTANCE_ID")
+    or f"{socket.gethostname()}:{hashlib.sha1(str(BASE_DIR).encode('utf-8')).hexdigest()[:8]}"
+)
 UPDATE_ENV_FILE = Path(os.getenv("SDAC_UPDATE_CONFIG", "/etc/sdac-bot/update.env"))
 RELEASE_CACHE = {
     "expires_at": 0,
@@ -511,6 +526,9 @@ HTML = """
             <a href="{{ url_for('admin_privacy', key=admin_key) }}">Privacy</a>
             <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
             <a href="{{ url_for('admin_releases', key=admin_key) }}">Releases</a>
+            <a href="{{ url_for('admin_install_doctor', key=admin_key) }}">Install Doctor</a>
+            <a href="{{ url_for('admin_approvals', key=admin_key) }}">Approvals</a>
+            <a href="{{ url_for('admin_owner_portal', key=admin_key) }}">Owner Portal</a>
             <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
             <a href="{{ url_for('admin_logout') }}">Log out</a>
         {% endif %}
@@ -625,6 +643,22 @@ HTML = """
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <input type="hidden" name="new_status" value="{{ 'posted' if post.status == 'needs_review' else 'needs_review' }}">
                                     <button type="submit">{{ 'Clear Review' if post.status == 'needs_review' else 'Needs Review' }}</button>
+                                </form>
+                                <form method="post"
+                                      action="{{ url_for(
+                                          'quarantine_submission',
+                                          submission_id=post.id,
+                                          key=admin_key,
+                                          category=selected_category,
+                                          guild_id=selected_guild_id or 'all',
+                                          q=search_query,
+                                          status=selected_status,
+                                          page=page
+                                      ) }}"
+                                      onsubmit="return confirm('Move this submission media into quarantine?');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="reason" value="Manual dashboard quarantine">
+                                    <button type="submit">Quarantine</button>
                                 </form>
                             {% endif %}
                         </div>
@@ -2109,6 +2143,24 @@ SETTINGS_HTML = """
                             <option value="0" {% if not limits.get('restore_test_enabled', True) %}selected{% endif %}>Disabled</option>
                         </select>
                     </td></tr>
+                    <tr><th>Monthly restore drill</th><td>
+                        <select name="restore_drill_enabled">
+                            <option value="1" {% if limits.get('restore_drill_enabled', True) %}selected{% endif %}>Enabled</option>
+                            <option value="0" {% if not limits.get('restore_drill_enabled', True) %}selected{% endif %}>Disabled</option>
+                        </select>
+                    </td></tr>
+                    <tr><th>Monthly digest posts</th><td>
+                        <select name="monthly_digest_enabled">
+                            <option value="1" {% if limits.get('monthly_digest_enabled', True) %}selected{% endif %}>Enabled</option>
+                            <option value="0" {% if not limits.get('monthly_digest_enabled', True) %}selected{% endif %}>Disabled</option>
+                        </select>
+                    </td></tr>
+                    <tr><th>Two-admin approval for dangerous actions</th><td>
+                        <select name="two_admin_approval_enabled">
+                            <option value="0" {% if not limits.get('two_admin_approval_enabled', False) %}selected{% endif %}>Disabled</option>
+                            <option value="1" {% if limits.get('two_admin_approval_enabled', False) %}selected{% endif %}>Enabled</option>
+                        </select>
+                    </td></tr>
                     <tr><th>Orphan media cleanup</th><td>
                         <select name="orphan_media_cleanup_enabled">
                             <option value="1" {% if limits.get('orphan_media_cleanup_enabled', True) %}selected{% endif %}>Enabled</option>
@@ -2149,7 +2201,7 @@ SETTINGS_HTML = """
                     <input type="hidden" name="guild_id" value="{{ guild.id }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <textarea name="config_json" placeholder="Paste exported sdac-guild-config JSON here"></textarea>
-                    <button type="submit">Import Server Config</button>
+                    <button type="submit">Preview Import</button>
                 </form>
             </div>
             <form method="post">
@@ -2418,6 +2470,9 @@ MAINTENANCE_HTML = """
         <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
         <a href="{{ url_for('admin_monthly_report', key=admin_key) }}">Monthly Report</a>
         <a href="{{ url_for('admin_releases', key=admin_key) }}">Releases</a>
+        <a href="{{ url_for('admin_install_doctor', key=admin_key) }}">Install Doctor</a>
+        <a href="{{ url_for('admin_approvals', key=admin_key) }}">Approvals</a>
+        <a href="{{ url_for('admin_owner_portal', key=admin_key) }}">Owner Portal</a>
         <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
         <a href="{{ url_for('admin_jobs', key=admin_key) }}">Jobs</a>
         <a href="{{ url_for('admin_production_health', key=admin_key) }}">Health Score</a>
@@ -2467,6 +2522,10 @@ MAINTENANCE_HTML = """
             <tbody>
                 <tr><th>Heartbeat</th><td class="{{ 'ok' if bot_status.fresh else 'bad' }}">{{ bot_status.message }}</td></tr>
                 <tr><th>Updated</th><td>{{ bot_status.updated_at or "Unknown" }}</td></tr>
+                <tr><th>Bot instance</th><td><code>{{ bot_status.instance_id or "Unknown" }}</code></td></tr>
+                <tr><th>Bot host / PID</th><td>{{ bot_status.hostname or "Unknown" }} / {{ bot_status.pid or "Unknown" }}</td></tr>
+                <tr><th>Bot directory</th><td><code>{{ bot_status.base_dir or "Unknown" }}</code></td></tr>
+                <tr><th>Dashboard instance</th><td><code>{{ dashboard_instance_id }}</code></td></tr>
                 <tr><th>Bot user</th><td>{{ bot_status.bot_user or "Unknown" }}</td></tr>
                 <tr><th>Guild count</th><td>{{ bot_status.guild_count or 0 }}</td></tr>
                 <tr><th>Slash commands synced</th><td>{{ "Yes" if bot_status.slash_commands_synced else "No" }}</td></tr>
@@ -2486,6 +2545,7 @@ MAINTENANCE_HTML = """
             <button name="action" value="archive_history" type="submit">Archive Old History</button>
             <button name="action" value="archive_history_delete" type="submit" onclick="return confirm('Archive and remove old full submission rows from the live database? Monthly top snapshots stay preserved.');">Archive And Remove Old Full History</button>
             <button name="action" value="rollback_latest_snapshot" type="submit" onclick="return confirm('Queue rollback to the latest deploy snapshot? This can restart SDAC services if the server permissions allow it.');">Rollback Latest Snapshot</button>
+            <button name="action" value="optimize_database" type="submit">Optimize SQLite Database</button>
         </form>
         <p class="muted">
             Monthly report export:
@@ -2677,6 +2737,40 @@ MEDIA_CLEANUP_HTML = """
             <button type="submit" name="action" value="rebuild_media_fingerprints">Rebuild Duplicate Index</button>
             <button type="submit" name="action" value="prune_backed_up_originals" onclick="return confirm('Prune old backed-up originals for all safe servers? Thumbnails stay local.');">Prune Backed-Up Originals</button>
         </form>
+    </section>
+
+    <section class="panel">
+        <h2>Media Quarantine</h2>
+        <table>
+            <thead><tr><th>ID</th><th>Submission</th><th>File</th><th>Reason</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+            <tbody>
+                {% for item in quarantine_items %}
+                    <tr>
+                        <td>{{ item.id }}</td>
+                        <td><a href="{{ url_for('index', key=admin_key, q=item.submission_id, guild_id=item.guild_id or 'all') }}">#{{ item.submission_id }}</a></td>
+                        <td><code>{{ item.media_name or item.original_path }}</code></td>
+                        <td>{{ item.reason }}</td>
+                        <td><code>{{ item.status }}</code></td>
+                        <td>{{ item.created_at }}</td>
+                        <td>
+                            {% if item.status == "quarantined" %}
+                                <form method="post">
+                                    <input type="hidden" name="key" value="{{ admin_key }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="quarantine_id" value="{{ item.id }}">
+                                    <button type="submit" name="action" value="restore_quarantine">Restore</button>
+                                    <button type="submit" name="action" value="delete_quarantine" onclick="return confirm('Delete this quarantined file?');">Delete</button>
+                                </form>
+                            {% else %}
+                                <span class="muted">Resolved</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="7" class="muted">No quarantined media.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </section>
 
     <section class="panel">
@@ -3173,7 +3267,8 @@ RELEASES_HTML = """
             <tbody>
                 <tr><th>Installed release</th><td><code>{{ release_status.installed }}</code></td></tr>
                 <tr><th>Configured update tag</th><td><code>{{ release_status.configured_tag }}</code></td></tr>
-                <tr><th>Repository</th><td><code>{{ release_status.repo }}</code></td></tr>
+                <tr><th>User/fork repository</th><td><code>{{ release_status.repo }}</code></td></tr>
+                <tr><th>Original repository</th><td><code>{{ release_status.original_repo }}</code></td></tr>
                 <tr><th>Latest official</th><td><code>{{ release_status.official.tag }}</code>{% if release_status.official.published_at %} ({{ release_status.official.published_at }}){% endif %}</td></tr>
                 <tr><th>Latest experimental</th><td><code>{{ release_status.experimental.tag }}</code>{% if release_status.experimental.published_at %} ({{ release_status.experimental.published_at }}){% endif %}</td></tr>
                 {% if release_status.error %}<tr><th>Release check</th><td class="bad">{{ release_status.error }}</td></tr>{% endif %}
@@ -3182,14 +3277,22 @@ RELEASES_HTML = """
     </section>
     <section class="panel">
         <h2>Update Commands</h2>
+        {% if release_status.configured_tag == "latest-experimental" %}
+            <p class="bad">This install is tracking the experimental channel. Use it for validation before promoting a build to official.</p>
+        {% elif release_status.configured_tag == "latest-official" or release_status.configured_tag == "Version 2" %}
+            <p class="ok">This install is tracking the official channel.</p>
+        {% else %}
+            <p class="muted">This install is pinned to an explicit release. That is safest when you need repeatable deploys.</p>
+        {% endif %}
         <p>Stable official channel:</p>
         <p><code>sudo sdac-update latest-official</code></p>
         <p>Version 2 alias:</p>
         <p><code>sudo sdac-update "Version 2"</code></p>
         <p>Exact release:</p>
-        <p><code>sudo sdac-update 2.8</code></p>
+        <p><code>sudo sdac-update 2.8.2</code></p>
         <p>Experimental test channel:</p>
         <p><code>sudo sdac-update latest-experimental</code></p>
+        <p class="muted">Recommendation: run <code>latest-experimental</code> only on a test/verification server, then update production with <code>latest-official</code> after the release is promoted.</p>
     </section>
     <section class="panel">
         <h2>Rollback</h2>
@@ -3212,6 +3315,283 @@ RELEASES_HTML = """
             </tbody>
         </table>
     </section>
+</main>
+</body>
+</html>
+"""
+
+
+CONFIG_DIFF_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Preview Server Config Import</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1100px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .notice { background: #223057; border: 1px solid #4d6ee8; border-radius: 10px; padding: 12px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        pre { background: #111318; border: 1px solid #30333b; border-radius: 8px; margin: 0; max-height: 220px; overflow: auto; padding: 8px; white-space: pre-wrap; }
+        .ok { color: #63c174; font-weight: bold; }
+        .bad { color: #e45d68; font-weight: bold; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+        button { background: #2f6fed; border: 0; border-radius: 8px; color: white; cursor: pointer; margin: 6px; padding: 10px 14px; }
+        .secondary { background: #3b3f4a; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Preview Config Import</h1>
+    <nav>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Back to Settings</a>
+        <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+    <section class="panel">
+        <h2>{{ guild_name }} ({{ guild_id }})</h2>
+        <p class="notice">
+            Review the changed fields before importing. Confirming replaces this server's SDAC config with the imported server config.
+        </p>
+        <p class="muted">Source export guild: <code>{{ source_guild_id or "unknown" }}</code></p>
+        <form method="post" action="{{ url_for('admin_import_guild_config') }}">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="guild_id" value="{{ guild_id }}">
+            <input type="hidden" name="confirm_import" value="1">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <textarea name="config_json" hidden>{{ normalized_json }}</textarea>
+            <button type="submit" onclick="return confirm('Import this server config now?');">Confirm Import</button>
+            <a class="secondary" href="{{ url_for('admin_settings', key=admin_key) }}">Cancel</a>
+        </form>
+    </section>
+    <section class="panel">
+        <h2>Changes</h2>
+        <table>
+            <thead><tr><th>Field</th><th>Current</th><th>Imported</th></tr></thead>
+            <tbody>
+                {% for row in diff_rows %}
+                    <tr>
+                        <td><code>{{ row.path }}</code></td>
+                        <td><pre>{{ row.old }}</pre></td>
+                        <td><pre>{{ row.new }}</pre></td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="3" class="muted">No changes detected. You can still confirm to normalize defaults.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+INSTALL_DOCTOR_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Install Doctor</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1000px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        .ok { color: #63c174; font-weight: bold; }
+        .bad { color: #e45d68; font-weight: bold; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Install Doctor</h1>
+    <nav>
+        <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_releases', key=admin_key) }}">Releases</a>
+        <a href="{{ url_for('admin_health', key=admin_key) }}">Health JSON</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+    <section class="panel">
+        <h2>Score: {{ report.score }} / {{ report.max_score }}</h2>
+        <table>
+            <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+            <tbody>
+                {% for check in report.checks %}
+                    <tr>
+                        <td>{{ check.label }}</td>
+                        <td class="{{ 'ok' if check.ok else 'bad' }}">{{ "OK" if check.ok else "Needs attention" }}</td>
+                        <td>{{ check.details }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+APPROVALS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Admin Approvals</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1100px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav, form.filters { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        button, select { border: 1px solid #30333b; border-radius: 7px; padding: 8px 10px; }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; }
+        .danger { background: #e45d68; color: white; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 16px; padding: 12px; text-align: center; }
+        .notice.error { border-color: #e45d68; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Admin Approvals</h1>
+    <nav>
+        <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('admin_media_cleanup', key=admin_key) }}">Media</a>
+        <a href="{{ url_for('admin_privacy', key=admin_key) }}">Privacy</a>
+        <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+    {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
+    <section class="panel">
+        <form class="filters" method="get">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <select name="status">
+                {% for option in ["pending", "complete", "denied", "failed", "all"] %}
+                    <option value="{{ option }}" {% if selected_status == option %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit">Filter</button>
+        </form>
+        <p class="muted">
+            When two-admin approval is enabled in Settings, dangerous actions
+            are queued here and must be approved by a different dashboard admin.
+        </p>
+        <table>
+            <thead><tr><th>ID</th><th>Action</th><th>Target</th><th>Requested By</th><th>Status</th><th>Payload</th><th>Result</th><th>Actions</th></tr></thead>
+            <tbody>
+                {% for item in actions %}
+                    <tr>
+                        <td>{{ item.id }}</td>
+                        <td><code>{{ item.action_type }}</code></td>
+                        <td>{{ item.target_type }}<br><code>{{ item.target_id }}</code></td>
+                        <td>{{ item.requested_by_name }}<br><span class="muted">{{ item.created_at }}</span></td>
+                        <td><code>{{ item.status }}</code></td>
+                        <td><code>{{ item.payload }}</code></td>
+                        <td>{{ item.result_text or "" }}</td>
+                        <td>
+                            {% if item.status == "pending" %}
+                                <form method="post">
+                                    <input type="hidden" name="key" value="{{ admin_key }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="action_id" value="{{ item.id }}">
+                                    <button name="decision" value="approve" type="submit">Approve</button>
+                                    <button class="danger" name="decision" value="deny" type="submit">Deny</button>
+                                </form>
+                            {% else %}
+                                <span class="muted">Resolved</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="8" class="muted">No matching approval actions.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+OWNER_PORTAL_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Owner Portal</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1100px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .server { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Server Owner Portal</h1>
+    <nav>
+        <a href="{{ url_for('admin_onboarding', key=admin_key) }}">Onboarding</a>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_media_cleanup', key=admin_key) }}">Media</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+    {% for server in servers %}
+        <article class="server">
+            <h2>{{ server.name }} <span class="muted">({{ server.id }})</span></h2>
+            <table>
+                <tbody>
+                    <tr><th>Setup score</th><td>{{ server.health }}%</td></tr>
+                    <tr><th>Storage</th><td>{{ server.forecast.current if server.forecast else "Unknown" }}; {{ server.forecast.forecast if server.forecast else "No forecast yet." }}</td></tr>
+                    <tr><th>Backup</th><td>
+                        Enabled: <code>{{ "Yes" if server.backup.enabled else "No" }}</code><br>
+                        Remote: <code>{{ server.backup.remote or "Not set" }}</code><br>
+                        Last status: <code>{{ server.backup.last_status or "Unknown" }}</code>
+                    </td></tr>
+                    <tr><th>Quick commands</th><td>
+                        {% for command in server.commands %}<code>{{ command }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}
+                    </td></tr>
+                    <tr><th>Invite link</th><td>
+                        {% if server.invite_url %}<a href="{{ server.invite_url }}" target="_blank">Invite/Re-authorize SDAC</a>{% else %}<span class="muted">Set bot client ID to show invite link.</span>{% endif %}
+                    </td></tr>
+                </tbody>
+            </table>
+        </article>
+    {% else %}
+        <p class="muted">No servers are available to this dashboard admin.</p>
+    {% endfor %}
 </main>
 </body>
 </html>
@@ -4316,6 +4696,15 @@ def production_health_report(config_data=None):
     add("Public URL", bool(os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN")), "Public URL configured." if os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN") else "Set SDAC_PUBLIC_URL.")
     add("Guilds configured", bool(config_data.get("guilds")), f"{len(config_data.get('guilds') or {})} guild(s) configured.")
     add(
+        "Instance ID",
+        bool(os.getenv("SDAC_INSTANCE_ID")),
+        (
+            f"Explicit SDAC_INSTANCE_ID={DASHBOARD_INSTANCE_ID}."
+            if os.getenv("SDAC_INSTANCE_ID")
+            else f"Using generated instance ID {DASHBOARD_INSTANCE_ID}; set SDAC_INSTANCE_ID for multi-instance hosts."
+        ),
+    )
+    add(
         "Release updater",
         bool(release_status().get("configured_tag")),
         f"Configured tag: {release_status().get('configured_tag') or 'unknown'}",
@@ -4327,6 +4716,156 @@ def production_health_report(config_data=None):
         "max_score": len(checks),
         "checks": checks,
     }
+
+
+def doctor_item(label, ok, details, severity="warn"):
+    return {
+        "label": label,
+        "ok": bool(ok),
+        "details": details,
+        "severity": severity,
+    }
+
+
+def command_available(command):
+    return shutil.which(command) is not None
+
+
+def check_directory_writable(path):
+    path = Path(path)
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / f".sdac-write-test-{secrets.token_hex(4)}"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return True, f"Writable: {path}"
+    except OSError as error:
+        return False, f"Not writable: {path} ({error})"
+
+
+def install_doctor_report():
+    checks = []
+    config_data = load_config()
+    update_config = read_update_config()
+
+    def add(label, ok, details, severity="warn"):
+        checks.append(doctor_item(label, ok, details, severity))
+
+    add("Discord token", bool(TOKEN), "DISCORD_TOKEN is set." if TOKEN else "DISCORD_TOKEN is missing.", "critical")
+    add("Admin password", ADMIN_PASSWORD != ADMIN_KEY, "Separate dashboard password configured." if ADMIN_PASSWORD != ADMIN_KEY else "SDAC_ADMIN_PASSWORD still matches the admin key.", "critical")
+    add("Session secret", bool(os.getenv("SDAC_SECRET_KEY")), "SDAC_SECRET_KEY is set." if os.getenv("SDAC_SECRET_KEY") else "Set SDAC_SECRET_KEY for stable sessions.", "critical")
+    add("Public URL", bool(os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN")), os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN") or "Set SDAC_PUBLIC_URL or SDAC_DOMAIN.")
+    add("Configured guilds", bool(config_data.get("guilds")), f"{len(config_data.get('guilds') or {})} guild(s) configured.")
+    add("Repository", bool(RELEASE_REPO), f"User/fork repo: {RELEASE_REPO}; original repo: {ORIGINAL_REPO}.")
+
+    for label, path in (
+        ("Media folder", MEDIA_DIR),
+        ("Backup folder", BACKUP_DIR),
+        ("Config folder", CONFIG_FILE.parent),
+        ("Quarantine folder", MEDIA_QUARANTINE_DIR),
+    ):
+        ok, details = check_directory_writable(path)
+        add(label, ok, details, "critical" if not ok else "warn")
+
+    try:
+        with closing(connect_db()) as connection:
+            schema_row = connection.execute("""
+                SELECT version
+                FROM schema_version
+                WHERE id = 1
+            """).fetchone()
+            version = int(schema_row["version"]) if schema_row else 0
+            if using_postgres():
+                table_details = "PostgreSQL backend."
+            else:
+                table_count = connection.execute("""
+                    SELECT COUNT(*)
+                    FROM sqlite_master
+                    WHERE type = 'table'
+                """).fetchone()[0]
+                table_details = f"{table_count} table(s)."
+        add("Database schema", version >= SCHEMA_VERSION, f"Schema v{version}; expected v{SCHEMA_VERSION}; {table_details}", "critical")
+    except Exception as error:
+        add("Database schema", False, f"Database check failed: {error}", "critical")
+
+    bot_status = read_bot_status()
+    add("Bot heartbeat", bot_status.get("fresh"), bot_status.get("message") or "No heartbeat.", "critical")
+    add(
+        "Instance ID",
+        bool(os.getenv("SDAC_INSTANCE_ID")),
+        (
+            f"Explicit SDAC_INSTANCE_ID={DASHBOARD_INSTANCE_ID}; bot reports {bot_status.get('instance_id') or 'unknown'}."
+            if os.getenv("SDAC_INSTANCE_ID")
+            else f"Generated ID {DASHBOARD_INSTANCE_ID}; set SDAC_INSTANCE_ID when running multiple installs on one host."
+        ),
+    )
+
+    add("Updater config", bool(update_config), f"Update config: {UPDATE_ENV_FILE}" if update_config else f"No readable updater config at {UPDATE_ENV_FILE}.")
+    add("Updater command", Path("/usr/local/bin/sdac-update").exists() or (BASE_DIR / "scripts" / "update_from_github.sh").is_file(), "sdac-update command or bundled updater script found.")
+    add("Rollback script", (BASE_DIR / "scripts" / "rollback_ubuntu.sh").is_file(), "Rollback script is bundled." if (BASE_DIR / "scripts" / "rollback_ubuntu.sh").is_file() else "Missing scripts/rollback_ubuntu.sh.")
+
+    systemd_available = command_available("systemctl")
+    add("systemd", systemd_available, "systemctl is available." if systemd_available else "systemctl is not available on this host.")
+    if os.name != "nt":
+        add("sdac-bot unit", Path("/etc/systemd/system/sdac-bot.service").exists(), "/etc/systemd/system/sdac-bot.service")
+        add("sdac-dashboard unit", Path("/etc/systemd/system/sdac-dashboard.service").exists(), "/etc/systemd/system/sdac-dashboard.service")
+
+    nginx_available = command_available("nginx")
+    add("Nginx", nginx_available, "nginx command found." if nginx_available else "nginx command not found.")
+    if nginx_available:
+        try:
+            result = subprocess.run(
+                ["nginx", "-t"],
+                capture_output=True,
+                text=True,
+                timeout=8,
+                check=False,
+            )
+            add("Nginx config", result.returncode == 0, (result.stderr or result.stdout or "nginx -t ran.")[-500:])
+        except (OSError, subprocess.SubprocessError) as error:
+            add("Nginx config", False, f"nginx -t failed: {error}")
+
+    certbot_needed = bool(os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN"))
+    certbot_available = command_available("certbot")
+    add("Certbot", (not certbot_needed) or certbot_available, "certbot found." if certbot_available else "certbot not found; needed for public HTTPS hosts.")
+
+    release = release_status()
+    add("Release check", not release.get("error"), release.get("error") or f"Official: {release['official']['tag']}; Experimental: {release['experimental']['tag']}.")
+
+    score = sum(1 for check in checks if check["ok"])
+    return {
+        "score": score,
+        "max_score": len(checks),
+        "checks": checks,
+    }
+
+
+def owner_portal_rows():
+    config_data = load_config()
+    onboarding = {row["id"]: row for row in build_onboarding_rows(config_data)}
+    forecasts = {row["guild_id"]: row for row in storage_forecast_rows(config_data)}
+    backup_rows = {row["guild_id"]: row for row in guild_storage_rows(config_data)}
+    rows = []
+    for option in guild_options(config_data):
+        guild_id = option["id"]
+        guild_config = (config_data.get("guilds") or {}).get(guild_id) or {}
+        backup = guild_config.get("external_backup") or {}
+        rows.append({
+            "id": guild_id,
+            "name": option["name"],
+            "health": (onboarding.get(guild_id) or {}).get("health_score", 0),
+            "forecast": forecasts.get(guild_id),
+            "storage": backup_rows.get(guild_id),
+            "backup": backup,
+            "invite_url": bot_invite_url(),
+            "commands": [
+                "/setup",
+                "/diagnose",
+                "/repairpermissions",
+                "/serverbackupstatus",
+            ],
+        })
+    return rows
 
 
 def csv_response(filename, rows, columns):
@@ -5365,6 +5904,52 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS pending_admin_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                action_type TEXT,
+                target_type TEXT,
+                target_id TEXT,
+                payload_json TEXT,
+                requested_by TEXT,
+                requested_by_name TEXT,
+                approved_by TEXT,
+                approved_by_name TEXT,
+                status TEXT DEFAULT 'pending',
+                result_text TEXT,
+                created_at TEXT,
+                approved_at TEXT,
+                completed_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS media_quarantine (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                submission_id INTEGER,
+                original_path TEXT,
+                quarantine_path TEXT,
+                media_name TEXT,
+                reason TEXT,
+                status TEXT DEFAULT 'quarantined',
+                actor_user_id TEXT,
+                actor_username TEXT,
+                created_at TEXT,
+                resolved_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS monthly_digest_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                month TEXT,
+                status TEXT,
+                details_json TEXT,
+                posted_at TEXT,
+                created_at TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS schema_version (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 version INTEGER NOT NULL,
@@ -5494,6 +6079,26 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_privacy_actions_guild_user_created
             ON privacy_actions (guild_id, user_id, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_pending_admin_actions_status_created
+            ON pending_admin_actions (status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_pending_admin_actions_guild_status
+            ON pending_admin_actions (guild_id, status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_media_quarantine_status_created
+            ON media_quarantine (status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_media_quarantine_submission
+            ON media_quarantine (submission_id, status)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_monthly_digest_runs_guild_month
+            ON monthly_digest_runs (guild_id, month, created_at)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_guess_points_global_month
@@ -6545,6 +7150,7 @@ def background_job_label(job_type):
         "archive_history": "Archive old history",
         "rebuild_media_fingerprints": "Rebuild media fingerprints",
         "rollback_latest_snapshot": "Rollback latest deploy snapshot",
+        "optimize_database": "Optimize SQLite database",
     }
     return labels.get(job_type, str(job_type or "").replace("_", " ").title())
 
@@ -6667,6 +7273,11 @@ def process_background_job(job_id):
                 result = run_latest_rollback()
                 if not result.get("ok"):
                     raise RuntimeError(result.get("message") or "Rollback failed.")
+            elif job["job_type"] == "optimize_database":
+                ok, message = optimize_database()
+                result = {"ok": ok, "message": message}
+                if not ok:
+                    raise RuntimeError(message)
             else:
                 raise ValueError(f"Unknown background job type: {job['job_type']}")
             update_background_job(
@@ -6803,6 +7414,44 @@ def normalize_imported_guild_config(payload):
         merged["features"] = dict(DEFAULT_FEATURES)
     fill_nested_defaults(merged, DEFAULT_GUILD_FIELDS)
     return merged
+
+
+def config_value_display(value):
+    if value is None:
+        return "(unset)"
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, indent=2, sort_keys=True)
+    return str(value)
+
+
+def flatten_config_values(value, prefix=""):
+    rows = {}
+    if isinstance(value, dict):
+        if not value and prefix:
+            rows[prefix] = {}
+        for key in sorted(value):
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            rows.update(flatten_config_values(value[key], child_prefix))
+    else:
+        rows[prefix or "(root)"] = value
+    return rows
+
+
+def guild_config_diff(current_config, imported_config):
+    current_flat = flatten_config_values(current_config or {})
+    imported_flat = flatten_config_values(imported_config or {})
+    rows = []
+    for path in sorted(set(current_flat) | set(imported_flat)):
+        old_value = current_flat.get(path)
+        new_value = imported_flat.get(path)
+        if old_value == new_value:
+            continue
+        rows.append({
+            "path": path,
+            "old": config_value_display(old_value),
+            "new": config_value_display(new_value),
+        })
+    return rows
 
 
 def sql_placeholders(values):
@@ -6990,6 +7639,474 @@ def delete_local_media(row):
                 file_path.unlink()
             except OSError:
                 pass
+
+
+def move_path_with_parents(source_path, target_path):
+    source_path = Path(source_path)
+    target_path = Path(target_path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    if target_path.exists():
+        target_path = target_path.with_name(
+            f"{target_path.stem}-{int(time.time())}{target_path.suffix}"
+        )
+    shutil.move(str(source_path), str(target_path))
+    return target_path
+
+
+def quarantine_submission_media(submission_id, reason, actor_id, actor_name):
+    reason = (reason or "Manual admin quarantine").strip()[:500]
+    with closing(connect_db()) as connection:
+        row = connection.execute(
+            "SELECT * FROM submissions WHERE id = ?",
+            (submission_id,),
+        ).fetchone()
+    if not row:
+        return False, "Submission not found."
+
+    moved = 0
+    now = utc_now_iso()
+    paths = split_values(row["media_paths"] or row["file_paths"])
+    names = split_values(row["media_names"])
+    with database() as connection:
+        for index, stored_path in enumerate(paths):
+            relative_path = media_relative_path(stored_path)
+            if not relative_path:
+                continue
+            original_path = (MEDIA_DIR / relative_path).resolve()
+            try:
+                original_path.relative_to(MEDIA_DIR)
+            except ValueError:
+                continue
+            if not original_path.is_file():
+                continue
+            quarantine_path = move_path_with_parents(
+                original_path,
+                MEDIA_QUARANTINE_DIR / relative_path,
+            )
+            moved += 1
+            connection.execute("""
+                INSERT INTO media_quarantine (
+                    guild_id, submission_id, original_path, quarantine_path,
+                    media_name, reason, status, actor_user_id,
+                    actor_username, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 'quarantined', ?, ?, ?)
+            """, (
+                row["guild_id"],
+                row["id"],
+                str(original_path),
+                str(quarantine_path),
+                names[index] if index < len(names) else original_path.name,
+                reason,
+                actor_id,
+                actor_name,
+                now,
+            ))
+        if moved:
+            connection.execute(
+                "UPDATE submissions SET status = 'needs_review' WHERE id = ?",
+                (row["id"],),
+            )
+            connection.execute("""
+                INSERT INTO moderation_history (
+                    guild_id, submission_id, action, actor_user_id,
+                    actor_username, details, created_at
+                )
+                VALUES (?, ?, 'quarantine', ?, ?, ?, ?)
+            """, (
+                row["guild_id"],
+                row["id"],
+                actor_id,
+                actor_name,
+                f"Quarantined {moved} file(s): {reason}",
+                now,
+            ))
+            add_admin_audit_log(
+                connection,
+                row["guild_id"],
+                "quarantine_submission_media",
+                actor_id,
+                actor_name,
+                "submission",
+                row["id"],
+                f"Quarantined {moved} file(s): {reason}",
+            )
+    if moved:
+        PUBLIC_PAGE_CACHE.clear()
+        return True, f"Quarantined {moved} media file(s)."
+    return False, "No local media files were available to quarantine."
+
+
+def quarantine_items(status="quarantined", limit=100):
+    where = []
+    params = []
+    if status and status != "all":
+        where.append("status = ?")
+        params.append(status)
+    scope_sql, scope_params = admin_scope_filter("guild_id", load_config())
+    if scope_sql:
+        where.append(scope_sql)
+        params.extend(scope_params)
+    where_sql = "WHERE " + " AND ".join(where) if where else ""
+    with closing(connect_db()) as connection:
+        return connection.execute(f"""
+            SELECT *
+            FROM media_quarantine
+            {where_sql}
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+        """, params + [int(limit)]).fetchall()
+
+
+def resolve_quarantine_item(item_id, action, actor_id, actor_name):
+    with closing(connect_db()) as connection:
+        item = connection.execute("""
+            SELECT *
+            FROM media_quarantine
+            WHERE id = ?
+        """, (item_id,)).fetchone()
+    if not item:
+        return False, "Quarantine item not found."
+    if item["status"] != "quarantined":
+        return False, "That quarantine item is already resolved."
+    if not can_admin_access_guild(item["guild_id"], load_config()):
+        abort(403)
+
+    quarantine_path = Path(item["quarantine_path"])
+    original_path = Path(item["original_path"])
+    now = utc_now_iso()
+    if action == "restore":
+        if not quarantine_path.is_file():
+            return False, "Quarantined file is missing."
+        try:
+            restored_path = move_path_with_parents(quarantine_path, original_path)
+        except OSError as error:
+            return False, f"Restore failed: {error}"
+        new_status = "restored"
+        details = f"Restored quarantined media to {restored_path}."
+        with database() as connection:
+            connection.execute(
+                "UPDATE submissions SET status = 'posted' WHERE id = ?",
+                (item["submission_id"],),
+            )
+    elif action == "delete":
+        try:
+            if quarantine_path.is_file():
+                quarantine_path.unlink()
+        except OSError as error:
+            return False, f"Delete failed: {error}"
+        new_status = "deleted"
+        details = "Deleted quarantined media file."
+    else:
+        return False, "Unknown quarantine action."
+
+    with database() as connection:
+        connection.execute("""
+            UPDATE media_quarantine
+            SET status = ?, resolved_at = ?
+            WHERE id = ?
+        """, (new_status, now, item_id))
+        add_admin_audit_log(
+            connection,
+            item["guild_id"],
+            f"quarantine_{new_status}",
+            actor_id,
+            actor_name,
+            "media_quarantine",
+            item_id,
+            details,
+        )
+    PUBLIC_PAGE_CACHE.clear()
+    return True, details
+
+
+def remove_submission_from_dashboard(submission_id, actor_id, actor_name):
+    with closing(connect_db()) as connection:
+        row = connection.execute(
+            "SELECT * FROM submissions WHERE id = ?",
+            (submission_id,),
+        ).fetchone()
+    if not row:
+        return False, "Submission not found."
+
+    for channel_id, message_id in (
+        (row["repost_channel_id"], row["repost_message_id"]),
+        (row["approval_channel_id"], row["approval_message_id"]),
+    ):
+        deleted, error_message = delete_discord_message(channel_id, message_id)
+        if not deleted:
+            send_admin_notification(
+                "repost_delete_failed",
+                (
+                    f"Could not delete Discord message `{message_id}` in "
+                    f"channel `{channel_id}` for submission `{row['id']}`: "
+                    f"`{error_message}`"
+                ),
+                guild_id=row["guild_id"],
+                throttle_key=f"repost_delete_failed:{row['id']}:{message_id}",
+                throttle_seconds=900,
+            )
+            return False, error_message
+
+    with database() as connection:
+        connection.execute("""
+            INSERT INTO moderation_history (
+                guild_id, submission_id, action, actor_user_id,
+                actor_username, details, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            row["guild_id"],
+            row["id"],
+            "remove",
+            actor_id,
+            actor_name,
+            "Removed from dashboard",
+            utc_now_iso(),
+        ))
+        add_admin_audit_log(
+            connection,
+            row["guild_id"],
+            "remove_submission_dashboard",
+            actor_id,
+            actor_name,
+            "submission",
+            row["id"],
+            "Removed from dashboard",
+        )
+        connection.execute("DELETE FROM submissions WHERE id = ?", (submission_id,))
+        connection.execute(
+            "DELETE FROM media_fingerprints WHERE submission_id = ?",
+            (submission_id,),
+        )
+    delete_local_media(row)
+    PUBLIC_PAGE_CACHE.clear()
+    return True, "Submission removed from the website and Discord."
+
+
+def optimize_database():
+    if using_postgres():
+        return False, "Database optimize is currently only available for SQLite."
+    if not DB_FILE.exists():
+        return False, "SQLite database file was not found."
+    backup_path, _created, backup_message = create_database_backup("pre-optimize")
+    before_size = DB_FILE.stat().st_size
+    connection = sqlite3.connect(DB_FILE)
+    try:
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        connection.execute("ANALYZE")
+        connection.commit()
+        connection.execute("VACUUM")
+        connection.commit()
+    finally:
+        connection.close()
+    after_size = DB_FILE.stat().st_size
+    return True, (
+        f"Optimized SQLite database. Size {format_bytes(before_size)} -> "
+        f"{format_bytes(after_size)}. Backup: {backup_path.name}. {backup_message}"
+    )
+
+
+def two_admin_approval_enabled(config_data=None):
+    config_data = config_data or load_config()
+    return bool(
+        (config_data.get("limits") or {}).get("two_admin_approval_enabled", False)
+    )
+
+
+def create_pending_admin_action(
+    action_type,
+    target_type,
+    target_id,
+    payload,
+    actor_id,
+    actor_name,
+    guild_id=None,
+):
+    with database() as connection:
+        cursor = connection.execute("""
+            INSERT INTO pending_admin_actions (
+                guild_id, action_type, target_type, target_id, payload_json,
+                requested_by, requested_by_name, status, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+        """, (
+            str(guild_id) if guild_id is not None else None,
+            action_type,
+            target_type,
+            str(target_id or ""),
+            json.dumps(payload or {}, separators=(",", ":")),
+            str(actor_id or ""),
+            str(actor_name or ""),
+            utc_now_iso(),
+        ))
+        action_id = cursor.lastrowid
+        add_admin_audit_log(
+            connection,
+            guild_id,
+            "pending_admin_action_created",
+            actor_id,
+            actor_name,
+            "pending_admin_action",
+            action_id,
+            f"Requested approval for {action_type}.",
+        )
+    return action_id
+
+
+def approval_required_redirect(
+    action_type,
+    target_type,
+    target_id,
+    payload,
+    actor_id,
+    actor_name,
+    guild_id=None,
+    endpoint="admin_approvals",
+    route_values=None,
+):
+    action_id = create_pending_admin_action(
+        action_type,
+        target_type,
+        target_id,
+        payload,
+        actor_id,
+        actor_name,
+        guild_id,
+    )
+    values = {"key": ADMIN_KEY, **(route_values or {})}
+    values["notice"] = (
+        f"Created pending approval #{action_id}. A second admin must approve it."
+    )
+    return redirect(url_for(endpoint, **values))
+
+
+def pending_admin_action_rows(status="pending", limit=100):
+    where = []
+    params = []
+    if status and status != "all":
+        where.append("status = ?")
+        params.append(status)
+    scope_sql, scope_params = admin_scope_filter("guild_id", load_config(), include_global=True)
+    if scope_sql:
+        where.append(scope_sql)
+        params.extend(scope_params)
+    where_sql = "WHERE " + " AND ".join(where) if where else ""
+    with closing(connect_db()) as connection:
+        rows = connection.execute(f"""
+            SELECT *
+            FROM pending_admin_actions
+            {where_sql}
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+        """, params + [int(limit)]).fetchall()
+    actions = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["payload"] = json.loads(item.get("payload_json") or "{}")
+        except (TypeError, ValueError):
+            item["payload"] = {}
+        actions.append(item)
+    return actions
+
+
+def execute_pending_admin_action(row, actor_id, actor_name):
+    payload = json.loads(row["payload_json"] or "{}")
+    action_type = row["action_type"]
+    if action_type == "delete_submission":
+        return remove_submission_from_dashboard(
+            int(payload.get("submission_id") or row["target_id"] or 0),
+            actor_id,
+            actor_name,
+        )
+    if action_type == "privacy_delete_user_data":
+        details = delete_user_privacy_data(
+            payload.get("guild_id") or row["guild_id"],
+            payload.get("user_id") or row["target_id"],
+            actor_id,
+            actor_name,
+        )
+        return True, f"Deleted privacy data: {details}"
+    if action_type == "delete_orphans":
+        deleted = delete_orphaned_media_files()
+        return True, f"Deleted {deleted} orphaned media file(s)."
+    if action_type == "prune_backed_up_originals":
+        job_id = queue_background_job(
+            "prune_backed_up_originals",
+            guild_id=payload.get("guild_id"),
+            payload={"guild_id": payload.get("guild_id")},
+            actor_id=actor_id,
+            actor_name=actor_name,
+        )
+        return True, f"Queued backed-up original pruning as job #{job_id}."
+    if action_type == "rollback_latest_snapshot":
+        job_id = queue_background_job(
+            "rollback_latest_snapshot",
+            actor_id=actor_id,
+            actor_name=actor_name,
+        )
+        return True, f"Queued rollback as background job #{job_id}."
+    if action_type == "quarantine_submission":
+        return quarantine_submission_media(
+            int(payload.get("submission_id") or row["target_id"] or 0),
+            payload.get("reason") or "Approved admin quarantine",
+            actor_id,
+            actor_name,
+        )
+    return False, f"Unknown pending action type: {action_type}"
+
+
+def resolve_pending_admin_action(action_id, decision, actor_id, actor_name):
+    with closing(connect_db()) as connection:
+        row = connection.execute("""
+            SELECT *
+            FROM pending_admin_actions
+            WHERE id = ?
+        """, (action_id,)).fetchone()
+    if not row:
+        return False, "Pending action not found."
+    if row["status"] != "pending":
+        return False, "Pending action is already resolved."
+    if str(row["requested_by"] or "") == str(actor_id or ""):
+        return False, "A second admin must approve this action."
+    if not can_admin_access_guild(row["guild_id"], load_config()):
+        abort(403)
+
+    now = utc_now_iso()
+    if decision == "deny":
+        ok = True
+        message = "Pending action denied."
+        status = "denied"
+    else:
+        ok, message = execute_pending_admin_action(row, actor_id, actor_name)
+        status = "complete" if ok else "failed"
+    with database() as connection:
+        connection.execute("""
+            UPDATE pending_admin_actions
+            SET status = ?, approved_by = ?, approved_by_name = ?,
+                approved_at = ?, completed_at = ?, result_text = ?
+            WHERE id = ?
+        """, (
+            status,
+            str(actor_id or ""),
+            str(actor_name or ""),
+            now,
+            now,
+            message,
+            action_id,
+        ))
+        add_admin_audit_log(
+            connection,
+            row["guild_id"],
+            f"pending_admin_action_{status}",
+            actor_id,
+            actor_name,
+            "pending_admin_action",
+            action_id,
+            message,
+        )
+    return ok, message
 
 
 def has_valid_key():
@@ -7390,6 +8507,7 @@ def release_status():
     update_config = read_update_config()
     status = {
         "repo": RELEASE_REPO,
+        "original_repo": ORIGINAL_REPO,
         "installed": os.getenv("SDAC_RELEASE") or "development",
         "configured_tag": (
             os.getenv("SDAC_RELEASE_TAG")
@@ -8540,6 +9658,15 @@ def admin_settings():
                 limits["restore_test_enabled"] = (
                     request.form.get("restore_test_enabled") == "1"
                 )
+                limits["restore_drill_enabled"] = (
+                    request.form.get("restore_drill_enabled") == "1"
+                )
+                limits["monthly_digest_enabled"] = (
+                    request.form.get("monthly_digest_enabled") == "1"
+                )
+                limits["two_admin_approval_enabled"] = (
+                    request.form.get("two_admin_approval_enabled") == "1"
+                )
                 limits["orphan_media_cleanup_enabled"] = (
                     request.form.get("orphan_media_cleanup_enabled") == "1"
                 )
@@ -9077,6 +10204,16 @@ def admin_maintenance():
                 error=0,
             ))
         if action == "rollback_latest_snapshot":
+            if two_admin_approval_enabled(load_config()):
+                return approval_required_redirect(
+                    "rollback_latest_snapshot",
+                    "deploy_snapshot",
+                    "latest",
+                    {},
+                    actor_id,
+                    actor_name,
+                    endpoint="admin_maintenance",
+                )
             job_id = queue_background_job(
                 "rollback_latest_snapshot",
                 actor_id=actor_id,
@@ -9090,6 +10227,18 @@ def admin_maintenance():
                     f"background job #{job_id}. Watch the Jobs page; the "
                     "dashboard may briefly restart if rollback succeeds."
                 ),
+                error=0,
+            ))
+        if action == "optimize_database":
+            job_id = queue_background_job(
+                "optimize_database",
+                actor_id=actor_id,
+                actor_name=actor_name,
+            )
+            return redirect(url_for(
+                "admin_maintenance",
+                key=ADMIN_KEY,
+                notice=f"Queued database optimize as background job #{job_id}.",
                 error=0,
             ))
 
@@ -9146,6 +10295,7 @@ def admin_maintenance():
         cache_entries=len(PUBLIC_PAGE_CACHE),
         config_backups=recent_config_backups(),
         csrf_token=get_csrf_token(),
+        dashboard_instance_id=DASHBOARD_INSTANCE_ID,
         db_file=DB_FILE,
         db_size=format_bytes(DB_FILE.stat().st_size) if DB_FILE.exists() else "0 B",
         error=error,
@@ -9178,6 +10328,16 @@ def admin_media_cleanup():
         action = request.form.get("action", "")
         config_data = load_config()
         if action == "delete_orphans":
+            if two_admin_approval_enabled(config_data):
+                return approval_required_redirect(
+                    "delete_orphans",
+                    "media",
+                    "orphans",
+                    {},
+                    actor_id,
+                    actor_name,
+                    endpoint="admin_media_cleanup",
+                )
             deleted = delete_orphaned_media_files()
             with database() as connection:
                 add_admin_audit_log(
@@ -9224,6 +10384,17 @@ def admin_media_cleanup():
                 if action == "prune_guild_originals"
                 else None
             )
+            if two_admin_approval_enabled(config_data):
+                return approval_required_redirect(
+                    "prune_backed_up_originals",
+                    "guild",
+                    guild_id or "all",
+                    {"guild_id": guild_id},
+                    actor_id,
+                    actor_name,
+                    guild_id=guild_id,
+                    endpoint="admin_media_cleanup",
+                )
             job_id = queue_background_job(
                 "prune_backed_up_originals",
                 guild_id=guild_id,
@@ -9250,6 +10421,20 @@ def admin_media_cleanup():
                 key=ADMIN_KEY,
                 notice=f"Queued media restore as job #{job_id}.",
             ))
+        if action in {"restore_quarantine", "delete_quarantine"}:
+            quarantine_id = int(request.form.get("quarantine_id", "0") or 0)
+            ok, message = resolve_quarantine_item(
+                quarantine_id,
+                "restore" if action == "restore_quarantine" else "delete",
+                actor_id,
+                actor_name,
+            )
+            return redirect(url_for(
+                "admin_media_cleanup",
+                key=ADMIN_KEY,
+                notice=message,
+                error=0 if ok else 1,
+            ))
 
     config_data = load_config()
     return render_template_string(
@@ -9258,6 +10443,7 @@ def admin_media_cleanup():
         csrf_token=get_csrf_token(),
         guild_storage_rows=guild_storage_rows(config_data),
         notice=notice,
+        quarantine_items=quarantine_items(),
         report=media_cleanup_report(),
     )
 
@@ -9278,6 +10464,60 @@ def admin_jobs():
             limit=75,
             guild_id=selected_server_id,
         ),
+    )
+
+
+@app.route("/admin/install-doctor")
+def admin_install_doctor():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+    return render_template_string(
+        INSTALL_DOCTOR_HTML,
+        admin_key=ADMIN_KEY,
+        report=install_doctor_report(),
+    )
+
+
+@app.route("/admin/approvals", methods=["GET", "POST"])
+def admin_approvals():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    selected_status = request.args.get("status", "pending").strip() or "pending"
+    if selected_status not in {"pending", "complete", "denied", "failed", "all"}:
+        selected_status = "pending"
+    actor_id, actor_name = web_actor()
+    if request.method == "POST":
+        require_csrf_token()
+        action_id = int(request.form.get("action_id", "0") or 0)
+        decision = request.form.get("decision", "approve")
+        if decision not in {"approve", "deny"}:
+            abort(400)
+        ok, message = resolve_pending_admin_action(
+            action_id,
+            decision,
+            actor_id,
+            actor_name,
+        )
+        return redirect(url_for(
+            "admin_approvals",
+            key=ADMIN_KEY,
+            status=selected_status,
+            notice=message,
+            error=0 if ok else 1,
+        ))
+    return render_template_string(
+        APPROVALS_HTML,
+        actions=pending_admin_action_rows(selected_status),
+        admin_key=ADMIN_KEY,
+        csrf_token=get_csrf_token(),
+        error=error,
+        notice=notice,
+        selected_status=selected_status,
     )
 
 
@@ -9348,6 +10588,17 @@ def admin_privacy():
                     notice="Type DELETE before deleting user data.",
                     error=1,
                 ))
+            if two_admin_approval_enabled(config_data):
+                return approval_required_redirect(
+                    "privacy_delete_user_data",
+                    "user",
+                    user_id,
+                    {"guild_id": guild_id, "user_id": user_id},
+                    actor_id,
+                    actor_name,
+                    guild_id=guild_id,
+                    endpoint="admin_privacy",
+                )
             details = delete_user_privacy_data(
                 guild_id,
                 user_id,
@@ -9424,6 +10675,27 @@ def admin_import_guild_config():
             notice=f"Config import failed: {import_error}",
             error=1,
         ))
+    if request.form.get("confirm_import") != "1":
+        current_config = (config_data.get("guilds") or {}).get(str(guild_id)) or {}
+        guild_names = {
+            option["id"]: option["name"]
+            for option in guild_options(config_data)
+        }
+        normalized_json = json.dumps({
+            "format": "sdac-guild-config-v1",
+            "guild_id": payload.get("guild_id") or guild_id,
+            "guild_config": guild_config,
+        }, indent=2, sort_keys=True)
+        return render_template_string(
+            CONFIG_DIFF_HTML,
+            admin_key=ADMIN_KEY,
+            csrf_token=get_csrf_token(),
+            diff_rows=guild_config_diff(current_config, guild_config),
+            guild_id=str(guild_id),
+            guild_name=guild_names.get(str(guild_id), f"Discord {guild_id}"),
+            normalized_json=normalized_json,
+            source_guild_id=payload.get("guild_id") or "",
+        )
     actor_id, actor_name = web_actor()
     config_data.setdefault("guilds", {})[str(guild_id)] = guild_config
     save_config(config_data)
@@ -9739,6 +11011,18 @@ def admin_onboarding():
         invite_url=bot_invite_url(),
         servers=build_onboarding_rows(config_data),
         setup_templates=SETUP_TEMPLATE_ROWS,
+    )
+
+
+@app.route("/admin/owner-portal")
+def admin_owner_portal():
+    login_response = require_admin_login("moderator")
+    if login_response:
+        return login_response
+    return render_template_string(
+        OWNER_PORTAL_HTML,
+        admin_key=ADMIN_KEY,
+        servers=owner_portal_rows(),
     )
 
 
@@ -10793,6 +12077,133 @@ def public_stats():
     )
 
 
+@app.route("/api/stats")
+def api_stats():
+    config_data = load_config()
+    public_guilds = {
+        option["id"]: option["name"]
+        for option in guild_options(config_data, public_only=True)
+        if (config_data.get("guilds") or {})
+        .get(option["id"], {})
+        .get("public_stats_enabled", True)
+    }
+    scope_sql, scope_params = guild_id_filter("guild_id", set(public_guilds))
+    with closing(connect_db()) as connection:
+        payload = {
+            "servers": len(public_guilds),
+            "submissions": connection.execute(
+                f"SELECT COUNT(*) FROM submissions WHERE status = 'posted' AND {scope_sql}",
+                scope_params,
+            ).fetchone()[0],
+            "guess_points": connection.execute(
+                f"SELECT COALESCE(SUM(points), 0) FROM guess_points WHERE {scope_sql}",
+                scope_params,
+            ).fetchone()[0],
+            "active_games": connection.execute(
+                f"SELECT COUNT(*) FROM guess_games WHERE status = 'active' AND {scope_sql}",
+                scope_params,
+            ).fetchone()[0],
+        }
+    return jsonify(payload)
+
+
+@app.route("/api/servers")
+def api_servers():
+    config_data = load_config()
+    rows = []
+    with closing(connect_db()) as connection:
+        for option in guild_options(config_data, public_only=True):
+            guild_config = (config_data.get("guilds") or {}).get(option["id"], {})
+            if not guild_config.get("public_stats_enabled", True):
+                continue
+            rows.append({
+                "id": option["id"],
+                "name": option["name"],
+                "submissions": connection.execute("""
+                    SELECT COUNT(*)
+                    FROM submissions
+                    WHERE guild_id = ? AND status = 'posted'
+                """, (option["id"],)).fetchone()[0],
+                "guess_points": connection.execute("""
+                    SELECT COALESCE(SUM(points), 0)
+                    FROM guess_points
+                    WHERE guild_id = ?
+                """, (option["id"],)).fetchone()[0],
+            })
+    return jsonify({"servers": rows})
+
+
+@app.route("/api/leaderboard")
+def api_leaderboard():
+    config_data = load_config()
+    visible_ids = {
+        option["id"]
+        for option in guild_options(config_data, public_only=True)
+        if (config_data.get("guilds") or {})
+        .get(option["id"], {})
+        .get("public_stats_enabled", True)
+    }
+    month = request.args.get("month", current_month_key()).strip()
+    if not re.match(r"^\d{4}-\d{2}$", month):
+        month = current_month_key()
+    scope_sql, scope_params = guild_id_filter("guild_id", visible_ids)
+    with closing(connect_db()) as connection:
+        rows = connection.execute(f"""
+            SELECT guild_id, user_id, username, SUM(points) AS points
+            FROM guess_points
+            WHERE {scope_sql}
+              AND month = ?
+            GROUP BY guild_id, user_id, username
+            ORDER BY points DESC, username ASC
+            LIMIT 25
+        """, scope_params + [month]).fetchall()
+    return jsonify({
+        "month": month,
+        "leaderboard": rows_as_dicts(rows),
+    })
+
+
+@app.route("/api/server/<guild_id>")
+def api_server(guild_id):
+    config_data = load_config()
+    guild_config = (config_data.get("guilds") or {}).get(str(guild_id))
+    if not guild_config or not feature_enabled(guild_config, "public_gallery"):
+        abort(404)
+    if not guild_config.get("public_stats_enabled", True):
+        abort(404)
+    with closing(connect_db()) as connection:
+        recent = connection.execute("""
+            SELECT id, username, category, stars, created_at
+            FROM submissions
+            WHERE guild_id = ?
+              AND status = 'posted'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 20
+        """, (str(guild_id),)).fetchall()
+        totals = {
+            "submissions": connection.execute("""
+                SELECT COUNT(*)
+                FROM submissions
+                WHERE guild_id = ? AND status = 'posted'
+            """, (str(guild_id),)).fetchone()[0],
+            "guess_points": connection.execute("""
+                SELECT COALESCE(SUM(points), 0)
+                FROM guess_points
+                WHERE guild_id = ?
+            """, (str(guild_id),)).fetchone()[0],
+        }
+    return jsonify({
+        "id": str(guild_id),
+        "name": (
+            guild_config.get("brand_name")
+            or guild_config.get("guild_name")
+            or f"Discord {guild_id}"
+        ),
+        "totals": totals,
+        "recent_submissions": rows_as_dicts(recent),
+    })
+
+
 @app.route("/server/<guild_id>")
 def server_profile(guild_id):
     config_data = load_config()
@@ -10947,6 +12358,7 @@ def health():
     return jsonify({
         "ok": True,
         "service": "sdac-dashboard",
+        "dashboard_instance_id": DASHBOARD_INSTANCE_ID,
         "bot_heartbeat_fresh": bool(bot_status.get("fresh")),
     })
 
@@ -10972,6 +12384,7 @@ def admin_health():
         payload = {
             "ok": True,
             "service": "sdac-dashboard",
+            "dashboard_instance_id": DASHBOARD_INSTANCE_ID,
             "schema_version": schema_row["version"] if schema_row else None,
             "schema_updated_at": schema_row["updated_at"] if schema_row else None,
             "expected_schema_version": SCHEMA_VERSION,
@@ -11313,6 +12726,60 @@ def set_submission_status(submission_id):
     ))
 
 
+@app.post("/admin/submission/<int:submission_id>/quarantine")
+def quarantine_submission(submission_id):
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+    require_csrf_token()
+
+    redirect_values = {
+        "key": ADMIN_KEY,
+        "category": request.args.get("category", "").strip(),
+        "guild_id": request.args.get("guild_id", "all").strip() or "all",
+        "status": request.args.get("status", "").strip(),
+        "q": request.args.get("q", "").strip(),
+        "page": positive_page(request.args.get("page")),
+    }
+    with closing(connect_db()) as connection:
+        row = connection.execute(
+            "SELECT guild_id FROM submissions WHERE id = ?",
+            (submission_id,),
+        ).fetchone()
+    if not row:
+        return redirect(url_for(
+            "index",
+            notice="Submission not found.",
+            error=1,
+            **redirect_values,
+        ))
+    actor_id, actor_name = web_actor()
+    reason = request.form.get("reason", "Manual dashboard quarantine")
+    if two_admin_approval_enabled(load_config()):
+        return approval_required_redirect(
+            "quarantine_submission",
+            "submission",
+            submission_id,
+            {"submission_id": submission_id, "reason": reason},
+            actor_id,
+            actor_name,
+            guild_id=row["guild_id"],
+            endpoint="admin_approvals",
+        )
+    ok, message = quarantine_submission_media(
+        submission_id,
+        reason,
+        actor_id,
+        actor_name,
+    )
+    return redirect(url_for(
+        "index",
+        notice=message,
+        error=0 if ok else 1,
+        **redirect_values,
+    ))
+
+
 @app.post("/delete/<int:submission_id>")
 def delete_submission(submission_id):
     login_response = require_admin_login()
@@ -11345,75 +12812,25 @@ def delete_submission(submission_id):
             error=1,
             **redirect_values,
         ))
-
-    for channel_id, message_id in (
-        (row["repost_channel_id"], row["repost_message_id"]),
-        (row["approval_channel_id"], row["approval_message_id"]),
-    ):
-        deleted, error_message = delete_discord_message(
-            channel_id,
-            message_id,
-        )
-        if not deleted:
-            send_admin_notification(
-                "repost_delete_failed",
-                (
-                    f"Could not delete Discord message `{message_id}` in "
-                    f"channel `{channel_id}` for submission `{row['id']}`: "
-                    f"`{error_message}`"
-                ),
-                guild_id=row["guild_id"],
-                throttle_key=f"repost_delete_failed:{row['id']}:{message_id}",
-                throttle_seconds=900,
-            )
-            return redirect(url_for(
-                "index",
-                notice=error_message,
-                error=1,
-                **redirect_values,
-            ))
-
     actor_id, actor = web_actor()
-    with database() as connection:
-        connection.execute("""
-            INSERT INTO moderation_history (
-                guild_id, submission_id, action, actor_user_id,
-                actor_username, details, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (
-            row["guild_id"],
-            row["id"],
-            "remove",
-            actor_id,
-            actor,
-            "Removed from dashboard",
-            utc_now_iso(),
-        ))
-        add_admin_audit_log(
-            connection,
-            row["guild_id"],
-            "remove_submission_dashboard",
-            actor_id,
-            actor,
+    if two_admin_approval_enabled(load_config()):
+        return approval_required_redirect(
+            "delete_submission",
             "submission",
-            row["id"],
-            "Removed from dashboard",
-        )
-        connection.execute(
-            "DELETE FROM submissions WHERE id = ?",
-            (submission_id,),
-        )
-        connection.execute(
-            "DELETE FROM media_fingerprints WHERE submission_id = ?",
-            (submission_id,),
+            submission_id,
+            {"submission_id": submission_id},
+            actor_id,
+            actor,
+            guild_id=row["guild_id"],
+            endpoint="index",
+            route_values=redirect_values,
         )
 
-    delete_local_media(row)
-    PUBLIC_PAGE_CACHE.clear()
+    ok, message = remove_submission_from_dashboard(submission_id, actor_id, actor)
     return redirect(url_for(
         "index",
-        notice="Submission removed from the website and Discord.",
+        notice=message,
+        error=0 if ok else 1,
         **redirect_values,
     ))
 

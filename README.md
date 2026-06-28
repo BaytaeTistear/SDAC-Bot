@@ -27,7 +27,9 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - Public user profiles and submission reports
 - Moderation queue bulk review and submission review flags
 - Media cleanup dashboard for orphaned, missing, and oversized media
+- Media quarantine controls for suspicious/problem submissions
 - Background job queue and Jobs page for long-running maintenance actions
+- Two-admin approval queue for dangerous admin actions
 - Duplicate media fingerprinting with admin-visible anti-spam review scores
 - Lightweight gallery mode with generated thumbnails and remote-original badges
 - Media lifecycle controls for local original retention, thumbnail size, image
@@ -38,6 +40,8 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - Maintenance page for backups, backup downloads, release status, restore tests,
   backup checksums, storage warnings, config backup restore, bot heartbeat
   status, storage forecast, rollback queueing, and health
+- Install Doctor, owner portal, config import diff preview, SQLite optimize,
+  monthly restore drills, permission drift alerts, and monthly digest posts
 - Release channel dashboard for installed, official, and experimental versions
 - Moderation page for pending submissions, public reports, and recent decisions
 - Admin audit log under `/audit` and `/admin/audit`
@@ -51,6 +55,8 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
   setup test
 - `/diagnose` self-checks for database, folders, channels, permissions, bot
   runtime state, public URL, and command sync
+- `/repository` shows the configured user/fork GitHub repo and the original
+  upstream repo
 - Website-managed guessing-game seasons with top 10 leaderboard snapshots
 - Emergency `/sdacpanic` pause/resume command for submissions and games
 - Per-server limits for file size, monthly submissions, active games, and storage
@@ -130,7 +136,7 @@ sdac-update latest-experimental
 Explicit numbered release:
 
 ```bash
-sdac-update 2.8
+sdac-update 2.8.2
 ```
 
 Optional checks:
@@ -385,6 +391,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /setupstatus
 /setuptest
 /diagnose
+/repository
 /settings
 /setfeature submissions true
 /checkpermissions
@@ -438,6 +445,9 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /admin/seasons?key=ImTheBestAdmin
 /admin/onboarding?key=ImTheBestAdmin
 /admin/maintenance?key=ImTheBestAdmin
+/admin/install-doctor?key=ImTheBestAdmin
+/admin/approvals?key=ImTheBestAdmin
+/admin/owner-portal?key=ImTheBestAdmin
 /admin/media?key=ImTheBestAdmin
 /admin/jobs?key=ImTheBestAdmin
 /admin/privacy?key=ImTheBestAdmin
@@ -452,6 +462,10 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /export/audit.csv?key=ImTheBestAdmin
 /export/monthly-report.csv?key=ImTheBestAdmin
 /admin/health?key=ImTheBestAdmin
+/api/stats
+/api/servers
+/api/leaderboard
+/api/server/GUILD_ID
 ```
 
 ### Windows
