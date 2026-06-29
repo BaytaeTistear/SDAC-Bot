@@ -1,3 +1,26 @@
+# SDAC Bot Version 2.8.3 Experimental
+
+Date: 2026-06-28
+
+Version 2.8.3 is an experimental command-discovery build.
+
+Included:
+
+- new `/commands` public slash command for regular user commands
+- new `/admincommands` admin-only slash command for SDAC admin commands
+- command help automatically splits long admin command output into safe
+  Discord-sized messages
+- README command directory now separates Discord user commands from Discord
+  admin commands
+
+Release channel:
+
+- `version-2.8.3` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+---
+
 # SDAC Bot Version 2.8.2 Experimental
 
 Date: 2026-06-28

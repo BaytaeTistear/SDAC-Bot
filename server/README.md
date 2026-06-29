@@ -378,9 +378,20 @@ cd /home/ubuntu/discord-screenshot-bot
 bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backups/SNAPSHOT-NAME
 ```
 
+### Discord User Commands
+
+```text
+/commands
+/submit category
+/categories
+/guess guess
+/hint
+```
+
 ### Discord Admin Commands
 
 ```text
+/admincommands
 /setsubmit #channel
 /clearsubmit
 /setcategory category #channel
@@ -419,12 +430,10 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /startgame #channel answer media text category hint auto_hint_minutes
 /startlibrarygame #channel item_id category random_item
 /activegame
-/guess guess
 /correct
 /cancelgame
 /sethint hint
 /revealhint
-/hint
 /removesubmission id
 /submissioninfo id
 ```

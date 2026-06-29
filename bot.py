@@ -301,6 +301,92 @@ NOTIFICATION_EVENT_CHOICES = [
     for key, label in NOTIFICATION_EVENT_LABELS.items()
 ]
 
+USER_COMMAND_HELP = [
+    ("/commands", "Show the public SDAC command list."),
+    ("/submit category", "Start a guided media submission."),
+    ("/categories", "Show configured categories and basic server setup."),
+    ("/guess guess", "Guess the active game answer in the current channel."),
+    ("/hint", "Show this channel's revealed game hint."),
+]
+
+ADMIN_COMMAND_HELP = [
+    ("/admincommands", "Show this admin command list."),
+    ("/setup", "Open the guided Discord setup wizard."),
+    ("/setupstatus", "Show setup progress."),
+    ("/setuptest", "Run setup checks."),
+    ("/diagnose", "Run setup and runtime diagnostics."),
+    ("/repository", "Show the configured user/fork repo and original repo."),
+    ("/settings", "Show SDAC bot settings."),
+    ("/setsubmit #channel", "Set the submission channel."),
+    ("/clearsubmit", "Clear the submission channel."),
+    ("/setcategory category #channel", "Create or update a repost category."),
+    ("/editcategory oldname newname #channel", "Rename or move a category."),
+    ("/deletecategory category", "Delete a category."),
+    ("/setfeature feature enabled", "Enable or disable a feature."),
+    ("/checkpermissions", "Check bot permissions in configured channels."),
+    ("/repairpermissions", "Show missing permissions and the repair invite."),
+    ("/setbranding name accent logo_url", "Set dashboard branding."),
+    ("/setapproval enabled #channel", "Configure approval-before-repost."),
+    ("/setadminrole @role", "Allow a role to manage SDAC."),
+    ("/removeadminrole @role", "Remove an SDAC admin role."),
+    ("/setweeklychannel #channel", "Set weekly top channel."),
+    ("/clearweeklychannel", "Clear weekly top channel."),
+    ("/setweeklyday day", "Set weekly top posting day."),
+    ("/setweeklytime hour minute", "Set weekly top posting time."),
+    ("/settimezone timezone", "Set this server's timezone."),
+    ("/setguesstimeout minutes", "Set wrong-guess cooldown."),
+    ("/setgamesummarychannel #channel", "Set game summary channel."),
+    ("/cleargamesummarychannel", "Use game channel for summaries."),
+    ("/seterrorchannel #channel", "Set error notification channel."),
+    ("/clearerrorchannel", "Clear error notification channel."),
+    ("/setnotification event #channel enabled", "Route admin alerts."),
+    ("/setlimit limit value", "Set a safety limit."),
+    ("/setmoderation ...", "Set moderation controls."),
+    ("/setgamesettings ...", "Set default guessing-game controls."),
+    ("/setserverbackup ...", "Set per-server external backup target."),
+    ("/serverbackupstatus", "Show this server's backup settings."),
+    ("/supportbundle", "Create a small diagnostic bundle."),
+    ("/sdacpanic paused reason", "Pause or resume SDAC activity."),
+    ("/startgame #channel answer media text category hint auto_hint_minutes", "Start a guessing game."),
+    ("/startlibrarygame #channel item_id category random_item", "Start a saved library game."),
+    ("/activegame", "Show active game details including the answer."),
+    ("/correct", "Reveal and close the active game."),
+    ("/cancelgame", "Cancel the active game."),
+    ("/sethint hint", "Reveal a manual hint."),
+    ("/revealhint", "Reveal the next generated hint."),
+    ("/removesubmission id", "Remove a submission."),
+    ("/submissioninfo id", "Show submission details."),
+]
+
+
+def command_help_chunks(title, commands, intro=""):
+    lines = [f"**{title}**"]
+    if intro:
+        lines.append(intro)
+    for command, description in commands:
+        lines.append(f"- `{command}` - {description}")
+    chunks = []
+    current = ""
+    for line in lines:
+        next_value = f"{current}\n{line}" if current else line
+        if len(next_value) > 1900 and current:
+            chunks.append(current)
+            current = line
+        else:
+            current = next_value
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+async def send_command_help(interaction, title, commands, intro=""):
+    chunks = command_help_chunks(title, commands, intro)
+    if not chunks:
+        chunks = [f"**{title}**\nNo commands are listed."]
+    await interaction.response.send_message(chunks[0], ephemeral=True)
+    for chunk in chunks[1:]:
+        await interaction.followup.send(chunk, ephemeral=True)
+
 
 def fill_nested_defaults(target, defaults):
     changed = False
@@ -4406,6 +4492,30 @@ class SetupWizardView(discord.ui.View):
             "\n".join(lines)[:1900],
             ephemeral=True,
         )
+
+
+@tree.command(name="commands", description="Show SDAC user commands")
+@app_commands.guild_only()
+async def commands_list(interaction):
+    await send_command_help(
+        interaction,
+        "SDAC User Commands",
+        USER_COMMAND_HELP,
+        "These commands are available to regular users in this server.",
+    )
+
+
+@tree.command(name="admincommands", description="Show SDAC admin commands")
+@app_commands.guild_only()
+async def admincommands(interaction):
+    if not await require_admin(interaction):
+        return
+    await send_command_help(
+        interaction,
+        "SDAC Admin Commands",
+        ADMIN_COMMAND_HELP,
+        "These commands require SDAC admin access in this server.",
+    )
 
 
 @tree.command(name="setup", description="Open the guided SDAC setup wizard")
