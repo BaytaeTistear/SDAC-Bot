@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import time
 import traceback
+import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -127,10 +128,12 @@ DEFAULT_GUILD_EXTERNAL_BACKUP = {
     "public_base_url": "",
     "include_media": True,
     "include_database_export": True,
+    "zip_backups": True,
     "delete_local_media_after_success": False,
     "last_success_at": "",
     "last_status": "",
     "last_details": "",
+    "last_archive_path": "",
 }
 
 DEFAULT_GUILD_CONFIG = {
@@ -176,6 +179,11 @@ DEFAULT_GUILD_CONFIG = {
     },
     "public_stats_enabled": True,
     "external_backup": DEFAULT_GUILD_EXTERNAL_BACKUP,
+    "notification_digest": {
+        "enabled": False,
+        "frequency": "weekly",
+        "channel_id": None,
+    },
     "categories": {},
     "features": DEFAULT_FEATURES,
 }
@@ -282,6 +290,10 @@ REQUIRED_TABLES = {
     "pending_admin_actions",
     "media_quarantine",
     "monthly_digest_runs",
+    "scheduled_games",
+    "user_streaks",
+    "user_achievements",
+    "backup_archives",
 }
 
 NOTIFICATION_EVENT_LABELS = {
@@ -309,10 +321,23 @@ USER_COMMAND_HELP = [
     ("/hint", "Show this channel's revealed game hint."),
 ]
 
+USER_COMMAND_GROUPS = {
+    "All User Commands": USER_COMMAND_HELP,
+    "Submissions": [
+        ("/submit category", "Start a guided media submission."),
+        ("/categories", "Show configured categories and basic server setup."),
+    ],
+    "Guessing Games": [
+        ("/guess guess", "Guess the active game answer in the current channel."),
+        ("/hint", "Show this channel's revealed game hint."),
+    ],
+}
+
 ADMIN_COMMAND_HELP = [
     ("/admincommands", "Show this admin command list."),
     ("/setup", "Open the guided Discord setup wizard."),
     ("/setupstatus", "Show setup progress."),
+    ("/setupchecklist", "Show the admin setup and production checklist."),
     ("/setuptest", "Run setup checks."),
     ("/diagnose", "Run setup and runtime diagnostics."),
     ("/repository", "Show the configured user/fork repo and original repo."),
@@ -345,8 +370,17 @@ ADMIN_COMMAND_HELP = [
     ("/setgamesettings ...", "Set default guessing-game controls."),
     ("/setserverbackup ...", "Set per-server external backup target."),
     ("/serverbackupstatus", "Show this server's backup settings."),
+    ("/backupguide provider", "Show setup steps for a backup provider."),
+    ("/backupsetup provider remote ...", "Configure backups from Discord."),
+    ("/backupnow upload", "Create a zip backup and optionally upload it."),
+    ("/backupstatus", "Show backup settings and prerequisites."),
+    ("/setdigest enabled frequency #channel", "Configure admin notification digest."),
     ("/supportbundle", "Create a small diagnostic bundle."),
     ("/sdacpanic paused reason", "Pause or resume SDAC activity."),
+    ("/schedulegame #channel start_time ...", "Schedule a saved library game."),
+    ("/scheduledgames", "List queued and running scheduled games."),
+    ("/cancelscheduledgame id", "Cancel a queued scheduled game."),
+    ("/reasonpresets", "Show standard admin action reasons."),
     ("/startgame #channel answer media text category hint auto_hint_minutes", "Start a guessing game."),
     ("/startlibrarygame #channel item_id category random_item", "Start a saved library game."),
     ("/activegame", "Show active game details including the answer."),
@@ -354,8 +388,139 @@ ADMIN_COMMAND_HELP = [
     ("/cancelgame", "Cancel the active game."),
     ("/sethint hint", "Reveal a manual hint."),
     ("/revealhint", "Reveal the next generated hint."),
-    ("/removesubmission id", "Remove a submission."),
+    ("/removesubmission id reason_preset reason", "Remove a submission with an audit reason."),
     ("/submissioninfo id", "Show submission details."),
+]
+
+ADMIN_COMMAND_GROUPS = {
+    "All Admin Commands": ADMIN_COMMAND_HELP,
+    "Setup": [
+        ("/setup", "Open the guided Discord setup wizard."),
+        ("/setupstatus", "Show setup progress."),
+        ("/setupchecklist", "Show the admin setup and production checklist."),
+        ("/setuptest", "Run setup checks."),
+        ("/diagnose", "Run setup and runtime diagnostics."),
+        ("/repository", "Show the configured user/fork repo and original repo."),
+        ("/settings", "Show SDAC bot settings."),
+        ("/setfeature feature enabled", "Enable or disable a feature."),
+    ],
+    "Channels": [
+        ("/setsubmit #channel", "Set the submission channel."),
+        ("/clearsubmit", "Clear the submission channel."),
+        ("/setcategory category #channel", "Create or update a repost category."),
+        ("/editcategory oldname newname #channel", "Rename or move a category."),
+        ("/deletecategory category", "Delete a category."),
+        ("/setweeklychannel #channel", "Set weekly top channel."),
+        ("/clearweeklychannel", "Clear weekly top channel."),
+        ("/setgamesummarychannel #channel", "Set game summary channel."),
+        ("/seterrorchannel #channel", "Set error notification channel."),
+    ],
+    "Permissions": [
+        ("/checkpermissions", "Check bot permissions in configured channels."),
+        ("/repairpermissions", "Show missing permissions and the repair invite."),
+        ("/setadminrole @role", "Allow a role to manage SDAC."),
+        ("/removeadminrole @role", "Remove an SDAC admin role."),
+    ],
+    "Games": [
+        ("/startgame #channel answer media text category hint auto_hint_minutes", "Start a guessing game."),
+        ("/startlibrarygame #channel item_id category random_item", "Start a saved library game."),
+        ("/schedulegame #channel start_time ...", "Schedule a saved library game."),
+        ("/scheduledgames", "List queued and running scheduled games."),
+        ("/cancelscheduledgame id", "Cancel a queued scheduled game."),
+        ("/activegame", "Show active game details including the answer."),
+        ("/correct", "Reveal and close the active game."),
+        ("/cancelgame", "Cancel the active game."),
+        ("/sethint hint", "Reveal a manual hint."),
+        ("/revealhint", "Reveal the next generated hint."),
+        ("/setgamesettings ...", "Set default guessing-game controls."),
+    ],
+    "Moderation": [
+        ("/setmoderation ...", "Set moderation controls."),
+        ("/removesubmission id reason_preset reason", "Remove a submission with an audit reason."),
+        ("/submissioninfo id", "Show submission details."),
+        ("/reasonpresets", "Show standard admin action reasons."),
+        ("/sdacpanic paused reason", "Pause or resume SDAC activity."),
+    ],
+    "Backups": [
+        ("/backupguide provider", "Show setup steps for a backup provider."),
+        ("/backupsetup provider remote ...", "Configure backups from Discord."),
+        ("/backupnow upload", "Create a zip backup and optionally upload it."),
+        ("/backupstatus", "Show backup settings and prerequisites."),
+        ("/setserverbackup ...", "Set per-server external backup target."),
+        ("/serverbackupstatus", "Show this server's backup settings."),
+        ("/supportbundle", "Create a small diagnostic bundle."),
+    ],
+    "Notifications": [
+        ("/setnotification event #channel enabled", "Route admin alerts."),
+        ("/setdigest enabled frequency #channel", "Configure admin notification digest."),
+        ("/setweeklyday day", "Set weekly top posting day."),
+        ("/setweeklytime hour minute", "Set weekly top posting time."),
+        ("/settimezone timezone", "Set this server's timezone."),
+        ("/setbranding name accent logo_url", "Set dashboard branding."),
+    ],
+}
+
+BACKUP_PROVIDER_GUIDES = {
+    "google_drive": {
+        "label": "Google Drive",
+        "remote_hint": "drive:sdac-backups/server-name",
+        "steps": "Run `rclone config`, choose Google Drive, then use the remote path from `/backupsetup`.",
+    },
+    "onedrive": {
+        "label": "Microsoft OneDrive",
+        "remote_hint": "onedrive:SDAC/server-name",
+        "steps": "Run `rclone config`, choose OneDrive, sign in, then use the remote path from `/backupsetup`.",
+    },
+    "dropbox": {
+        "label": "Dropbox",
+        "remote_hint": "dropbox:sdac/server-name",
+        "steps": "Run `rclone config`, choose Dropbox, sign in, then use the remote path from `/backupsetup`.",
+    },
+    "mega": {
+        "label": "Mega",
+        "remote_hint": "mega:sdac/server-name",
+        "steps": "Run `rclone config`, choose Mega, enter the account credentials, then use the remote path.",
+    },
+    "s3": {
+        "label": "Amazon S3 compatible",
+        "remote_hint": "s3:bucket/sdac/server-name",
+        "steps": "Run `rclone config`, choose S3, enter keys/region/bucket provider, then use the remote path.",
+    },
+    "b2": {
+        "label": "Backblaze B2",
+        "remote_hint": "b2:bucket/sdac/server-name",
+        "steps": "Run `rclone config`, choose Backblaze B2, enter key ID/application key, then use the remote path.",
+    },
+    "box": {
+        "label": "Box",
+        "remote_hint": "box:SDAC/server-name",
+        "steps": "Run `rclone config`, choose Box, sign in, then use the remote path from `/backupsetup`.",
+    },
+    "sftp": {
+        "label": "SFTP / another VPS",
+        "remote_hint": "sftp:sdac/server-name",
+        "steps": "Run `rclone config`, choose SFTP, enter SSH host/user/key settings, then use the remote path.",
+    },
+}
+
+BACKUP_PROVIDER_CHOICES = [
+    app_commands.Choice(name=guide["label"], value=key)
+    for key, guide in BACKUP_PROVIDER_GUIDES.items()
+]
+
+MODERATION_REASON_PRESETS = {
+    "spam": "Spam or automated abuse",
+    "wrong_category": "Wrong category",
+    "duplicate": "Duplicate submission",
+    "unsafe_media": "Unsafe or disallowed media",
+    "user_request": "Removed by user request",
+    "copyright": "Copyright or ownership concern",
+    "other": "Other admin decision",
+}
+
+REASON_PRESET_CHOICES = [
+    app_commands.Choice(name=label, value=key)
+    for key, label in MODERATION_REASON_PRESETS.items()
 ]
 
 
@@ -384,6 +549,47 @@ async def send_command_help(interaction, title, commands, intro=""):
     if not chunks:
         chunks = [f"**{title}**\nNo commands are listed."]
     await interaction.response.send_message(chunks[0], ephemeral=True)
+    for chunk in chunks[1:]:
+        await interaction.followup.send(chunk, ephemeral=True)
+
+
+class CommandHelpSelect(discord.ui.Select):
+    def __init__(self, groups):
+        self.groups = groups
+        options = [
+            discord.SelectOption(label=label[:100], value=label)
+            for label in groups
+        ]
+        super().__init__(
+            placeholder="Choose a command category",
+            min_values=1,
+            max_values=1,
+            options=options[:25],
+        )
+
+    async def callback(self, interaction):
+        label = self.values[0]
+        commands = self.groups.get(label, [])
+        chunks = command_help_chunks(label, commands)
+        await interaction.response.edit_message(content=chunks[0], view=self.view)
+        for chunk in chunks[1:]:
+            await interaction.followup.send(chunk, ephemeral=True)
+
+
+class CommandHelpView(discord.ui.View):
+    def __init__(self, groups):
+        super().__init__(timeout=300)
+        self.add_item(CommandHelpSelect(groups))
+
+
+async def send_command_help_menu(interaction, title, groups, intro=""):
+    first_label = next(iter(groups))
+    chunks = command_help_chunks(title, groups[first_label], intro)
+    await interaction.response.send_message(
+        chunks[0],
+        view=CommandHelpView(groups),
+        ephemeral=True,
+    )
     for chunk in chunks[1:]:
         await interaction.followup.send(chunk, ephemeral=True)
 
@@ -821,6 +1027,10 @@ def initialize_database():
                 status TEXT DEFAULT 'active',
                 times_used INTEGER DEFAULT 0,
                 last_used_at TEXT,
+                tags_json TEXT,
+                pack_name TEXT,
+                enabled INTEGER DEFAULT 1,
+                notes TEXT,
                 created_by TEXT,
                 created_at TEXT,
                 updated_at TEXT
@@ -1003,6 +1213,67 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS scheduled_games (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                channel_id TEXT,
+                library_item_id INTEGER DEFAULT 0,
+                category TEXT,
+                random_item INTEGER DEFAULT 0,
+                starts_at TEXT,
+                close_after_minutes INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'queued',
+                game_id INTEGER,
+                created_by TEXT,
+                created_by_name TEXT,
+                created_at TEXT,
+                updated_at TEXT,
+                last_error TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS user_streaks (
+                guild_id TEXT,
+                user_id TEXT,
+                username TEXT,
+                current_guess_streak INTEGER DEFAULT 0,
+                best_guess_streak INTEGER DEFAULT 0,
+                last_correct_game_id INTEGER,
+                updated_at TEXT,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS user_achievements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                user_id TEXT,
+                username TEXT,
+                achievement_key TEXT,
+                label TEXT,
+                details TEXT,
+                month TEXT,
+                awarded_at TEXT,
+                UNIQUE (guild_id, user_id, achievement_key, month)
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS backup_archives (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                archive_type TEXT,
+                file_path TEXT,
+                size_bytes INTEGER DEFAULT 0,
+                sha256 TEXT,
+                destination TEXT,
+                status TEXT DEFAULT 'created',
+                details TEXT,
+                created_by TEXT,
+                created_by_name TEXT,
+                created_at TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS schema_version (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 version INTEGER NOT NULL,
@@ -1089,6 +1360,16 @@ def initialize_database():
                 connection, "guess_games", column, definition
             )
 
+        for column, definition in {
+            "tags_json": "TEXT",
+            "pack_name": "TEXT",
+            "enabled": "INTEGER DEFAULT 1",
+            "notes": "TEXT",
+        }.items():
+            ensure_column(
+                connection, "guess_library_items", column, definition
+            )
+
         ensure_column(
             connection,
             "dashboard_admin_users",
@@ -1156,6 +1437,34 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_monthly_digest_runs_guild_month
             ON monthly_digest_runs (guild_id, month, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_scheduled_games_due
+            ON scheduled_games (status, starts_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_scheduled_games_guild_status
+            ON scheduled_games (guild_id, status, starts_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_streaks_best
+            ON user_streaks (guild_id, best_guess_streak)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_achievements_user
+            ON user_achievements (guild_id, user_id, awarded_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_achievements_key
+            ON user_achievements (guild_id, achievement_key, month)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_backup_archives_created
+            ON backup_archives (guild_id, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_backup_archives_status
+            ON backup_archives (status, created_at)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_guess_games_active
@@ -1701,6 +2010,216 @@ def create_daily_database_backup():
                 message,
             )
     return backup_path, created, message
+
+
+BACKUP_EXPORT_TABLES = (
+    "submissions",
+    "monthly_submission_top",
+    "category_history",
+    "moderation_history",
+    "admin_audit_log",
+    "admin_notifications",
+    "game_seasons",
+    "guess_games",
+    "guess_library_items",
+    "guess_answer_history",
+    "guess_points",
+    "guess_correct_guesses",
+    "guess_cooldowns",
+    "monthly_guess_runs",
+    "daily_guess_runs",
+    "rate_limit_events",
+    "submission_reports",
+    "setup_test_runs",
+    "support_bundles",
+    "content_moderation_events",
+    "privacy_actions",
+    "scheduled_games",
+    "user_streaks",
+    "user_achievements",
+    "backup_archives",
+)
+
+
+def table_has_column(connection, table_name, column_name):
+    exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table_name,),
+    ).fetchone()
+    if not exists:
+        return False
+    return column_name in {
+        row["name"]
+        for row in connection.execute(f"PRAGMA table_info({table_name})")
+    }
+
+
+def rows_for_guild_export(connection, table_name, guild_id):
+    if not table_has_column(connection, table_name, "guild_id"):
+        return []
+    columns = [
+        row["name"]
+        for row in connection.execute(f"PRAGMA table_info({table_name})")
+    ]
+    order_column = "id" if "id" in columns else columns[0]
+    rows = connection.execute(
+        f'SELECT * FROM "{table_name}" WHERE guild_id = ? ORDER BY "{order_column}"',
+        (str(guild_id),),
+    ).fetchall()
+    return [{key: row[key] for key in row.keys()} for row in rows]
+
+
+def create_guild_backup_archive(guild_id, actor_id="", actor_name=""):
+    guild_id = str(guild_id)
+    guild_config = get_guild_config(guild_id, create=False)
+    backup = {
+        **DEFAULT_GUILD_EXTERNAL_BACKUP,
+        **(guild_config.get("external_backup") or {}),
+    }
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    archive_dir = BACKUP_DIR / "archives" / guild_id
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = archive_dir / f"sdac-guild-{guild_id}-{stamp}.zip"
+    manifest = {
+        "guild_id": guild_id,
+        "guild_name": guild_config.get("guild_name", ""),
+        "created_at": utc_now_iso(),
+        "created_by": str(actor_id or ""),
+        "created_by_name": str(actor_name or ""),
+        "include_media": bool(backup.get("include_media", True)),
+        "include_database_export": bool(
+            backup.get("include_database_export", True)
+        ),
+        "tables": {},
+        "media_files": 0,
+    }
+    with zipfile.ZipFile(
+        archive_path,
+        "w",
+        compression=zipfile.ZIP_DEFLATED,
+        compresslevel=6,
+    ) as archive:
+        archive.writestr(
+            "guild-config.json",
+            json.dumps({
+                "format": "sdac-guild-config-v1",
+                "guild_id": guild_id,
+                "guild_config": guild_config,
+            }, indent=2) + "\n",
+        )
+        if backup.get("include_database_export", True):
+            export = {}
+            with database() as connection:
+                for table_name in BACKUP_EXPORT_TABLES:
+                    rows = rows_for_guild_export(connection, table_name, guild_id)
+                    if rows:
+                        export[table_name] = rows
+                        manifest["tables"][table_name] = len(rows)
+            archive.writestr(
+                "database-guild-export.json",
+                json.dumps(export, indent=2, default=str) + "\n",
+            )
+        if backup.get("include_media", True):
+            media_root = MEDIA_DIR.resolve()
+            guild_media_dir = (media_root / guild_id).resolve()
+            try:
+                guild_media_dir.relative_to(media_root)
+            except ValueError:
+                guild_media_dir = media_root / "__invalid__"
+            if guild_media_dir.is_dir():
+                for media_path in guild_media_dir.rglob("*"):
+                    if not media_path.is_file():
+                        continue
+                    try:
+                        relative = media_path.resolve().relative_to(media_root)
+                    except (OSError, ValueError):
+                        continue
+                    archive.write(media_path, f"media/{relative.as_posix()}")
+                    manifest["media_files"] += 1
+        archive.writestr("manifest.json", json.dumps(manifest, indent=2) + "\n")
+
+    sha256 = file_sha256(archive_path)
+    size_bytes = archive_path.stat().st_size
+    with database() as connection:
+        cursor = connection.execute("""
+            INSERT INTO backup_archives (
+                guild_id, archive_type, file_path, size_bytes, sha256,
+                destination, status, details, created_by, created_by_name,
+                created_at
+            )
+            VALUES (?, 'guild_zip', ?, ?, ?, ?, 'created', ?, ?, ?, ?)
+        """, (
+            guild_id,
+            str(archive_path),
+            int(size_bytes),
+            sha256,
+            backup.get("remote") or "",
+            f"Created zip archive with {manifest['media_files']} media file(s).",
+            str(actor_id or ""),
+            str(actor_name or ""),
+            utc_now_iso(),
+        ))
+        archive_id = cursor.lastrowid
+    return {
+        "id": archive_id,
+        "path": archive_path,
+        "sha256": sha256,
+        "size": size_bytes,
+        "manifest": manifest,
+    }
+
+
+async def upload_archive_with_rclone(archive_info, remote):
+    remote = (remote or "").strip().rstrip("/")
+    if not remote:
+        return False, "No rclone remote is configured."
+    if shutil.which("rclone") is None:
+        return False, (
+            "rclone is not installed. Run "
+            "`sudo bash scripts/install_backup_prereqs.sh` on the server."
+        )
+    archive_path = Path(archive_info["path"])
+    destination = f"{remote}/archives"
+    process = await asyncio.create_subprocess_exec(
+        "rclone",
+        "copy",
+        str(archive_path),
+        destination,
+        "--transfers",
+        os.getenv("SDAC_RCLONE_TRANSFERS", "4"),
+        "--checkers",
+        os.getenv("SDAC_RCLONE_CHECKERS", "8"),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+    output = (stderr or stdout or b"").decode("utf-8", errors="replace").strip()
+    guild_id = str(archive_info["manifest"]["guild_id"])
+    status = "uploaded" if process.returncode == 0 else "failed"
+    details = (
+        f"Uploaded archive to {destination}."
+        if process.returncode == 0
+        else f"rclone failed: {output[-500:]}"
+    )
+    with database() as connection:
+        connection.execute("""
+            UPDATE backup_archives
+            SET status = ?, destination = ?, details = ?
+            WHERE id = ?
+        """, (status, destination, details, archive_info["id"]))
+        connection.execute("""
+            INSERT INTO offsite_backup_runs (
+                provider, destination, status, details, created_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            "rclone",
+            f"guild:{guild_id}:{destination}",
+            "success" if process.returncode == 0 else "failed",
+            details,
+            utc_now_iso(),
+        ))
+    return process.returncode == 0, details
 
 
 def referenced_media_paths(connection):
@@ -2616,6 +3135,431 @@ def active_game_count(connection, guild_id):
         WHERE guild_id = ? AND status = 'active'
     """, (str(guild_id),)).fetchone()
     return int(row[0] or 0)
+
+
+def parse_scheduled_start_time(raw_value, guild_config):
+    value = (raw_value or "").strip()
+    if not value:
+        raise ValueError("Start time is required.")
+    timezone_info = get_guild_timezone(guild_config)
+    for candidate in (value, value.replace(" ", "T", 1)):
+        try:
+            parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone_info)
+            return parsed.astimezone(timezone.utc)
+        except ValueError:
+            pass
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %I:%M%p", "%Y-%m-%d %I:%M %p"):
+        try:
+            parsed = datetime.strptime(value, fmt)
+            return parsed.replace(tzinfo=timezone_info).astimezone(timezone.utc)
+        except ValueError:
+            pass
+    raise ValueError(
+        "Use `YYYY-MM-DD HH:MM` in the server timezone or an ISO timestamp."
+    )
+
+
+def select_library_item_for_game(
+    connection,
+    guild_id,
+    item_id=0,
+    category="",
+    random_item=False,
+    reuse_cooldown_days=0,
+):
+    guild_id = str(guild_id)
+    if int(item_id or 0) > 0:
+        return connection.execute("""
+            SELECT *
+            FROM guess_library_items
+            WHERE id = ?
+              AND guild_id = ?
+              AND status = 'active'
+              AND (enabled IS NULL OR enabled != 0)
+            LIMIT 1
+        """, (int(item_id), guild_id)).fetchone()
+
+    where = [
+        "guild_id = ?",
+        "status = 'active'",
+        "(enabled IS NULL OR enabled != 0)",
+        "media_path IS NOT NULL",
+        "media_path != ''",
+    ]
+    parameters = [guild_id]
+    category_filter = (category or "").strip()
+    if category_filter:
+        where.append("LOWER(category) = LOWER(?)")
+        parameters.append(category_filter)
+    if reuse_cooldown_days > 0:
+        where.append("(last_used_at IS NULL OR last_used_at = '' OR last_used_at < ?)")
+        parameters.append(
+            (
+                datetime.now(timezone.utc) - timedelta(days=reuse_cooldown_days)
+            ).isoformat()
+        )
+    order_sql = (
+        "RANDOM()"
+        if random_item
+        else """
+            CASE WHEN last_used_at IS NULL OR last_used_at = '' THEN 0 ELSE 1 END,
+            last_used_at ASC,
+            id ASC
+        """
+    )
+    return connection.execute(f"""
+        SELECT *
+        FROM guess_library_items
+        WHERE {" AND ".join(where)}
+        ORDER BY {order_sql}
+        LIMIT 1
+    """, parameters).fetchone()
+
+
+async def start_library_game_item(
+    guild,
+    channel,
+    item,
+    starter_user_id,
+    starter_username,
+    source="library",
+    scheduled_id=None,
+):
+    guild_config = get_guild_config(guild.id, create=False)
+    if emergency_pause_message(guild_config):
+        raise RuntimeError("SDAC is paused for this server.")
+    if not feature_enabled(guild_config, "guessing_games"):
+        raise RuntimeError("Guessing games are disabled for this server.")
+
+    bot_member = guild.me
+    if bot_member is None and bot.user is not None:
+        bot_member = guild.get_member(bot.user.id)
+    if bot_member is None:
+        raise RuntimeError("The bot could not verify its channel permissions.")
+    permissions = channel.permissions_for(bot_member)
+    if not (
+        permissions.view_channel
+        and permissions.send_messages
+        and permissions.attach_files
+    ):
+        raise RuntimeError(
+            "The bot needs View Channel, Send Messages, and Attach Files."
+        )
+
+    try:
+        answer_aliases = json.loads(item["answer_aliases_json"] or "[]")
+    except (TypeError, json.JSONDecodeError):
+        answer_aliases = []
+    if not answer_aliases:
+        answer_aliases = parse_answer_aliases(
+            item["answer_display"] or item["answer"]
+        )
+    if not answer_aliases:
+        raise RuntimeError(f"Library item {item['id']} does not have an answer.")
+
+    answer_display = item["answer_display"] or answer_aliases[0]["display"]
+    normalized_answer = item["answer"] or answer_aliases[0]["normalized"]
+    media_name = item["media_name"] or Path(item["media_path"] or "").name
+    if not media_name or not is_allowed_file(media_name):
+        raise RuntimeError(f"Library item {item['id']} does not have valid media.")
+
+    source_path = Path(item["media_path"] or "")
+    if not source_path.is_absolute():
+        source_path = BASE_DIR / source_path
+    source_path = source_path.resolve()
+    source_path.relative_to(MEDIA_DIR.resolve())
+    if not source_path.is_file():
+        raise RuntimeError(f"Library item {item['id']} is missing its media file.")
+
+    media_size = source_path.stat().st_size
+    if media_size > guild_max_file_bytes(guild_config):
+        raise RuntimeError(f"Library item {item['id']} exceeds the file limit.")
+    storage_limit = guild_storage_limit(guild_config)
+    if storage_limit and guild_media_size(guild.id) + media_size > storage_limit:
+        raise RuntimeError("This server has reached its media storage limit.")
+
+    game_settings = guild_game_settings(guild_config)
+    with database() as connection:
+        limit = guild_active_game_limit(guild_config)
+        active_same_channel = connection.execute("""
+            SELECT 1
+            FROM guess_games
+            WHERE guild_id = ? AND channel_id = ? AND status = 'active'
+            LIMIT 1
+        """, (str(guild.id), str(channel.id))).fetchone()
+        if limit and active_game_count(connection, guild.id) >= limit and not active_same_channel:
+            raise RuntimeError("This server has reached its active game limit.")
+        recent_answer = answer_recently_used(
+            connection,
+            guild.id,
+            normalized_answer,
+            int(game_settings.get("reuse_cooldown_days") or 0),
+        )
+        if recent_answer:
+            raise RuntimeError(
+                f"That answer was used recently ({recent_answer['created_at']})."
+            )
+
+    replaced_game = await close_active_guess_game(guild.id, channel.id, "replaced")
+    game_folder = MEDIA_DIR / str(guild.id) / "guess_games" / str(channel.id)
+    game_folder.mkdir(parents=True, exist_ok=True)
+    safe_name = Path(media_name).name.replace("\\", "_")
+    unique_token = scheduled_id or int(time.time())
+    media_path = game_folder / f"{int(time.time())}_{unique_token}_{safe_name}"
+    discord_file = None
+    game_message = None
+    game_id = None
+
+    try:
+        shutil.copy2(source_path, media_path)
+        maybe_compress_image(media_path, media_name)
+        try:
+            stored_metadata = json.loads(item["media_metadata_json"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            stored_metadata = {}
+        media_metadata = stored_media_metadata(
+            media_name,
+            media_path,
+            stored_metadata.get("content_type", ""),
+        )
+        discord_file = discord.File(media_path, filename=media_name)
+        auto_hint_minutes = int(item["auto_hint_minutes"] or 0)
+        if auto_hint_minutes == 0:
+            auto_hint_minutes = int(
+                game_settings.get("default_auto_hint_minutes") or 0
+            )
+        game_lines = ["**Guessing Game Started**"]
+        prompt_text = (item["prompt_text"] or "").strip()
+        if prompt_text:
+            game_lines.append(prompt_text)
+        if scheduled_id:
+            game_lines.append(f"Scheduled game `{scheduled_id}` is now live.")
+        if auto_hint_minutes > 0:
+            game_lines.append(
+                f"Automatic hints are enabled every {auto_hint_minutes} minute(s)."
+            )
+        game_lines.append("Use `/guess <guess>` in this channel.")
+        generated_hints = build_game_hints(
+            answer_display,
+            item["category"] or "",
+            item["hint_text"] or "",
+        )
+        game_message = await channel.send(
+            content="\n\n".join(game_lines),
+            file=discord_file,
+        )
+        with database() as connection:
+            cursor = connection.execute("""
+                INSERT INTO guess_games (
+                    guild_id, channel_id, message_id, starter_user_id,
+                    starter_username, answer, answer_display, prompt_text,
+                    media_path, media_name, media_type, media_size,
+                    media_metadata_json, answer_aliases_json, hints_json,
+                    hint_level, next_hint_at, auto_hint_minutes,
+                    hint_category, library_item_id, status, started_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 'active', ?)
+            """, (
+                str(guild.id),
+                str(channel.id),
+                str(game_message.id),
+                str(starter_user_id),
+                str(starter_username),
+                normalized_answer,
+                answer_display,
+                prompt_text,
+                str(media_path),
+                media_name,
+                get_media_type(media_name),
+                int(media_metadata.get("size") or media_size),
+                json.dumps(media_metadata, separators=(",", ":")),
+                json.dumps(answer_aliases, separators=(",", ":")),
+                json.dumps(generated_hints, separators=(",", ":")),
+                next_hint_time(auto_hint_minutes),
+                auto_hint_minutes,
+                item["category"] or "",
+                item["id"],
+                utc_now_iso(),
+            ))
+            game_id = cursor.lastrowid
+            record_guess_answer_history(
+                connection,
+                guild.id,
+                channel.id,
+                game_id,
+                item["id"],
+                normalized_answer,
+                answer_display,
+                item["category"] or "",
+                source,
+                starter_username,
+            )
+            connection.execute("""
+                UPDATE guess_library_items
+                SET times_used = COALESCE(times_used, 0) + 1,
+                    last_used_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+            """, (utc_now_iso(), utc_now_iso(), item["id"]))
+            add_admin_audit_log(
+                connection,
+                guild.id,
+                "start_scheduled_library_game" if scheduled_id else "start_library_guess_game",
+                starter_user_id,
+                starter_username,
+                "game",
+                game_id,
+                (
+                    f"Channel {channel.id}; library item {item['id']}; "
+                    f"scheduled={scheduled_id or 'no'}; replaced={bool(replaced_game)}."
+                ),
+            )
+        return game_id, replaced_game
+    except Exception:
+        if game_message is not None:
+            try:
+                await game_message.delete()
+            except discord.HTTPException:
+                pass
+        if game_id is not None:
+            with database() as connection:
+                connection.execute("DELETE FROM guess_games WHERE id = ?", (game_id,))
+        cleanup_files([str(media_path)])
+        raise
+    finally:
+        if discord_file is not None:
+            discord_file.close()
+
+
+def award_user_achievement(
+    connection,
+    guild_id,
+    user_id,
+    username,
+    key,
+    label,
+    details,
+    month="",
+):
+    existing = connection.execute("""
+        SELECT 1
+        FROM user_achievements
+        WHERE guild_id = ?
+          AND user_id = ?
+          AND achievement_key = ?
+          AND month = ?
+        LIMIT 1
+    """, (str(guild_id), str(user_id), key, month or "")).fetchone()
+    if existing:
+        return ""
+    connection.execute("""
+        INSERT INTO user_achievements (
+            guild_id, user_id, username, achievement_key, label,
+            details, month, awarded_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        str(guild_id),
+        str(user_id),
+        str(username),
+        key,
+        label,
+        details,
+        month or "",
+        utc_now_iso(),
+    ))
+    return label
+
+
+def record_guess_success_achievements(
+    connection,
+    guild_id,
+    user_id,
+    username,
+    game_id,
+    month,
+):
+    row = connection.execute("""
+        SELECT *
+        FROM user_streaks
+        WHERE guild_id = ? AND user_id = ?
+    """, (str(guild_id), str(user_id))).fetchone()
+    if row and str(row["last_correct_game_id"] or "") == str(game_id):
+        current_streak = int(row["current_guess_streak"] or 1)
+        best_streak = int(row["best_guess_streak"] or current_streak)
+    else:
+        current_streak = int(row["current_guess_streak"] or 0) + 1 if row else 1
+        best_streak = max(current_streak, int(row["best_guess_streak"] or 0) if row else 0)
+    connection.execute("""
+        INSERT INTO user_streaks (
+            guild_id, user_id, username, current_guess_streak,
+            best_guess_streak, last_correct_game_id, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (guild_id, user_id)
+        DO UPDATE SET
+            username = excluded.username,
+            current_guess_streak = excluded.current_guess_streak,
+            best_guess_streak = excluded.best_guess_streak,
+            last_correct_game_id = excluded.last_correct_game_id,
+            updated_at = excluded.updated_at
+    """, (
+        str(guild_id),
+        str(user_id),
+        str(username),
+        current_streak,
+        best_streak,
+        int(game_id),
+        utc_now_iso(),
+    ))
+
+    labels = []
+    for key, label, details, award_month in (
+        ("first_correct", "First Correct Guess", "Guessed a game correctly.", ""),
+        ("streak_3", "Three-Guess Streak", "Reached a 3 correct-guess streak.", ""),
+        ("streak_5", "Five-Guess Streak", "Reached a 5 correct-guess streak.", ""),
+        ("streak_10", "Ten-Guess Streak", "Reached a 10 correct-guess streak.", ""),
+    ):
+        if key == "streak_3" and best_streak < 3:
+            continue
+        if key == "streak_5" and best_streak < 5:
+            continue
+        if key == "streak_10" and best_streak < 10:
+            continue
+        awarded = award_user_achievement(
+            connection,
+            guild_id,
+            user_id,
+            username,
+            key,
+            label,
+            details,
+            award_month,
+        )
+        if awarded:
+            labels.append(awarded)
+
+    total_points = connection.execute("""
+        SELECT COALESCE(SUM(points), 0)
+        FROM guess_points
+        WHERE guild_id = ? AND user_id = ? AND month = ?
+    """, (str(guild_id), str(user_id), month)).fetchone()[0]
+    if int(total_points or 0) >= 10:
+        awarded = award_user_achievement(
+            connection,
+            guild_id,
+            user_id,
+            username,
+            "monthly_10_points",
+            "Monthly 10 Points",
+            f"Earned at least 10 guessing points in {month}.",
+            month,
+        )
+        if awarded:
+            labels.append(awarded)
+    return labels
 
 
 def blocked_word_match(text, blocked_words):
@@ -4497,11 +5441,11 @@ class SetupWizardView(discord.ui.View):
 @tree.command(name="commands", description="Show SDAC user commands")
 @app_commands.guild_only()
 async def commands_list(interaction):
-    await send_command_help(
+    await send_command_help_menu(
         interaction,
         "SDAC User Commands",
-        USER_COMMAND_HELP,
-        "These commands are available to regular users in this server.",
+        USER_COMMAND_GROUPS,
+        "These commands are available to regular users. Use the menu to switch sections.",
     )
 
 
@@ -4510,11 +5454,11 @@ async def commands_list(interaction):
 async def admincommands(interaction):
     if not await require_admin(interaction):
         return
-    await send_command_help(
+    await send_command_help_menu(
         interaction,
         "SDAC Admin Commands",
-        ADMIN_COMMAND_HELP,
-        "These commands require SDAC admin access in this server.",
+        ADMIN_COMMAND_GROUPS,
+        "These commands require SDAC admin access. Use the menu to switch sections.",
     )
 
 
@@ -4550,6 +5494,54 @@ async def setupstatus(interaction):
             page=1,
             notice="Run `/setup` to change these settings with the wizard.",
         ),
+        ephemeral=True,
+    )
+
+
+@tree.command(name="setupchecklist", description="Show SDAC setup and production checklist")
+@app_commands.guild_only()
+async def setupchecklist(interaction):
+    if not await require_admin(interaction):
+        return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    lines = await setup_test_lines(interaction.guild, guild_config)
+    backup = {
+        **DEFAULT_GUILD_EXTERNAL_BACKUP,
+        **(guild_config.get("external_backup") or {}),
+    }
+    digest = guild_config.get("notification_digest") or {}
+    lines.extend([
+        "",
+        "**Production Extras**",
+        (
+            "OK: Per-server backup remote configured."
+            if backup.get("enabled") and backup.get("remote")
+            else "WARN: No per-server backup remote configured. Run `/backupguide` and `/backupsetup`."
+        ),
+        (
+            "OK: Backup zip archives are enabled."
+            if backup.get("zip_backups", True)
+            else "WARN: Backup zip archives are disabled."
+        ),
+        (
+            "OK: Admin notification digest configured."
+            if digest.get("enabled") and digest.get("channel_id")
+            else "WARN: Admin notification digest is not configured. Run `/setdigest`."
+        ),
+        f"Release: `{os.getenv('SDAC_RELEASE') or 'development'}`",
+        f"Update channel: `{os.getenv('SDAC_RELEASE_TAG') or 'latest-official'}`",
+    ])
+    status, summary = save_setup_test_run(interaction, lines)
+    audit_interaction(
+        interaction,
+        "run_setup_checklist",
+        "guild",
+        interaction.guild_id,
+        f"Ran setup checklist: {summary}",
+    )
+    lines.insert(1, f"Saved checklist result: `{status}`.")
+    await interaction.response.send_message(
+        "\n".join(lines)[:1900],
         ephemeral=True,
     )
 
@@ -5710,6 +6702,7 @@ async def setgamesettings(
     public_base_url="Optional public media URL prefix. Use clear to remove.",
     include_media="Include this server's media folder in the backup job",
     include_database_export="Include this server's database rows as JSON",
+    zip_backups="Create a local zip archive when backups run",
     delete_local_media_after_success="Advanced: delete local guild media after a successful copy",
 )
 async def setserverbackup(
@@ -5719,6 +6712,7 @@ async def setserverbackup(
     public_base_url: str = "",
     include_media: bool = True,
     include_database_export: bool = True,
+    zip_backups: bool = True,
     delete_local_media_after_success: bool = False,
 ):
     if not await require_admin(interaction):
@@ -5771,6 +6765,7 @@ async def setserverbackup(
     backup["provider"] = "rclone"
     backup["include_media"] = bool(include_media)
     backup["include_database_export"] = bool(include_database_export)
+    backup["zip_backups"] = bool(zip_backups)
     backup["delete_local_media_after_success"] = bool(
         delete_local_media_after_success
     )
@@ -5784,6 +6779,7 @@ async def setserverbackup(
         (
             f"enabled={enabled}; remote={backup.get('remote') or 'unset'}; "
             f"include_media={include_media}; "
+            f"zip_backups={zip_backups}; "
             f"delete_local={delete_local_media_after_success}"
         ),
     )
@@ -5806,6 +6802,7 @@ async def setserverbackup(
         "\n".join([
             f"Per-server backup is now {'enabled' if enabled else 'disabled'}.",
             f"Remote: `{backup.get('remote') or 'Not set'}`",
+            f"Zip archives: `{backup.get('zip_backups')}`",
             f"Run on the host with: `{command}`",
             *warnings,
         ]),
@@ -5835,15 +6832,298 @@ async def serverbackupstatus(interaction):
             f"Public media URL: `{backup.get('public_base_url') or 'Not set'}`",
             f"Include media: `{backup.get('include_media')}`",
             f"Include DB export: `{backup.get('include_database_export')}`",
+            f"Zip archives: `{backup.get('zip_backups', True)}`",
             (
                 "Delete local media after success: "
                 f"`{backup.get('delete_local_media_after_success')}`"
             ),
+            f"Last archive: `{backup.get('last_archive_path') or 'Never'}`",
             f"Last success: `{backup.get('last_success_at') or 'Never'}`",
             f"Last status: `{backup.get('last_status') or 'Unknown'}`",
             f"Details: `{backup.get('last_details') or ''}`",
             f"Host command: `{command}`",
         ]),
+        ephemeral=True,
+    )
+
+
+@tree.command(name="backupguide", description="Show backup provider setup steps")
+@app_commands.guild_only()
+@app_commands.choices(provider=BACKUP_PROVIDER_CHOICES)
+async def backupguide(interaction, provider: app_commands.Choice[str]):
+    if not await require_admin(interaction):
+        return
+    guide = BACKUP_PROVIDER_GUIDES[provider.value]
+    await interaction.response.send_message(
+        "\n".join([
+            f"**Backup Setup: {guide['label']}**",
+            "Prerequisites on Ubuntu:",
+            "`sudo bash scripts/install_backup_prereqs.sh`",
+            "",
+            "Configure rclone on the server:",
+            "`rclone config`",
+            "",
+            guide["steps"],
+            f"Example remote: `{guide['remote_hint']}`",
+            "",
+            "Then save it in Discord:",
+            f"`/backupsetup provider:{guide['label']} remote:{guide['remote_hint']}`",
+            "",
+            "Create and upload a zip backup any time with `/backupnow upload:true`.",
+        ]),
+        ephemeral=True,
+    )
+
+
+@tree.command(name="backupsetup", description="Configure this server's backups from Discord")
+@app_commands.guild_only()
+@app_commands.choices(provider=BACKUP_PROVIDER_CHOICES)
+@app_commands.describe(
+    remote="rclone destination, for example drive:sdac/server-name",
+    public_base_url="Optional public media URL prefix. Use clear to remove.",
+    include_media="Include this server's media folder in backups",
+    include_database_export="Include this server's database rows as JSON",
+    zip_backups="Create local zip archives for backups",
+    delete_local_media_after_success="Advanced: delete local guild media after a successful copy",
+)
+async def backupsetup(
+    interaction,
+    provider: app_commands.Choice[str],
+    remote: str,
+    public_base_url: str = "",
+    include_media: bool = True,
+    include_database_export: bool = True,
+    zip_backups: bool = True,
+    delete_local_media_after_success: bool = False,
+):
+    if not await require_admin(interaction):
+        return
+    remote_value = (remote or "").strip()
+    if not remote_value or any(character in remote_value for character in "\r\n"):
+        await interaction.response.send_message(
+            "Remote is required and cannot contain line breaks.",
+            ephemeral=True,
+        )
+        return
+    public_base_value = (public_base_url or "").strip()
+    if public_base_value.casefold() in {"clear", "none", "-"}:
+        public_base_value = ""
+    if public_base_value and not public_base_value.startswith(("https://", "http://")):
+        await interaction.response.send_message(
+            "Public media base URL must start with http:// or https://.",
+            ephemeral=True,
+        )
+        return
+    if delete_local_media_after_success and not include_media:
+        await interaction.response.send_message(
+            "Local media can only be deleted after media is included in backups.",
+            ephemeral=True,
+        )
+        return
+
+    guild_config = get_guild_config(interaction.guild_id)
+    backup = guild_config.setdefault(
+        "external_backup",
+        json.loads(json.dumps(DEFAULT_GUILD_EXTERNAL_BACKUP)),
+    )
+    backup.update({
+        "enabled": True,
+        "provider": provider.value,
+        "remote": remote_value[:300],
+        "public_base_url": public_base_value.rstrip("/")[:300],
+        "include_media": bool(include_media),
+        "include_database_export": bool(include_database_export),
+        "zip_backups": bool(zip_backups),
+        "delete_local_media_after_success": bool(
+            delete_local_media_after_success
+        ),
+    })
+    save_config(config)
+    audit_interaction(
+        interaction,
+        "backup_setup",
+        "guild",
+        interaction.guild_id,
+        f"provider={provider.value}; remote={remote_value}; zip={zip_backups}.",
+    )
+    await interaction.response.send_message(
+        "\n".join([
+            "Backup settings saved.",
+            f"Provider: `{BACKUP_PROVIDER_GUIDES[provider.value]['label']}`",
+            f"Remote: `{remote_value}`",
+            f"Zip archives: `{zip_backups}`",
+            "Use `/backupnow upload:true` to create and upload a zip backup.",
+        ]),
+        ephemeral=True,
+    )
+
+
+@tree.command(name="backupnow", description="Create a zip backup and optionally upload it")
+@app_commands.guild_only()
+@app_commands.describe(upload="Upload the zip to the configured rclone remote")
+async def backupnow(interaction, upload: bool = True):
+    if not await require_admin(interaction):
+        return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    backup = {
+        **DEFAULT_GUILD_EXTERNAL_BACKUP,
+        **(guild_config.get("external_backup") or {}),
+    }
+    if not backup.get("zip_backups", True):
+        await interaction.response.send_message(
+            "Zip backups are disabled. Enable them with `/backupsetup`.",
+            ephemeral=True,
+        )
+        return
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    try:
+        archive_info = await asyncio.to_thread(
+            create_guild_backup_archive,
+            interaction.guild_id,
+            interaction.user.id,
+            interaction.user,
+        )
+        guild_config = get_guild_config(interaction.guild_id)
+        guild_config.setdefault("external_backup", {})["last_archive_path"] = str(
+            archive_info["path"]
+        )
+        save_config(config)
+    except Exception as error:
+        capture_exception(error)
+        await interaction.followup.send(
+            f"Backup zip creation failed: `{error}`",
+            ephemeral=True,
+        )
+        return
+
+    upload_message = "Upload skipped."
+    if upload:
+        ok, upload_message = await upload_archive_with_rclone(
+            archive_info,
+            backup.get("remote") or "",
+        )
+        if ok:
+            guild_config = get_guild_config(interaction.guild_id)
+            backup_config = guild_config.setdefault("external_backup", {})
+            backup_config["last_status"] = "success"
+            backup_config["last_success_at"] = utc_now_iso()
+            backup_config["last_details"] = upload_message
+            save_config(config)
+
+    await interaction.followup.send(
+        "\n".join([
+            "Backup zip created.",
+            f"Archive: `{archive_info['path'].name}`",
+            f"Size: `{format_bytes(archive_info['size'])}`",
+            f"SHA-256: `{archive_info['sha256']}`",
+            f"Media files: `{archive_info['manifest']['media_files']}`",
+            upload_message,
+        ])[:1900],
+        ephemeral=True,
+    )
+
+
+@tree.command(name="backupstatus", description="Show this server's backup status")
+@app_commands.guild_only()
+async def backupstatus(interaction):
+    if not await require_admin(interaction):
+        return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    backup = {
+        **DEFAULT_GUILD_EXTERNAL_BACKUP,
+        **(guild_config.get("external_backup") or {}),
+    }
+    prereqs = [
+        "OK: Python zipfile is built in.",
+        (
+            "OK: rclone found."
+            if shutil.which("rclone")
+            else "WARN: rclone not found. Run `sudo bash scripts/install_backup_prereqs.sh`."
+        ),
+    ]
+    await interaction.response.send_message(
+        "\n".join([
+            "**SDAC Backup Status**",
+            f"Enabled: `{backup.get('enabled')}`",
+            f"Provider: `{backup.get('provider') or 'rclone'}`",
+            f"Remote: `{backup.get('remote') or 'Not set'}`",
+            f"Zip archives: `{backup.get('zip_backups', True)}`",
+            f"Include media: `{backup.get('include_media')}`",
+            f"Include DB export: `{backup.get('include_database_export')}`",
+            f"Last archive: `{backup.get('last_archive_path') or 'Never'}`",
+            f"Last success: `{backup.get('last_success_at') or 'Never'}`",
+            f"Last status: `{backup.get('last_status') or 'Unknown'}`",
+            *prereqs,
+        ]),
+        ephemeral=True,
+    )
+
+
+@tree.command(name="setdigest", description="Configure the admin notification digest")
+@app_commands.guild_only()
+@app_commands.describe(
+    enabled="Whether digest posts are enabled",
+    frequency="daily or weekly",
+    channel="Channel where the digest should post",
+)
+async def setdigest(
+    interaction,
+    enabled: bool,
+    frequency: str = "weekly",
+    channel: Optional[discord.TextChannel] = None,
+):
+    if not await require_admin(interaction):
+        return
+    frequency = (frequency or "weekly").strip().casefold()
+    if frequency not in {"daily", "weekly"}:
+        await interaction.response.send_message(
+            "Digest frequency must be `daily` or `weekly`.",
+            ephemeral=True,
+        )
+        return
+    guild_config = get_guild_config(interaction.guild_id)
+    digest = guild_config.setdefault("notification_digest", {})
+    if enabled and channel is None and not digest.get("channel_id"):
+        await interaction.response.send_message(
+            "Choose a digest channel the first time you enable admin digests.",
+            ephemeral=True,
+        )
+        return
+    digest["enabled"] = bool(enabled)
+    digest["frequency"] = frequency
+    if channel is not None:
+        digest["channel_id"] = channel.id
+    save_config(config)
+    audit_interaction(
+        interaction,
+        "set_notification_digest",
+        "guild",
+        interaction.guild_id,
+        f"enabled={enabled}; frequency={frequency}; channel={digest.get('channel_id')}",
+    )
+    await interaction.response.send_message(
+        "\n".join([
+            f"Notification digest is now {'enabled' if enabled else 'disabled'}.",
+            f"Frequency: `{frequency}`",
+            f"Channel: {channel.mention if channel else channel_display(digest.get('channel_id'))}",
+        ]),
+        ephemeral=True,
+    )
+
+
+@tree.command(name="reasonpresets", description="Show standard SDAC admin action reasons")
+@app_commands.guild_only()
+async def reasonpresets(interaction):
+    if not await require_admin(interaction):
+        return
+    await interaction.response.send_message(
+        "\n".join(
+            ["**SDAC Reason Presets**"]
+            + [
+                f"- `{key}` - {label}"
+                for key, label in MODERATION_REASON_PRESETS.items()
+            ]
+        ),
         ephemeral=True,
     )
 
@@ -6522,6 +7802,197 @@ async def submit(interaction, category: str):
         view=view,
     )
     view.preview_message = preview_message
+
+
+@tree.command(name="schedulegame", description="Schedule a saved library guessing game")
+@app_commands.guild_only()
+@app_commands.describe(
+    channel="Channel where the scheduled game should start",
+    start_time="YYYY-MM-DD HH:MM in server timezone, or ISO time",
+    item_id="Library item ID. Use 0 to choose by category/reuse rules.",
+    category="Optional library category filter when item_id is 0",
+    random_item="Pick a random matching library item",
+    close_after_minutes="Automatically close the game after this many minutes",
+)
+async def schedulegame(
+    interaction,
+    channel: discord.TextChannel,
+    start_time: str,
+    item_id: int = 0,
+    category: str = "",
+    random_item: bool = True,
+    close_after_minutes: int = 0,
+):
+    if not await require_admin(interaction):
+        return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    if not feature_enabled(guild_config, "guessing_games"):
+        await interaction.response.send_message(
+            "Guessing games are currently disabled for this server.",
+            ephemeral=True,
+        )
+        return
+    try:
+        starts_at = parse_scheduled_start_time(start_time, guild_config)
+    except ValueError as error:
+        await interaction.response.send_message(str(error), ephemeral=True)
+        return
+    if starts_at <= datetime.now(timezone.utc):
+        await interaction.response.send_message(
+            "Scheduled game time must be in the future.",
+            ephemeral=True,
+        )
+        return
+    if close_after_minutes < 0 or close_after_minutes > 10080:
+        await interaction.response.send_message(
+            "Auto-close minutes must be between 0 and 10080.",
+            ephemeral=True,
+        )
+        return
+    game_settings = guild_game_settings(guild_config)
+    with database() as connection:
+        item = select_library_item_for_game(
+            connection,
+            interaction.guild_id,
+            item_id=item_id,
+            category=category,
+            random_item=random_item,
+            reuse_cooldown_days=int(game_settings.get("reuse_cooldown_days") or 0),
+        )
+        if item is None:
+            await interaction.response.send_message(
+                "No active game-library item matched that schedule request.",
+                ephemeral=True,
+            )
+            return
+        cursor = connection.execute("""
+            INSERT INTO scheduled_games (
+                guild_id, channel_id, library_item_id, category, random_item,
+                starts_at, close_after_minutes, status, created_by,
+                created_by_name, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)
+        """, (
+            str(interaction.guild_id),
+            str(channel.id),
+            int(item_id or 0),
+            (category or "").strip(),
+            1 if random_item else 0,
+            starts_at.isoformat(),
+            int(close_after_minutes or 0),
+            str(interaction.user.id),
+            str(interaction.user),
+            utc_now_iso(),
+            utc_now_iso(),
+        ))
+        scheduled_id = cursor.lastrowid
+        add_admin_audit_log(
+            connection,
+            interaction.guild_id,
+            "schedule_guess_game",
+            interaction.user.id,
+            interaction.user,
+            "scheduled_game",
+            scheduled_id,
+            f"Channel {channel.id}; starts {starts_at.isoformat()}; item {item['id']}.",
+        )
+    local_time = starts_at.astimezone(get_guild_timezone(guild_config))
+    await interaction.response.send_message(
+        "\n".join([
+            f"Scheduled game `{scheduled_id}` for {channel.mention}.",
+            f"Starts: `{local_time.strftime('%Y-%m-%d %H:%M %Z')}`",
+            f"Selected item now: `{item['id']}` - `{item['title'] or item['answer_display']}`",
+            (
+                f"Auto-close: `{close_after_minutes}` minute(s)"
+                if close_after_minutes
+                else "Auto-close: `disabled`"
+            ),
+        ]),
+        ephemeral=True,
+    )
+
+
+@tree.command(name="scheduledgames", description="List queued and running scheduled games")
+@app_commands.guild_only()
+async def scheduledgames(interaction):
+    if not await require_admin(interaction):
+        return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    timezone_info = get_guild_timezone(guild_config)
+    with database() as connection:
+        rows = connection.execute("""
+            SELECT *
+            FROM scheduled_games
+            WHERE guild_id = ?
+              AND status IN ('queued', 'starting', 'running')
+            ORDER BY starts_at ASC, id ASC
+            LIMIT 15
+        """, (str(interaction.guild_id),)).fetchall()
+    lines = ["**Scheduled Games**"]
+    if not rows:
+        lines.append("No queued or running scheduled games.")
+    for row in rows:
+        starts_at = parse_database_datetime(row["starts_at"])
+        if starts_at:
+            starts_text = starts_at.astimezone(timezone_info).strftime(
+                "%Y-%m-%d %H:%M"
+            )
+        else:
+            starts_text = row["starts_at"] or "unknown"
+        lines.append(
+            (
+                f"- `{row['id']}` {channel_display(row['channel_id'])} "
+                f"`{row['status']}` at `{starts_text}` "
+                f"item `{row['library_item_id'] or 'auto'}` "
+                f"category `{row['category'] or 'any'}`"
+            )
+        )
+    await interaction.response.send_message("\n".join(lines)[:1900], ephemeral=True)
+
+
+@tree.command(name="cancelscheduledgame", description="Cancel a queued scheduled game")
+@app_commands.guild_only()
+@app_commands.describe(scheduled_id="Scheduled game ID from /scheduledgames")
+async def cancelscheduledgame(interaction, scheduled_id: int):
+    if not await require_admin(interaction):
+        return
+    with database() as connection:
+        row = connection.execute("""
+            SELECT *
+            FROM scheduled_games
+            WHERE id = ? AND guild_id = ?
+        """, (scheduled_id, str(interaction.guild_id))).fetchone()
+        if not row:
+            await interaction.response.send_message(
+                "Scheduled game not found.",
+                ephemeral=True,
+            )
+            return
+        if row["status"] not in {"queued", "starting"}:
+            await interaction.response.send_message(
+                f"Scheduled game `{scheduled_id}` is `{row['status']}` and cannot be cancelled here.",
+                ephemeral=True,
+            )
+            return
+        connection.execute("""
+            UPDATE scheduled_games
+            SET status = 'cancelled', updated_at = ?
+            WHERE id = ?
+        """, (utc_now_iso(), scheduled_id))
+        add_admin_audit_log(
+            connection,
+            interaction.guild_id,
+            "cancel_scheduled_game",
+            interaction.user.id,
+            interaction.user,
+            "scheduled_game",
+            scheduled_id,
+            "Cancelled scheduled game from Discord.",
+        )
+    await interaction.response.send_message(
+        f"Cancelled scheduled game `{scheduled_id}`.",
+        ephemeral=True,
+    )
 
 
 @tree.command(name="startgame", description="Start a guessing game in a channel")
@@ -7502,6 +8973,7 @@ async def guess(interaction, guess: str):
 
     now = datetime.now(timezone.utc)
     channel = interaction.channel
+    achievement_labels = []
     with database() as connection:
         game = connection.execute("""
             SELECT *
@@ -7651,6 +9123,14 @@ async def guess(interaction, guess: str):
             str(interaction.channel_id),
             str(interaction.user.id),
         ))
+        achievement_labels = record_guess_success_achievements(
+            connection,
+            interaction.guild_id,
+            interaction.user.id,
+            interaction.user,
+            game["id"],
+            month,
+        )
 
     if points_awarded:
         response_text = f"Correct. You gained {points_awarded} point for `{month}`."
@@ -7658,6 +9138,10 @@ async def guess(interaction, guess: str):
         response_text = (
             "Correct. This game already has a hint revealed, so no "
             "leaderboard point was added."
+        )
+    if achievement_labels:
+        response_text += "\nNew achievement(s): " + ", ".join(
+            f"`{label}`" for label in achievement_labels
         )
     await interaction.response.send_message(response_text, ephemeral=True)
     if channel is not None:
@@ -7728,14 +9212,30 @@ async def correct(interaction):
 
 @tree.command(name="removesubmission", description="Remove a submission")
 @app_commands.guild_only()
-@app_commands.describe(submission_id="Dashboard submission ID", reason="Audit reason")
+@app_commands.describe(
+    submission_id="Dashboard submission ID",
+    reason_preset="Standard reason preset",
+    reason="Optional custom audit reason",
+)
+@app_commands.choices(reason_preset=REASON_PRESET_CHOICES)
 async def removesubmission(
     interaction,
     submission_id: int,
-    reason: str = "Removed by Discord admin",
+    reason_preset: Optional[app_commands.Choice[str]] = None,
+    reason: str = "",
 ):
     if not await require_admin(interaction):
         return
+    final_reason = (reason or "").strip()
+    if reason_preset is not None:
+        preset_text = MODERATION_REASON_PRESETS.get(reason_preset.value, "")
+        final_reason = (
+            f"{preset_text}: {final_reason}"
+            if final_reason
+            else preset_text
+        )
+    if not final_reason:
+        final_reason = "Removed by Discord admin"
     await interaction.response.defer(ephemeral=True, thinking=True)
     with database() as connection:
         row = connection.execute(
@@ -7752,7 +9252,7 @@ async def removesubmission(
         submission_id,
         interaction.user.id,
         interaction.user,
-        reason,
+        final_reason,
     )
     await interaction.followup.send(message, ephemeral=True)
 
@@ -8048,6 +9548,158 @@ async def post_monthly_digests():
             )
 
 
+def notification_digest_run_key(frequency, now):
+    if frequency == "daily":
+        return f"admin-digest:daily:{now.date().isoformat()}"
+    return f"admin-digest:weekly:{now.strftime('%G-W%V')}"
+
+
+async def post_notification_digests():
+    for guild_id, guild_config in config.get("guilds", {}).items():
+        digest = guild_config.get("notification_digest") or {}
+        if not digest.get("enabled"):
+            continue
+        target_channel_id = digest.get("channel_id")
+        if not target_channel_id:
+            continue
+        frequency = str(digest.get("frequency") or "weekly").casefold()
+        if frequency not in {"daily", "weekly"}:
+            frequency = "weekly"
+
+        now = guild_now(guild_config)
+        if now.hour < 9:
+            continue
+        if frequency == "weekly" and now.weekday() != 0:
+            continue
+        run_key = notification_digest_run_key(frequency, now)
+        since = (
+            now - timedelta(days=1)
+            if frequency == "daily"
+            else now - timedelta(days=7)
+        )
+        since_iso = since.astimezone(timezone.utc).isoformat()
+
+        with database() as connection:
+            already_posted = connection.execute("""
+                SELECT 1
+                FROM daily_runs
+                WHERE guild_id = ? AND run_date = ?
+            """, (str(guild_id), run_key)).fetchone()
+            if already_posted:
+                continue
+            totals = {
+                "submissions": connection.execute("""
+                    SELECT COUNT(*)
+                    FROM submissions
+                    WHERE guild_id = ?
+                      AND COALESCE(created_at, submitted_at, '') >= ?
+                """, (str(guild_id), since_iso)).fetchone()[0],
+                "reports": connection.execute("""
+                    SELECT COUNT(*)
+                    FROM submission_reports
+                    WHERE guild_id = ?
+                      AND COALESCE(created_at, '') >= ?
+                """, (str(guild_id), since_iso)).fetchone()[0],
+                "active_games": connection.execute("""
+                    SELECT COUNT(*)
+                    FROM guess_games
+                    WHERE guild_id = ?
+                      AND status = 'active'
+                """, (str(guild_id),)).fetchone()[0],
+                "queued_scheduled_games": connection.execute("""
+                    SELECT COUNT(*)
+                    FROM scheduled_games
+                    WHERE guild_id = ?
+                      AND status IN ('queued', 'starting', 'running')
+                """, (str(guild_id),)).fetchone()[0],
+                "failed_scheduled_games": connection.execute("""
+                    SELECT COUNT(*)
+                    FROM scheduled_games
+                    WHERE guild_id = ?
+                      AND status = 'failed'
+                      AND COALESCE(updated_at, created_at, '') >= ?
+                """, (str(guild_id), since_iso)).fetchone()[0],
+                "pending_approvals": connection.execute("""
+                    SELECT COUNT(*)
+                    FROM pending_admin_actions
+                    WHERE (guild_id = ? OR guild_id IS NULL OR guild_id = '')
+                      AND status = 'pending'
+                """, (str(guild_id),)).fetchone()[0],
+            }
+            backup_row = connection.execute("""
+                SELECT status, destination, size_bytes, created_at
+                FROM backup_archives
+                WHERE guild_id = ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+            """, (str(guild_id),)).fetchone()
+            top_guessers = connection.execute("""
+                SELECT username, SUM(points) AS points
+                FROM guess_points
+                WHERE guild_id = ?
+                  AND month = ?
+                GROUP BY user_id, username
+                ORDER BY points DESC, username ASC
+                LIMIT 3
+            """, (str(guild_id), now.strftime("%Y-%m"))).fetchall()
+
+        channel = bot.get_channel(int(target_channel_id))
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(int(target_channel_id))
+            except discord.HTTPException:
+                channel = None
+        if channel is None:
+            continue
+
+        lines = [
+            f"**SDAC Admin Digest - {frequency.title()}**",
+            f"Server: `{guild_config.get('guild_name') or guild_id}`",
+            f"Window starts: `{since.strftime('%Y-%m-%d %H:%M %Z')}`",
+            "",
+            f"Submissions: `{totals['submissions']}`",
+            f"Reports: `{totals['reports']}`",
+            f"Active games: `{totals['active_games']}`",
+            f"Queued/running scheduled games: `{totals['queued_scheduled_games']}`",
+            f"Failed scheduled games: `{totals['failed_scheduled_games']}`",
+            f"Pending admin approvals: `{totals['pending_approvals']}`",
+        ]
+        if backup_row:
+            lines.extend([
+                "",
+                "**Latest Backup Archive**",
+                f"Status: `{backup_row['status'] or 'unknown'}`",
+                f"Destination: `{backup_row['destination'] or 'local only'}`",
+                f"Size: `{format_bytes(int(backup_row['size_bytes'] or 0))}`",
+                f"Created: `{backup_row['created_at'] or 'unknown'}`",
+            ])
+        else:
+            lines.extend([
+                "",
+                "No zip backup archive has been recorded yet. Run `/backupnow`.",
+            ])
+        if top_guessers:
+            lines.extend(["", "**Current Month Top Guessers**"])
+            for index, row in enumerate(top_guessers, start=1):
+                lines.append(
+                    f"{index}. {row['username']} - {row['points'] or 0} point(s)"
+                )
+        try:
+            await channel.send("\n".join(lines)[:1900])
+        except discord.HTTPException as error:
+            await send_error_notification(
+                guild_id,
+                f"Admin digest failed: `{error}`",
+                "system_errors",
+            )
+            continue
+        with database() as connection:
+            connection.execute("""
+                INSERT OR IGNORE INTO daily_runs (guild_id, run_date, created_at)
+                VALUES (?, ?, ?)
+            """, (str(guild_id), run_key, utc_now_iso()))
+
+
 async def post_daily_guess_summaries():
     with database() as connection:
         games = connection.execute("""
@@ -8308,11 +9960,153 @@ async def before_guess_hint_scheduler():
     await bot.wait_until_ready()
 
 
+async def start_due_scheduled_games():
+    now = datetime.now(timezone.utc)
+    with database() as connection:
+        due_games = connection.execute("""
+            SELECT *
+            FROM scheduled_games
+            WHERE status = 'queued'
+              AND starts_at <= ?
+            ORDER BY starts_at ASC, id ASC
+            LIMIT 5
+        """, (now.isoformat(),)).fetchall()
+        for row in due_games:
+            connection.execute("""
+                UPDATE scheduled_games
+                SET status = 'starting', updated_at = ?
+                WHERE id = ? AND status = 'queued'
+            """, (utc_now_iso(), row["id"]))
+
+    for scheduled in due_games:
+        try:
+            guild = bot.get_guild(int(scheduled["guild_id"]))
+            if guild is None:
+                raise RuntimeError("Guild is not available to the bot.")
+            channel = bot.get_channel(int(scheduled["channel_id"]))
+            if channel is None:
+                channel = await bot.fetch_channel(int(scheduled["channel_id"]))
+            guild_config = get_guild_config(guild.id, create=False)
+            game_settings = guild_game_settings(guild_config)
+            with database() as connection:
+                item = select_library_item_for_game(
+                    connection,
+                    guild.id,
+                    item_id=int(scheduled["library_item_id"] or 0),
+                    category=scheduled["category"] or "",
+                    random_item=bool(scheduled["random_item"]),
+                    reuse_cooldown_days=int(
+                        game_settings.get("reuse_cooldown_days") or 0
+                    ),
+                )
+            if item is None:
+                raise RuntimeError("No active matching library item was found.")
+            game_id, _replaced = await start_library_game_item(
+                guild,
+                channel,
+                item,
+                scheduled["created_by"] or "system",
+                scheduled["created_by_name"] or "SDAC scheduler",
+                source="scheduled",
+                scheduled_id=scheduled["id"],
+            )
+            new_status = (
+                "running"
+                if int(scheduled["close_after_minutes"] or 0) > 0
+                else "started"
+            )
+            with database() as connection:
+                connection.execute("""
+                    UPDATE scheduled_games
+                    SET status = ?, game_id = ?, updated_at = ?, last_error = ''
+                    WHERE id = ?
+                """, (new_status, game_id, utc_now_iso(), scheduled["id"]))
+        except Exception as error:
+            capture_exception(error)
+            with database() as connection:
+                connection.execute("""
+                    UPDATE scheduled_games
+                    SET status = 'failed', updated_at = ?, last_error = ?
+                    WHERE id = ?
+                """, (utc_now_iso(), str(error)[:1000], scheduled["id"]))
+            await send_error_notification(
+                scheduled["guild_id"],
+                f"Scheduled game `{scheduled['id']}` failed: `{error}`",
+                "system_errors",
+            )
+
+
+async def close_due_scheduled_games():
+    now = datetime.now(timezone.utc)
+    with database() as connection:
+        running = connection.execute("""
+            SELECT *
+            FROM scheduled_games
+            WHERE status = 'running'
+              AND close_after_minutes > 0
+            ORDER BY starts_at ASC, id ASC
+            LIMIT 10
+        """).fetchall()
+    for scheduled in running:
+        starts_at = parse_database_datetime(scheduled["starts_at"])
+        if starts_at is None:
+            continue
+        close_at = starts_at + timedelta(
+            minutes=int(scheduled["close_after_minutes"] or 0)
+        )
+        if close_at > now:
+            continue
+        try:
+            channel = bot.get_channel(int(scheduled["channel_id"]))
+            if channel is None:
+                channel = await bot.fetch_channel(int(scheduled["channel_id"]))
+            game = await close_active_guess_game(
+                scheduled["guild_id"],
+                scheduled["channel_id"],
+                "scheduled_closed",
+            )
+            if game:
+                await announce_guess_summary(
+                    channel,
+                    game,
+                    f"scheduled close from scheduled game {scheduled['id']}",
+                )
+            with database() as connection:
+                connection.execute("""
+                    UPDATE scheduled_games
+                    SET status = 'completed', updated_at = ?
+                    WHERE id = ?
+                """, (utc_now_iso(), scheduled["id"]))
+        except Exception as error:
+            capture_exception(error)
+            with database() as connection:
+                connection.execute("""
+                    UPDATE scheduled_games
+                    SET last_error = ?, updated_at = ?
+                    WHERE id = ?
+                """, (str(error)[:1000], utc_now_iso(), scheduled["id"]))
+
+
+@tasks.loop(minutes=1)
+async def scheduled_games_scheduler():
+    try:
+        await start_due_scheduled_games()
+        await close_due_scheduled_games()
+    except Exception as error:
+        await report_background_error("scheduled_games_scheduler", error)
+
+
+@scheduled_games_scheduler.before_loop
+async def before_scheduled_games_scheduler():
+    await bot.wait_until_ready()
+
+
 @tasks.loop(hours=1)
 async def monthly_leaderboard_scheduler():
     try:
         await post_monthly_guess_leaderboards()
         await post_monthly_digests()
+        await post_notification_digests()
     except Exception as error:
         await report_background_error("monthly_leaderboard_scheduler", error)
 
@@ -8464,6 +10258,8 @@ async def on_ready():
         guess_summary_scheduler.start()
     if not guess_hint_scheduler.is_running():
         guess_hint_scheduler.start()
+    if not scheduled_games_scheduler.is_running():
+        scheduled_games_scheduler.start()
     if not monthly_leaderboard_scheduler.is_running():
         monthly_leaderboard_scheduler.start()
     if not cleanup_scheduler.is_running():

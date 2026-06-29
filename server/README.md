@@ -12,10 +12,13 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - Guessing games started by admins with `/startgame`
 - Website-managed guessing-game library for reusable media, answers, aliases,
   prompts, categories, and hints
-- Bulk CSV import for website game-library answer drafts
+- Game-library packs, tags, admin notes, enable/disable controls, and bulk CSV
+  import for answer drafts
 - Library game randomizer and category filter for `/startlibrarygame`
+- Scheduled library games with auto-close support through `/schedulegame`
 - Answer aliases, generated hints, automatic hints, `/guess` scoring,
   wrong-guess cooldowns, and monthly leaderboards
+- Guessing-game streak achievements and public achievement award history
 - Cross-server dashboard filtering and cross-server guessing rankings
 - Per-server feature toggles for submissions, approval queues, guessing games,
   weekly posts, public gallery visibility, and cross-server rankings
@@ -42,6 +45,8 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
   status, storage forecast, rollback queueing, and health
 - Install Doctor, owner portal, config import diff preview, SQLite optimize,
   monthly restore drills, permission drift alerts, and monthly digest posts
+- Server Health Cards page for quick per-server setup, storage, backup, game,
+  library, and achievement status
 - Release channel dashboard for installed, official, and experimental versions
 - Moderation page for pending submissions, public reports, and recent decisions
 - Admin audit log under `/audit` and `/admin/audit`
@@ -66,13 +71,18 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - Optional cloud media mirror support through `SDAC_MEDIA_PUBLIC_BASE_URL`
   plus `scripts/sync_media_rclone.sh`
 - Per-server rclone backup targets with optional public media URL prefixes,
-  guild-scoped database exports, and opt-in local guild media cleanup
+  guild-scoped database exports, zip backup archives, and opt-in local guild
+  media cleanup
+- Discord backup setup commands for Google Drive, OneDrive, Dropbox, Mega, S3,
+  Backblaze B2, Box, and SFTP through rclone
 - Per-server storage dashboard with restore/prune buttons and backup health
   badges
 - Docker and Docker Compose files for easier self-hosting
 - PostgreSQL export tooling and experimental `SDAC_DATABASE_URL` runtime mode
 - New-server welcome message that points admins to `/setup`
 - Ubuntu systemd service templates and Nginx helper scripts
+- CLI dashboard admin login recovery with `scripts/reset_admin_login.py`
+- Backup prerequisite and release checklist helpers under `scripts/`
 - Linux and Windows single-file installers from GitHub Releases
 
 ## Main Files
@@ -365,6 +375,49 @@ Create a one-command support bundle:
 bash scripts/support_bundle.sh
 ```
 
+### Backup Prerequisites And Zip Archives
+
+Install backup tools on Ubuntu:
+
+```bash
+cd /home/ubuntu/discord-screenshot-bot
+sudo bash scripts/install_backup_prereqs.sh
+```
+
+Then configure the provider in Discord:
+
+```text
+/backupguide provider:Google Drive
+/backupsetup provider:Google Drive remote:drive:sdac/server
+/backupnow upload:true
+```
+
+Per-server host backup script:
+
+```bash
+SDAC_GUILD_ID=123456789 bash scripts/backup_guild_offsite.sh
+```
+
+The backup script creates metadata exports, optional media backups, and a zip
+archive under `backups/guild-offsite/GUILD_ID/archives/`, then uploads the zip
+to `REMOTE/archives` when rclone is configured.
+
+### Dashboard Login Recovery
+
+Reset or create a dashboard owner from the server shell:
+
+```bash
+cd /home/ubuntu/discord-screenshot-bot
+source venv/bin/activate
+python scripts/reset_admin_login.py --username owner --role owner
+```
+
+Run a release sanity checklist before promoting an experimental build:
+
+```bash
+bash scripts/release_checklist.sh
+```
+
 ### Rollback
 
 ```bash
@@ -400,6 +453,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /categories
 /setup
 /setupstatus
+/setupchecklist
 /setuptest
 /diagnose
 /repository
@@ -419,22 +473,31 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /setgamesummarychannel #channel
 /seterrorchannel #channel
 /setnotification system_errors #channel true
+/setdigest true weekly #channel
 /setlimit max_file_mb 25
 /setmoderation "badword1,badword2" "image,video,audio" false 7 false
 /setgamesettings 30 10 normal
 /setserverbackup true drive:sdac/server https://cdn.example.com/sdac/server true true false
 /serverbackupstatus
+/backupguide provider:Google Drive
+/backupsetup provider:Google Drive remote:drive:sdac/server
+/backupnow upload:true
+/backupstatus
 /supportbundle
 /sdacpanic true "Cleaning up spam"
 /sdacpanic false
 /startgame #channel answer media text category hint auto_hint_minutes
 /startlibrarygame #channel item_id category random_item
+/schedulegame channel:#channel start_time:"2026-07-01 19:30" item_id:0 category:movie random_item:true close_after_minutes:60
+/scheduledgames
+/cancelscheduledgame scheduled_id:1
 /activegame
 /correct
 /cancelgame
 /sethint hint
 /revealhint
-/removesubmission id
+/reasonpresets
+/removesubmission submission_id:1 reason_preset:duplicate reason:"Optional details"
 /submissioninfo id
 ```
 
@@ -457,6 +520,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /admin/install-doctor?key=ImTheBestAdmin
 /admin/approvals?key=ImTheBestAdmin
 /admin/owner-portal?key=ImTheBestAdmin
+/admin/server-health?key=ImTheBestAdmin
 /admin/media?key=ImTheBestAdmin
 /admin/jobs?key=ImTheBestAdmin
 /admin/privacy?key=ImTheBestAdmin

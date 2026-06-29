@@ -1,3 +1,37 @@
+# SDAC Bot Version 2.8.4 Experimental
+
+Date: 2026-06-29
+
+Version 2.8.4 is an experimental operations and game-library build.
+
+Included:
+
+- Discord backup setup flow with `/backupguide`, `/backupsetup`,
+  `/backupnow`, and `/backupstatus`
+- per-server zip backup archives with SHA256 sidecars and rclone upload support
+- Ubuntu backup prerequisite installer for rclone, zip, unzip, and certificates
+- dashboard admin login recovery helper at `scripts/reset_admin_login.py`
+- scheduled saved-library games through `/schedulegame`, `/scheduledgames`, and
+  `/cancelscheduledgame`
+- guessing streak achievements saved to the database and shown on the public
+  achievements page
+- Game Library pack, tag, notes, and enabled-for-picker metadata
+- admin notification digests with `/setdigest`
+- `/setupchecklist` production-readiness summary
+- standard moderation reason presets for `/removesubmission`
+- dashboard Server Health Cards page at `/admin/server-health`
+- release checklist helper at `scripts/release_checklist.sh`
+- README updates for backup setup, login recovery, new slash commands, and
+  dashboard pages
+
+Release channel:
+
+- `version-2.8.4` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on the latest official Version 2 release
+
+---
+
 # SDAC Bot Version 2.8.3 Experimental
 
 Date: 2026-06-28
