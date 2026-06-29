@@ -178,6 +178,7 @@ ROLE_LEVELS = {
     "moderator": 1,
     "admin": 2,
     "owner": 3,
+    "bot_owner": 4,
 }
 
 ROLE_LABELS = {
@@ -185,7 +186,8 @@ ROLE_LABELS = {
     "trusted": "Trusted User",
     "moderator": "Moderator",
     "admin": "Admin",
-    "owner": "Owner",
+    "owner": "Server Owner",
+    "bot_owner": "Bot Owner",
 }
 
 LOCKOUT_SCOPE_LABELS = {
@@ -196,11 +198,23 @@ LOCKOUT_SCOPE_LABELS = {
 
 OWNER_OVERRIDE_USERNAME = "baytae"
 OWNER_BAN_CODE_TTL_SECONDS = 600
+DEFAULT_DASHBOARD_THEME = {
+    "primary": "#4f46e5",
+    "secondary": "#06b6d4",
+    "accent": "#f59e0b",
+    "background": "#0f172a",
+    "surface": "#111827",
+    "sidebar": "#0b1220",
+    "text": "#f8fafc",
+    "muted": "#94a3b8",
+    "background_image": "",
+}
+THEME_UPLOAD_DIR = MEDIA_DIR / "dashboard_theme"
 
 ADMIN_ROLE_CHOICES = {
     key: value
     for key, value in ROLE_LABELS.items()
-    if key in {"user", "trusted", "moderator", "admin", "owner"}
+    if key in {"user", "trusted", "moderator", "admin", "owner", "bot_owner"}
 }
 
 NOTIFICATION_EVENT_LABELS = {
@@ -571,6 +585,33 @@ HTML = """
         <div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>
     {% endif %}
 
+    {% if is_admin and dashboard_summary %}
+        <section class="sdac-dashboard-panel">
+            <h2>Admin Overview</h2>
+            <div class="sdac-range-tabs">
+                {% for range_key, range_label in dashboard_ranges %}
+                    <a class="{{ 'active' if dashboard_summary.range_key == range_key else '' }}" href="{{ url_for('index', key=admin_key, guild_id=selected_guild_id or 'all', metric_range=range_key) }}">{{ range_label }}</a>
+                {% endfor %}
+            </div>
+            <div class="sdac-dashboard-grid">
+                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.total_users }}</strong><span>Known Users</span></div>
+                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.submission_count }}</strong><span>Submissions</span></div>
+                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.pending }}</strong><span>Pending Review</span></div>
+                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.posted }}</strong><span>Posted</span></div>
+                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.active_games }}</strong><span>Active Games</span></div>
+                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.open_reports }}</strong><span>Open Reports</span></div>
+                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.lockouts }}</strong><span>Active Lockouts</span></div>
+                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.db_size }}</strong><span>Database</span></div>
+            </div>
+            <div class="sdac-dashboard-grid">
+                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.last_restart }}</strong><span>Last Server Restart</span></div>
+                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.last_backup }}</strong><span>Last Server Backup</span></div>
+                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.media_size }}</strong><span>Media Storage</span></div>
+                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.bot_heartbeat }}</strong><span>Bot Heartbeat</span></div>
+            </div>
+        </section>
+    {% endif %}
+
     <div class="filter">
         <form method="get" action="{{ url_for('index') }}">
             {% if is_admin %}
@@ -896,7 +937,7 @@ ACCOUNT_REGISTER_HTML = """
     </form>
     <p class="muted">
         New accounts start as regular users. Admins can promote accounts to
-        trusted user, moderator, admin, or owner from the admin Settings page.
+        trusted user, moderator, admin, Server Owner, or Bot Owner from the admin Settings page.
     </p>
     <p><a href="{{ url_for('account_login') }}">Already have an account?</a></p>
     <p><a href="{{ url_for('index') }}">Back to submissions</a></p>
@@ -925,12 +966,16 @@ ACCOUNT_LOGIN_HTML = """
         .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 16px; padding: 10px; text-align: center; }
         .error { border-color: #e45d68; }
         .muted { color: #a8adb8; }
+        .oauth { background: #5865f2; border-radius: 8px; color: white; display: block; font-weight: bold; margin-bottom: 16px; padding: 11px; text-align: center; text-decoration: none; }
     </style>
 </head>
 <body>
 <main>
     <h1>Account Login</h1>
     {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
+    {% if oauth_enabled %}
+        <a class="oauth" href="{{ url_for('account_oauth_start', next=next_url) }}">Continue with Discord</a>
+    {% endif %}
     <form method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="next" value="{{ next_url }}">
@@ -2437,7 +2482,7 @@ SETTINGS_HTML = """
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="8" class="muted">No dashboard accounts yet. Create the first owner with <code>python scripts/reset_admin_login.py --username owner --role owner</code>.</td></tr>
+                    <tr><td colspan="8" class="muted">No dashboard accounts yet. Create the first Bot Owner with <code>python scripts/reset_admin_login.py --username owner --role bot_owner</code>.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -3968,6 +4013,62 @@ APPROVALS_HTML = """
                 {% endfor %}
             </tbody>
         </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+THEME_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Theme</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #0f172a; color: #f8fafc; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 960px); }
+        .panel { background: #111827; border: 1px solid #30333b; border-radius: 8px; margin: 16px 0; padding: 16px; }
+        .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+        label { display: block; font-weight: bold; margin: 10px 0 6px; }
+        input, button { border: 1px solid #30333b; border-radius: 7px; box-sizing: border-box; font-size: 15px; padding: 10px; width: 100%; }
+        button { background: #4f46e5; color: white; cursor: pointer; font-weight: bold; margin-top: 16px; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 14px; padding: 12px; }
+        .preview { min-height: 180px; border-radius: 8px; padding: 18px; background: var(--sdac-bg); background-image: var(--sdac-theme-image, linear-gradient(135deg, var(--sdac-primary), var(--sdac-secondary))); background-size: cover; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Theme</h1>
+    {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
+    <section class="panel">
+        <h2>Dashboard Colors</h2>
+        <form method="post" enctype="multipart/form-data">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="grid">
+                {% for key, label in color_fields %}
+                    <div><label for="{{ key }}">{{ label }}</label><input id="{{ key }}" name="{{ key }}" type="color" value="{{ theme[key] }}"></div>
+                {% endfor %}
+            </div>
+            <label for="background_image">Background Image URL</label>
+            <input id="background_image" name="background_image" value="{{ theme.background_image }}" placeholder="https://... or uploaded file below">
+            <label for="background_file">Upload Background Image</label>
+            <input id="background_file" name="background_file" type="file" accept="image/png,image/jpeg,image/gif,image/webp">
+            <button type="submit">Save Theme</button>
+        </form>
+    </section>
+    <section class="panel">
+        <h2>Preview</h2>
+        <div class="preview">
+            <div class="sdac-dashboard-grid">
+                <div class="sdac-dashboard-card"><strong>128</strong><span>Submissions</span></div>
+                <div class="sdac-dashboard-card"><strong>42</strong><span>Users</span></div>
+            </div>
+        </div>
     </section>
 </main>
 </body>
@@ -5716,7 +5817,7 @@ def guild_id_filter(column, guild_ids):
 
 
 def admin_scope_filter(column, config_data=None, include_global=False):
-    if current_admin_role() == "owner":
+    if current_admin_role() == "bot_owner":
         return "", []
     filter_sql, parameters = guild_id_filter(
         column,
@@ -5734,7 +5835,7 @@ def guild_options(config_data=None, public_only=False):
         not public_only
         and has_request_context()
         and is_admin_logged_in()
-        and current_admin_role() != "owner"
+        and current_admin_role() != "bot_owner"
     ):
         allowed_admin_ids = current_admin_allowed_guild_ids(config_data)
     options = []
@@ -5967,7 +6068,7 @@ def build_onboarding_rows(config_data):
 def selected_guild_id(options):
     valid_ids = {option["id"] for option in options}
     requested = request.values.get("guild_id", "").strip()
-    restricted_admin = is_admin_logged_in() and current_admin_role() != "owner"
+    restricted_admin = is_admin_logged_in() and current_admin_role() != "bot_owner"
     if requested == "all":
         session.pop("sdac_guild_id", None)
         if restricted_admin and valid_ids:
@@ -9032,8 +9133,12 @@ def unique_account_username(connection, preferred):
 
 
 def normalize_role(role):
-    role = str(role or "").strip().lower()
-    return role if role in ROLE_LEVELS else "user"
+    key = str(role or "").strip().casefold().replace("-", "_")
+    if key in {"server_owner", "server owner"}:
+        key = "owner"
+    if key in {"botowner", "bot owner", "global_owner", "global owner"}:
+        key = "bot_owner"
+    return key if key in ROLE_LEVELS else "user"
 
 
 def is_admin_logged_in():
@@ -9069,6 +9174,8 @@ def has_admin_role(required_role):
 
 def can_assign_dashboard_role(role):
     role = normalize_role(role)
+    if role == "bot_owner":
+        return has_admin_role("bot_owner")
     if role in {"admin", "owner"}:
         return has_admin_role("owner")
     return has_admin_role("admin")
@@ -9077,10 +9184,10 @@ def can_assign_dashboard_role(role):
 def current_admin_is_baytae_owner():
     if current_admin_username().casefold() != OWNER_OVERRIDE_USERNAME:
         return False
-    if current_admin_role() != "owner":
+    if current_admin_role() not in {"owner", "bot_owner"}:
         return False
     user = dashboard_user(current_admin_username())
-    return bool(user and normalize_role(user["role"]) == "owner" and not int(user["disabled"] or 0))
+    return bool(user and normalize_role(user["role"]) in {"owner", "bot_owner"} and not int(user["disabled"] or 0))
 
 
 def owner_ban_code_session_key(target_username):
@@ -9118,7 +9225,10 @@ def can_promote_dashboard_user(target_role, new_role, target_username=""):
     target_level = ROLE_LEVELS[target_role]
     if current_level < ROLE_LEVELS["admin"]:
         return False
-    if new_role in {"admin", "owner"}:
+    if new_role == "bot_owner":
+        if not has_admin_role("bot_owner"):
+            return False
+    elif new_role in {"admin", "owner"}:
         if not has_admin_role("owner"):
             return False
     elif not has_admin_role("admin"):
@@ -9143,7 +9253,7 @@ def can_ban_dashboard_user(target_role="user", target_username="", owner_code=""
     if current_level > target_level:
         return True
     if (
-        target_role == "owner"
+        target_role in {"owner", "bot_owner"}
         and current_admin_is_baytae_owner()
         and target_username != OWNER_OVERRIDE_USERNAME
         and valid_owner_ban_code(target_username, owner_code)
@@ -9209,18 +9319,18 @@ def current_admin_allowed_guild_ids(config_data=None):
         str(guild_id)
         for guild_id in (config_data.get("guilds") or {})
     }
-    if current_admin_role() == "owner":
+    if current_admin_role() == "bot_owner":
         return all_ids
     scoped_ids = set(parse_guild_scope(session.get("sdac_admin_guild_ids", [])))
     if not scoped_ids:
-        return all_ids
+        return all_ids if current_admin_role() in {"moderator", "admin"} else set()
     return all_ids & scoped_ids
 
 
 def can_admin_access_guild(guild_id, config_data=None):
     if not has_request_context():
         return True
-    if current_admin_role() == "owner":
+    if current_admin_role() == "bot_owner":
         return True
     return str(guild_id) in current_admin_allowed_guild_ids(config_data)
 
@@ -9371,6 +9481,65 @@ def notification_routes(config_data=None):
     ]
 
 
+def sanitize_theme_color(value, fallback):
+    value = str(value or "").strip()
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+        return value.lower()
+    return fallback
+
+
+def dashboard_theme(config_data=None):
+    config_data = config_data or load_config()
+    raw = config_data.get("dashboard_theme") or {}
+    theme = dict(DEFAULT_DASHBOARD_THEME)
+    theme.update({key: raw.get(key, theme[key]) for key in theme})
+    for key in ("primary", "secondary", "accent", "background", "surface", "sidebar", "text", "muted"):
+        theme[key] = sanitize_theme_color(theme.get(key), DEFAULT_DASHBOARD_THEME[key])
+    theme["background_image"] = str(theme.get("background_image") or "").strip()
+    return theme
+
+
+def dashboard_theme_css(config_data=None):
+    theme = dashboard_theme(config_data)
+    image_rule = ""
+    if theme.get("background_image"):
+        image_rule = f"--sdac-theme-image: url('{theme['background_image']}'); --sdac-theme-image-opacity: .22;"
+    return (
+        "<style id=\"sdac-theme-vars\">:root {"
+        f"--sdac-primary: {theme['primary']};"
+        f"--sdac-secondary: {theme['secondary']};"
+        f"--sdac-accent: {theme['accent']};"
+        f"--sdac-bg: {theme['background']};"
+        f"--sdac-surface: {theme['surface']};"
+        f"--sdac-sidebar-bg: {theme['sidebar']};"
+        f"--sdac-text: {theme['text']};"
+        f"--sdac-muted: {theme['muted']};"
+        f"{image_rule}"
+        "}</style>"
+    )
+
+
+def update_dashboard_theme(form, uploaded_file=None):
+    config_data = load_config()
+    theme = dashboard_theme(config_data)
+    for key in ("primary", "secondary", "accent", "background", "surface", "sidebar", "text", "muted"):
+        theme[key] = sanitize_theme_color(form.get(key), theme[key])
+    image_url = str(form.get("background_image", "")).strip()
+    if image_url:
+        theme["background_image"] = image_url
+    if uploaded_file and uploaded_file.filename:
+        suffix = Path(uploaded_file.filename).suffix.casefold()
+        if suffix not in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
+            raise ValueError("Theme background must be PNG, JPG, GIF, or WEBP.")
+        THEME_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        name = f"background-{int(time.time())}{suffix}"
+        destination = THEME_UPLOAD_DIR / name
+        uploaded_file.save(destination)
+        theme["background_image"] = url_for("media_file", filename=f"dashboard_theme/{name}")
+    config_data["dashboard_theme"] = theme
+    save_config(config_data)
+    return theme
+
 def admin_url(endpoint, **values):
     values.setdefault("key", ADMIN_KEY)
     return url_for(endpoint, **values)
@@ -9407,10 +9576,11 @@ def admin_sidebar_sections():
             ],
         },
         {
-            "label": "Owner",
+            "label": "Server Owner",
             "required_role": "owner",
             "links": [
                 ("Settings", "admin_settings", {}),
+                ("Theme", "admin_theme", {}),
                 ("Maintenance", "admin_maintenance", {}),
                 ("Server Health", "admin_server_health_cards", {}),
                 ("Production", "admin_production_health", {}),
@@ -9419,6 +9589,14 @@ def admin_sidebar_sections():
                 ("Privacy", "admin_privacy", {}),
                 ("Owner Portal", "admin_owner_portal", {}),
                 ("Onboarding", "admin_onboarding", {}),
+            ],
+        },
+        {
+            "label": "Bot Owner",
+            "required_role": "bot_owner",
+            "links": [
+                ("Server Switcher", "admin_server_switcher", {}),
+                ("All Servers", "index", {"guild_id": "all"}),
             ],
         },
     ]
@@ -9504,10 +9682,23 @@ def admin_sidebar_html():
     )
     account_label = "My Account" if is_account_logged_in() else "Account Login"
     role = ROLE_LABELS.get(current_admin_role(), current_admin_role().title())
+    switcher = ""
+    if current_admin_role() == "bot_owner":
+        options = ['<option value="all">All Servers</option>']
+        for guild in guild_options(load_config()):
+            selected = " selected" if request.args.get("guild_id", "all") == str(guild["id"]) else ""
+            options.append(f'<option value="{html.escape(str(guild["id"]), quote=True)}"{selected}>{html.escape(guild["name"])}</option>')
+        switcher = (
+            '<form class="sdac-server-switcher" method="get" action="' + html.escape(url_for("index"), quote=True) + '">'
+            '<input type="hidden" name="key" value="' + html.escape(ADMIN_KEY, quote=True) + '">'
+            '<label>Server</label><select name="guild_id" onchange="this.form.submit()">' + ''.join(options) + '</select>'
+            '<button type="submit">Open</button></form>'
+        )
     return f"""
 <aside class="sdac-sidebar">
     <div class="sdac-sidebar-brand">SDAC Admin</div>
     <div class="sdac-sidebar-user">{html.escape(current_admin_username())}<br><span>{html.escape(role)}</span></div>
+    {switcher}
     <nav>{"".join(groups)}</nav>
     <div class="sdac-sidebar-footer">
         <a class="sdac-sidebar-link" href="{html.escape(account_url, quote=True)}">{html.escape(account_label)}</a>
@@ -9519,100 +9710,79 @@ def admin_sidebar_html():
 
 SIDEBAR_STYLE = """
 <style id="sdac-sidebar-style">
-body.sdac-has-sidebar {
-    padding-left: 260px !important;
+:root {
+    --sdac-primary: #4f46e5;
+    --sdac-secondary: #06b6d4;
+    --sdac-accent: #f59e0b;
+    --sdac-bg: #0f172a;
+    --sdac-surface: #111827;
+    --sdac-sidebar-bg: #0b1220;
+    --sdac-text: #f8fafc;
+    --sdac-muted: #94a3b8;
+    --sdac-border: rgba(148, 163, 184, 0.24);
+}
+body.sdac-theme { background-color: var(--sdac-bg) !important; color: var(--sdac-text) !important; }
+body.sdac-theme::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image: var(--sdac-theme-image, linear-gradient(135deg, rgba(79,70,229,.24), rgba(6,182,212,.14) 45%, rgba(245,158,11,.10)));
+    background-size: cover;
+    background-position: center;
+    opacity: var(--sdac-theme-image-opacity, .18);
+    pointer-events: none;
+    z-index: -1;
+}
+body.sdac-has-sidebar { padding-left: 280px !important; }
+body.sdac-has-sidebar main { max-width: 1220px !important; width: min(100%, 1220px) !important; }
+body.sdac-has-sidebar h1, body.sdac-has-sidebar h2 { text-align: left !important; }
+body.sdac-has-sidebar a { color: var(--sdac-secondary) !important; }
+body.sdac-has-sidebar .panel, body.sdac-has-sidebar .post, body.sdac-has-sidebar .audit-row,
+body.sdac-has-sidebar .section, body.sdac-has-sidebar table, body.sdac-has-sidebar .notice,
+.sdac-dashboard-card, .sdac-dashboard-panel {
+    background: color-mix(in srgb, var(--sdac-surface) 88%, transparent) !important;
+    border-color: var(--sdac-border) !important;
+    box-shadow: 0 18px 48px rgba(2, 6, 23, .24);
 }
 .sdac-sidebar {
     position: fixed;
     inset: 0 auto 0 0;
-    width: 240px;
+    width: 260px;
     overflow-y: auto;
-    background: #111827;
-    color: #e5e7eb;
+    background: linear-gradient(180deg, var(--sdac-sidebar-bg), color-mix(in srgb, var(--sdac-sidebar-bg) 88%, #020617));
+    color: var(--sdac-text);
     padding: 22px 16px;
-    box-shadow: 8px 0 28px rgba(15, 23, 42, 0.18);
+    box-shadow: 12px 0 34px rgba(2, 6, 23, 0.34);
     z-index: 1000;
 }
-.sdac-sidebar-brand {
-    font-size: 1.25rem;
-    font-weight: 800;
-    margin-bottom: 10px;
-}
-.sdac-sidebar-user {
-    color: #cbd5e1;
-    font-size: 0.9rem;
-    line-height: 1.35;
-    margin-bottom: 18px;
-}
-.sdac-sidebar-user span {
-    color: #93c5fd;
-}
-.sdac-sidebar-section {
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    border-radius: 12px;
-    margin: 8px 0;
-    overflow: hidden;
-}
-.sdac-sidebar-section summary {
-    color: #bfdbfe;
-    cursor: pointer;
-    font-size: 0.78rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    list-style: none;
-    padding: 10px 11px;
-    text-transform: uppercase;
-}
-.sdac-sidebar-section summary::-webkit-details-marker {
-    display: none;
-}
-.sdac-sidebar-section summary::after {
-    content: "+";
-    float: right;
-    font-size: 1rem;
-    line-height: 0.85;
-}
-.sdac-sidebar-section[open] summary::after {
-    content: "-";
-}
-.sdac-sidebar-section[open] summary {
-    background: rgba(96, 165, 250, 0.12);
-}
-.sdac-sidebar-section-links {
-    padding: 4px 6px 8px;
-}
-.sdac-sidebar-link {
-    display: block;
-    color: #dbeafe;
-    text-decoration: none;
-    padding: 9px 11px;
-    border-radius: 10px;
-    margin: 2px 0;
-    font-weight: 650;
-}
-.sdac-sidebar-link:hover,
-.sdac-sidebar-link.active {
-    color: #ffffff;
-    background: rgba(96, 165, 250, 0.24);
-}
-.sdac-sidebar-footer {
-    border-top: 1px solid rgba(148, 163, 184, 0.28);
-    margin-top: 18px;
-    padding-top: 14px;
-}
-body.sdac-has-sidebar main > nav,
-body.sdac-has-sidebar body > nav {
-    display: none !important;
-}
+.sdac-sidebar-brand { font-size: 1.25rem; font-weight: 900; margin-bottom: 10px; }
+.sdac-sidebar-user { color: var(--sdac-muted); font-size: 0.9rem; line-height: 1.35; margin-bottom: 18px; }
+.sdac-sidebar-user span { color: var(--sdac-secondary); }
+.sdac-server-switcher { border: 1px solid var(--sdac-border); border-radius: 8px; margin-bottom: 14px; padding: 10px; }
+.sdac-server-switcher label { color: var(--sdac-muted); display: block; font-size: .72rem; font-weight: 800; margin-bottom: 6px; text-transform: uppercase; }
+.sdac-server-switcher select, .sdac-server-switcher button { width: 100%; margin-top: 6px; }
+.sdac-sidebar-section { border: 1px solid var(--sdac-border); border-radius: 8px; margin: 8px 0; overflow: hidden; }
+.sdac-sidebar-section summary { color: var(--sdac-text); cursor: pointer; font-size: 0.78rem; font-weight: 850; letter-spacing: 0.08em; list-style: none; padding: 10px 11px; text-transform: uppercase; }
+.sdac-sidebar-section summary::-webkit-details-marker { display: none; }
+.sdac-sidebar-section summary::after { content: "+"; float: right; font-size: 1rem; line-height: 0.85; }
+.sdac-sidebar-section[open] summary::after { content: "-"; }
+.sdac-sidebar-section[open] summary { background: color-mix(in srgb, var(--sdac-primary) 20%, transparent); }
+.sdac-sidebar-section-links { padding: 4px 6px 8px; }
+.sdac-sidebar-link { display: block; color: var(--sdac-text) !important; text-decoration: none; padding: 9px 11px; border-radius: 7px; margin: 2px 0; font-weight: 650; }
+.sdac-sidebar-link:hover, .sdac-sidebar-link.active { color: #fff !important; background: linear-gradient(90deg, var(--sdac-primary), var(--sdac-secondary)); }
+.sdac-sidebar-footer { border-top: 1px solid var(--sdac-border); margin-top: 18px; padding-top: 14px; }
+body.sdac-has-sidebar main > nav, body.sdac-has-sidebar body > nav, body.sdac-has-sidebar .admin-nav { display: none !important; }
+.sdac-dashboard-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin: 20px 0; }
+.sdac-dashboard-card { border: 1px solid var(--sdac-border); border-radius: 8px; padding: 16px; }
+.sdac-dashboard-card strong { display: block; font-size: 1.8rem; line-height: 1.1; }
+.sdac-dashboard-card span { color: var(--sdac-muted); display: block; font-size: .82rem; font-weight: 750; margin-top: 6px; text-transform: uppercase; }
+.sdac-dashboard-panel { border: 1px solid var(--sdac-border); border-radius: 8px; margin: 18px 0; padding: 16px; }
+.sdac-range-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.sdac-range-tabs a { border: 1px solid var(--sdac-border); border-radius: 7px; padding: 8px 10px; text-decoration: none; }
+.sdac-range-tabs a.active { background: var(--sdac-primary); color: #fff !important; }
 @media (max-width: 900px) {
-    body.sdac-has-sidebar {
-        padding-left: 0 !important;
-    }
-    .sdac-sidebar {
-        position: static;
-        width: auto;
-        border-radius: 0 0 18px 18px;
-    }
+    body.sdac-has-sidebar { padding-left: 0 !important; }
+    .sdac-sidebar { position: static; width: auto; border-radius: 0 0 18px 18px; }
 }
 </style>
 """
@@ -9623,22 +9793,26 @@ def inject_admin_sidebar(response):
     if (
         response.status_code != 200
         or response.direct_passthrough
-        or not should_render_admin_sidebar()
         or not response.mimetype.startswith("text/html")
     ):
         return response
-    html = response.get_data(as_text=True)
-    if "sdac-sidebar" in html or "<body" not in html:
+    page_html = response.get_data(as_text=True)
+    if "<body" not in page_html:
         return response
-    html = html.replace("</head>", SIDEBAR_STYLE + "\n</head>", 1)
-    html = re.sub(r"<body([^>]*)>", r'<body\1 class="sdac-has-sidebar">', html, count=1)
-    html = re.sub(
-        r'(<body[^>]*>)',
-        r'\1' + admin_sidebar_html(),
-        html,
-        count=1,
-    )
-    response.set_data(html)
+    if "sdac-theme-vars" not in page_html:
+        page_html = page_html.replace("</head>", dashboard_theme_css() + "\n</head>", 1)
+    page_html = re.sub(r"<body([^>]*)>", r'<body\1 class="sdac-theme">', page_html, count=1)
+    if should_render_admin_sidebar() and 'class="sdac-sidebar"' not in page_html:
+        if "sdac-sidebar-style" not in page_html:
+            page_html = page_html.replace("</head>", SIDEBAR_STYLE + "\n</head>", 1)
+        page_html = page_html.replace('class="sdac-theme"', 'class="sdac-theme sdac-has-sidebar"', 1)
+        page_html = re.sub(
+            r'(<body[^>]*>)',
+            r'\1' + admin_sidebar_html(),
+            page_html,
+            count=1,
+        )
+    response.set_data(page_html)
     response.headers["Content-Length"] = str(len(response.get_data()))
     return response
 
@@ -9896,13 +10070,13 @@ def discord_json_request(url, token, token_type="Bearer"):
         return json.loads(response.read().decode("utf-8"))
 
 
-def exchange_discord_oauth_code(code):
+def exchange_discord_oauth_code(code, redirect_uri=None):
     payload = urlencode({
         "client_id": DISCORD_OAUTH_CLIENT_ID,
         "client_secret": DISCORD_OAUTH_CLIENT_SECRET,
         "grant_type": "authorization_code",
         "code": code,
-        "redirect_uri": oauth_redirect_uri(),
+        "redirect_uri": redirect_uri or oauth_redirect_uri(),
     }).encode("utf-8")
     api_request = Request(
         "https://discord.com/api/oauth2/token",
@@ -9978,95 +10152,12 @@ def oauth_allowed_guild_ids(access_token, user_id, config_data):
 
 @app.route("/admin/oauth/start")
 def admin_oauth_start():
-    if not oauth_enabled():
-        abort(404)
-    if not has_valid_key():
-        abort(403)
-    state = secrets.token_urlsafe(24)
-    session["sdac_oauth_state"] = state
-    session["sdac_oauth_next"] = request.args.get("next") or url_for(
-        "index",
-        key=ADMIN_KEY,
-    )
-    authorize_url = (
-        "https://discord.com/api/oauth2/authorize?"
-        + urlencode({
-            "client_id": DISCORD_OAUTH_CLIENT_ID,
-            "redirect_uri": oauth_redirect_uri(),
-            "response_type": "code",
-            "scope": "identify guilds",
-            "state": state,
-            "prompt": "none",
-        })
-    )
-    return redirect(authorize_url)
+    abort(404)
 
 
 @app.route("/admin/oauth/callback")
 def admin_oauth_callback():
-    if not oauth_enabled():
-        abort(404)
-    if not has_valid_key():
-        abort(403)
-    state = request.args.get("state", "")
-    code = request.args.get("code", "")
-    if not code or state != session.get("sdac_oauth_state"):
-        return redirect(url_for(
-            "admin_login",
-            key=ADMIN_KEY,
-            error="Discord login state did not match. Try again.",
-        ))
-    try:
-        token_payload = exchange_discord_oauth_code(code)
-        access_token = token_payload.get("access_token") or ""
-        user = discord_current_user(access_token)
-    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
-        return redirect(url_for(
-            "admin_login",
-            key=ADMIN_KEY,
-            error=f"Discord login failed: {error}",
-        ))
-    user_id = str(user.get("id") or "")
-    username = (
-        user.get("global_name")
-        or user.get("username")
-        or f"discord-{user_id}"
-    )
-    allowed_guilds = oauth_allowed_guild_ids(
-        access_token,
-        user_id,
-        load_config(),
-    )
-    if not allowed_guilds:
-        return redirect(url_for(
-            "admin_login",
-            key=ADMIN_KEY,
-            error="Discord login succeeded, but you are not an SDAC admin in any configured server.",
-        ))
-
-    session["sdac_admin"] = True
-    session["sdac_admin_username"] = username
-    session["sdac_admin_role"] = "admin"
-    session["sdac_admin_auth"] = "discord"
-    session["sdac_admin_guild_ids"] = allowed_guilds
-    session["sdac_discord_user_id"] = user_id
-    session.pop("sdac_oauth_state", None)
-    next_url = session.pop("sdac_oauth_next", None) or url_for(
-        "index",
-        key=ADMIN_KEY,
-    )
-    with database() as connection:
-        add_admin_audit_log(
-            connection,
-            None,
-            "dashboard_discord_oauth_login_success",
-            user_id,
-            username,
-            "dashboard",
-            "admin_oauth",
-            "Discord OAuth admin login succeeded.",
-        )
-    return redirect(next_url)
+    abort(404)
 
 
 @app.route("/admin/login", methods=["GET", "POST"])
@@ -10166,7 +10257,7 @@ def admin_login():
         csrf_token=get_csrf_token(),
         error=error,
         next_url=next_url,
-        oauth_enabled=oauth_enabled(),
+        oauth_enabled=False,
         username=username,
     )
 
@@ -10328,7 +10419,96 @@ def account_login():
         identifier=identifier,
         next_url=next_url,
         notice=notice,
+        oauth_enabled=oauth_enabled(),
     )
+
+
+@app.route("/account/oauth/start")
+def account_oauth_start():
+    if not oauth_enabled():
+        abort(404)
+    state = secrets.token_urlsafe(24)
+    session["sdac_account_oauth_state"] = state
+    session["sdac_account_oauth_next"] = request.args.get("next") or url_for("account_home")
+    authorize_url = (
+        "https://discord.com/api/oauth2/authorize?"
+        + urlencode({
+            "client_id": DISCORD_OAUTH_CLIENT_ID,
+            "redirect_uri": url_for("account_oauth_callback", _external=True),
+            "response_type": "code",
+            "scope": "identify",
+            "state": state,
+            "prompt": "none",
+        })
+    )
+    return redirect(authorize_url)
+
+
+@app.route("/account/oauth/callback")
+def account_oauth_callback():
+    if not oauth_enabled():
+        abort(404)
+    state = request.args.get("state", "")
+    code = request.args.get("code", "")
+    if not code or state != session.get("sdac_account_oauth_state"):
+        return redirect(url_for("account_login", notice="Discord login state did not match. Try again.", error=1))
+    try:
+        token_payload = exchange_discord_oauth_code(
+            code,
+            url_for("account_oauth_callback", _external=True),
+        )
+        user = discord_current_user(token_payload.get("access_token") or "")
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+        return redirect(url_for("account_login", notice=f"Discord login failed: {error}", error=1))
+    user_id = str(user.get("id") or "")
+    if not user_id:
+        return redirect(url_for("account_login", notice="Discord did not return a user ID.", error=1))
+    username = (user.get("global_name") or user.get("username") or f"discord-{user_id}").strip()[:80]
+    now = utc_now_iso()
+    with database() as connection:
+        account = dashboard_user_by_discord_id(connection, user_id)
+        if not account:
+            base_username = normalize_account_username(username, f"{user_id}@discord.local")
+            account_username = unique_account_username(connection, base_username)
+            connection.execute("""
+                INSERT INTO dashboard_admin_users (
+                    username, email, display_name, discord_user_id,
+                    password_hash, role, disabled, email_verified,
+                    created_ip, created_at, updated_at, guild_ids_json
+                )
+                VALUES (?, '', ?, ?, ?, 'user', 0, 1, ?, ?, ?, '[]')
+            """, (
+                account_username,
+                username or account_username,
+                user_id,
+                generate_password_hash(secrets.token_urlsafe(32)),
+                request.remote_addr or "",
+                now,
+                now,
+            ))
+            account = dashboard_user_by_discord_id(connection, user_id)
+        elif int(account["disabled"] or 0):
+            return redirect(url_for("account_login", notice="That account is disabled.", error=1))
+        connection.execute("""
+            UPDATE dashboard_admin_users
+            SET last_login_at = ?, updated_at = ?, display_name = COALESCE(NULLIF(display_name, ''), ?)
+            WHERE username = ?
+        """, (now, now, username, account["username"]))
+        add_admin_audit_log(
+            connection,
+            None,
+            "account_discord_login_success",
+            account["username"],
+            account["username"],
+            "dashboard_user",
+            account["username"],
+            "User account Discord OAuth login succeeded.",
+        )
+    session["sdac_account_username"] = account["username"]
+    session["sdac_account_role"] = normalize_role(account["role"])
+    session["sdac_discord_user_id"] = user_id
+    session.pop("sdac_account_oauth_state", None)
+    return redirect(safe_next_url(session.pop("sdac_account_oauth_next", None), url_for("account_home")))
 
 
 @app.route("/account/logout")
@@ -10420,7 +10600,7 @@ def admin_game_library():
         selected_server_id = ""
     if selected_server_id and selected_server_id not in valid_guild_ids:
         selected_server_id = ""
-    if current_admin_role() != "owner" and not selected_server_id and options:
+    if current_admin_role() != "bot_owner" and not selected_server_id and options:
         selected_server_id = options[0]["id"]
 
     if request.method == "POST":
@@ -12952,6 +13132,49 @@ def admin_onboarding():
     )
 
 
+@app.route("/admin/theme", methods=["GET", "POST"])
+def admin_theme():
+    login_response = require_admin_login("owner")
+    if login_response:
+        return login_response
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    if request.method == "POST":
+        require_csrf_token()
+        try:
+            update_dashboard_theme(request.form, request.files.get("background_file"))
+            return redirect(url_for("admin_theme", key=ADMIN_KEY, notice="Theme saved across all pages."))
+        except (ValueError, OSError) as exc:
+            notice = str(exc)
+            error = True
+    return render_template_string(
+        THEME_HTML,
+        admin_key=ADMIN_KEY,
+        color_fields=[
+            ("primary", "Primary"),
+            ("secondary", "Secondary"),
+            ("accent", "Accent"),
+            ("background", "Page Background"),
+            ("surface", "Panels"),
+            ("sidebar", "Sidebar"),
+            ("text", "Text"),
+            ("muted", "Muted Text"),
+        ],
+        csrf_token=get_csrf_token(),
+        error=error,
+        notice=notice,
+        theme=dashboard_theme(),
+    )
+
+
+@app.route("/admin/server-switcher")
+def admin_server_switcher():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    return redirect(url_for("index", key=ADMIN_KEY, guild_id=request.args.get("guild_id", "all")))
+
+
 @app.route("/admin/owner-portal")
 def admin_owner_portal():
     login_response = require_admin_login("moderator")
@@ -13082,7 +13305,7 @@ def admin_seasons():
     with closing(connect_db()) as connection:
         where_sql = ""
         parameters = []
-        if current_admin_role() != "owner":
+        if current_admin_role() != "bot_owner":
             filter_sql, parameters = guild_id_filter("guild_id", allowed_season_ids)
             where_sql = "WHERE " + filter_sql
         rows = connection.execute(f"""
@@ -13112,10 +13335,62 @@ def admin_seasons():
     )
 
 
+def dashboard_submission_range(range_key):
+    now = datetime.now(timezone.utc)
+    range_key = str(range_key or "all").strip().casefold()
+    if range_key == "today":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif range_key == "week":
+        start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    elif range_key == "month":
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif range_key == "year":
+        start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        return "all", None
+    return range_key, start.isoformat()
+
+
+def admin_dashboard_summary(connection, selected_server_id, visible_guild_ids, range_key):
+    range_key, start_at = dashboard_submission_range(range_key)
+    scope_sql, scope_params = guild_id_filter("guild_id", visible_guild_ids)
+    where = [scope_sql]
+    params = list(scope_params)
+    if selected_server_id:
+        where = ["guild_id = ?"]
+        params = [selected_server_id]
+    if start_at:
+        where.append("COALESCE(created_at, submitted_at) >= ?")
+        params.append(start_at)
+    where_sql = " WHERE " + " AND ".join(where)
+    base_scope = " WHERE " + ("guild_id = ?" if selected_server_id else scope_sql)
+    base_params = [selected_server_id] if selected_server_id else list(scope_params)
+    backups = recent_database_backups()
+    bot_status = read_bot_status()
+    return {
+        "range_key": range_key,
+        "submission_count": connection.execute(f"SELECT COUNT(*) FROM submissions{where_sql}", params).fetchone()[0],
+        "total_users": connection.execute("SELECT COUNT(DISTINCT user_id) FROM submissions" + base_scope, base_params).fetchone()[0],
+        "pending": connection.execute("SELECT COUNT(*) FROM submissions" + base_scope + " AND status IN ('pending', 'needs_review')", base_params).fetchone()[0],
+        "posted": connection.execute("SELECT COUNT(*) FROM submissions" + base_scope + " AND status = 'posted'", base_params).fetchone()[0],
+        "active_games": connection.execute("SELECT COUNT(*) FROM guess_games" + base_scope + " AND status = 'active'", base_params).fetchone()[0],
+        "open_reports": connection.execute("SELECT COUNT(*) FROM submission_reports" + base_scope + " AND status = 'open'", base_params).fetchone()[0],
+        "lockouts": connection.execute("SELECT COUNT(*) FROM user_restrictions" + base_scope + " AND active = 1", base_params).fetchone()[0],
+        "last_restart": APP_STARTED_AT.strftime("%Y-%m-%d %H:%M UTC"),
+        "last_backup": backups[0]["modified"] if backups else "No backup found",
+        "bot_heartbeat": bot_status.get("message") or "No heartbeat",
+        "db_size": format_bytes(DB_FILE.stat().st_size) if DB_FILE.exists() else "0 B",
+        "media_size": format_bytes(media_directory_size()),
+    }
+
 @app.route("/")
 def index():
     config_data = load_config()
     has_key = request.args.get("key") == ADMIN_KEY
+    if is_admin_logged_in() and not has_key:
+        values = request.args.to_dict(flat=True)
+        values["key"] = ADMIN_KEY
+        return redirect(url_for("index", **values))
     is_admin = has_key and is_admin_logged_in()
     if has_key and not is_admin:
         return redirect(url_for(
@@ -13190,6 +13465,14 @@ def index():
             """, category_parameters)
         ]
 
+        dashboard_summary = None
+        if is_admin:
+            dashboard_summary = admin_dashboard_summary(
+                connection,
+                selected_server_id,
+                visible_guild_ids,
+                request.args.get("metric_range", "all"),
+            )
         if selected_month:
             preserve_monthly_submission_top(connection, selected_month)
             connection.commit()
@@ -13364,6 +13647,8 @@ def index():
         error=error,
         grouped_posts=grouped_posts,
         csrf_token=get_csrf_token() if is_admin else "",
+        dashboard_ranges=[("all", "All Time"), ("year", "This Year"), ("month", "This Month"), ("week", "This Week"), ("today", "Today")],
+        dashboard_summary=dashboard_summary,
         guild_options=server_options,
         is_admin=is_admin,
         months=months,

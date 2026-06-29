@@ -1,3 +1,32 @@
+# SDAC Bot Version 3.0.5 Experimental
+
+Date: 2026-06-29
+
+Version 3.0.5 is an experimental dashboard redesign and role-scope update.
+
+Included:
+
+- redesigned admin landing page with persistent sidebar styling and overview panels
+- overview panels for known users, submissions by date range, review counts,
+  active games, reports, lockouts, last restart, last backup, database size,
+  media storage, and bot heartbeat
+- all HTML pages now receive shared dashboard theme variables
+- Server Owner theme page for color changes and uploaded/linked background images
+- normal user accounts can sign in with Discord OAuth
+- admin areas now require username/password login; admin Discord OAuth endpoints
+  are disabled
+- Owner role label changed to Server Owner and is scoped to assigned servers
+- new Bot Owner role can access all servers
+- Bot Owner sidebar section includes a server selector for switching server views
+
+Release channel:
+
+- `version-3.0.5` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.5 line is validated
+
+---
+
 # SDAC Bot Version 3.0.4 Experimental
 
 Date: 2026-06-29
