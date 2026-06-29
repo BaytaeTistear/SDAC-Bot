@@ -1,3 +1,25 @@
+# SDAC Bot Version 3.0.6 Experimental
+
+Date: 2026-06-29
+
+Version 3.0.6 is an experimental dashboard layout polish update.
+
+Included:
+
+- moved the admin overview cards from the gallery landing page to `/admin`
+- added a Home link to the admin sidebar
+- fixed sidebar rendering on the bare `/admin` route
+- extended shared theme styling to public and non-admin pages
+- public gallery pages no longer show admin overview metrics
+
+Release channel:
+
+- `version-3.0.6` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.6 line is validated
+
+---
+
 # SDAC Bot Version 3.0.5 Experimental
 
 Date: 2026-06-29

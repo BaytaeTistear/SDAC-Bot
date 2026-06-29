@@ -585,33 +585,6 @@ HTML = """
         <div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>
     {% endif %}
 
-    {% if is_admin and dashboard_summary %}
-        <section class="sdac-dashboard-panel">
-            <h2>Admin Overview</h2>
-            <div class="sdac-range-tabs">
-                {% for range_key, range_label in dashboard_ranges %}
-                    <a class="{{ 'active' if dashboard_summary.range_key == range_key else '' }}" href="{{ url_for('index', key=admin_key, guild_id=selected_guild_id or 'all', metric_range=range_key) }}">{{ range_label }}</a>
-                {% endfor %}
-            </div>
-            <div class="sdac-dashboard-grid">
-                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.total_users }}</strong><span>Known Users</span></div>
-                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.submission_count }}</strong><span>Submissions</span></div>
-                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.pending }}</strong><span>Pending Review</span></div>
-                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.posted }}</strong><span>Posted</span></div>
-                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.active_games }}</strong><span>Active Games</span></div>
-                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.open_reports }}</strong><span>Open Reports</span></div>
-                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.lockouts }}</strong><span>Active Lockouts</span></div>
-                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.db_size }}</strong><span>Database</span></div>
-            </div>
-            <div class="sdac-dashboard-grid">
-                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.last_restart }}</strong><span>Last Server Restart</span></div>
-                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.last_backup }}</strong><span>Last Server Backup</span></div>
-                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.media_size }}</strong><span>Media Storage</span></div>
-                <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.bot_heartbeat }}</strong><span>Bot Heartbeat</span></div>
-            </div>
-        </section>
-    {% endif %}
-
     <div class="filter">
         <form method="get" action="{{ url_for('index') }}">
             {% if is_admin %}
@@ -4013,6 +3986,72 @@ APPROVALS_HTML = """
                 {% endfor %}
             </tbody>
         </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+ADMIN_OVERVIEW_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Admin Home</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #0f172a; color: #f8fafc; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1180px); }
+        .toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+        select, button { border: 1px solid #30333b; border-radius: 7px; font-size: 15px; padding: 9px 10px; }
+        button { background: #4f46e5; color: white; cursor: pointer; font-weight: bold; }
+        .muted { color: #94a3b8; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Admin Home</h1>
+    <p class="muted">Viewing: {{ selected_guild_name }}</p>
+    <form class="toolbar" method="get" action="{{ url_for('admin_overview') }}">
+        <input type="hidden" name="key" value="{{ admin_key }}">
+        <select name="guild_id" aria-label="Discord server">
+            <option value="all">All Discord Servers</option>
+            {% for guild in guild_options %}
+                <option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>{{ guild.name }}</option>
+            {% endfor %}
+        </select>
+        <select name="metric_range" aria-label="Submission range">
+            {% for range_key, range_label in dashboard_ranges %}
+                <option value="{{ range_key }}" {% if dashboard_summary.range_key == range_key %}selected{% endif %}>{{ range_label }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit">Refresh</button>
+    </form>
+    <section class="sdac-dashboard-panel">
+        <h2>Overview</h2>
+        <div class="sdac-range-tabs">
+            {% for range_key, range_label in dashboard_ranges %}
+                <a class="{{ 'active' if dashboard_summary.range_key == range_key else '' }}" href="{{ url_for('admin_overview', key=admin_key, guild_id=selected_guild_id or 'all', metric_range=range_key) }}">{{ range_label }}</a>
+            {% endfor %}
+        </div>
+        <div class="sdac-dashboard-grid">
+            <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.total_users }}</strong><span>Known Users</span></div>
+            <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.submission_count }}</strong><span>Submissions</span></div>
+            <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.pending }}</strong><span>Pending Review</span></div>
+            <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.posted }}</strong><span>Posted</span></div>
+            <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.active_games }}</strong><span>Active Games</span></div>
+            <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.open_reports }}</strong><span>Open Reports</span></div>
+            <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.lockouts }}</strong><span>Active Lockouts</span></div>
+            <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.db_size }}</strong><span>Database</span></div>
+        </div>
+        <div class="sdac-dashboard-grid">
+            <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.last_restart }}</strong><span>Last Server Restart</span></div>
+            <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.last_backup }}</strong><span>Last Server Backup</span></div>
+            <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.media_size }}</strong><span>Media Storage</span></div>
+            <div class="sdac-dashboard-card"><strong>{{ dashboard_summary.bot_heartbeat }}</strong><span>Bot Heartbeat</span></div>
+        </div>
     </section>
 </main>
 </body>
@@ -9505,7 +9544,8 @@ def dashboard_theme_css(config_data=None):
     if theme.get("background_image"):
         image_rule = f"--sdac-theme-image: url('{theme['background_image']}'); --sdac-theme-image-opacity: .22;"
     return (
-        "<style id=\"sdac-theme-vars\">:root {"
+        "<style id=\"sdac-theme-vars\">"
+        ":root {"
         f"--sdac-primary: {theme['primary']};"
         f"--sdac-secondary: {theme['secondary']};"
         f"--sdac-accent: {theme['accent']};"
@@ -9514,8 +9554,30 @@ def dashboard_theme_css(config_data=None):
         f"--sdac-sidebar-bg: {theme['sidebar']};"
         f"--sdac-text: {theme['text']};"
         f"--sdac-muted: {theme['muted']};"
+        "--sdac-border: rgba(148, 163, 184, 0.24);"
+        "--bg: var(--sdac-bg);"
+        "--panel: var(--sdac-surface);"
+        "--border: var(--sdac-border);"
+        "--muted: var(--sdac-muted);"
+        "--accent: var(--sdac-secondary);"
         f"{image_rule}"
-        "}</style>"
+        "}"
+        "body.sdac-theme{background-color:var(--sdac-bg)!important;color:var(--sdac-text)!important;}"
+        "body.sdac-theme::before{content:'';position:fixed;inset:0;background-image:var(--sdac-theme-image,linear-gradient(135deg,rgba(79,70,229,.20),rgba(6,182,212,.13) 45%,rgba(245,158,11,.10)));background-size:cover;background-position:center;opacity:var(--sdac-theme-image-opacity,.16);pointer-events:none;z-index:-1;}"
+        "body.sdac-theme main{position:relative;}"
+        "body.sdac-theme .admin-nav,body.sdac-theme main>nav{background:color-mix(in srgb,var(--sdac-surface) 84%,transparent);border:1px solid var(--sdac-border);border-radius:8px;padding:10px;}"
+        "body.sdac-theme .panel,body.sdac-theme .post,body.sdac-theme .audit-row,body.sdac-theme .section,body.sdac-theme .notice,body.sdac-theme table,.sdac-dashboard-card,.sdac-dashboard-panel{background:color-mix(in srgb,var(--sdac-surface) 88%,transparent)!important;border-color:var(--sdac-border)!important;box-shadow:0 18px 48px rgba(2,6,23,.20);}"
+        "body.sdac-theme a{color:var(--sdac-secondary)!important;}"
+        "body.sdac-theme button{background:linear-gradient(90deg,var(--sdac-primary),var(--sdac-secondary))!important;color:#fff!important;border-color:transparent!important;}"
+        ".sdac-dashboard-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));margin:20px 0;}"
+        ".sdac-dashboard-card{border:1px solid var(--sdac-border);border-radius:8px;padding:16px;}"
+        ".sdac-dashboard-card strong{display:block;font-size:1.8rem;line-height:1.1;}"
+        ".sdac-dashboard-card span{color:var(--sdac-muted);display:block;font-size:.82rem;font-weight:750;margin-top:6px;text-transform:uppercase;}"
+        ".sdac-dashboard-panel{border:1px solid var(--sdac-border);border-radius:8px;margin:18px 0;padding:16px;}"
+        ".sdac-range-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;}"
+        ".sdac-range-tabs a{border:1px solid var(--sdac-border);border-radius:7px;padding:8px 10px;text-decoration:none;}"
+        ".sdac-range-tabs a.active{background:var(--sdac-primary);color:#fff!important;}"
+        "</style>"
     )
 
 
@@ -9551,6 +9613,7 @@ def admin_sidebar_sections():
             "label": "User",
             "required_role": "moderator",
             "links": [
+                ("Home", "admin_overview", {}),
                 ("Submissions", "index", {}),
                 ("My Submissions", "my_submissions", {}),
                 ("Guessing", "guessing_leaderboard", {}),
@@ -9644,7 +9707,7 @@ def should_render_admin_sidebar():
         "admin_oauth_callback",
     }:
         return False
-    if request.path.startswith("/admin/"):
+    if request.path == "/admin" or request.path.startswith("/admin/"):
         return True
     if request.endpoint in {
         "index",
@@ -13383,6 +13446,45 @@ def admin_dashboard_summary(connection, selected_server_id, visible_guild_ids, r
         "media_size": format_bytes(media_directory_size()),
     }
 
+
+@app.route("/admin")
+def admin_overview():
+    login_response = require_admin_login("moderator")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    options = guild_options(config_data)
+    guild_names = guild_name_map(config_data)
+    visible_guild_ids = {option["id"] for option in options}
+    selected_server_id = selected_guild_id(options)
+    selected_server_name = (
+        guild_names.get(selected_server_id, "Selected Server")
+        if selected_server_id
+        else "All Discord Servers"
+    )
+    with closing(connect_db()) as connection:
+        summary = admin_dashboard_summary(
+            connection,
+            selected_server_id,
+            visible_guild_ids,
+            request.args.get("metric_range", "all"),
+        )
+    return render_template_string(
+        ADMIN_OVERVIEW_HTML,
+        admin_key=ADMIN_KEY,
+        dashboard_ranges=[
+            ("all", "All Time"),
+            ("year", "This Year"),
+            ("month", "This Month"),
+            ("week", "This Week"),
+            ("today", "Today"),
+        ],
+        dashboard_summary=summary,
+        guild_options=options,
+        selected_guild_id=selected_server_id,
+        selected_guild_name=selected_server_name,
+    )
+
 @app.route("/")
 def index():
     config_data = load_config()
@@ -13465,14 +13567,6 @@ def index():
             """, category_parameters)
         ]
 
-        dashboard_summary = None
-        if is_admin:
-            dashboard_summary = admin_dashboard_summary(
-                connection,
-                selected_server_id,
-                visible_guild_ids,
-                request.args.get("metric_range", "all"),
-            )
         if selected_month:
             preserve_monthly_submission_top(connection, selected_month)
             connection.commit()
@@ -13647,8 +13741,6 @@ def index():
         error=error,
         grouped_posts=grouped_posts,
         csrf_token=get_csrf_token() if is_admin else "",
-        dashboard_ranges=[("all", "All Time"), ("year", "This Year"), ("month", "This Month"), ("week", "This Week"), ("today", "Today")],
-        dashboard_summary=dashboard_summary,
         guild_options=server_options,
         is_admin=is_admin,
         months=months,
