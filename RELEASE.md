@@ -1,3 +1,37 @@
+# SDAC Bot Version 3.0 Official
+
+Date: 2026-06-29
+
+Version 3.0 is an official dashboard and account-management release.
+
+Included:
+
+- dashboard accounts can now be registered with email, optional username, and
+  password
+- dashboard admins can promote users to trusted, moderator, admin, or owner
+  roles from the admin Settings page
+- server shell account management through `scripts/reset_admin_login.py` for
+  create/update, list, disable, enable, delete, and legacy default cleanup
+- removed the old default admin password fallback; create a real owner account
+  during install or with the CLI helper
+- consistent admin sidebar navigation across admin dashboard pages
+- Ubuntu and Windows installers now seed an initial dashboard owner account
+- submission repost cleanup no longer rolls back a successful submission when
+  Discord refuses to delete the source message
+- submission reposting now fetches a category channel if Discord has not cached
+  it yet
+- updater aliases now support `Version 3`, `3`, and `v3`; `Version 2` remains
+  pinned to the last official Version 2 release
+
+Release channel:
+
+- `version-3.0` is this official build
+- `latest-official` points to this build
+- `Version 3`, `3`, `v3`, and `version-3` resolve to this official channel
+- `Version 2`, `2`, `v2`, and `version-2` remain pinned to `version-2.8`
+
+---
+
 # SDAC Bot Version 2.8.4 Experimental
 
 Date: 2026-06-29

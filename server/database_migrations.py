@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import sqlite3
 
 
-DATABASE_SCHEMA_VERSION = 12
+DATABASE_SCHEMA_VERSION = 13
 
 
 def utc_now_iso():
@@ -599,6 +599,25 @@ def migration_12_schedules_achievements_and_archives(connection):
     """)
 
 
+def migration_13_dashboard_accounts(connection):
+    ensure_column(connection, "dashboard_admin_users", "email", "TEXT")
+    ensure_column(connection, "dashboard_admin_users", "display_name", "TEXT")
+    ensure_column(
+        connection,
+        "dashboard_admin_users",
+        "email_verified",
+        "INTEGER DEFAULT 0",
+    )
+    ensure_column(connection, "dashboard_admin_users", "created_ip", "TEXT")
+    ensure_column(connection, "dashboard_admin_users", "approved_by", "TEXT")
+    ensure_column(connection, "dashboard_admin_users", "approved_at", "TEXT")
+    ensure_column(connection, "dashboard_admin_users", "notes", "TEXT")
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dashboard_admin_users_email
+        ON dashboard_admin_users (email, disabled)
+    """)
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -610,6 +629,7 @@ MIGRATIONS = (
     (10, migration_10_jobs_duplicates_and_privacy),
     (11, migration_11_operations_safety_tables),
     (12, migration_12_schedules_achievements_and_archives),
+    (13, migration_13_dashboard_accounts),
 )
 
 

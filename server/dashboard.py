@@ -47,7 +47,6 @@ app = Flask(__name__)
 init_sentry("sdac-dashboard")
 
 ADMIN_KEY = os.getenv("SDAC_ADMIN_KEY", "ImTheBestAdmin")
-ADMIN_PASSWORD = os.getenv("SDAC_ADMIN_PASSWORD", ADMIN_KEY)
 DISCORD_OAUTH_CLIENT_ID = (
     os.getenv("SDAC_DISCORD_CLIENT_ID")
     or os.getenv("DISCORD_CLIENT_ID")
@@ -173,15 +172,25 @@ FEATURE_LABELS = {
 }
 
 ROLE_LEVELS = {
+    "user": 0,
+    "trusted": 0,
     "moderator": 1,
     "admin": 2,
     "owner": 3,
 }
 
 ROLE_LABELS = {
+    "user": "User",
+    "trusted": "Trusted User",
     "moderator": "Moderator",
     "admin": "Admin",
     "owner": "Owner",
+}
+
+ADMIN_ROLE_CHOICES = {
+    key: value
+    for key, value in ROLE_LABELS.items()
+    if key in {"user", "trusted", "moderator", "admin", "owner"}
 }
 
 NOTIFICATION_EVENT_LABELS = {
@@ -812,12 +821,147 @@ LOGIN_HTML = """
         <input type="hidden" name="key" value="{{ admin_key }}">
         <input type="hidden" name="next" value="{{ next_url }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label for="username">Admin username</label>
-        <input id="username" name="username" value="{{ username }}" placeholder="owner" autofocus>
+        <label for="username">Admin username or email</label>
+        <input id="username" name="username" value="{{ username }}" placeholder="admin@example.com" autofocus required>
         <label for="password">Admin password</label>
         <input id="password" name="password" type="password" required>
         <button type="submit">Log In</button>
     </form>
+    <p class="note">
+        Need a normal account?
+        <a href="{{ url_for('account_register') }}">Create one here</a>.
+        Admin access must be granted by an existing admin or the server CLI.
+    </p>
+</main>
+</body>
+</html>
+"""
+
+
+ACCOUNT_REGISTER_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Create SDAC Account</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 60px auto; padding: 24px; width: min(100%, 440px); }
+        h1 { text-align: center; }
+        a { color: #7c9cff; }
+        label { display: block; font-weight: bold; margin: 14px 0 6px; }
+        input, button { border: 1px solid #30333b; border-radius: 7px; box-sizing: border-box; font-size: 16px; padding: 10px 12px; width: 100%; }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; margin-top: 18px; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 16px; padding: 10px; text-align: center; }
+        .error { border-color: #e45d68; }
+        .muted { color: #a8adb8; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Create Account</h1>
+    {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
+    <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" value="{{ email }}" maxlength="254" required>
+        <label for="username">Username <span class="muted">(optional)</span></label>
+        <input id="username" name="username" value="{{ username }}" maxlength="40" placeholder="Leave blank to derive from email">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" minlength="10" required>
+        <label for="confirm_password">Confirm Password</label>
+        <input id="confirm_password" name="confirm_password" type="password" minlength="10" required>
+        <button type="submit">Create Account</button>
+    </form>
+    <p class="muted">
+        New accounts start as regular users. Admins can promote accounts to
+        trusted user, moderator, admin, or owner from the admin Settings page.
+    </p>
+    <p><a href="{{ url_for('account_login') }}">Already have an account?</a></p>
+    <p><a href="{{ url_for('index') }}">Back to submissions</a></p>
+</main>
+</body>
+</html>
+"""
+
+
+ACCOUNT_LOGIN_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Account Login</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 60px auto; padding: 24px; width: min(100%, 440px); }
+        h1 { text-align: center; }
+        a { color: #7c9cff; }
+        label { display: block; font-weight: bold; margin: 14px 0 6px; }
+        input, button { border: 1px solid #30333b; border-radius: 7px; box-sizing: border-box; font-size: 16px; padding: 10px 12px; width: 100%; }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; margin-top: 18px; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 16px; padding: 10px; text-align: center; }
+        .error { border-color: #e45d68; }
+        .muted { color: #a8adb8; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Account Login</h1>
+    {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
+    <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="{{ next_url }}">
+        <label for="identifier">Username or email</label>
+        <input id="identifier" name="identifier" value="{{ identifier }}" required>
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required>
+        <button type="submit">Log In</button>
+    </form>
+    <p><a href="{{ url_for('account_register') }}">Create an account</a></p>
+    <p><a href="{{ url_for('admin_login', key=admin_key) }}">Admin login</a></p>
+</main>
+</body>
+</html>
+"""
+
+
+ACCOUNT_HOME_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Account</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 60px auto; padding: 24px; width: min(100%, 560px); }
+        a { color: #7c9cff; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Your SDAC Account</h1>
+    <table>
+        <tbody>
+            <tr><th>Username</th><td><code>{{ account.username }}</code></td></tr>
+            <tr><th>Email</th><td>{{ account.email or "Not set" }}</td></tr>
+            <tr><th>Display name</th><td>{{ account.display_name or account.username }}</td></tr>
+            <tr><th>Role</th><td>{{ role_labels.get(account.role, account.role) }}</td></tr>
+            <tr><th>Status</th><td>{{ "Disabled" if account.disabled else "Active" }}</td></tr>
+        </tbody>
+    </table>
+    {% if can_open_admin %}
+        <p><a href="{{ url_for('admin_settings', key=admin_key) }}">Open admin dashboard</a></p>
+    {% endif %}
+    <p><a href="{{ url_for('index') }}">Submissions</a> &middot; <a href="{{ url_for('account_logout') }}">Log out</a></p>
 </main>
 </body>
 </html>
@@ -2030,10 +2174,12 @@ SETTINGS_HTML = """
                 <table>
                     <tbody>
                         <tr><th>Username</th><td><input name="username" placeholder="moderator-name"></td></tr>
+                        <tr><th>Email</th><td><input name="email" type="email" placeholder="optional@example.com"></td></tr>
+                        <tr><th>Display name</th><td><input name="display_name" placeholder="Optional display name"></td></tr>
                         <tr><th>Password</th><td><input name="password" type="password"></td></tr>
                         <tr><th>Role</th><td>
                             <select name="role">
-                                {% for role_key, role_label in role_labels.items() %}
+                                {% for role_key, role_label in admin_role_choices.items() %}
                                     <option value="{{ role_key }}">{{ role_label }}</option>
                                 {% endfor %}
                             </select>
@@ -2044,14 +2190,15 @@ SETTINGS_HTML = """
                 <button type="submit">Create / Replace Dashboard User</button>
             </form>
         {% else %}
-            <p class="muted">Only owners can create, update, or disable dashboard users.</p>
+            <p class="muted">Only admins can create, promote, update, or disable dashboard users.</p>
         {% endif %}
         <table>
-            <thead><tr><th>User</th><th>Role</th><th>Scope</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
+            <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Scope</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
             <tbody>
                 {% for user in dashboard_users %}
                     <tr>
                         <td><code>{{ user.username }}</code></td>
+                        <td>{{ user.email or "" }}{% if user.display_name %}<br><span class="muted">{{ user.display_name }}</span>{% endif %}</td>
                         <td>{{ role_labels.get(user.role, user.role) }}</td>
                         <td>
                             {% set scope = parse_guild_scope(user.guild_ids_json) %}
@@ -2067,10 +2214,12 @@ SETTINGS_HTML = """
                                     <input type="hidden" name="action" value="update_dashboard_user">
                                     <input type="hidden" name="username" value="{{ user.username }}">
                                     <select name="role">
-                                        {% for role_key, role_label in role_labels.items() %}
+                                        {% for role_key, role_label in admin_role_choices.items() %}
                                             <option value="{{ role_key }}" {% if user.role == role_key %}selected{% endif %}>{{ role_label }}</option>
                                         {% endfor %}
                                     </select>
+                                    <input name="email" type="email" value="{{ user.email or '' }}" placeholder="Email optional">
+                                    <input name="display_name" value="{{ user.display_name or '' }}" placeholder="Display name">
                                     <input name="guild_ids" value="{{ parse_guild_scope(user.guild_ids_json)|join(' ') }}" placeholder="Server IDs or blank for all">
                                     <input name="password" type="password" placeholder="New password optional">
                                     <button type="submit">Update</button>
@@ -2083,12 +2232,12 @@ SETTINGS_HTML = """
                                     <button type="submit">Disable</button>
                                 </form>
                             {% else %}
-                                <span class="muted">Owner only</span>
+                                <span class="muted">Admin only</span>
                             {% endif %}
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="6" class="muted">No named dashboard users yet. Legacy owner login is still active.</td></tr>
+                    <tr><td colspan="7" class="muted">No dashboard accounts yet. Create the first owner with <code>python scripts/reset_admin_login.py --username owner --role owner</code>.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -3365,17 +3514,19 @@ RELEASES_HTML = """
         <h2>Update Commands</h2>
         {% if release_status.configured_tag == "latest-experimental" %}
             <p class="bad">This install is tracking the experimental channel. Use it for validation before promoting a build to official.</p>
-        {% elif release_status.configured_tag == "latest-official" or release_status.configured_tag == "Version 2" %}
+        {% elif release_status.configured_tag == "latest-official" or release_status.configured_tag in ["Version 3", "version-3"] %}
             <p class="ok">This install is tracking the official channel.</p>
         {% else %}
             <p class="muted">This install is pinned to an explicit release. That is safest when you need repeatable deploys.</p>
         {% endif %}
         <p>Stable official channel:</p>
         <p><code>sudo sdac-update latest-official</code></p>
-        <p>Version 2 alias:</p>
+        <p>Version 3 alias:</p>
+        <p><code>sudo sdac-update "Version 3"</code></p>
+        <p>Last Version 2 official:</p>
         <p><code>sudo sdac-update "Version 2"</code></p>
         <p>Exact release:</p>
-        <p><code>sudo sdac-update 2.8.2</code></p>
+        <p><code>sudo sdac-update 3.0</code></p>
         <p>Experimental test channel:</p>
         <p><code>sudo sdac-update latest-experimental</code></p>
         <p class="muted">Recommendation: run <code>latest-experimental</code> only on a test/verification server, then update production with <code>latest-official</code> after the release is promoted.</p>
@@ -4790,11 +4941,6 @@ def storage_warnings(config_data=None):
 
 def security_warnings():
     warnings = []
-    if ADMIN_PASSWORD == ADMIN_KEY:
-        warnings.append(
-            "SDAC_ADMIN_PASSWORD matches SDAC_ADMIN_KEY. Use a separate "
-            "password for the admin login."
-        )
     if ADMIN_KEY == "ImTheBestAdmin":
         warnings.append(
             "SDAC_ADMIN_KEY is still using the development default."
@@ -4803,11 +4949,6 @@ def security_warnings():
         warnings.append(
             "SDAC_SECRET_KEY is not set. Sessions will reset on dashboard "
             "restart and are not production-stable."
-        )
-    if not os.getenv("SDAC_ADMIN_PASSWORD"):
-        warnings.append(
-            "SDAC_ADMIN_PASSWORD is not set. The dashboard falls back to the "
-            "admin key as the password."
         )
     return warnings
 
@@ -4857,6 +4998,15 @@ def production_health_report(config_data=None):
         checks.append({"label": label, "ok": bool(ok), "details": details})
 
     add("Secrets", not security_warnings(), "No default/missing dashboard secrets." if not security_warnings() else "; ".join(security_warnings()))
+    add(
+        "Dashboard accounts",
+        dashboard_user_count() > 0,
+        (
+            f"{dashboard_user_count()} active dashboard account(s)."
+            if dashboard_user_count() > 0
+            else "Create an owner with scripts/reset_admin_login.py before exposing the admin dashboard."
+        ),
+    )
     add("Discord OAuth", oauth_enabled(), "OAuth configured." if oauth_enabled() else "Set SDAC_DISCORD_CLIENT_ID and SDAC_DISCORD_CLIENT_SECRET.")
     add("Bot heartbeat", bot_status.get("fresh"), bot_status.get("message") or "No heartbeat.")
     add("Database backend", True, "PostgreSQL mode." if using_postgres() else "SQLite mode.")
@@ -4935,7 +5085,16 @@ def install_doctor_report():
         checks.append(doctor_item(label, ok, details, severity))
 
     add("Discord token", bool(TOKEN), "DISCORD_TOKEN is set." if TOKEN else "DISCORD_TOKEN is missing.", "critical")
-    add("Admin password", ADMIN_PASSWORD != ADMIN_KEY, "Separate dashboard password configured." if ADMIN_PASSWORD != ADMIN_KEY else "SDAC_ADMIN_PASSWORD still matches the admin key.", "critical")
+    add(
+        "Dashboard accounts",
+        dashboard_user_count() > 0,
+        (
+            f"{dashboard_user_count()} active dashboard account(s)."
+            if dashboard_user_count() > 0
+            else "Create an owner with scripts/reset_admin_login.py.",
+        ),
+        "critical",
+    )
     add("Session secret", bool(os.getenv("SDAC_SECRET_KEY")), "SDAC_SECRET_KEY is set." if os.getenv("SDAC_SECRET_KEY") else "Set SDAC_SECRET_KEY for stable sessions.", "critical")
     add("Public URL", bool(os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN")), os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN") or "Set SDAC_PUBLIC_URL or SDAC_DOMAIN.")
     add("Configured guilds", bool(config_data.get("guilds")), f"{len(config_data.get('guilds') or {})} guild(s) configured.")
@@ -5960,9 +6119,16 @@ def initialize_database():
         connection.execute("""
             CREATE TABLE IF NOT EXISTS dashboard_admin_users (
                 username TEXT PRIMARY KEY,
+                email TEXT,
+                display_name TEXT,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'moderator',
                 disabled INTEGER DEFAULT 0,
+                email_verified INTEGER DEFAULT 0,
+                created_ip TEXT,
+                approved_by TEXT,
+                approved_at TEXT,
+                notes TEXT,
                 created_at TEXT,
                 updated_at TEXT,
                 last_login_at TEXT,
@@ -6423,6 +6589,19 @@ def initialize_database():
             connection.execute(
                 "ALTER TABLE dashboard_admin_users ADD COLUMN guild_ids_json TEXT"
             )
+        for column, definition in {
+            "email": "TEXT",
+            "display_name": "TEXT",
+            "email_verified": "INTEGER DEFAULT 0",
+            "created_ip": "TEXT",
+            "approved_by": "TEXT",
+            "approved_at": "TEXT",
+            "notes": "TEXT",
+        }.items():
+            if column not in dashboard_user_columns:
+                connection.execute(
+                    f"ALTER TABLE dashboard_admin_users ADD COLUMN {column} {definition}"
+                )
         connection.execute("""
             UPDATE submissions
             SET status = 'posted'
@@ -6539,6 +6718,10 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_dashboard_admin_users_role
             ON dashboard_admin_users (role, disabled)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_dashboard_admin_users_email
+            ON dashboard_admin_users (email, disabled)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_setup_test_runs_guild_created
@@ -8571,13 +8754,59 @@ def clear_login_failures(remote_key):
     LOGIN_ATTEMPTS.pop(remote_key, None)
 
 
+def normalize_email(email):
+    value = str(email or "").strip().casefold()
+    if not value:
+        return ""
+    if len(value) > 254 or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value):
+        raise ValueError("Enter a valid email address.")
+    return value
+
+
+def normalize_account_username(username, email=""):
+    value = str(username or "").strip().casefold()
+    if not value and email:
+        value = str(email).split("@", 1)[0].casefold()
+    value = re.sub(r"[^a-z0-9_.-]+", "-", value).strip("-._")
+    if not value:
+        raise ValueError("Username is required when it cannot be derived from email.")
+    if not re.match(r"^[a-z0-9_.-]{3,40}$", value):
+        raise ValueError(
+            "Username must be 3-40 letters, numbers, dots, dashes, or underscores."
+        )
+    return value
+
+
+def unique_account_username(connection, preferred):
+    base = preferred[:36].strip("-._") or "user"
+    candidate = base
+    suffix = 2
+    while connection.execute(
+        "SELECT 1 FROM dashboard_admin_users WHERE username = ?",
+        (candidate,),
+    ).fetchone():
+        candidate = f"{base[:36]}-{suffix}"
+        suffix += 1
+        if suffix > 9999:
+            raise ValueError("Could not create a unique username.")
+    return candidate
+
+
 def normalize_role(role):
     role = str(role or "").strip().lower()
-    return role if role in ROLE_LEVELS else "moderator"
+    return role if role in ROLE_LEVELS else "user"
 
 
 def is_admin_logged_in():
     return bool(session.get("sdac_admin"))
+
+
+def is_account_logged_in():
+    return bool(session.get("sdac_account_username"))
+
+
+def current_account_username():
+    return session.get("sdac_account_username") or ""
 
 
 def current_admin_username():
@@ -8590,6 +8819,25 @@ def current_admin_role():
 
 def has_admin_role(required_role):
     return ROLE_LEVELS[current_admin_role()] >= ROLE_LEVELS[normalize_role(required_role)]
+
+
+def can_assign_dashboard_role(role):
+    role = normalize_role(role)
+    if role == "owner":
+        return has_admin_role("owner")
+    return has_admin_role("admin")
+
+
+def can_manage_dashboard_user(target_role="user", target_username=""):
+    target_role = normalize_role(target_role)
+    target_username = str(target_username or "").strip().casefold()
+    if not has_admin_role("admin"):
+        return False
+    if target_role == "owner" and not has_admin_role("owner"):
+        return False
+    if target_username == current_admin_username().casefold() and not has_admin_role("owner"):
+        return False
+    return True
 
 
 def parse_guild_scope(raw_value):
@@ -8645,11 +8893,27 @@ def dashboard_user(username):
         return None
     with closing(connect_db()) as connection:
         return connection.execute("""
-            SELECT username, password_hash, role, disabled, guild_ids_json
+            SELECT username, email, display_name, password_hash, role, disabled,
+                   guild_ids_json, last_login_at
             FROM dashboard_admin_users
             WHERE username = ?
             LIMIT 1
         """, (username,)).fetchone()
+
+
+def dashboard_user_by_login(identifier):
+    value = str(identifier or "").strip().casefold()
+    if not value:
+        return None
+    with closing(connect_db()) as connection:
+        return connection.execute("""
+            SELECT username, email, display_name, password_hash, role, disabled,
+                   guild_ids_json, last_login_at
+            FROM dashboard_admin_users
+            WHERE username = ?
+               OR lower(COALESCE(email, '')) = ?
+            LIMIT 1
+        """, (value, value)).fetchone()
 
 
 def dashboard_user_count():
@@ -8664,8 +8928,9 @@ def dashboard_user_count():
 def dashboard_users():
     with closing(connect_db()) as connection:
         return connection.execute("""
-            SELECT username, role, disabled, guild_ids_json,
-                   created_at, updated_at, last_login_at
+            SELECT username, email, display_name, role, disabled,
+                   guild_ids_json, created_at, updated_at, last_login_at,
+                   approved_by, approved_at, notes
             FROM dashboard_admin_users
             ORDER BY disabled ASC, role DESC, username ASC
         """).fetchall()
@@ -8703,6 +8968,159 @@ def notification_routes(config_data=None):
 def admin_url(endpoint, **values):
     values.setdefault("key", ADMIN_KEY)
     return url_for(endpoint, **values)
+
+
+def admin_sidebar_links():
+    links = [
+        ("Submissions", "index", {}),
+        ("Settings", "admin_settings", {}),
+        ("Game Library", "admin_game_library", {}),
+        ("Seasons", "admin_seasons", {}),
+        ("Approvals", "admin_approvals", {}),
+        ("Moderation", "admin_moderation", {}),
+        ("Analytics", "admin_analytics", {}),
+        ("Monthly Report", "admin_monthly_report", {}),
+        ("Media", "admin_media", {}),
+        ("Jobs", "admin_jobs", {}),
+        ("Maintenance", "admin_maintenance", {}),
+        ("Server Health", "admin_server_health_cards", {}),
+        ("Production", "admin_production_health", {}),
+        ("Install Doctor", "admin_install_doctor", {}),
+        ("Releases", "admin_releases", {}),
+        ("Privacy", "admin_privacy", {}),
+        ("Audit", "admin_audit", {}),
+        ("Owner Portal", "admin_owner_portal", {}),
+        ("Onboarding", "admin_onboarding", {}),
+    ]
+    rendered = []
+    for label, endpoint, values in links:
+        try:
+            rendered.append({
+                "label": label,
+                "url": admin_url(endpoint, **values),
+                "active": request.endpoint == endpoint,
+            })
+        except Exception:
+            continue
+    return rendered
+
+
+def admin_sidebar_html():
+    items = []
+    for link in admin_sidebar_links():
+        active_class = " active" if link["active"] else ""
+        items.append(
+            f'<a class="sdac-sidebar-link{active_class}" href="{link["url"]}">'
+            f'{link["label"]}</a>'
+        )
+    logout_url = admin_url("admin_logout")
+    account_url = url_for("account_home", key=ADMIN_KEY)
+    role = ROLE_LABELS.get(current_admin_role(), current_admin_role().title())
+    return f"""
+<aside class="sdac-sidebar">
+    <div class="sdac-sidebar-brand">SDAC Admin</div>
+    <div class="sdac-sidebar-user">{current_admin_username()}<br><span>{role}</span></div>
+    <nav>{"".join(items)}</nav>
+    <div class="sdac-sidebar-footer">
+        <a class="sdac-sidebar-link" href="{account_url}">My Account</a>
+        <a class="sdac-sidebar-link" href="{logout_url}">Logout</a>
+    </div>
+</aside>
+"""
+
+
+SIDEBAR_STYLE = """
+<style id="sdac-sidebar-style">
+body.sdac-has-sidebar {
+    padding-left: 260px !important;
+}
+.sdac-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: 240px;
+    overflow-y: auto;
+    background: #111827;
+    color: #e5e7eb;
+    padding: 22px 16px;
+    box-shadow: 8px 0 28px rgba(15, 23, 42, 0.18);
+    z-index: 1000;
+}
+.sdac-sidebar-brand {
+    font-size: 1.25rem;
+    font-weight: 800;
+    margin-bottom: 10px;
+}
+.sdac-sidebar-user {
+    color: #cbd5e1;
+    font-size: 0.9rem;
+    line-height: 1.35;
+    margin-bottom: 18px;
+}
+.sdac-sidebar-user span {
+    color: #93c5fd;
+}
+.sdac-sidebar-link {
+    display: block;
+    color: #dbeafe;
+    text-decoration: none;
+    padding: 9px 11px;
+    border-radius: 10px;
+    margin: 2px 0;
+    font-weight: 650;
+}
+.sdac-sidebar-link:hover,
+.sdac-sidebar-link.active {
+    color: #ffffff;
+    background: rgba(96, 165, 250, 0.24);
+}
+.sdac-sidebar-footer {
+    border-top: 1px solid rgba(148, 163, 184, 0.28);
+    margin-top: 18px;
+    padding-top: 14px;
+}
+body.sdac-has-sidebar main > nav,
+body.sdac-has-sidebar body > nav {
+    display: none !important;
+}
+@media (max-width: 900px) {
+    body.sdac-has-sidebar {
+        padding-left: 0 !important;
+    }
+    .sdac-sidebar {
+        position: static;
+        width: auto;
+        border-radius: 0 0 18px 18px;
+    }
+}
+</style>
+"""
+
+
+@app.after_request
+def inject_admin_sidebar(response):
+    if (
+        response.status_code != 200
+        or response.direct_passthrough
+        or not request.path.startswith("/admin/")
+        or request.endpoint in {"admin_login", "admin_logout", "admin_oauth_start", "admin_oauth_callback"}
+        or not is_admin_logged_in()
+        or not response.mimetype.startswith("text/html")
+    ):
+        return response
+    html = response.get_data(as_text=True)
+    if "sdac-sidebar" in html or "<body" not in html:
+        return response
+    html = html.replace("</head>", SIDEBAR_STYLE + "\n</head>", 1)
+    html = re.sub(r"<body([^>]*)>", r'<body\1 class="sdac-has-sidebar">', html, count=1)
+    html = re.sub(
+        r'(<body[^>]*>)',
+        r'\1' + admin_sidebar_html(),
+        html,
+        count=1,
+    )
+    response.set_data(html)
+    response.headers["Content-Length"] = str(len(response.get_data()))
+    return response
 
 
 def require_admin_key():
@@ -9141,11 +9559,11 @@ def admin_login():
         key=ADMIN_KEY,
     )
     error = request.args.get("error", "")
-    username = request.values.get("username", "owner").strip() or "owner"
+    username = request.values.get("username", "").strip()
 
     if request.method == "POST":
         require_csrf_token()
-        username = request.form.get("username", "owner").strip().casefold() or "owner"
+        username = request.form.get("username", "").strip().casefold()
         password = request.form.get("password", "")
         actor_id, actor_name = web_actor()
         remote_key = login_remote_key()
@@ -9163,20 +9581,17 @@ def admin_login():
                 )
             error = "Too many failed login attempts. Try again in a few minutes."
         else:
-            user = dashboard_user(username)
+            user = dashboard_user_by_login(username)
             role = ""
             login_ok = False
             if user and not int(user["disabled"] or 0):
                 login_ok = check_password_hash(user["password_hash"], password)
                 role = normalize_role(user["role"])
-            elif username in {"owner", "admin", "web-admin"}:
-                login_ok = secrets.compare_digest(password, ADMIN_PASSWORD)
-                role = "owner"
 
-            if login_ok:
+            if login_ok and ROLE_LEVELS.get(role, 0) >= ROLE_LEVELS["moderator"]:
                 clear_login_failures(remote_key)
                 session["sdac_admin"] = True
-                session["sdac_admin_username"] = username
+                session["sdac_admin_username"] = user["username"]
                 session["sdac_admin_role"] = role
                 session["sdac_admin_auth"] = "password"
                 session["sdac_admin_guild_ids"] = (
@@ -9190,19 +9605,24 @@ def admin_login():
                             UPDATE dashboard_admin_users
                             SET last_login_at = ?
                             WHERE username = ?
-                        """, (utc_now_iso(), username))
+                        """, (utc_now_iso(), user["username"]))
                 with database() as connection:
                     add_admin_audit_log(
                         connection,
                         None,
                         "dashboard_login_success",
-                        username,
-                        f"{username} ({role})",
+                        user["username"],
+                        f"{user['username']} ({role})",
                         "dashboard",
                         "admin_login",
                         "Admin login succeeded.",
                     )
                 return redirect(next_url)
+
+            if login_ok:
+                error = "That account is not an admin account yet."
+            else:
+                error = "Invalid admin username/email or password."
 
             record_login_failure(remote_key)
             with database() as connection:
@@ -9216,7 +9636,6 @@ def admin_login():
                     "admin_login",
                     f"Invalid password for {username}.",
                 )
-            error = "Invalid admin username or password."
 
     return render_template_string(
         LOGIN_HTML,
@@ -9226,6 +9645,187 @@ def admin_login():
         next_url=next_url,
         oauth_enabled=oauth_enabled(),
         username=username,
+    )
+
+
+@app.route("/account/register", methods=["GET", "POST"])
+def account_register():
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    email = request.values.get("email", "").strip()
+    username = request.values.get("username", "").strip()
+    if request.method == "POST":
+        require_csrf_token()
+        email = request.form.get("email", "")
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        confirm_password = request.form.get("confirm_password", "")
+        try:
+            normalized_email = normalize_email(email)
+            preferred_username = normalize_account_username(
+                username,
+                normalized_email,
+            )
+            if len(password) < 10:
+                raise ValueError("Password must be at least 10 characters.")
+            if password != confirm_password:
+                raise ValueError("Passwords did not match.")
+            now = utc_now_iso()
+            with database() as connection:
+                existing_email = connection.execute("""
+                    SELECT 1
+                    FROM dashboard_admin_users
+                    WHERE lower(COALESCE(email, '')) = ?
+                    LIMIT 1
+                """, (normalized_email,)).fetchone()
+                if existing_email:
+                    raise ValueError("An account with that email already exists.")
+                account_username = unique_account_username(
+                    connection,
+                    preferred_username,
+                )
+                connection.execute("""
+                    INSERT INTO dashboard_admin_users (
+                        username, email, display_name, password_hash, role,
+                        disabled, email_verified, created_ip, created_at,
+                        updated_at, guild_ids_json
+                    )
+                    VALUES (?, ?, ?, ?, 'user', 0, 0, ?, ?, ?, '[]')
+                """, (
+                    account_username,
+                    normalized_email,
+                    (username or account_username).strip()[:80],
+                    generate_password_hash(password),
+                    request.remote_addr or "",
+                    now,
+                    now,
+                ))
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    "account_registered",
+                    account_username,
+                    account_username,
+                    "dashboard_user",
+                    account_username,
+                    f"User account registered with email {normalized_email}.",
+                )
+            session["sdac_account_username"] = account_username
+            session["sdac_account_role"] = "user"
+            return redirect(url_for(
+                "account_home",
+                notice="Account created.",
+            ))
+        except (ValueError, sqlite3.Error) as form_error:
+            notice = str(form_error)
+            error = True
+    return render_template_string(
+        ACCOUNT_REGISTER_HTML,
+        csrf_token=get_csrf_token(),
+        email=email,
+        error=error,
+        notice=notice,
+        username=username,
+    )
+
+
+@app.route("/account/login", methods=["GET", "POST"])
+def account_login():
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    next_url = request.values.get("next") or url_for("account_home")
+    identifier = request.values.get("identifier", "").strip()
+    if request.method == "POST":
+        require_csrf_token()
+        identifier = request.form.get("identifier", "").strip()
+        password = request.form.get("password", "")
+        remote_key = "account:" + login_remote_key()
+        if login_rate_limited(remote_key):
+            notice = "Too many failed login attempts. Try again in a few minutes."
+            error = True
+        else:
+            account = dashboard_user_by_login(identifier)
+            if (
+                account
+                and not int(account["disabled"] or 0)
+                and check_password_hash(account["password_hash"], password)
+            ):
+                clear_login_failures(remote_key)
+                session["sdac_account_username"] = account["username"]
+                session["sdac_account_role"] = normalize_role(account["role"])
+                with database() as connection:
+                    connection.execute("""
+                        UPDATE dashboard_admin_users
+                        SET last_login_at = ?
+                        WHERE username = ?
+                    """, (utc_now_iso(), account["username"]))
+                    add_admin_audit_log(
+                        connection,
+                        None,
+                        "account_login_success",
+                        account["username"],
+                        account["username"],
+                        "dashboard_user",
+                        account["username"],
+                        "User account login succeeded.",
+                    )
+                if ROLE_LEVELS.get(normalize_role(account["role"]), 0) >= ROLE_LEVELS["moderator"]:
+                    session["sdac_admin"] = True
+                    session["sdac_admin_username"] = account["username"]
+                    session["sdac_admin_role"] = normalize_role(account["role"])
+                    session["sdac_admin_auth"] = "account"
+                    session["sdac_admin_guild_ids"] = parse_guild_scope(
+                        account["guild_ids_json"]
+                    )
+                return redirect(next_url)
+            record_login_failure(remote_key)
+            notice = "Invalid username/email or password."
+            error = True
+    return render_template_string(
+        ACCOUNT_LOGIN_HTML,
+        admin_key=ADMIN_KEY,
+        csrf_token=get_csrf_token(),
+        error=error,
+        identifier=identifier,
+        next_url=next_url,
+        notice=notice,
+    )
+
+
+@app.route("/account/logout")
+def account_logout():
+    session.pop("sdac_account_username", None)
+    session.pop("sdac_account_role", None)
+    session.pop("sdac_admin", None)
+    session.pop("sdac_admin_username", None)
+    session.pop("sdac_admin_role", None)
+    session.pop("sdac_admin_auth", None)
+    session.pop("sdac_admin_guild_ids", None)
+    return redirect(url_for("index"))
+
+
+@app.route("/account")
+def account_home():
+    if not is_account_logged_in():
+        return redirect(url_for(
+            "account_login",
+            next=request.full_path,
+        ))
+    account = dashboard_user(current_account_username())
+    if not account:
+        session.pop("sdac_account_username", None)
+        return redirect(url_for(
+            "account_login",
+            notice="Please log in again.",
+            error=1,
+        ))
+    role = normalize_role(account["role"])
+    return render_template_string(
+        ACCOUNT_HOME_HTML,
+        account=account,
+        admin_key=ADMIN_KEY,
+        can_open_admin=ROLE_LEVELS.get(role, 0) >= ROLE_LEVELS["moderator"],
+        role_labels=ROLE_LABELS,
     )
 
 
@@ -9845,20 +10445,27 @@ def admin_settings():
             "update_dashboard_user",
             "disable_dashboard_user",
         }:
-            if not has_admin_role("owner"):
+            if not has_admin_role("admin"):
                 abort(403)
-            username = request.form.get("username", "").strip().casefold()
-            role = normalize_role(request.form.get("role", "moderator"))
+            raw_username = request.form.get("username", "")
+            raw_email = request.form.get("email", "")
+            display_name = request.form.get("display_name", "").strip()[:120]
+            role = normalize_role(request.form.get("role", "user"))
             password = request.form.get("password", "")
-            guild_scope = parse_guild_scope(request.form.get("guild_ids", ""))
-            guild_scope_json = json.dumps(guild_scope, separators=(",", ":"))
-            if not username or not re.match(r"^[a-z0-9_.-]{3,40}$", username):
+            try:
+                email = normalize_email(raw_email)
+                username = normalize_account_username(raw_username, email)
+                guild_scope = parse_guild_scope(request.form.get("guild_ids", ""))
+            except ValueError as form_error:
                 return redirect(url_for(
                     "admin_settings",
                     key=ADMIN_KEY,
-                    notice="Dashboard username must be 3-40 letters, numbers, dots, dashes, or underscores.",
+                    notice=str(form_error),
                     error=1,
                 ))
+            if not can_assign_dashboard_role(role):
+                abort(403)
+            guild_scope_json = json.dumps(guild_scope, separators=(",", ":"))
             now = utc_now_iso()
             with database() as connection:
                 if action == "create_dashboard_user":
@@ -9869,30 +10476,55 @@ def admin_settings():
                             notice="Password is required for new dashboard users.",
                             error=1,
                         ))
+                    existing_email = None
+                    if email:
+                        existing_email = connection.execute("""
+                            SELECT username
+                            FROM dashboard_admin_users
+                            WHERE lower(COALESCE(email, '')) = ?
+                              AND username != ?
+                            LIMIT 1
+                        """, (email, username)).fetchone()
+                    if existing_email:
+                        return redirect(url_for(
+                            "admin_settings",
+                            key=ADMIN_KEY,
+                            notice="That email address already belongs to another account.",
+                            error=1,
+                        ))
                     connection.execute("""
                         INSERT INTO dashboard_admin_users (
-                            username, password_hash, role, disabled,
-                            created_at, updated_at, guild_ids_json
+                            username, email, display_name, password_hash, role,
+                            disabled, created_at, updated_at, guild_ids_json,
+                            approved_by, approved_at
                         )
-                        VALUES (?, ?, ?, 0, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
                         ON CONFLICT(username) DO UPDATE SET
+                            email = excluded.email,
+                            display_name = excluded.display_name,
                             password_hash = excluded.password_hash,
                             role = excluded.role,
                             disabled = 0,
                             guild_ids_json = excluded.guild_ids_json,
+                            approved_by = excluded.approved_by,
+                            approved_at = excluded.approved_at,
                             updated_at = excluded.updated_at
                     """, (
                         username,
+                        email,
+                        display_name,
                         generate_password_hash(password),
                         role,
                         now,
                         now,
                         guild_scope_json,
+                        current_admin_username(),
+                        now,
                     ))
                     message = f"Dashboard user {username} saved as {role}."
                 elif action == "update_dashboard_user":
                     user = connection.execute("""
-                        SELECT username
+                        SELECT username, role
                         FROM dashboard_admin_users
                         WHERE username = ?
                     """, (username,)).fetchone()
@@ -9903,29 +10535,81 @@ def admin_settings():
                             notice="Dashboard user was not found.",
                             error=1,
                         ))
+                    if not can_manage_dashboard_user(user["role"], username):
+                        abort(403)
+                    if not can_assign_dashboard_role(role):
+                        abort(403)
+                    existing_email = None
+                    if email:
+                        existing_email = connection.execute("""
+                            SELECT username
+                            FROM dashboard_admin_users
+                            WHERE lower(COALESCE(email, '')) = ?
+                              AND username != ?
+                            LIMIT 1
+                        """, (email, username)).fetchone()
+                    if existing_email:
+                        return redirect(url_for(
+                            "admin_settings",
+                            key=ADMIN_KEY,
+                            notice="That email address already belongs to another account.",
+                            error=1,
+                        ))
                     if password:
                         connection.execute("""
                             UPDATE dashboard_admin_users
-                            SET password_hash = ?, role = ?, guild_ids_json = ?,
-                                disabled = 0,
+                            SET email = ?, display_name = ?, password_hash = ?,
+                                role = ?, guild_ids_json = ?, disabled = 0,
+                                approved_by = COALESCE(approved_by, ?),
+                                approved_at = COALESCE(approved_at, ?),
                                 updated_at = ?
                             WHERE username = ?
                         """, (
+                            email,
+                            display_name,
                             generate_password_hash(password),
                             role,
                             guild_scope_json,
+                            current_admin_username(),
+                            now,
                             now,
                             username,
                         ))
                     else:
                         connection.execute("""
                             UPDATE dashboard_admin_users
-                            SET role = ?, guild_ids_json = ?, disabled = 0,
+                            SET email = ?, display_name = ?, role = ?,
+                                guild_ids_json = ?, disabled = 0,
+                                approved_by = COALESCE(approved_by, ?),
+                                approved_at = COALESCE(approved_at, ?),
                                 updated_at = ?
                             WHERE username = ?
-                        """, (role, guild_scope_json, now, username))
+                        """, (
+                            email,
+                            display_name,
+                            role,
+                            guild_scope_json,
+                            current_admin_username(),
+                            now,
+                            now,
+                            username,
+                        ))
                     message = f"Dashboard user {username} updated."
                 else:
+                    user = connection.execute("""
+                        SELECT username, role
+                        FROM dashboard_admin_users
+                        WHERE username = ?
+                    """, (username,)).fetchone()
+                    if not user:
+                        return redirect(url_for(
+                            "admin_settings",
+                            key=ADMIN_KEY,
+                            notice="Dashboard user was not found.",
+                            error=1,
+                        ))
+                    if not can_manage_dashboard_user(user["role"], username):
+                        abort(403)
                     connection.execute("""
                         UPDATE dashboard_admin_users
                         SET disabled = 1, updated_at = ?
@@ -10522,11 +11206,12 @@ def admin_settings():
         active_games=active_games,
         admin_key=ADMIN_KEY,
         backups=recent_database_backups(),
-        can_manage_users=has_admin_role("owner"),
+        admin_role_choices=ADMIN_ROLE_CHOICES,
+        can_manage_users=has_admin_role("admin"),
         csrf_token=get_csrf_token(),
         current_admin_role=current_admin_role(),
         current_admin_username=current_admin_username(),
-        dashboard_users=dashboard_users() if has_admin_role("owner") else [],
+        dashboard_users=dashboard_users() if has_admin_role("admin") else [],
         db_file=DB_FILE,
         db_size=db_size,
         error=error,

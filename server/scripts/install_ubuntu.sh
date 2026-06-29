@@ -124,6 +124,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
     echo "Creating $ENV_FILE"
     DISCORD_TOKEN_INPUT="${SDAC_DISCORD_TOKEN:-}"
     ADMIN_KEY_INPUT="${SDAC_ADMIN_KEY_INPUT:-}"
+    ADMIN_USERNAME_INPUT="${SDAC_ADMIN_USERNAME_INPUT:-${SDAC_ADMIN_USERNAME:-}}"
     ADMIN_PASSWORD_INPUT="${SDAC_ADMIN_PASSWORD_INPUT:-}"
     SECRET_KEY_INPUT="${SDAC_SECRET_KEY_INPUT:-}"
     PUBLIC_URL_INPUT="${SDAC_PUBLIC_URL_INPUT:-${SDAC_PUBLIC_URL:-}}"
@@ -142,12 +143,17 @@ if [[ ! -f "$ENV_FILE" ]]; then
     fi
     ADMIN_KEY_INPUT="${ADMIN_KEY_INPUT:-ImTheBestAdmin}"
 
+    if [[ -z "$ADMIN_USERNAME_INPUT" ]]; then
+        read -r -p "Initial dashboard owner username [owner]: " ADMIN_USERNAME_INPUT
+    fi
+    ADMIN_USERNAME_INPUT="${ADMIN_USERNAME_INPUT:-owner}"
+
     if [[ -z "$ADMIN_PASSWORD_INPUT" ]]; then
-        read -r -s -p "Dashboard admin password: " ADMIN_PASSWORD_INPUT
+        read -r -s -p "Initial dashboard owner password: " ADMIN_PASSWORD_INPUT
         echo
     fi
     if [[ -z "$ADMIN_PASSWORD_INPUT" ]]; then
-        echo "Admin password cannot be blank." >&2
+        echo "Initial dashboard owner password cannot be blank." >&2
         exit 1
     fi
     if [[ -z "$SECRET_KEY_INPUT" ]]; then
@@ -169,7 +175,6 @@ PY
     cat > "$ENV_TMP" <<EOF
 DISCORD_TOKEN=$DISCORD_TOKEN_INPUT
 SDAC_ADMIN_KEY=$ADMIN_KEY_INPUT
-SDAC_ADMIN_PASSWORD=$ADMIN_PASSWORD_INPUT
 SDAC_SECRET_KEY=$SECRET_KEY_INPUT
 PYTHONUNBUFFERED=1
 SDAC_PUBLIC_URL=$PUBLIC_URL_INPUT
@@ -200,6 +205,46 @@ fi
 
 "$APP_DIR/venv/bin/python" -m py_compile "$APP_DIR/bot.py" "$APP_DIR/dashboard.py"
 "$APP_DIR/venv/bin/python" -m py_compile "$APP_DIR/config.py" "$APP_DIR/database_backend.py" "$APP_DIR/database_migrations.py" "$APP_DIR/observability.py"
+
+if [[ -f "$APP_DIR/scripts/reset_admin_login.py" ]]; then
+    DASHBOARD_ACCOUNT_COUNT="$("$APP_DIR/venv/bin/python" - "$APP_DIR" <<'PY'
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root))
+from database_backend import connect_database
+from database_migrations import apply_database_migrations
+
+connection = connect_database(root / "sdac.db", timeout=30)
+try:
+    apply_database_migrations(connection)
+    row = connection.execute("""
+        SELECT COUNT(*)
+        FROM dashboard_admin_users
+        WHERE disabled = 0
+          AND role IN ('owner', 'admin')
+    """).fetchone()
+    print(row[0] if row else 0)
+finally:
+    connection.close()
+PY
+)"
+    if [[ "${DASHBOARD_ACCOUNT_COUNT:-0}" == "0" ]]; then
+        if [[ -z "${ADMIN_USERNAME_INPUT:-}" ]]; then
+            read -r -p "Initial dashboard owner username [owner]: " ADMIN_USERNAME_INPUT
+            ADMIN_USERNAME_INPUT="${ADMIN_USERNAME_INPUT:-owner}"
+        fi
+        if [[ -z "${ADMIN_PASSWORD_INPUT:-}" ]]; then
+            read -r -s -p "Initial dashboard owner password: " ADMIN_PASSWORD_INPUT
+            echo
+        fi
+        "$APP_DIR/venv/bin/python" "$APP_DIR/scripts/reset_admin_login.py" \
+            --username "$ADMIN_USERNAME_INPUT" \
+            --password "$ADMIN_PASSWORD_INPUT" \
+            --role owner
+    fi
+fi
 
 sudo chown -R "$APP_USER:$APP_USER" "$APP_DIR" 2>/dev/null || sudo chown -R "$APP_USER" "$APP_DIR"
 
@@ -244,7 +289,7 @@ echo "  sudo systemctl status sdac-bot --no-pager"
 echo "  sudo systemctl status sdac-dashboard --no-pager"
 echo
 echo "Future GitHub updates:"
-echo "  sdac-update \"Version 2\""
+echo "  sdac-update \"Version 3\""
 echo "  sdac-update latest-experimental"
 echo "  sdac-update 2.6"
 echo

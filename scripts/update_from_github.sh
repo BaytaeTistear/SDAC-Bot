@@ -41,6 +41,9 @@ Usage:
   $0 rollback [snapshot-path-or-name]
 
 Examples:
+  sdac-update "Version 3"
+  sdac-update 3
+  sdac-update 3.0
   sdac-update "Version 2"
   sdac-update 2
   sdac-update 2.6
@@ -67,8 +70,11 @@ normalize_release_tag() {
     lowered="${lowered// /-}"
     lowered="${lowered//_/-}"
     case "$lowered" in
-        ""|latest|stable|official|latest-official|2|v2|version-2)
+        ""|latest|stable|official|latest-official|3|v3|version-3)
             printf '%s\n' "latest-official"
+            ;;
+        2|v2|version-2)
+            printf '%s\n' "version-2.8"
             ;;
         experimental|expirimental|latest-experimental|latest-expirimental)
             printf '%s\n' "latest-experimental"

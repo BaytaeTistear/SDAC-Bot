@@ -41,9 +41,12 @@ function Resolve-ReleaseTag {
         "stable" { return "latest-official" }
         "official" { return "latest-official" }
         "latest-official" { return "latest-official" }
-        "2" { return "latest-official" }
-        "v2" { return "latest-official" }
-        "version-2" { return "latest-official" }
+        "3" { return "latest-official" }
+        "v3" { return "latest-official" }
+        "version-3" { return "latest-official" }
+        "2" { return "version-2.8" }
+        "v2" { return "version-2.8" }
+        "version-2" { return "version-2.8" }
         "experimental" { return "latest-experimental" }
         "expirimental" { return "latest-experimental" }
         "latest-experimental" { return "latest-experimental" }
@@ -67,6 +70,9 @@ function Show-Usage {
     Write-Host "Usage:"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 [release-tag]"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 rollback"
+    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 'Version 3'"
+    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 3"
+    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 3.0"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 'Version 2'"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 2"
     Write-Host "  .\SDAC-Bot-Windows-Update.ps1 2.6"

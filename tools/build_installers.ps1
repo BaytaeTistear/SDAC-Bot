@@ -382,6 +382,8 @@ class Program
     {
 $chunkLiteral
     };
+    static string InitialAdminUsername = "";
+    static string InitialAdminPassword = "";
 
     static int Main(string[] args)
     {
@@ -649,11 +651,12 @@ $chunkLiteral
 
         string token = PromptRequired("Discord bot token");
         string adminKey = Prompt("Dashboard admin key", "ImTheBestAdmin");
-        string adminPassword = PromptSecret("Dashboard admin password (blank generates one)");
-        if (String.IsNullOrWhiteSpace(adminPassword))
+        InitialAdminUsername = Prompt("Initial dashboard owner username", "owner");
+        InitialAdminPassword = PromptSecret("Initial dashboard owner password");
+        while (String.IsNullOrWhiteSpace(InitialAdminPassword) || InitialAdminPassword.Length < 10)
         {
-            adminPassword = RandomToken(24);
-            Console.WriteLine("Generated dashboard admin password: " + adminPassword);
+            Console.WriteLine("Use at least 10 characters for the dashboard owner password.");
+            InitialAdminPassword = PromptSecret("Initial dashboard owner password");
         }
         string publicUrl = Prompt("Public dashboard URL or domain", "");
         string serverName = Prompt("Server label for dashboard status", "windows");
@@ -662,7 +665,6 @@ $chunkLiteral
         StringBuilder env = new StringBuilder();
         env.AppendLine("DISCORD_TOKEN=" + QuoteEnv(token));
         env.AppendLine("SDAC_ADMIN_KEY=" + QuoteEnv(adminKey));
-        env.AppendLine("SDAC_ADMIN_PASSWORD=" + QuoteEnv(adminPassword));
         env.AppendLine("SDAC_SECRET_KEY=" + QuoteEnv(secretKey));
         env.AppendLine("PYTHONUNBUFFERED=1");
         env.AppendLine("SDAC_PUBLIC_URL=" + QuoteEnv(publicUrl));
@@ -732,6 +734,18 @@ pause
         Run(venvPython, "-m pip install --upgrade pip", appDir, false);
         Run(venvPython, "-m pip install \"discord.py>=2.3.2\" \"Flask>=3.0.0\" \"sentry-sdk>=2.0.0\"", appDir, false);
         Run(venvPython, "-m py_compile bot.py dashboard.py config.py database_backend.py database_migrations.py observability.py scripts\\migrate_database.py scripts\\export_sqlite_to_postgres.py", appDir, false);
+        if (!String.IsNullOrWhiteSpace(InitialAdminUsername) && !String.IsNullOrWhiteSpace(InitialAdminPassword))
+        {
+            string script = Path.Combine(appDir, "scripts", "reset_admin_login.py");
+            if (File.Exists(script))
+            {
+                Run(venvPython,
+                    "scripts\\reset_admin_login.py --username \"" + InitialAdminUsername.Replace("\"", "\\\"") +
+                    "\" --password \"" + InitialAdminPassword.Replace("\"", "\\\"") + "\" --role owner",
+                    appDir,
+                    false);
+            }
+        }
     }
 
     static string FindPythonCommand()

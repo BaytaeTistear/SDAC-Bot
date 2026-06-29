@@ -24,6 +24,11 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
   weekly posts, public gallery visibility, and cross-server rankings
 - Per-server dashboard branding with display name, accent color, and logo URL
 - Role-based dashboard admin login on top of the admin key
+- Public dashboard account registration with email, optional username, and
+  hashed password storage
+- Dashboard admin promotion controls for user, trusted, moderator, admin, and
+  owner roles
+- Consistent admin sidebar navigation across dashboard pages
 - Optional Discord OAuth dashboard login with per-server admin scoping
 - Admin alert routing for system errors, backup/restore failures, storage
   warnings, repost deletion failures, and stale bot heartbeat warnings
@@ -81,7 +86,7 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - PostgreSQL export tooling and experimental `SDAC_DATABASE_URL` runtime mode
 - New-server welcome message that points admins to `/setup`
 - Ubuntu systemd service templates and Nginx helper scripts
-- CLI dashboard admin login recovery with `scripts/reset_admin_login.py`
+- CLI dashboard account management with `scripts/reset_admin_login.py`
 - Backup prerequisite and release checklist helpers under `scripts/`
 - Linux and Windows single-file installers from GitHub Releases
 
@@ -131,7 +136,13 @@ After `sdac-update` is installed, future updates are one command:
 sdac-update latest-official
 ```
 
-Stable Version 2 alias:
+Stable Version 3 alias:
+
+```bash
+sdac-update "Version 3"
+```
+
+Stable Version 2 alias, pinned to the last Version 2 official release:
 
 ```bash
 sdac-update "Version 2"
@@ -146,7 +157,7 @@ sdac-update latest-experimental
 Explicit numbered release:
 
 ```bash
-sdac-update 2.8.2
+sdac-update 3.0
 ```
 
 Optional checks:
@@ -159,10 +170,12 @@ The updater always restarts both SDAC services and runs a post-update health
 summary for bot service status, dashboard service status, database migration,
 local dashboard health, optional public HTTPS health, and Nginx when present.
 
-The updater also accepts `latest`, `official`, `2`, `v2`, `version-2`,
-`experimental`, `expirimental`, and `latest-expirimental` as aliases. `Version
-2` always resolves to the latest official Version 2 release. Exact versions like
-`2.0` or `2.6` resolve to that specific `version-*` release.
+The updater also accepts `latest`, `official`, `3`, `v3`, `version-3`, `2`,
+`v2`, `version-2`, `experimental`, `expirimental`, and
+`latest-expirimental` as aliases. `Version 3` resolves to the current official
+channel. `Version 2` remains pinned to the last official Version 2 release.
+Exact versions like `2.8` or `3.0` resolve to that specific `version-*`
+release.
 
 If an older install says `/etc/sdac-bot/update.env: Permission denied`, fix the
 updater defaults file once:
@@ -178,11 +191,48 @@ cd /home/ubuntu/discord-screenshot-bot
 bash scripts/install_ubuntu.sh
 ```
 
+The installer prompts for an initial dashboard owner username and password, then
+stores that account in the database with a hashed password. The old default
+`owner` / `TheOnePieceIsReal` style fallback is not used.
+
 Dedicated service user:
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
 SDAC_APP_USER=sdac SDAC_CREATE_APP_USER=1 bash scripts/install_ubuntu.sh
+```
+
+### Dashboard Account Management
+
+Create or reset an owner from the server shell:
+
+```bash
+cd /home/ubuntu/discord-screenshot-bot
+venv/bin/python scripts/reset_admin_login.py --username owner --role owner
+```
+
+Create an admin with an email:
+
+```bash
+venv/bin/python scripts/reset_admin_login.py \
+  --username alex \
+  --email alex@example.com \
+  --role admin
+```
+
+List, disable, enable, or delete accounts:
+
+```bash
+venv/bin/python scripts/reset_admin_login.py --list
+venv/bin/python scripts/reset_admin_login.py --username alex --disable
+venv/bin/python scripts/reset_admin_login.py --username alex --enable
+venv/bin/python scripts/reset_admin_login.py --username alex --delete
+```
+
+Remove legacy default dashboard usernames:
+
+```bash
+venv/bin/python scripts/reset_admin_login.py --delete-defaults
 ```
 
 ### Local Ubuntu Update
@@ -511,6 +561,9 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /achievements                   Monthly achievements
 /servers                        Server list
 /stats                          Public stats
+/account/register               Create a dashboard account
+/account/login                  Dashboard account login
+/account                        Dashboard account profile
 /admin/login?key=ImTheBestAdmin Admin login
 /admin/settings?key=ImTheBestAdmin
 /admin/game-library?key=ImTheBestAdmin
@@ -558,8 +611,9 @@ update-sdac.bat latest-official
 Windows accepts the same channel and version names:
 
 ```bat
+update-sdac.bat "Version 3"
+update-sdac.bat 3.0
 update-sdac.bat "Version 2"
-update-sdac.bat 2.6
 update-sdac.bat latest-experimental
 ```
 

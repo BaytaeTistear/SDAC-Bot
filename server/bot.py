@@ -900,9 +900,16 @@ def initialize_database():
         connection.execute("""
             CREATE TABLE IF NOT EXISTS dashboard_admin_users (
                 username TEXT PRIMARY KEY,
+                email TEXT,
+                display_name TEXT,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'moderator',
                 disabled INTEGER DEFAULT 0,
+                email_verified INTEGER DEFAULT 0,
+                created_ip TEXT,
+                approved_by TEXT,
+                approved_at TEXT,
+                notes TEXT,
                 created_at TEXT,
                 updated_at TEXT,
                 last_login_at TEXT,
@@ -1376,6 +1383,21 @@ def initialize_database():
             "guild_ids_json",
             "TEXT",
         )
+        for column, definition in {
+            "email": "TEXT",
+            "display_name": "TEXT",
+            "email_verified": "INTEGER DEFAULT 0",
+            "created_ip": "TEXT",
+            "approved_by": "TEXT",
+            "approved_at": "TEXT",
+            "notes": "TEXT",
+        }.items():
+            ensure_column(
+                connection,
+                "dashboard_admin_users",
+                column,
+                definition,
+            )
 
         connection.execute("""
             UPDATE submissions
@@ -1513,6 +1535,10 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_dashboard_admin_users_role
             ON dashboard_admin_users (role, disabled)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_dashboard_admin_users_email
+            ON dashboard_admin_users (email, disabled)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_setup_test_runs_guild_created
@@ -7305,7 +7331,13 @@ async def create_submission(source_message, category):
     if validation_error:
         return False, validation_error
     categories_config = guild_config.get("categories", {})
-    target_channel = bot.get_channel(categories_config.get(category))
+    target_channel_id = categories_config.get(category)
+    target_channel = bot.get_channel(target_channel_id)
+    if target_channel is None and target_channel_id:
+        try:
+            target_channel = await bot.fetch_channel(int(target_channel_id))
+        except (TypeError, ValueError, discord.HTTPException):
+            target_channel = None
     if target_channel is None:
         return False, "The category channel could not be found."
 
@@ -7547,7 +7579,18 @@ async def create_submission(source_message, category):
         ] = now
         deleted, delete_error = await delete_source_message(source_message)
         if not deleted:
-            raise RuntimeError(delete_error)
+            response_text += (
+                "\n\nWarning: the submission was posted, but the bot could not "
+                f"delete the original message. {delete_error}"
+            )
+            await send_error_notification(
+                source_message.guild.id,
+                (
+                    f"Submission `{submission_id}` was posted, but source "
+                    f"message cleanup failed: `{delete_error}`"
+                ),
+                "repost_delete_failed",
+            )
         return True, response_text
     except Exception as error:
         capture_exception(error)
