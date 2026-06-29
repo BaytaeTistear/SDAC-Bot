@@ -315,7 +315,7 @@ NOTIFICATION_EVENT_CHOICES = [
 
 USER_COMMAND_HELP = [
     ("/commands", "Show the public SDAC command list."),
-    ("/submit category", "Start a guided media submission."),
+    ("/submit", "Start a guided media submission."),
     ("/categories", "Show configured categories and basic server setup."),
     ("/guess guess", "Guess the active game answer in the current channel."),
     ("/hint", "Show this channel's revealed game hint."),
@@ -324,7 +324,7 @@ USER_COMMAND_HELP = [
 USER_COMMAND_GROUPS = {
     "All User Commands": USER_COMMAND_HELP,
     "Submissions": [
-        ("/submit category", "Start a guided media submission."),
+        ("/submit", "Start a guided media submission."),
         ("/categories", "Show configured categories and basic server setup."),
     ],
     "Guessing Games": [
@@ -7703,11 +7703,185 @@ class SubmissionConfirmView(discord.ui.View):
         await self.finish(message)
 
 
+class SubmissionCategorySelect(discord.ui.Select):
+    def __init__(self, categories):
+        options = [
+            discord.SelectOption(
+                label=category[:100],
+                value=category,
+                description="Submit to this category",
+            )
+            for category in categories[:25]
+        ]
+        super().__init__(
+            placeholder="Choose a submission category",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+
+    async def callback(self, interaction):
+        view = self.view
+        if view is None:
+            await interaction.response.send_message(
+                "This submission menu is no longer available.",
+                ephemeral=True,
+            )
+            return
+        await view.start_content_step(interaction, self.values[0])
+
+
+class SubmissionCategoryView(discord.ui.View):
+    def __init__(self, author_id, guild_config):
+        super().__init__(timeout=300)
+        self.author_id = author_id
+        self.guild_config = guild_config
+        self.message = None
+        categories = sorted(guild_config.get("categories", {}).keys())
+        self.add_item(SubmissionCategorySelect(categories))
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id == self.author_id:
+            return True
+        await interaction.response.send_message(
+            "Only the person who started this submission can use this menu.",
+            ephemeral=True,
+        )
+        return False
+
+    async def start_content_step(self, interaction, category):
+        category = clean_category_name(category)
+        if category not in self.guild_config.get("categories", {}):
+            await interaction.response.send_message(
+                f"Invalid category `{category}`.",
+                ephemeral=True,
+            )
+            return
+
+        session_key = f"{interaction.guild_id}:{interaction.user.id}"
+        if session_key in active_submission_sessions:
+            await interaction.response.send_message(
+                "You already have an active submission. Finish or cancel it first.",
+                ephemeral=True,
+            )
+            return
+
+        cooldown_message, retry_after, bucket = submission_cooldown_message(
+            interaction.guild_id,
+            interaction.user.id,
+            category,
+        )
+        if cooldown_message:
+            record_rate_limit_event(
+                interaction.guild_id,
+                interaction.user.id,
+                interaction.user,
+                f"submission_{bucket}",
+                "submit",
+                retry_after,
+                f"Category {category}.",
+            )
+            await interaction.response.send_message(
+                cooldown_message,
+                ephemeral=True,
+            )
+            return
+
+        active_submission_sessions.add(session_key)
+        self.stop()
+        for item in self.children:
+            item.disabled = True
+
+        guidance = "\n".join(
+            f"- {line}"
+            for line in submission_guidance_lines(
+                interaction.guild_id,
+                self.guild_config,
+            )
+        )
+        await interaction.response.edit_message(
+            content=(
+                f"**Step 2 of 3: Add media/text for `{category}`**\n"
+                "Send one normal message in this channel with at least one "
+                "image, audio, or video attachment. Text is optional. You can "
+                "attach up to 5 files.\n\n"
+                f"{guidance}\n\n"
+                "You have 5 minutes."
+            ),
+            view=None,
+        )
+
+        def message_check(message):
+            return (
+                message.guild
+                and message.guild.id == interaction.guild_id
+                and message.channel.id == interaction.channel_id
+                and message.author.id == interaction.user.id
+                and not message.author.bot
+            )
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 300
+        try:
+            while True:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    raise asyncio.TimeoutError
+                source_message = await bot.wait_for(
+                    "message",
+                    timeout=remaining,
+                    check=message_check,
+                )
+                validation_error = validate_submission_message(
+                    source_message,
+                    self.guild_config,
+                    category,
+                )
+                if not validation_error:
+                    break
+                await delete_source_message(source_message)
+                await interaction.edit_original_response(
+                    content=(
+                        f"**Step 2 of 3: Try again for `{category}`**\n"
+                        f"{validation_error}\n\n"
+                        "Media is required. Send another normal message with "
+                        "at least one image, audio, or video attachment. Text "
+                        "can be included with the media.\n\n"
+                        f"{guidance}"
+                    )
+                )
+        except asyncio.TimeoutError:
+            active_submission_sessions.discard(session_key)
+            await interaction.edit_original_response(
+                content="Submission timed out. Run `/submit` to start again.",
+                view=None,
+            )
+            return
+
+        view = SubmissionConfirmView(source_message, category, session_key)
+        preview_message = await interaction.edit_original_response(
+            content=submission_preview(category, source_message),
+            embeds=submission_preview_embeds(source_message),
+            view=view,
+        )
+        view.preview_message = preview_message
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        if self.message is not None:
+            try:
+                await self.message.edit(
+                    content="Submission timed out. Run `/submit` to start again.",
+                    view=None,
+                )
+            except discord.HTTPException:
+                pass
+
+
 @tree.command(name="submit", description="Start a guided SDAC submission")
 @app_commands.guild_only()
-@app_commands.autocomplete(category=category_autocomplete)
-@app_commands.describe(category="Submission category")
-async def submit(interaction, category: str):
+async def submit(interaction):
     guild_config = get_guild_config(interaction.guild_id, create=False)
     paused = emergency_pause_message(guild_config)
     if paused:
@@ -7734,39 +7908,10 @@ async def submit(interaction, category: str):
         )
         return
 
-    if not interaction.app_permissions.manage_messages:
+    categories = sorted(guild_config.get("categories", {}).keys())
+    if not categories:
         await interaction.response.send_message(
-            "The bot needs the **Manage Messages** permission in this "
-            "channel before guided submissions can be used.",
-            ephemeral=True,
-        )
-        return
-
-    category = clean_category_name(category)
-    if category not in guild_config.get("categories", {}):
-        await interaction.response.send_message(
-            f"Invalid category `{category}`.",
-            ephemeral=True,
-        )
-        return
-
-    cooldown_message, retry_after, bucket = submission_cooldown_message(
-        interaction.guild_id,
-        interaction.user.id,
-        category,
-    )
-    if cooldown_message:
-        record_rate_limit_event(
-            interaction.guild_id,
-            interaction.user.id,
-            interaction.user,
-            f"submission_{bucket}",
-            "submit",
-            retry_after,
-            f"Category {category}.",
-        )
-        await interaction.response.send_message(
-            cooldown_message,
+            "No submission categories are configured yet.",
             ephemeral=True,
         )
         return
@@ -7779,72 +7924,22 @@ async def submit(interaction, category: str):
         )
         return
 
-    active_submission_sessions.add(session_key)
-    guidance = "\n".join(
-        f"- {line}"
-        for line in submission_guidance_lines(interaction.guild_id, guild_config)
-    )
+    view = SubmissionCategoryView(interaction.user.id, guild_config)
+    extra = ""
+    if len(categories) > 25:
+        extra = "\n\nOnly the first 25 categories are shown because Discord limits select menus."
     await interaction.response.send_message(
-        "**Step 2 of 3: Send your content**\n"
-        "Send one normal message in this channel with at least one image, "
-        "audio, or video attachment. Text is optional. You can attach up "
-        "to 5 files.\n\n"
-        f"{guidance}\n\n"
-        "You have 5 minutes.",
+        "**Step 1 of 3: Select a category**\n"
+        "Choose where this submission should be posted. After that, I will "
+        "ask you to send the media/text message in this channel."
+        f"{extra}",
+        view=view,
         ephemeral=True,
     )
-
-    def message_check(message):
-        return (
-            message.guild
-            and message.guild.id == interaction.guild_id
-            and message.channel.id == interaction.channel_id
-            and message.author.id == interaction.user.id
-            and not message.author.bot
-        )
-
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + 300
     try:
-        while True:
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                raise asyncio.TimeoutError
-            source_message = await bot.wait_for(
-                "message",
-                timeout=remaining,
-                check=message_check,
-            )
-            validation_error = validate_submission_message(
-                source_message,
-                guild_config,
-                category,
-            )
-            if not validation_error:
-                break
-            await delete_source_message(source_message)
-            await interaction.edit_original_response(
-                content=(
-                    f"**Step 2 of 3: Try again**\n{validation_error}\n\n"
-                    "Send another message with valid text and/or media.\n\n"
-                    f"{guidance}"
-                )
-            )
-    except asyncio.TimeoutError:
-        active_submission_sessions.discard(session_key)
-        await interaction.edit_original_response(
-            content="Submission timed out. Run `/submit` to start again.",
-            view=None,
-        )
-        return
-
-    view = SubmissionConfirmView(source_message, category, session_key)
-    preview_message = await interaction.edit_original_response(
-        content=submission_preview(category, source_message),
-        embeds=submission_preview_embeds(source_message),
-        view=view,
-    )
-    view.preview_message = preview_message
+        view.message = await interaction.original_response()
+    except discord.HTTPException:
+        view.message = None
 
 
 @tree.command(name="schedulegame", description="Schedule a saved library guessing game")

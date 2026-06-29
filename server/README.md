@@ -485,7 +485,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 
 ```text
 /commands
-/submit category
+/submit
 /categories
 /guess guess
 /hint

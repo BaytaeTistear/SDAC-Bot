@@ -1,3 +1,28 @@
+# SDAC Bot Version 3.0.1 Official
+
+Date: 2026-06-29
+
+Version 3.0.1 is an official submission-flow hotfix.
+
+Included:
+
+- `/submit` no longer takes a category argument
+- Step 1 now shows a Discord category selector
+- Step 2 asks the user to send one normal message with required image, audio,
+  or video media and optional text
+- Step 3 shows the preview and confirm/cancel buttons
+- removed the hard guided-submission startup block for missing Manage Messages;
+  successful submissions can still post even if source-message deletion fails
+- updated command docs/help from `/submit category` to `/submit`
+
+Release channel:
+
+- `version-3.0.1` is this official hotfix
+- `latest-official` points to this build
+- `Version 3`, `3`, `v3`, and `version-3` resolve to this official channel
+
+---
+
 # SDAC Bot Version 3.0 Official
 
 Date: 2026-06-29
