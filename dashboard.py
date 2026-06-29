@@ -187,6 +187,15 @@ ROLE_LABELS = {
     "owner": "Owner",
 }
 
+LOCKOUT_SCOPE_LABELS = {
+    "games": "Games only",
+    "submissions": "Submissions only",
+    "both": "Games and submissions",
+}
+
+OWNER_OVERRIDE_USERNAME = "baytae"
+OWNER_BAN_CODE_TTL_SECONDS = 600
+
 ADMIN_ROLE_CHOICES = {
     key: value
     for key, value in ROLE_LABELS.items()
@@ -2059,6 +2068,179 @@ GAME_LIBRARY_HTML = """
                     </tr>
                 {% else %}
                     <tr><td colspan="7" class="muted">No game library items yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+USERS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Admin Users</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1120px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        input, select, button, textarea { border: 1px solid #30333b; border-radius: 7px; font-size: 15px; padding: 9px 10px; }
+        textarea { min-height: 70px; width: min(100%, 520px); }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; margin-top: 6px; }
+        .danger { background: #e45d68; color: #19080b; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin: 0 auto 20px; padding: 12px; text-align: center; }
+        .notice.error { border-color: #e45d68; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+        .stack { display: grid; gap: 8px; }
+        @media (max-width: 760px) {
+            body { padding: 12px; }
+            input, select, button, textarea { box-sizing: border-box; width: 100%; }
+            table, thead, tbody, tr, th, td { display: block; }
+            thead { display: none; }
+            tr { border-bottom: 1px solid #30333b; padding: 10px 0; }
+            th, td { border-bottom: 0; padding: 6px 0; }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Users</h1>
+    {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
+    <section class="panel">
+        <h2>Dashboard Accounts</h2>
+        <table>
+            <thead><tr><th>User</th><th>Discord</th><th>Role</th><th>Status</th><th>Promote</th><th>Ban</th></tr></thead>
+            <tbody>
+            {% for user in dashboard_users %}
+                <tr>
+                    <td><code>{{ user.username }}</code>{% if user.display_name %}<br><span class="muted">{{ user.display_name }}</span>{% endif %}</td>
+                    <td><code>{{ user.discord_user_id or '' }}</code></td>
+                    <td>{{ role_labels.get(user.role, user.role) }}</td>
+                    <td>{{ 'Banned' if user.disabled else 'Active' }}</td>
+                    <td>
+                        {% if can_promote_dashboard_user(user.role, 'moderator', user.username) or can_promote_dashboard_user(user.role, 'admin', user.username) or can_promote_dashboard_user(user.role, 'owner', user.username) %}
+                            <form method="post" class="stack">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="promote_dashboard_user">
+                                <input type="hidden" name="username" value="{{ user.username }}">
+                                <select name="role">
+                                    {% for role_key, role_label in role_labels.items() %}
+                                        {% if can_promote_dashboard_user(user.role, role_key, user.username) %}
+                                            <option value="{{ role_key }}" {% if user.role == role_key %}selected{% endif %}>{{ role_label }}</option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                                <button type="submit">Save Role</button>
+                            </form>
+                        {% else %}
+                            <span class="muted">Not allowed</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if can_ban_dashboard_user(user.role, user.username) %}
+                            <form method="post">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="ban_dashboard_user">
+                                <input type="hidden" name="username" value="{{ user.username }}">
+                                <button class="danger" type="submit">Ban</button>
+                            </form>
+                        {% elif current_admin_is_baytae_owner() and user.role == 'owner' and user.username != owner_override_username %}
+                            <form method="post" class="stack">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="request_owner_ban_code">
+                                <input type="hidden" name="username" value="{{ user.username }}">
+                                <button type="submit">Get Code</button>
+                            </form>
+                            <form method="post" class="stack">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="ban_dashboard_user">
+                                <input type="hidden" name="username" value="{{ user.username }}">
+                                <input name="owner_code" inputmode="numeric" placeholder="Owner-ban code">
+                                <button class="danger" type="submit">Ban Owner</button>
+                            </form>
+                        {% else %}
+                            <span class="muted">Not allowed</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="6" class="muted">No dashboard accounts yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    <section class="panel">
+        <h2>User Lockouts</h2>
+        <form method="post" class="stack">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="set_user_lockout">
+            <label>Server
+                <select name="guild_id">
+                    <option value="">All servers</option>
+                    {% for guild in guilds %}<option value="{{ guild.id }}">{{ guild.name }} ({{ guild.id }})</option>{% endfor %}
+                </select>
+            </label>
+            <label>Discord user ID <input name="user_id" inputmode="numeric" required></label>
+            <label>Username <input name="username" placeholder="Display name for audit rows"></label>
+            <label>Lockout
+                <select name="scope">
+                    {% for scope_key, scope_label in lockout_scope_labels.items() %}<option value="{{ scope_key }}">{{ scope_label }}</option>{% endfor %}
+                </select>
+            </label>
+            <label>Reason <textarea name="reason" placeholder="Reason shown to admins and stored in audit history"></textarea></label>
+            <button type="submit">Save Lockout</button>
+        </form>
+        <table>
+            <thead><tr><th>User</th><th>Server</th><th>Lockout</th><th>Reason</th><th>Updated</th><th>Action</th></tr></thead>
+            <tbody>
+                {% for row in restrictions %}
+                    <tr>
+                        <td>{{ row.username or row.dashboard_username or row.user_id }}<br><code>{{ row.user_id }}</code></td>
+                        <td>{{ guild_names.get(row.guild_id, row.guild_id) if row.guild_id else 'All servers' }}</td>
+                        <td>{% if row.lock_games %}Games{% endif %}{% if row.lock_games and row.lock_submissions %}, {% endif %}{% if row.lock_submissions %}Submissions{% endif %}</td>
+                        <td>{{ row.reason or '' }}</td>
+                        <td>{{ row.updated_at or row.created_at }}</td>
+                        <td>
+                            <form method="post">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="clear_user_lockout">
+                                <input type="hidden" name="restriction_id" value="{{ row.id }}">
+                                <button type="submit">Clear</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="6" class="muted">No active lockouts.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    <section class="panel">
+        <h2>Recent Discord Users</h2>
+        <table>
+            <thead><tr><th>User</th><th>Submissions</th><th>Guess Points</th><th>Last Seen</th></tr></thead>
+            <tbody>
+                {% for row in known_users %}
+                    <tr><td>{{ row.username or row.user_id }}<br><code>{{ row.user_id }}</code></td><td>{{ row.submissions or 0 }}</td><td>{{ row.guess_points or 0 }}</td><td>{{ row.last_seen_at or '' }}</td></tr>
+                {% else %}
+                    <tr><td colspan="4" class="muted">No Discord user activity recorded yet.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -6154,6 +6336,22 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS user_restrictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT DEFAULT '',
+                user_id TEXT NOT NULL,
+                username TEXT,
+                lock_games INTEGER DEFAULT 0,
+                lock_submissions INTEGER DEFAULT 0,
+                reason TEXT,
+                active INTEGER DEFAULT 1,
+                created_by TEXT,
+                created_by_name TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS setup_test_runs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 guild_id TEXT,
@@ -6745,6 +6943,14 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_dashboard_admin_users_discord_id
             ON dashboard_admin_users (discord_user_id, disabled)
+        """)
+        connection.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_user_restrictions_guild_user
+            ON user_restrictions (guild_id, user_id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_restrictions_active_scope
+            ON user_restrictions (active, guild_id, user_id)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_setup_test_runs_guild_created
@@ -8862,21 +9068,113 @@ def has_admin_role(required_role):
 
 def can_assign_dashboard_role(role):
     role = normalize_role(role)
-    if role == "owner":
+    if role in {"admin", "owner"}:
         return has_admin_role("owner")
     return has_admin_role("admin")
+
+
+def current_admin_is_baytae_owner():
+    if current_admin_username().casefold() != OWNER_OVERRIDE_USERNAME:
+        return False
+    if current_admin_role() != "owner":
+        return False
+    user = dashboard_user(current_admin_username())
+    return bool(user and normalize_role(user["role"]) == "owner" and not int(user["disabled"] or 0))
+
+
+def owner_ban_code_session_key(target_username):
+    return f"owner_ban_code:{str(target_username or '').strip().casefold()}"
+
+
+def issue_owner_ban_code(target_username):
+    code = "".join(secrets.choice("0123456789") for _ in range(6))
+    session[owner_ban_code_session_key(target_username)] = {
+        "code": code,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(
+            seconds=OWNER_BAN_CODE_TTL_SECONDS,
+        )).isoformat(),
+    }
+    return code
+
+
+def valid_owner_ban_code(target_username, code):
+    payload = session.get(owner_ban_code_session_key(target_username)) or {}
+    if not payload or str(payload.get("code") or "") != str(code or "").strip():
+        return False
+    expires_at = parse_database_datetime(payload.get("expires_at"))
+    if not expires_at or expires_at < datetime.now(timezone.utc):
+        session.pop(owner_ban_code_session_key(target_username), None)
+        return False
+    session.pop(owner_ban_code_session_key(target_username), None)
+    return True
+
+
+def can_promote_dashboard_user(target_role, new_role, target_username=""):
+    target_role = normalize_role(target_role)
+    new_role = normalize_role(new_role)
+    target_username = str(target_username or "").strip().casefold()
+    current_level = ROLE_LEVELS[current_admin_role()]
+    target_level = ROLE_LEVELS[target_role]
+    if current_level < ROLE_LEVELS["admin"]:
+        return False
+    if new_role in {"admin", "owner"}:
+        if not has_admin_role("owner"):
+            return False
+    elif not has_admin_role("admin"):
+        return False
+    if not has_admin_role("owner") and target_level >= current_level:
+        return False
+    if target_username == current_admin_username().casefold() and not has_admin_role("owner"):
+        return False
+    return True
+
+
+def can_ban_dashboard_user(target_role="user", target_username="", owner_code=""):
+    target_role = normalize_role(target_role)
+    target_username = str(target_username or "").strip().casefold()
+    current_username = current_admin_username().casefold()
+    current_level = ROLE_LEVELS[current_admin_role()]
+    target_level = ROLE_LEVELS[target_role]
+    if current_level < ROLE_LEVELS["moderator"]:
+        return False
+    if target_username and target_username == current_username:
+        return False
+    if current_level > target_level:
+        return True
+    if (
+        target_role == "owner"
+        and current_admin_is_baytae_owner()
+        and target_username != OWNER_OVERRIDE_USERNAME
+        and valid_owner_ban_code(target_username, owner_code)
+    ):
+        return True
+    return False
+
+
+def can_lockout_dashboard_target(target_role="user", target_username=""):
+    target_role = normalize_role(target_role)
+    target_username = str(target_username or "").strip().casefold()
+    current_level = ROLE_LEVELS[current_admin_role()]
+    target_level = ROLE_LEVELS[target_role]
+    if current_level < ROLE_LEVELS["moderator"]:
+        return False
+    if target_username and target_username == current_admin_username().casefold():
+        return False
+    if target_level >= ROLE_LEVELS["moderator"]:
+        return current_level > target_level
+    return True
 
 
 def can_manage_dashboard_user(target_role="user", target_username=""):
     target_role = normalize_role(target_role)
     target_username = str(target_username or "").strip().casefold()
-    if not has_admin_role("admin"):
+    current_level = ROLE_LEVELS[current_admin_role()]
+    target_level = ROLE_LEVELS[target_role]
+    if current_level < ROLE_LEVELS["admin"]:
         return False
-    if target_role == "owner" and not has_admin_role("owner"):
-        return False
-    if target_username == current_admin_username().casefold() and not has_admin_role("owner"):
-        return False
-    return True
+    if target_username == current_admin_username().casefold():
+        return has_admin_role("owner")
+    return current_level > target_level
 
 
 def parse_guild_scope(raw_value):
@@ -8975,6 +9273,74 @@ def dashboard_users():
         """).fetchall()
 
 
+def dashboard_user_by_discord_id(connection, user_id):
+    user_id = str(user_id or "").strip()
+    if not user_id:
+        return None
+    return connection.execute("""
+        SELECT username, email, display_name, discord_user_id, role, disabled,
+               guild_ids_json, created_at, updated_at, last_login_at,
+               approved_by, approved_at, notes
+        FROM dashboard_admin_users
+        WHERE discord_user_id = ?
+        LIMIT 1
+    """, (user_id,)).fetchone()
+
+
+def dashboard_user_restrictions():
+    with closing(connect_db()) as connection:
+        return connection.execute("""
+            SELECT restrictions.*, users.role AS dashboard_role,
+                   users.username AS dashboard_username
+            FROM user_restrictions AS restrictions
+            LEFT JOIN dashboard_admin_users AS users
+              ON users.discord_user_id = restrictions.user_id
+            WHERE restrictions.active = 1
+            ORDER BY restrictions.updated_at DESC, restrictions.created_at DESC,
+                     restrictions.id DESC
+        """).fetchall()
+
+
+def active_user_restriction(connection, guild_id, user_id, scope):
+    lock_column = (
+        "lock_games" if scope == "games" else "lock_submissions"
+    )
+    return connection.execute(f"""
+        SELECT *
+        FROM user_restrictions
+        WHERE active = 1
+          AND user_id = ?
+          AND (guild_id = '' OR guild_id = ?)
+          AND {lock_column} = 1
+        ORDER BY CASE WHEN guild_id = ? THEN 0 ELSE 1 END, updated_at DESC
+        LIMIT 1
+    """, (str(user_id), str(guild_id), str(guild_id))).fetchone()
+
+
+def known_discord_users(limit=100):
+    with closing(connect_db()) as connection:
+        rows = connection.execute("""
+            SELECT user_id, MAX(username) AS username, MAX(last_seen_at) AS last_seen_at,
+                   SUM(submissions) AS submissions, SUM(guess_points) AS guess_points
+            FROM (
+                SELECT user_id, username,
+                       COALESCE(created_at, submitted_at, '') AS last_seen_at,
+                       1 AS submissions, 0 AS guess_points
+                FROM submissions
+                WHERE COALESCE(user_id, '') != ''
+                UNION ALL
+                SELECT user_id, username, COALESCE(updated_at, '') AS last_seen_at,
+                       0 AS submissions, points AS guess_points
+                FROM guess_points
+                WHERE COALESCE(user_id, '') != ''
+            )
+            GROUP BY user_id
+            ORDER BY last_seen_at DESC, submissions DESC, guess_points DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+    return rows
+
+
 def notification_routes(config_data=None):
     config_data = config_data or load_config()
     guild_names = guild_name_map(config_data)
@@ -9012,6 +9378,7 @@ def admin_url(endpoint, **values):
 def admin_sidebar_links():
     links = [
         ("Submissions", "index", {}),
+        ("Users", "admin_users", {}),
         ("Settings", "admin_settings", {}),
         ("Game Library", "admin_game_library", {}),
         ("Seasons", "admin_seasons", {}),
@@ -10509,6 +10876,218 @@ def admin_game_library():
         max_text_length=max_text_length,
         notice=notice,
         selected_guild_id=selected_server_id,
+    )
+
+
+@app.route("/admin/users", methods=["GET", "POST"])
+def admin_users():
+    login_response = require_admin_login("moderator")
+    if login_response:
+        return login_response
+
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    config_data = load_config()
+    actor_id, actor_name = web_actor()
+
+    if request.method == "POST":
+        require_csrf_token()
+        action = request.form.get("action", "")
+        try:
+            with database() as connection:
+                if action == "request_owner_ban_code":
+                    username = normalize_account_username(request.form.get("username", ""))
+                    user = connection.execute("""
+                        SELECT username, role, disabled
+                        FROM dashboard_admin_users
+                        WHERE username = ?
+                    """, (username,)).fetchone()
+                    if not user or normalize_role(user["role"]) != "owner":
+                        raise ValueError("Owner account was not found.")
+                    if not current_admin_is_baytae_owner() or username == OWNER_OVERRIDE_USERNAME:
+                        abort(403)
+                    code = issue_owner_ban_code(username)
+                    notice = f"Owner-ban code for {username}: {code}. It expires in 10 minutes."
+                elif action == "ban_dashboard_user":
+                    username = normalize_account_username(request.form.get("username", ""))
+                    owner_code = request.form.get("owner_code", "")
+                    user = connection.execute("""
+                        SELECT username, role, disabled
+                        FROM dashboard_admin_users
+                        WHERE username = ?
+                    """, (username,)).fetchone()
+                    if not user:
+                        raise ValueError("Dashboard user was not found.")
+                    if not can_ban_dashboard_user(user["role"], username, owner_code):
+                        abort(403)
+                    now = utc_now_iso()
+                    connection.execute("""
+                        UPDATE dashboard_admin_users
+                        SET disabled = 1, updated_at = ?
+                        WHERE username = ?
+                    """, (now, username))
+                    add_admin_audit_log(
+                        connection,
+                        None,
+                        "dashboard_ban_user",
+                        actor_id,
+                        actor_name,
+                        "dashboard_user",
+                        username,
+                        f"Banned dashboard user {username}.",
+                    )
+                    notice = f"Dashboard user {username} banned."
+                elif action == "promote_dashboard_user":
+                    username = normalize_account_username(request.form.get("username", ""))
+                    new_role = normalize_role(request.form.get("role", "user"))
+                    user = connection.execute("""
+                        SELECT username, role, disabled
+                        FROM dashboard_admin_users
+                        WHERE username = ?
+                    """, (username,)).fetchone()
+                    if not user:
+                        raise ValueError("Dashboard user was not found.")
+                    if not can_promote_dashboard_user(user["role"], new_role, username):
+                        abort(403)
+                    now = utc_now_iso()
+                    connection.execute("""
+                        UPDATE dashboard_admin_users
+                        SET role = ?, disabled = 0, approved_by = COALESCE(approved_by, ?),
+                            approved_at = COALESCE(approved_at, ?), updated_at = ?
+                        WHERE username = ?
+                    """, (new_role, current_admin_username(), now, now, username))
+                    if username == current_admin_username().casefold():
+                        session["sdac_admin_role"] = new_role
+                    add_admin_audit_log(
+                        connection,
+                        None,
+                        "dashboard_promote_user",
+                        actor_id,
+                        actor_name,
+                        "dashboard_user",
+                        username,
+                        f"Set dashboard user {username} role to {new_role}.",
+                    )
+                    notice = f"Dashboard user {username} role saved as {new_role}."
+                elif action == "set_user_lockout":
+                    user_id = normalize_discord_user_id(request.form.get("user_id", ""))
+                    if not user_id:
+                        raise ValueError("Discord user ID is required.")
+                    guild_id = request.form.get("guild_id", "").strip()
+                    if guild_id and guild_id not in (config_data.get("guilds") or {}):
+                        raise ValueError("Unknown server selected.")
+                    if guild_id and not can_admin_access_guild(guild_id, config_data):
+                        abort(403)
+                    linked = dashboard_user_by_discord_id(connection, user_id)
+                    if linked and not can_lockout_dashboard_target(linked["role"], linked["username"]):
+                        abort(403)
+                    scope = request.form.get("scope", "both")
+                    if scope not in LOCKOUT_SCOPE_LABELS:
+                        raise ValueError("Unknown lockout scope.")
+                    lock_games = 1 if scope in {"games", "both"} else 0
+                    lock_submissions = 1 if scope in {"submissions", "both"} else 0
+                    username = request.form.get("username", "").strip()[:120]
+                    reason = request.form.get("reason", "").strip()[:500]
+                    now = utc_now_iso()
+                    connection.execute("""
+                        INSERT INTO user_restrictions (
+                            guild_id, user_id, username, lock_games,
+                            lock_submissions, reason, active, created_by,
+                            created_by_name, created_at, updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                        ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                            username = excluded.username,
+                            lock_games = excluded.lock_games,
+                            lock_submissions = excluded.lock_submissions,
+                            reason = excluded.reason,
+                            active = 1,
+                            updated_at = excluded.updated_at
+                    """, (
+                        guild_id,
+                        user_id,
+                        username,
+                        lock_games,
+                        lock_submissions,
+                        reason,
+                        str(actor_id),
+                        str(actor_name),
+                        now,
+                        now,
+                    ))
+                    add_admin_audit_log(
+                        connection,
+                        guild_id or None,
+                        "dashboard_set_user_lockout",
+                        actor_id,
+                        actor_name,
+                        "discord_user",
+                        user_id,
+                        f"Set {LOCKOUT_SCOPE_LABELS[scope]} lockout. {reason}",
+                    )
+                    notice = "User lockout saved."
+                elif action == "clear_user_lockout":
+                    restriction_id = int(request.form.get("restriction_id", "0") or 0)
+                    row = connection.execute("""
+                        SELECT restrictions.*, users.role AS dashboard_role,
+                               users.username AS dashboard_username
+                        FROM user_restrictions AS restrictions
+                        LEFT JOIN dashboard_admin_users AS users
+                          ON users.discord_user_id = restrictions.user_id
+                        WHERE restrictions.id = ?
+                    """, (restriction_id,)).fetchone()
+                    if not row:
+                        raise ValueError("Lockout was not found.")
+                    if row["guild_id"] and not can_admin_access_guild(row["guild_id"], config_data):
+                        abort(403)
+                    if row["dashboard_role"] and not can_lockout_dashboard_target(row["dashboard_role"], row["dashboard_username"]):
+                        abort(403)
+                    now = utc_now_iso()
+                    connection.execute("""
+                        UPDATE user_restrictions
+                        SET active = 0, updated_at = ?
+                        WHERE id = ?
+                    """, (now, restriction_id))
+                    add_admin_audit_log(
+                        connection,
+                        row["guild_id"] or None,
+                        "dashboard_clear_user_lockout",
+                        actor_id,
+                        actor_name,
+                        "discord_user",
+                        row["user_id"],
+                        "Cleared user lockout.",
+                    )
+                    notice = "User lockout cleared."
+                else:
+                    raise ValueError("Unknown user action.")
+        except ValueError as form_error:
+            return redirect(url_for(
+                "admin_users",
+                key=ADMIN_KEY,
+                notice=str(form_error),
+                error=1,
+            ))
+        return redirect(url_for("admin_users", key=ADMIN_KEY, notice=notice))
+
+    guild_names = guild_name_map(config_data)
+    return render_template_string(
+        USERS_HTML,
+        admin_key=ADMIN_KEY,
+        csrf_token=get_csrf_token(),
+        current_admin_is_baytae_owner=current_admin_is_baytae_owner,
+        can_ban_dashboard_user=can_ban_dashboard_user,
+        can_promote_dashboard_user=can_promote_dashboard_user,
+        dashboard_users=dashboard_users(),
+        error=error,
+        guild_names=guild_names,
+        guilds=guild_options(config_data),
+        known_users=known_discord_users(),
+        lockout_scope_labels=LOCKOUT_SCOPE_LABELS,
+        notice=notice,
+        owner_override_username=OWNER_OVERRIDE_USERNAME,
+        restrictions=dashboard_user_restrictions(),
+        role_labels=ROLE_LABELS,
     )
 
 

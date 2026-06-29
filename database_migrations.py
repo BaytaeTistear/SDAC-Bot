@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import sqlite3
 
 
-DATABASE_SCHEMA_VERSION = 14
+DATABASE_SCHEMA_VERSION = 15
 
 
 def utc_now_iso():
@@ -626,6 +626,33 @@ def migration_14_dashboard_account_discord_id(connection):
     """)
 
 
+def migration_15_user_restrictions(connection):
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS user_restrictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT DEFAULT '',
+            user_id TEXT NOT NULL,
+            username TEXT,
+            lock_games INTEGER DEFAULT 0,
+            lock_submissions INTEGER DEFAULT 0,
+            reason TEXT,
+            active INTEGER DEFAULT 1,
+            created_by TEXT,
+            created_by_name TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_user_restrictions_guild_user
+        ON user_restrictions (guild_id, user_id)
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_user_restrictions_active_scope
+        ON user_restrictions (active, guild_id, user_id)
+    """)
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -639,6 +666,7 @@ MIGRATIONS = (
     (12, migration_12_schedules_achievements_and_archives),
     (13, migration_13_dashboard_accounts),
     (14, migration_14_dashboard_account_discord_id),
+    (15, migration_15_user_restrictions),
 )
 
 

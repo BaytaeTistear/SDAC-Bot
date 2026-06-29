@@ -803,6 +803,28 @@ def database():
         connection.close()
 
 
+def active_user_restriction(connection, guild_id, user_id, scope):
+    lock_column = "lock_games" if scope == "games" else "lock_submissions"
+    return connection.execute(f"""
+        SELECT *
+        FROM user_restrictions
+        WHERE active = 1
+          AND user_id = ?
+          AND (guild_id = '' OR guild_id = ?)
+          AND {lock_column} = 1
+        ORDER BY CASE WHEN guild_id = ? THEN 0 ELSE 1 END, updated_at DESC
+        LIMIT 1
+    """, (str(user_id), str(guild_id), str(guild_id))).fetchone()
+
+
+def user_lockout_message(row, scope):
+    label = "guessing games" if scope == "games" else "submissions"
+    reason = (row["reason"] or "").strip() if row else ""
+    if reason:
+        return f"You are locked out of SDAC {label}: {reason}"
+    return f"You are locked out of SDAC {label}."
+
+
 def ensure_column(connection, table, column, definition):
     existing = {
         row["name"]
@@ -915,6 +937,22 @@ def initialize_database():
                 updated_at TEXT,
                 last_login_at TEXT,
                 guild_ids_json TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS user_restrictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT DEFAULT '',
+                user_id TEXT NOT NULL,
+                username TEXT,
+                lock_games INTEGER DEFAULT 0,
+                lock_submissions INTEGER DEFAULT 0,
+                reason TEXT,
+                active INTEGER DEFAULT 1,
+                created_by TEXT,
+                created_by_name TEXT,
+                created_at TEXT,
+                updated_at TEXT
             )
         """)
         connection.execute("""
@@ -1402,6 +1440,23 @@ def initialize_database():
             )
 
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS user_restrictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT DEFAULT '',
+                user_id TEXT NOT NULL,
+                username TEXT,
+                lock_games INTEGER DEFAULT 0,
+                lock_submissions INTEGER DEFAULT 0,
+                reason TEXT,
+                active INTEGER DEFAULT 1,
+                created_by TEXT,
+                created_by_name TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )
+        """)
+
+        connection.execute("""
             UPDATE submissions
             SET status = 'posted'
             WHERE status IS NULL OR status = ''
@@ -1545,6 +1600,14 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_dashboard_admin_users_discord_id
             ON dashboard_admin_users (discord_user_id, disabled)
+        """)
+        connection.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_user_restrictions_guild_user
+            ON user_restrictions (guild_id, user_id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_restrictions_active_scope
+            ON user_restrictions (active, guild_id, user_id)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_setup_test_runs_guild_created
@@ -7899,6 +7962,19 @@ async def submit(interaction):
             ephemeral=True,
         )
         return
+    with database() as connection:
+        restriction = active_user_restriction(
+            connection,
+            interaction.guild_id,
+            interaction.user.id,
+            "submissions",
+        )
+    if restriction:
+        await interaction.response.send_message(
+            user_lockout_message(restriction, "submissions"),
+            ephemeral=True,
+        )
+        return
     submit_channel_id = guild_config.get("submit_channel")
     if not submit_channel_id:
         await interaction.response.send_message(
@@ -9085,6 +9161,19 @@ async def guess(interaction, guess: str):
     if not feature_enabled(guild_config, "guessing_games"):
         await interaction.response.send_message(
             "Guessing games are currently disabled for this server.",
+            ephemeral=True,
+        )
+        return
+    with database() as connection:
+        restriction = active_user_restriction(
+            connection,
+            interaction.guild_id,
+            interaction.user.id,
+            "games",
+        )
+    if restriction:
+        await interaction.response.send_message(
+            user_lockout_message(restriction, "games"),
             ephemeral=True,
         )
         return

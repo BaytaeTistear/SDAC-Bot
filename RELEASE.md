@@ -1,3 +1,30 @@
+# SDAC Bot Version 3.0.3 Experimental
+
+Date: 2026-06-29
+
+Version 3.0.3 is an experimental admin user-control build.
+
+Included:
+
+- new `/admin/users` dashboard tab for account moderation and user controls
+- role-aware dashboard promotion rules: admins and owners can promote users up
+  to moderator, while only owners can promote users to admin or owner
+- dashboard ban rules now enforce role hierarchy so admins and moderators can
+  only ban users below their own role
+- the `baytae` owner account can ban another owner only after entering a
+  server-generated confirmation code
+- Discord user lockouts for guessing games, submissions, or both
+- `/submit` and `/guess` now block users with active dashboard lockouts
+- schema v15 with the `user_restrictions` table
+
+Release channel:
+
+- `version-3.0.3` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until this build is validated
+
+---
+
 # SDAC Bot Version 3.0.2 Official
 
 Date: 2026-06-29
