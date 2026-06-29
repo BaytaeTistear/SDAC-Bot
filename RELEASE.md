@@ -1,3 +1,25 @@
+# SDAC Bot Version 3.0.4 Experimental
+
+Date: 2026-06-29
+
+Version 3.0.4 is an experimental dashboard navigation update.
+
+Included:
+
+- admin sidebar is now split into three collapsible sections
+- User section contains public/user-facing dashboard links
+- Moderation section contains moderator-and-up moderation workflows
+- Owner section is visible only to owner accounts
+- sidebar links now escape generated labels and URLs before injection
+
+Release channel:
+
+- `version-3.0.4` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3/3.0.4 line is validated
+
+---
+
 # SDAC Bot Version 3.0.3 Experimental
 
 Date: 2026-06-29

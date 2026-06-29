@@ -1,5 +1,6 @@
 import csv
 import gzip
+import html
 import hashlib
 import io
 import math
@@ -9375,40 +9376,84 @@ def admin_url(endpoint, **values):
     return url_for(endpoint, **values)
 
 
-def admin_sidebar_links():
-    links = [
-        ("Submissions", "index", {}),
-        ("Users", "admin_users", {}),
-        ("Settings", "admin_settings", {}),
-        ("Game Library", "admin_game_library", {}),
-        ("Seasons", "admin_seasons", {}),
-        ("Approvals", "admin_approvals", {}),
-        ("Moderation", "admin_moderation", {}),
-        ("Analytics", "admin_analytics", {}),
-        ("Monthly Report", "admin_monthly_report", {}),
-        ("Media", "admin_media", {}),
-        ("Jobs", "admin_jobs", {}),
-        ("Maintenance", "admin_maintenance", {}),
-        ("Server Health", "admin_server_health_cards", {}),
-        ("Production", "admin_production_health", {}),
-        ("Install Doctor", "admin_install_doctor", {}),
-        ("Releases", "admin_releases", {}),
-        ("Privacy", "admin_privacy", {}),
-        ("Audit", "admin_audit", {}),
-        ("Owner Portal", "admin_owner_portal", {}),
-        ("Onboarding", "admin_onboarding", {}),
+def admin_sidebar_sections():
+    sections = [
+        {
+            "label": "User",
+            "required_role": "moderator",
+            "links": [
+                ("Submissions", "index", {}),
+                ("My Submissions", "my_submissions", {}),
+                ("Guessing", "guessing_leaderboard", {}),
+                ("Servers", "servers", {}),
+                ("Stats", "public_stats", {}),
+                ("Achievements", "achievements", {}),
+            ],
+        },
+        {
+            "label": "Moderation",
+            "required_role": "moderator",
+            "links": [
+                ("Users", "admin_users", {}),
+                ("Moderation", "admin_moderation", {}),
+                ("Approvals", "admin_approvals", {}),
+                ("Audit", "admin_audit", {}),
+                ("Game Library", "admin_game_library", {}),
+                ("Seasons", "admin_seasons", {}),
+                ("Media", "admin_media", {}),
+                ("Jobs", "admin_jobs", {}),
+                ("Analytics", "admin_analytics", {}),
+                ("Monthly Report", "admin_monthly_report", {}),
+            ],
+        },
+        {
+            "label": "Owner",
+            "required_role": "owner",
+            "links": [
+                ("Settings", "admin_settings", {}),
+                ("Maintenance", "admin_maintenance", {}),
+                ("Server Health", "admin_server_health_cards", {}),
+                ("Production", "admin_production_health", {}),
+                ("Install Doctor", "admin_install_doctor", {}),
+                ("Releases", "admin_releases", {}),
+                ("Privacy", "admin_privacy", {}),
+                ("Owner Portal", "admin_owner_portal", {}),
+                ("Onboarding", "admin_onboarding", {}),
+            ],
+        },
     ]
-    rendered = []
-    for label, endpoint, values in links:
-        try:
-            rendered.append({
-                "label": label,
-                "url": admin_url(endpoint, **values),
-                "active": request.endpoint == endpoint,
-            })
-        except Exception:
+    rendered_sections = []
+    for section in sections:
+        if not has_admin_role(section["required_role"]):
             continue
-    return rendered
+        rendered_links = []
+        section_active = False
+        for label, endpoint, values in section["links"]:
+            try:
+                active = request.endpoint == endpoint
+                section_active = section_active or active
+                rendered_links.append({
+                    "label": label,
+                    "url": admin_url(endpoint, **values),
+                    "active": active,
+                })
+            except Exception:
+                continue
+        if rendered_links:
+            rendered_sections.append({
+                "label": section["label"],
+                "active": section_active,
+                "links": rendered_links,
+            })
+    return rendered_sections
+
+
+def admin_sidebar_links():
+    return [
+        link
+        for section in admin_sidebar_sections()
+        for link in section["links"]
+    ]
 
 
 def should_render_admin_sidebar():
@@ -9434,12 +9479,22 @@ def should_render_admin_sidebar():
 
 
 def admin_sidebar_html():
-    items = []
-    for link in admin_sidebar_links():
-        active_class = " active" if link["active"] else ""
-        items.append(
-            f'<a class="sdac-sidebar-link{active_class}" href="{link["url"]}">'
-            f'{link["label"]}</a>'
+    groups = []
+    for section in admin_sidebar_sections():
+        links = []
+        for link in section["links"]:
+            active_class = " active" if link["active"] else ""
+            links.append(
+                f'<a class="sdac-sidebar-link{active_class}" '
+                f'href="{html.escape(link["url"], quote=True)}">'
+                f'{html.escape(link["label"])}</a>'
+            )
+        open_attr = " open" if section["active"] else ""
+        groups.append(
+            f'<details class="sdac-sidebar-section"{open_attr}>'
+            f'<summary>{html.escape(section["label"])}</summary>'
+            f'<div class="sdac-sidebar-section-links">{"".join(links)}</div>'
+            f'</details>'
         )
     logout_url = admin_url("admin_logout")
     account_url = (
@@ -9452,11 +9507,11 @@ def admin_sidebar_html():
     return f"""
 <aside class="sdac-sidebar">
     <div class="sdac-sidebar-brand">SDAC Admin</div>
-    <div class="sdac-sidebar-user">{current_admin_username()}<br><span>{role}</span></div>
-    <nav>{"".join(items)}</nav>
+    <div class="sdac-sidebar-user">{html.escape(current_admin_username())}<br><span>{html.escape(role)}</span></div>
+    <nav>{"".join(groups)}</nav>
     <div class="sdac-sidebar-footer">
-        <a class="sdac-sidebar-link" href="{account_url}">{account_label}</a>
-        <a class="sdac-sidebar-link" href="{logout_url}">Logout</a>
+        <a class="sdac-sidebar-link" href="{html.escape(account_url, quote=True)}">{html.escape(account_label)}</a>
+        <a class="sdac-sidebar-link" href="{html.escape(logout_url, quote=True)}">Logout</a>
     </div>
 </aside>
 """
@@ -9491,6 +9546,40 @@ body.sdac-has-sidebar {
 }
 .sdac-sidebar-user span {
     color: #93c5fd;
+}
+.sdac-sidebar-section {
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 12px;
+    margin: 8px 0;
+    overflow: hidden;
+}
+.sdac-sidebar-section summary {
+    color: #bfdbfe;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    list-style: none;
+    padding: 10px 11px;
+    text-transform: uppercase;
+}
+.sdac-sidebar-section summary::-webkit-details-marker {
+    display: none;
+}
+.sdac-sidebar-section summary::after {
+    content: "+";
+    float: right;
+    font-size: 1rem;
+    line-height: 0.85;
+}
+.sdac-sidebar-section[open] summary::after {
+    content: "-";
+}
+.sdac-sidebar-section[open] summary {
+    background: rgba(96, 165, 250, 0.12);
+}
+.sdac-sidebar-section-links {
+    padding: 4px 6px 8px;
 }
 .sdac-sidebar-link {
     display: block;
