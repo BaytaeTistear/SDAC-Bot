@@ -1,3 +1,33 @@
+# SDAC Bot Version 3.0.2 Official
+
+Date: 2026-06-29
+
+Version 3.0.2 is an official dashboard account and sidebar completion update.
+
+Included:
+
+- admin sidebar now appears on admin-key dashboard pages outside `/admin/*`,
+  including the main submissions gallery, audit page, user profiles, and
+  My Submissions
+- public gallery navigation now shows account login, registration, account, and
+  logout links based on user login state
+- dashboard accounts can store a linked Discord user ID
+- account registration, admin Settings, and the server CLI can set Discord user
+  IDs for accounts
+- `/me` and My Submissions now use the linked Discord user ID from the logged-in
+  account instead of requiring users to manually search every time
+- `/admin/login` now also creates the matching account session for local
+  dashboard accounts, so sidebar account links work immediately
+- disabled user accounts are logged out when they try to open `/account`
+
+Release channel:
+
+- `version-3.0.2` is this official dashboard completion update
+- `latest-official` points to this build
+- `Version 3`, `3`, `v3`, and `version-3` resolve to this official channel
+
+---
+
 # SDAC Bot Version 3.0.1 Official
 
 Date: 2026-06-29

@@ -906,6 +906,7 @@ def initialize_database():
                 role TEXT NOT NULL DEFAULT 'moderator',
                 disabled INTEGER DEFAULT 0,
                 email_verified INTEGER DEFAULT 0,
+                discord_user_id TEXT,
                 created_ip TEXT,
                 approved_by TEXT,
                 approved_at TEXT,
@@ -1387,6 +1388,7 @@ def initialize_database():
             "email": "TEXT",
             "display_name": "TEXT",
             "email_verified": "INTEGER DEFAULT 0",
+            "discord_user_id": "TEXT",
             "created_ip": "TEXT",
             "approved_by": "TEXT",
             "approved_at": "TEXT",
@@ -1539,6 +1541,10 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_dashboard_admin_users_email
             ON dashboard_admin_users (email, disabled)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_dashboard_admin_users_discord_id
+            ON dashboard_admin_users (discord_user_id, disabled)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_setup_test_runs_guild_created

@@ -217,8 +217,12 @@ Create an admin with an email:
 venv/bin/python scripts/reset_admin_login.py \
   --username alex \
   --email alex@example.com \
+  --discord-user-id 123456789012345678 \
   --role admin
 ```
+
+The Discord user ID link is optional, but it lets `/me` and the dashboard
+account page automatically show that user's submissions after login.
 
 List, disable, enable, or delete accounts:
 

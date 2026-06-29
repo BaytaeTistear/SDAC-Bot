@@ -531,6 +531,13 @@ HTML = """
         <a href="{{ url_for('setup_guide') }}">Setup guide</a>
         <a href="{{ url_for('guessing_leaderboard', key=admin_key if is_admin else None) }}">Guessing leaderboard</a>
         <a href="{{ url_for('achievements', key=admin_key if is_admin else None) }}">Achievements</a>
+        {% if account_logged_in %}
+            <a href="{{ url_for('account_home') }}">Account: {{ account_username }}</a>
+            <a href="{{ url_for('account_logout') }}">Log out</a>
+        {% else %}
+            <a href="{{ url_for('account_login') }}">Log in</a>
+            <a href="{{ url_for('account_register') }}">Create account</a>
+        {% endif %}
         {% if is_admin %}
             <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
             <a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a>
@@ -869,6 +876,8 @@ ACCOUNT_REGISTER_HTML = """
         <input id="email" name="email" type="email" value="{{ email }}" maxlength="254" required>
         <label for="username">Username <span class="muted">(optional)</span></label>
         <input id="username" name="username" value="{{ username }}" maxlength="40" placeholder="Leave blank to derive from email">
+        <label for="discord_user_id">Discord User ID <span class="muted">(optional)</span></label>
+        <input id="discord_user_id" name="discord_user_id" value="{{ discord_user_id }}" inputmode="numeric" placeholder="Needed for My Submissions">
         <label for="password">Password</label>
         <input id="password" name="password" type="password" minlength="10" required>
         <label for="confirm_password">Confirm Password</label>
@@ -954,6 +963,7 @@ ACCOUNT_HOME_HTML = """
             <tr><th>Username</th><td><code>{{ account.username }}</code></td></tr>
             <tr><th>Email</th><td>{{ account.email or "Not set" }}</td></tr>
             <tr><th>Display name</th><td>{{ account.display_name or account.username }}</td></tr>
+            <tr><th>Discord user ID</th><td>{{ account.discord_user_id or "Not linked" }}</td></tr>
             <tr><th>Role</th><td>{{ role_labels.get(account.role, account.role) }}</td></tr>
             <tr><th>Status</th><td>{{ "Disabled" if account.disabled else "Active" }}</td></tr>
         </tbody>
@@ -961,7 +971,11 @@ ACCOUNT_HOME_HTML = """
     {% if can_open_admin %}
         <p><a href="{{ url_for('admin_settings', key=admin_key) }}">Open admin dashboard</a></p>
     {% endif %}
-    <p><a href="{{ url_for('index') }}">Submissions</a> &middot; <a href="{{ url_for('account_logout') }}">Log out</a></p>
+    <p>
+        <a href="{{ url_for('my_submissions') }}">My submissions</a>
+        &middot; <a href="{{ url_for('index') }}">Gallery</a>
+        &middot; <a href="{{ url_for('account_logout') }}">Log out</a>
+    </p>
 </main>
 </body>
 </html>
@@ -2176,6 +2190,7 @@ SETTINGS_HTML = """
                         <tr><th>Username</th><td><input name="username" placeholder="moderator-name"></td></tr>
                         <tr><th>Email</th><td><input name="email" type="email" placeholder="optional@example.com"></td></tr>
                         <tr><th>Display name</th><td><input name="display_name" placeholder="Optional display name"></td></tr>
+                        <tr><th>Discord user ID</th><td><input name="discord_user_id" inputmode="numeric" placeholder="Optional, links My Submissions"></td></tr>
                         <tr><th>Password</th><td><input name="password" type="password"></td></tr>
                         <tr><th>Role</th><td>
                             <select name="role">
@@ -2193,12 +2208,13 @@ SETTINGS_HTML = """
             <p class="muted">Only admins can create, promote, update, or disable dashboard users.</p>
         {% endif %}
         <table>
-            <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Scope</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
+            <thead><tr><th>User</th><th>Email</th><th>Discord ID</th><th>Role</th><th>Scope</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
             <tbody>
                 {% for user in dashboard_users %}
                     <tr>
                         <td><code>{{ user.username }}</code></td>
                         <td>{{ user.email or "" }}{% if user.display_name %}<br><span class="muted">{{ user.display_name }}</span>{% endif %}</td>
+                        <td><code>{{ user.discord_user_id or "" }}</code></td>
                         <td>{{ role_labels.get(user.role, user.role) }}</td>
                         <td>
                             {% set scope = parse_guild_scope(user.guild_ids_json) %}
@@ -2220,6 +2236,7 @@ SETTINGS_HTML = """
                                     </select>
                                     <input name="email" type="email" value="{{ user.email or '' }}" placeholder="Email optional">
                                     <input name="display_name" value="{{ user.display_name or '' }}" placeholder="Display name">
+                                    <input name="discord_user_id" value="{{ user.discord_user_id or '' }}" placeholder="Discord user ID">
                                     <input name="guild_ids" value="{{ parse_guild_scope(user.guild_ids_json)|join(' ') }}" placeholder="Server IDs or blank for all">
                                     <input name="password" type="password" placeholder="New password optional">
                                     <button type="submit">Update</button>
@@ -2237,7 +2254,7 @@ SETTINGS_HTML = """
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="7" class="muted">No dashboard accounts yet. Create the first owner with <code>python scripts/reset_admin_login.py --username owner --role owner</code>.</td></tr>
+                    <tr><td colspan="8" class="muted">No dashboard accounts yet. Create the first owner with <code>python scripts/reset_admin_login.py --username owner --role owner</code>.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -6125,6 +6142,7 @@ def initialize_database():
                 role TEXT NOT NULL DEFAULT 'moderator',
                 disabled INTEGER DEFAULT 0,
                 email_verified INTEGER DEFAULT 0,
+                discord_user_id TEXT,
                 created_ip TEXT,
                 approved_by TEXT,
                 approved_at TEXT,
@@ -6593,6 +6611,7 @@ def initialize_database():
             "email": "TEXT",
             "display_name": "TEXT",
             "email_verified": "INTEGER DEFAULT 0",
+            "discord_user_id": "TEXT",
             "created_ip": "TEXT",
             "approved_by": "TEXT",
             "approved_at": "TEXT",
@@ -6722,6 +6741,10 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_dashboard_admin_users_email
             ON dashboard_admin_users (email, disabled)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_dashboard_admin_users_discord_id
+            ON dashboard_admin_users (discord_user_id, disabled)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_setup_test_runs_guild_created
@@ -8777,6 +8800,15 @@ def normalize_account_username(username, email=""):
     return value
 
 
+def normalize_discord_user_id(value):
+    value = str(value or "").strip()
+    if not value:
+        return ""
+    if not value.isdigit() or len(value) < 15 or len(value) > 25:
+        raise ValueError("Discord user ID must be numeric.")
+    return value
+
+
 def unique_account_username(connection, preferred):
     base = preferred[:36].strip("-._") or "user"
     candidate = base
@@ -8815,6 +8847,13 @@ def current_admin_username():
 
 def current_admin_role():
     return normalize_role(session.get("sdac_admin_role") or "moderator")
+
+
+def safe_next_url(value, fallback="/"):
+    value = str(value or "").strip()
+    if value.startswith("/") and not value.startswith("//"):
+        return value
+    return fallback
 
 
 def has_admin_role(required_role):
@@ -8893,8 +8932,8 @@ def dashboard_user(username):
         return None
     with closing(connect_db()) as connection:
         return connection.execute("""
-            SELECT username, email, display_name, password_hash, role, disabled,
-                   guild_ids_json, last_login_at
+            SELECT username, email, display_name, discord_user_id,
+                   password_hash, role, disabled, guild_ids_json, last_login_at
             FROM dashboard_admin_users
             WHERE username = ?
             LIMIT 1
@@ -8907,8 +8946,8 @@ def dashboard_user_by_login(identifier):
         return None
     with closing(connect_db()) as connection:
         return connection.execute("""
-            SELECT username, email, display_name, password_hash, role, disabled,
-                   guild_ids_json, last_login_at
+            SELECT username, email, display_name, discord_user_id,
+                   password_hash, role, disabled, guild_ids_json, last_login_at
             FROM dashboard_admin_users
             WHERE username = ?
                OR lower(COALESCE(email, '')) = ?
@@ -8928,7 +8967,7 @@ def dashboard_user_count():
 def dashboard_users():
     with closing(connect_db()) as connection:
         return connection.execute("""
-            SELECT username, email, display_name, role, disabled,
+            SELECT username, email, display_name, discord_user_id, role, disabled,
                    guild_ids_json, created_at, updated_at, last_login_at,
                    approved_by, approved_at, notes
             FROM dashboard_admin_users
@@ -9005,6 +9044,28 @@ def admin_sidebar_links():
     return rendered
 
 
+def should_render_admin_sidebar():
+    if not is_admin_logged_in():
+        return False
+    if request.endpoint in {
+        "admin_login",
+        "admin_logout",
+        "admin_oauth_start",
+        "admin_oauth_callback",
+    }:
+        return False
+    if request.path.startswith("/admin/"):
+        return True
+    if request.endpoint in {
+        "index",
+        "audit_log",
+        "my_submissions",
+        "user_profile",
+    } and request.args.get("key") == ADMIN_KEY:
+        return True
+    return False
+
+
 def admin_sidebar_html():
     items = []
     for link in admin_sidebar_links():
@@ -9014,7 +9075,12 @@ def admin_sidebar_html():
             f'{link["label"]}</a>'
         )
     logout_url = admin_url("admin_logout")
-    account_url = url_for("account_home", key=ADMIN_KEY)
+    account_url = (
+        url_for("account_home", key=ADMIN_KEY)
+        if is_account_logged_in()
+        else url_for("account_login", next=request.full_path)
+    )
+    account_label = "My Account" if is_account_logged_in() else "Account Login"
     role = ROLE_LABELS.get(current_admin_role(), current_admin_role().title())
     return f"""
 <aside class="sdac-sidebar">
@@ -9022,7 +9088,7 @@ def admin_sidebar_html():
     <div class="sdac-sidebar-user">{current_admin_username()}<br><span>{role}</span></div>
     <nav>{"".join(items)}</nav>
     <div class="sdac-sidebar-footer">
-        <a class="sdac-sidebar-link" href="{account_url}">My Account</a>
+        <a class="sdac-sidebar-link" href="{account_url}">{account_label}</a>
         <a class="sdac-sidebar-link" href="{logout_url}">Logout</a>
     </div>
 </aside>
@@ -9101,9 +9167,7 @@ def inject_admin_sidebar(response):
     if (
         response.status_code != 200
         or response.direct_passthrough
-        or not request.path.startswith("/admin/")
-        or request.endpoint in {"admin_login", "admin_logout", "admin_oauth_start", "admin_oauth_callback"}
-        or not is_admin_logged_in()
+        or not should_render_admin_sidebar()
         or not response.mimetype.startswith("text/html")
     ):
         return response
@@ -9554,10 +9618,10 @@ def admin_login():
     if not has_valid_key():
         abort(403)
 
-    next_url = request.values.get("next") or url_for(
+    next_url = safe_next_url(request.values.get("next"), url_for(
         "index",
         key=ADMIN_KEY,
-    )
+    ))
     error = request.args.get("error", "")
     username = request.values.get("username", "").strip()
 
@@ -9594,6 +9658,9 @@ def admin_login():
                 session["sdac_admin_username"] = user["username"]
                 session["sdac_admin_role"] = role
                 session["sdac_admin_auth"] = "password"
+                session["sdac_account_username"] = user["username"]
+                session["sdac_account_role"] = role
+                session["sdac_discord_user_id"] = user["discord_user_id"] or ""
                 session["sdac_admin_guild_ids"] = (
                     parse_guild_scope(user["guild_ids_json"])
                     if user
@@ -9654,14 +9721,17 @@ def account_register():
     error = request.args.get("error") == "1"
     email = request.values.get("email", "").strip()
     username = request.values.get("username", "").strip()
+    discord_user_id = request.values.get("discord_user_id", "").strip()
     if request.method == "POST":
         require_csrf_token()
         email = request.form.get("email", "")
         username = request.form.get("username", "")
+        discord_user_id = request.form.get("discord_user_id", "")
         password = request.form.get("password", "")
         confirm_password = request.form.get("confirm_password", "")
         try:
             normalized_email = normalize_email(email)
+            normalized_discord_user_id = normalize_discord_user_id(discord_user_id)
             preferred_username = normalize_account_username(
                 username,
                 normalized_email,
@@ -9680,21 +9750,31 @@ def account_register():
                 """, (normalized_email,)).fetchone()
                 if existing_email:
                     raise ValueError("An account with that email already exists.")
+                if normalized_discord_user_id:
+                    existing_discord_id = connection.execute("""
+                        SELECT 1
+                        FROM dashboard_admin_users
+                        WHERE discord_user_id = ?
+                        LIMIT 1
+                    """, (normalized_discord_user_id,)).fetchone()
+                    if existing_discord_id:
+                        raise ValueError("That Discord user ID is already linked.")
                 account_username = unique_account_username(
                     connection,
                     preferred_username,
                 )
                 connection.execute("""
                     INSERT INTO dashboard_admin_users (
-                        username, email, display_name, password_hash, role,
-                        disabled, email_verified, created_ip, created_at,
-                        updated_at, guild_ids_json
+                        username, email, display_name, discord_user_id,
+                        password_hash, role, disabled, email_verified,
+                        created_ip, created_at, updated_at, guild_ids_json
                     )
-                    VALUES (?, ?, ?, ?, 'user', 0, 0, ?, ?, ?, '[]')
+                    VALUES (?, ?, ?, ?, ?, 'user', 0, 0, ?, ?, ?, '[]')
                 """, (
                     account_username,
                     normalized_email,
                     (username or account_username).strip()[:80],
+                    normalized_discord_user_id,
                     generate_password_hash(password),
                     request.remote_addr or "",
                     now,
@@ -9712,6 +9792,7 @@ def account_register():
                 )
             session["sdac_account_username"] = account_username
             session["sdac_account_role"] = "user"
+            session["sdac_discord_user_id"] = normalized_discord_user_id
             return redirect(url_for(
                 "account_home",
                 notice="Account created.",
@@ -9722,6 +9803,7 @@ def account_register():
     return render_template_string(
         ACCOUNT_REGISTER_HTML,
         csrf_token=get_csrf_token(),
+        discord_user_id=discord_user_id,
         email=email,
         error=error,
         notice=notice,
@@ -9733,7 +9815,7 @@ def account_register():
 def account_login():
     notice = request.args.get("notice", "")
     error = request.args.get("error") == "1"
-    next_url = request.values.get("next") or url_for("account_home")
+    next_url = safe_next_url(request.values.get("next"), url_for("account_home"))
     identifier = request.values.get("identifier", "").strip()
     if request.method == "POST":
         require_csrf_token()
@@ -9753,6 +9835,7 @@ def account_login():
                 clear_login_failures(remote_key)
                 session["sdac_account_username"] = account["username"]
                 session["sdac_account_role"] = normalize_role(account["role"])
+                session["sdac_discord_user_id"] = account["discord_user_id"] or ""
                 with database() as connection:
                     connection.execute("""
                         UPDATE dashboard_admin_users
@@ -9812,8 +9895,10 @@ def account_home():
             next=request.full_path,
         ))
     account = dashboard_user(current_account_username())
-    if not account:
+    if not account or int(account["disabled"] or 0):
         session.pop("sdac_account_username", None)
+        session.pop("sdac_account_role", None)
+        session.pop("sdac_discord_user_id", None)
         return redirect(url_for(
             "account_login",
             notice="Please log in again.",
@@ -10449,11 +10534,13 @@ def admin_settings():
                 abort(403)
             raw_username = request.form.get("username", "")
             raw_email = request.form.get("email", "")
+            raw_discord_user_id = request.form.get("discord_user_id", "")
             display_name = request.form.get("display_name", "").strip()[:120]
             role = normalize_role(request.form.get("role", "user"))
             password = request.form.get("password", "")
             try:
                 email = normalize_email(raw_email)
+                discord_user_id = normalize_discord_user_id(raw_discord_user_id)
                 username = normalize_account_username(raw_username, email)
                 guild_scope = parse_guild_scope(request.form.get("guild_ids", ""))
             except ValueError as form_error:
@@ -10492,16 +10579,33 @@ def admin_settings():
                             notice="That email address already belongs to another account.",
                             error=1,
                         ))
+                    existing_discord_id = None
+                    if discord_user_id:
+                        existing_discord_id = connection.execute("""
+                            SELECT username
+                            FROM dashboard_admin_users
+                            WHERE discord_user_id = ?
+                              AND username != ?
+                            LIMIT 1
+                        """, (discord_user_id, username)).fetchone()
+                    if existing_discord_id:
+                        return redirect(url_for(
+                            "admin_settings",
+                            key=ADMIN_KEY,
+                            notice="That Discord user ID already belongs to another account.",
+                            error=1,
+                        ))
                     connection.execute("""
                         INSERT INTO dashboard_admin_users (
-                            username, email, display_name, password_hash, role,
-                            disabled, created_at, updated_at, guild_ids_json,
-                            approved_by, approved_at
+                            username, email, display_name, discord_user_id,
+                            password_hash, role, disabled, created_at,
+                            updated_at, guild_ids_json, approved_by, approved_at
                         )
-                        VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
                         ON CONFLICT(username) DO UPDATE SET
                             email = excluded.email,
                             display_name = excluded.display_name,
+                            discord_user_id = excluded.discord_user_id,
                             password_hash = excluded.password_hash,
                             role = excluded.role,
                             disabled = 0,
@@ -10513,6 +10617,7 @@ def admin_settings():
                         username,
                         email,
                         display_name,
+                        discord_user_id,
                         generate_password_hash(password),
                         role,
                         now,
@@ -10555,11 +10660,28 @@ def admin_settings():
                             notice="That email address already belongs to another account.",
                             error=1,
                         ))
+                    existing_discord_id = None
+                    if discord_user_id:
+                        existing_discord_id = connection.execute("""
+                            SELECT username
+                            FROM dashboard_admin_users
+                            WHERE discord_user_id = ?
+                              AND username != ?
+                            LIMIT 1
+                        """, (discord_user_id, username)).fetchone()
+                    if existing_discord_id:
+                        return redirect(url_for(
+                            "admin_settings",
+                            key=ADMIN_KEY,
+                            notice="That Discord user ID already belongs to another account.",
+                            error=1,
+                        ))
                     if password:
                         connection.execute("""
                             UPDATE dashboard_admin_users
-                            SET email = ?, display_name = ?, password_hash = ?,
-                                role = ?, guild_ids_json = ?, disabled = 0,
+                            SET email = ?, display_name = ?, discord_user_id = ?,
+                                password_hash = ?, role = ?, guild_ids_json = ?,
+                                disabled = 0,
                                 approved_by = COALESCE(approved_by, ?),
                                 approved_at = COALESCE(approved_at, ?),
                                 updated_at = ?
@@ -10567,6 +10689,7 @@ def admin_settings():
                         """, (
                             email,
                             display_name,
+                            discord_user_id,
                             generate_password_hash(password),
                             role,
                             guild_scope_json,
@@ -10578,8 +10701,8 @@ def admin_settings():
                     else:
                         connection.execute("""
                             UPDATE dashboard_admin_users
-                            SET email = ?, display_name = ?, role = ?,
-                                guild_ids_json = ?, disabled = 0,
+                            SET email = ?, display_name = ?, discord_user_id = ?,
+                                role = ?, guild_ids_json = ?, disabled = 0,
                                 approved_by = COALESCE(approved_by, ?),
                                 approved_at = COALESCE(approved_at, ?),
                                 updated_at = ?
@@ -10587,6 +10710,7 @@ def admin_settings():
                         """, (
                             email,
                             display_name,
+                            discord_user_id,
                             role,
                             guild_scope_json,
                             current_admin_username(),
@@ -10595,6 +10719,12 @@ def admin_settings():
                             username,
                         ))
                     message = f"Dashboard user {username} updated."
+                    if username == current_account_username().casefold():
+                        session["sdac_account_role"] = role
+                        session["sdac_discord_user_id"] = discord_user_id
+                    if username == current_admin_username().casefold():
+                        session["sdac_admin_role"] = role
+                        session["sdac_admin_guild_ids"] = guild_scope
                 else:
                     user = connection.execute("""
                         SELECT username, role
@@ -12559,6 +12689,8 @@ def index():
 
     rendered = render_template_string(
         HTML,
+        account_logged_in=is_account_logged_in(),
+        account_username=current_account_username(),
         admin_key=ADMIN_KEY,
         categories=categories,
         error=error,
@@ -12797,6 +12929,10 @@ def my_submissions():
         request.args.get("q", "").strip()
         or session.get("sdac_discord_user_id", "")
     )
+    if not search_query and is_account_logged_in():
+        account = dashboard_user(current_account_username())
+        if account and account["discord_user_id"]:
+            search_query = account["discord_user_id"]
     server_options = guild_options(config_data, public_only=not is_admin)
     guild_names = guild_name_map(config_data)
     selected_server_id = selected_guild_id(server_options)
