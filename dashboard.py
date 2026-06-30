@@ -10102,7 +10102,8 @@ def admin_sidebar_html():
             '<button type="submit">Open</button></form>'
         )
     return f"""
-<aside class="sdac-sidebar">
+<button class="sdac-sidebar-toggle" type="button" aria-controls="sdac-sidebar" aria-expanded="true" onclick="sdacToggleSidebar()">Menu</button>
+<aside class="sdac-sidebar" id="sdac-sidebar">
     <div class="sdac-sidebar-brand">{html.escape(brand)}</div>
     <div class="sdac-sidebar-user">{html.escape(username)}<br><span>{html.escape(role)}</span></div>
     {switcher}
@@ -10115,8 +10116,26 @@ def admin_sidebar_html():
         {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_logout"), quote=True) + '">Logout</a>') if is_account_logged_in() and not is_admin_logged_in() else ''}
     </div>
 </aside>
+<script>
+(function () {{
+    var key = "sdacSidebarCollapsed";
+    var collapsed = false;
+    try {{ collapsed = localStorage.getItem(key) === "1"; }} catch (error) {{ collapsed = false; }}
+    if (collapsed) {{ document.body.classList.add("sdac-sidebar-collapsed"); }}
+    window.sdacToggleSidebar = function () {{
+        var isMobile = window.matchMedia("(max-width: 900px)").matches;
+        if (isMobile) {{
+            document.body.classList.toggle("sdac-sidebar-open");
+            return;
+        }}
+        document.body.classList.toggle("sdac-sidebar-collapsed");
+        try {{
+            localStorage.setItem(key, document.body.classList.contains("sdac-sidebar-collapsed") ? "1" : "0");
+        }} catch (error) {{}}
+    }};
+}}());
+</script>
 """
-
 
 SIDEBAR_STYLE = """
 <style id="sdac-sidebar-style">
@@ -10143,7 +10162,8 @@ body.sdac-theme::before {
     pointer-events: none;
     z-index: -1;
 }
-body.sdac-has-sidebar { padding-left: 280px !important; }
+body.sdac-has-sidebar { padding-left: 280px !important; transition: padding-left .18s ease; }
+body.sdac-has-sidebar.sdac-sidebar-collapsed { padding-left: 0 !important; }
 body.sdac-has-sidebar main { max-width: 1220px !important; width: min(100%, 1220px) !important; }
 body.sdac-has-sidebar h1, body.sdac-has-sidebar h2 { text-align: left !important; }
 body.sdac-has-sidebar a { color: var(--sdac-secondary) !important; }
@@ -10154,17 +10174,39 @@ body.sdac-has-sidebar .section, body.sdac-has-sidebar table, body.sdac-has-sideb
     border-color: var(--sdac-border) !important;
     box-shadow: 0 18px 48px rgba(2, 6, 23, .24);
 }
+.sdac-sidebar-toggle {
+    position: fixed;
+    top: 14px;
+    left: 276px;
+    z-index: 1002;
+    border: 1px solid var(--sdac-border);
+    border-radius: 8px;
+    background: var(--sdac-primary);
+    color: #fff;
+    cursor: pointer;
+    font-weight: 850;
+    padding: 8px 10px;
+    transition: left .18s ease;
+}
 .sdac-sidebar {
     position: fixed;
     inset: 0 auto 0 0;
+    box-sizing: border-box;
     width: 260px;
+    max-width: calc(100vw - 24px);
+    overflow-x: hidden;
     overflow-y: auto;
     background: linear-gradient(180deg, var(--sdac-sidebar-bg), color-mix(in srgb, var(--sdac-sidebar-bg) 88%, #020617));
     color: var(--sdac-text);
     padding: 22px 16px;
     box-shadow: 12px 0 34px rgba(2, 6, 23, 0.34);
-    z-index: 1000;
+    transform: translateX(0);
+    transition: transform .18s ease;
+    z-index: 1001;
 }
+body.sdac-sidebar-collapsed .sdac-sidebar { transform: translateX(-105%); }
+body.sdac-sidebar-collapsed .sdac-sidebar-toggle { left: 14px; }
+.sdac-sidebar nav { display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; gap: 0 !important; justify-content: flex-start !important; margin: 0 !important; text-align: left !important; }
 .sdac-sidebar-brand { font-size: 1.25rem; font-weight: 900; margin-bottom: 10px; }
 .sdac-sidebar-user { color: var(--sdac-muted); font-size: 0.9rem; line-height: 1.35; margin-bottom: 18px; }
 .sdac-sidebar-user span { color: var(--sdac-secondary); }
@@ -10192,7 +10234,11 @@ body.sdac-has-sidebar > nav, body.sdac-has-sidebar main > nav:not(.pagination), 
 .sdac-range-tabs a.active { background: var(--sdac-primary); color: #fff !important; }
 @media (max-width: 900px) {
     body.sdac-has-sidebar { padding-left: 0 !important; }
-    .sdac-sidebar { position: static; width: auto; border-radius: 0 0 18px 18px; }
+    .sdac-sidebar-toggle { left: 12px; top: 12px; }
+    .sdac-sidebar { border-radius: 0 14px 14px 0; box-shadow: 18px 0 40px rgba(2, 6, 23, 0.48); transform: translateX(-105%); }
+    body.sdac-sidebar-open .sdac-sidebar { transform: translateX(0); }
+    body.sdac-sidebar-open .sdac-sidebar-toggle { left: min(276px, calc(100vw - 72px)); }
+    body.sdac-has-sidebar main { padding-top: 46px !important; }
 }
 </style>
 """
