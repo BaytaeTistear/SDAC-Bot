@@ -119,6 +119,7 @@ DEFAULT_FEATURES = {
     "weekly_posts": True,
     "public_gallery": True,
     "cross_server_leaderboard": True,
+    "cross_server_gallery": True,
 }
 
 DEFAULT_GUILD_EXTERNAL_BACKUP = {
@@ -195,6 +196,7 @@ FEATURE_LABELS = {
     "weekly_posts": "Weekly Posts",
     "public_gallery": "Public Gallery",
     "cross_server_leaderboard": "Cross-Server Leaderboard",
+    "cross_server_gallery": "Cross-Server Gallery Visibility",
 }
 
 FEATURE_CHOICES = [

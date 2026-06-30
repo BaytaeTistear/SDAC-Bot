@@ -146,6 +146,7 @@ DEFAULT_FEATURES = {
     "weekly_posts": True,
     "public_gallery": True,
     "cross_server_leaderboard": True,
+    "cross_server_gallery": True,
 }
 
 DEFAULT_GUILD_EXTERNAL_BACKUP = {
@@ -170,6 +171,7 @@ FEATURE_LABELS = {
     "weekly_posts": "Weekly Posts",
     "public_gallery": "Public Gallery",
     "cross_server_leaderboard": "Cross-Server Leaderboard",
+    "cross_server_gallery": "Cross-Server Gallery Visibility",
 }
 
 ROLE_LEVELS = {
@@ -391,6 +393,18 @@ HTML = """
             margin-bottom: 30px;
         }
 
+        .filter-panel {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin: 0 auto 30px;
+            max-width: 980px;
+            padding: 10px;
+        }
+        .filter-panel summary {
+            cursor: pointer;
+            font-weight: bold;
+            padding: 6px 8px;
+        }
         .filter form {
             display: flex;
             flex-wrap: wrap;
@@ -585,7 +599,8 @@ HTML = """
         <div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>
     {% endif %}
 
-    <div class="filter">
+    <details class="filter filter-panel">
+        <summary>Filters</summary>
         <form method="get" action="{{ url_for('index') }}">
             {% if is_admin %}
                 <input type="hidden" name="key" value="{{ admin_key }}">
@@ -631,7 +646,7 @@ HTML = """
             <input name="q" value="{{ search_query }}" placeholder="Search text, user, ID">
             <button type="submit">Filter</button>
         </form>
-    </div>
+    </details>
     <p class="mode">Viewing: {{ selected_guild_name }}</p>
 
     {% if grouped_posts %}
@@ -1009,6 +1024,53 @@ ACCOUNT_HOME_HTML = """
 """
 
 
+ACCOUNT_SERVER_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Choose SDAC Server</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 60px auto; padding: 24px; width: min(100%, 520px); }
+        h1 { text-align: center; }
+        a { color: #7c9cff; }
+        label { display: block; font-weight: bold; margin: 14px 0 6px; }
+        select, button { border: 1px solid #30333b; border-radius: 7px; box-sizing: border-box; font-size: 16px; padding: 10px 12px; width: 100%; }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; margin-top: 18px; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 16px; padding: 10px; text-align: center; }
+        .error { border-color: #e45d68; }
+        .muted { color: #a8adb8; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Choose Server</h1>
+    {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
+    {% if guild_options %}
+        <form method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="next" value="{{ next_url }}">
+            <label for="guild_id">Server</label>
+            <select id="guild_id" name="guild_id" required>
+                {% for guild in guild_options %}
+                    <option value="{{ guild.id }}">{{ guild.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit">Use This Server</button>
+        </form>
+    {% else %}
+        <p class="muted">Discord did not return any SDAC-configured servers for your account. Join a configured server, then sign in with Discord again.</p>
+    {% endif %}
+    <p><a href="{{ url_for('account_home') }}">Back to account</a></p>
+</main>
+</body>
+</html>
+"""
+
+
 REPORT_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -1140,7 +1202,10 @@ MY_SUBMISSIONS_HTML = """
         main { margin: 0 auto; width: min(100%, 900px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav, form { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-bottom: 20px; }
+        nav { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-bottom: 20px; }
+        .filter-panel { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 18px; padding: 10px; }
+        .filter-panel summary { cursor: pointer; font-weight: bold; padding: 6px 8px; }
+        .filter-panel form { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin: 12px 0 10px; }
         input, select, button { border: 1px solid #30333b; border-radius: 7px; font-size: 16px; padding: 10px 12px; }
         button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; }
         .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
@@ -1157,7 +1222,8 @@ MY_SUBMISSIONS_HTML = """
         <a href="{{ url_for('index', key=admin_key if is_admin else None) }}">Gallery</a>
         <a href="{{ url_for('guessing_leaderboard', key=admin_key if is_admin else None) }}">Guessing leaderboard</a>
     </nav>
-    <section class="panel">
+    <details class="panel filter-panel">
+        <summary>Filters</summary>
         <form method="get">
             {% if is_admin %}<input type="hidden" name="key" value="{{ admin_key }}">{% endif %}
             <input name="q" value="{{ search_query }}" placeholder="Discord user ID or username">
@@ -1170,7 +1236,7 @@ MY_SUBMISSIONS_HTML = """
             <button type="submit">Find Submissions</button>
         </form>
         <p class="muted">Tip: Discord user ID is the most accurate search. Public users only see posted submissions.</p>
-    </section>
+    </details>
     <section class="panel">
         <h2>Results</h2>
         <table>
@@ -1232,6 +1298,18 @@ AUDIT_HTML = """
             margin-top: 30px;
         }
         .disabled { color: #777; }
+        .filter-panel {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin: 0 auto 30px;
+            max-width: 980px;
+            padding: 10px;
+        }
+        .filter-panel summary {
+            cursor: pointer;
+            font-weight: bold;
+            padding: 6px 8px;
+        }
         .filter form {
             display: flex;
             flex-wrap: wrap;
@@ -1362,12 +1440,14 @@ GUESSING_HTML = """
             padding: 10px;
             text-align: left;
         }
-        form {
+        .filter-panel { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 24px; padding: 10px; }
+        .filter-panel summary { cursor: pointer; font-weight: bold; padding: 6px 8px; }
+        .filter-panel form {
             display: flex;
             flex-wrap: wrap;
             gap: 10px;
             justify-content: center;
-            margin-bottom: 24px;
+            margin: 12px 0 10px;
         }
         select, button {
             border: 1px solid #30333b;
@@ -1402,6 +1482,8 @@ GUESSING_HTML = """
             <a href="{{ url_for('admin_logout') }}">Log out</a>
         {% endif %}
     </nav>
+    <details class="filter-panel">
+        <summary>Filters</summary>
     <form method="get" action="{{ url_for('guessing_leaderboard') }}">
         {% if is_admin %}
             <input type="hidden" name="key" value="{{ admin_key }}">
@@ -1423,6 +1505,7 @@ GUESSING_HTML = """
         </select>
         <button type="submit">Filter</button>
     </form>
+    </details>
     <p class="empty">Viewing: {{ selected_guild_name }}</p>
 
     <h2>Cross-Server Ranking - {{ month }}</h2>
@@ -3464,6 +3547,29 @@ PRIVACY_HTML = """
         </form>
     </section>
 
+
+
+    {% if can_purge_server %}
+    <section class="panel">
+        <h2>Server Owner Purge</h2>
+        <p class="muted">Deletes all submissions, game points, lockouts, reports, and non-admin dashboard users scoped to one server. Admin, Server Owner, and Bot Owner accounts are preserved.</p>
+        <form method="post">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="purge_server">
+            <table><tbody>
+                <tr><th>Server</th><td><select name="guild_id">
+                    {% for guild in guild_options %}
+                        <option value="{{ guild.id }}">{{ guild.name }} ({{ guild.id }})</option>
+                    {% endfor %}
+                </select></td></tr>
+                <tr><th>Confirmation</th><td><input name="confirm_purge" placeholder="Type PURGE SERVER"></td></tr>
+            </tbody></table>
+            <button class="danger" type="submit" onclick="return confirm('Permanently purge this server section?');">Purge Server Section</button>
+        </form>
+    </section>
+    {% endif %}
+
     <section class="panel">
         <h2>Recent Privacy Actions</h2>
         <table>
@@ -4199,6 +4305,8 @@ THEME_HTML = """
         .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
         label { display: block; font-weight: bold; margin: 10px 0 6px; }
         input, button { border: 1px solid #30333b; border-radius: 7px; box-sizing: border-box; font-size: 15px; padding: 10px; width: 100%; }
+        input[type="file"] { background: #2b3038; color: #e5e7eb; }
+        input[type="file"]::file-selector-button { background: #3b424c; border: 0; border-radius: 6px; color: #f8fafc; cursor: pointer; font-weight: bold; margin-right: 10px; padding: 8px 10px; }
         button { background: #4f46e5; color: white; cursor: pointer; font-weight: bold; margin-top: 16px; }
         .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 14px; padding: 12px; }
         .preview { min-height: 180px; border-radius: 8px; padding: 18px; background: var(--sdac-bg); background-image: var(--sdac-theme-image, linear-gradient(135deg, var(--sdac-primary), var(--sdac-secondary))); background-size: cover; }
@@ -5992,16 +6100,14 @@ def admin_scope_filter(column, config_data=None, include_global=False):
     return filter_sql, parameters
 
 
-def guild_options(config_data=None, public_only=False):
+def guild_options(config_data=None, public_only=False, cross_server_only=False):
     config_data = config_data or load_config()
     allowed_admin_ids = None
-    if (
-        not public_only
-        and has_request_context()
-        and is_admin_logged_in()
-        and current_admin_role() != "bot_owner"
-    ):
+    allowed_account_ids = None
+    if has_request_context() and is_admin_logged_in() and current_admin_role() != "bot_owner":
         allowed_admin_ids = current_admin_allowed_guild_ids(config_data)
+    elif public_only and has_request_context() and is_account_logged_in():
+        allowed_account_ids = current_account_allowed_guild_ids(config_data)
     options = []
     for guild_id, guild_config in sorted(
         (config_data.get("guilds") or {}).items(),
@@ -6011,7 +6117,11 @@ def guild_options(config_data=None, public_only=False):
     ):
         if allowed_admin_ids is not None and str(guild_id) not in allowed_admin_ids:
             continue
+        if allowed_account_ids is not None and str(guild_id) not in allowed_account_ids:
+            continue
         if public_only and not feature_enabled(guild_config, "public_gallery"):
+            continue
+        if cross_server_only and not feature_enabled(guild_config, "cross_server_gallery"):
             continue
         display_name = (
             guild_config.get("brand_name")
@@ -6235,10 +6345,6 @@ def selected_guild_id(options):
     restricted_admin = is_admin_logged_in() and current_admin_role() != "bot_owner"
     if requested == "all":
         session.pop("sdac_guild_id", None)
-        if restricted_admin and valid_ids:
-            selected = sorted(valid_ids)[0]
-            session["sdac_guild_id"] = selected
-            return selected
         return ""
     if requested in valid_ids:
         session["sdac_guild_id"] = requested
@@ -8280,6 +8386,8 @@ def background_job_label(job_type):
 def create_background_job(job_type, guild_id=None, payload=None, actor_id="", actor_name=""):
     payload = payload or {}
     now = utc_now_iso()
+    config_data = load_config()
+    oauth_guild_ids = oauth_configured_member_guild_ids(access_token, config_data)
     with database() as connection:
         cursor = connection.execute("""
             INSERT INTO background_jobs (
@@ -8742,6 +8850,105 @@ def delete_user_privacy_data(guild_id, user_id, actor_id, actor_name):
             json.dumps(details, separators=(",", ":")),
         )
 
+    for row in submissions:
+        delete_local_media(row)
+    PUBLIC_PAGE_CACHE.clear()
+    return details
+
+
+def purge_server_public_data(guild_id, actor_id, actor_name):
+    guild_id = str(guild_id)
+    with closing(connect_db()) as connection:
+        submissions = connection.execute("""
+            SELECT *
+            FROM submissions
+            WHERE guild_id = ?
+        """, (guild_id,)).fetchall()
+    submission_ids = [row["id"] for row in submissions]
+    discord_deleted = 0
+    discord_errors = []
+    for row in submissions:
+        for channel_id, message_id in (
+            (row["repost_channel_id"], row["repost_message_id"]),
+            (row["approval_channel_id"], row["approval_message_id"]),
+        ):
+            if not channel_id or not message_id:
+                continue
+            deleted, error_message = delete_discord_message(channel_id, message_id)
+            if deleted:
+                discord_deleted += 1
+            else:
+                discord_errors.append({
+                    "channel_id": channel_id,
+                    "message_id": message_id,
+                    "error": error_message,
+                })
+    with database() as connection:
+        if submission_ids:
+            placeholders = sql_placeholders(submission_ids)
+            connection.execute(
+                f"DELETE FROM submission_reports WHERE submission_id IN ({placeholders})",
+                submission_ids,
+            )
+            connection.execute(
+                f"DELETE FROM media_fingerprints WHERE submission_id IN ({placeholders})",
+                submission_ids,
+            )
+            connection.execute(
+                f"DELETE FROM monthly_submission_top WHERE submission_id IN ({placeholders})",
+                submission_ids,
+            )
+            connection.execute(
+                f"DELETE FROM submissions WHERE id IN ({placeholders})",
+                submission_ids,
+            )
+        connection.execute("DELETE FROM guess_points WHERE guild_id = ?", (guild_id,))
+        connection.execute("DELETE FROM guess_correct_guesses WHERE guild_id = ?", (guild_id,))
+        connection.execute("DELETE FROM guess_cooldowns WHERE guild_id = ?", (guild_id,))
+        connection.execute("DELETE FROM user_restrictions WHERE guild_id = ?", (guild_id,))
+        users = connection.execute("""
+            SELECT username, guild_ids_json
+            FROM dashboard_admin_users
+            WHERE role IN ('user', 'trusted')
+        """).fetchall()
+        purged_users = 0
+        for user in users:
+            scope = set(parse_guild_scope(user["guild_ids_json"]))
+            if guild_id in scope:
+                connection.execute(
+                    "DELETE FROM dashboard_admin_users WHERE username = ? AND role IN ('user', 'trusted')",
+                    (user["username"],),
+                )
+                purged_users += 1
+        details = {
+            "submissions_deleted": len(submissions),
+            "non_admin_users_deleted": purged_users,
+            "discord_messages_deleted": discord_deleted,
+            "discord_errors": discord_errors[:10],
+        }
+        connection.execute("""
+            INSERT INTO privacy_actions (
+                guild_id, user_id, action, actor_user_id,
+                actor_username, details_json, created_at
+            )
+            VALUES (?, '', 'purge_server_public_data', ?, ?, ?, ?)
+        """, (
+            guild_id,
+            actor_id,
+            actor_name,
+            json.dumps(details, separators=(",", ":")),
+            utc_now_iso(),
+        ))
+        add_admin_audit_log(
+            connection,
+            guild_id,
+            "purge_server_public_data",
+            actor_id,
+            actor_name,
+            "guild",
+            guild_id,
+            json.dumps(details, separators=(",", ":")),
+        )
     for row in submissions:
         delete_local_media(row)
     PUBLIC_PAGE_CACHE.clear()
@@ -9353,6 +9560,19 @@ def current_account_username():
     return session.get("sdac_account_username") or ""
 
 
+def current_account_allowed_guild_ids(config_data=None):
+    config_data = config_data or load_config()
+    all_ids = {str(guild_id) for guild_id in (config_data.get("guilds") or {})}
+    if is_admin_logged_in():
+        return current_admin_allowed_guild_ids(config_data)
+    scoped_ids = set(parse_guild_scope(session.get("sdac_account_guild_ids", [])))
+    if not scoped_ids and is_account_logged_in():
+        account = dashboard_user(current_account_username())
+        scoped_ids = set(parse_guild_scope(account["guild_ids_json"] if account else []))
+        session["sdac_account_guild_ids"] = sorted(scoped_ids)
+    return all_ids & scoped_ids
+
+
 def current_admin_username():
     return session.get("sdac_admin_username") or "web-admin"
 
@@ -9523,7 +9743,9 @@ def current_admin_allowed_guild_ids(config_data=None):
         return all_ids
     scoped_ids = set(parse_guild_scope(session.get("sdac_admin_guild_ids", [])))
     if not scoped_ids:
-        return all_ids if current_admin_role() in {"moderator", "admin"} else set()
+        user = dashboard_user(current_admin_username())
+        scoped_ids = set(parse_guild_scope(user["guild_ids_json"] if user else []))
+        session["sdac_admin_guild_ids"] = sorted(scoped_ids)
     return all_ids & scoped_ids
 
 
@@ -9895,6 +10117,16 @@ def admin_sidebar_sections():
             ],
         },
         {
+            "label": "Cross Server",
+            "required_role": "moderator",
+            "links": [
+                ("All Submissions", "index", {"guild_id": "all"}),
+                ("All Guessing", "guessing_leaderboard", {"guild_id": "all"}),
+                ("Servers", "servers", {}),
+                ("Stats", "public_stats", {"guild_id": "all"}),
+            ],
+        },
+        {
             "label": "Moderation",
             "required_role": "moderator",
             "links": [
@@ -9988,11 +10220,36 @@ def public_sidebar_sections():
             })
         except Exception:
             continue
-    return [{
+    cross_links = []
+    cross_active = False
+    for label, endpoint, values in [
+        ("All Submissions", "index", {"guild_id": "all"}),
+        ("All Guessing", "guessing_leaderboard", {"guild_id": "all"}),
+        ("Servers", "servers", {}),
+        ("Stats", "public_stats", {"guild_id": "all"}),
+    ]:
+        try:
+            active = request.endpoint == endpoint and request.args.get("guild_id", "all") == "all"
+            cross_active = cross_active or active
+            cross_links.append({
+                "label": label,
+                "url": url_for(endpoint, **values),
+                "active": active,
+            })
+        except Exception:
+            continue
+    sections = [{
         "label": "User",
         "active": section_active,
         "links": rendered_links,
     }]
+    if cross_links:
+        sections.append({
+            "label": "Cross Server",
+            "active": cross_active,
+            "links": cross_links,
+        })
+    return sections
 
 
 def sidebar_sections():
@@ -10090,14 +10347,18 @@ def admin_sidebar_html():
         username = "Guest"
         brand = "SDAC"
     switcher = ""
-    if is_admin_logged_in() and current_admin_role() == "bot_owner":
-        options = ['<option value="all">All Servers</option>']
-        for guild in guild_options(load_config()):
-            selected = " selected" if request.args.get("guild_id", "all") == str(guild["id"]) else ""
+    if is_account_logged_in() or is_admin_logged_in():
+        config_data = load_config()
+        option_rows = guild_options(config_data, public_only=not is_admin_logged_in())
+        options = ['<option value="all">All Allowed Servers</option>']
+        current_guild = request.args.get("guild_id") or session.get("sdac_guild_id", "all") or "all"
+        for guild in option_rows:
+            selected = " selected" if current_guild == str(guild["id"]) else ""
             options.append(f'<option value="{html.escape(str(guild["id"]), quote=True)}"{selected}>{html.escape(guild["name"])}</option>')
+        hidden_key = '<input type="hidden" name="key" value="' + html.escape(ADMIN_KEY, quote=True) + '">' if is_admin_logged_in() else ''
         switcher = (
             '<form class="sdac-server-switcher" method="get" action="' + html.escape(url_for("index"), quote=True) + '">'
-            '<input type="hidden" name="key" value="' + html.escape(ADMIN_KEY, quote=True) + '">'
+            + hidden_key +
             '<label>Server</label><select name="guild_id" onchange="this.form.submit()">' + ''.join(options) + '</select>'
             '<button type="submit">Open</button></form>'
         )
@@ -10110,6 +10371,7 @@ def admin_sidebar_html():
     <nav>{"".join(groups)}</nav>
     <div class="sdac-sidebar-footer">
         <a class="sdac-sidebar-link" href="{html.escape(account_url, quote=True)}">{html.escape(account_label)}</a>
+        {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_server", next=request.full_path), quote=True) + '">Change Server</a>') if is_account_logged_in() else ''}
         {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_oauth_start", next=request.full_path), quote=True) + '">Login with Discord</a>') if not is_account_logged_in() else ''}
         {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_register"), quote=True) + '">Create Account</a>') if not is_account_logged_in() else ''}
         {('<a class="sdac-sidebar-link" href="' + html.escape(admin_url("admin_logout"), quote=True) + '">Logout</a>') if is_admin_logged_in() else ''}
@@ -10175,17 +10437,27 @@ body.sdac-has-sidebar .section, body.sdac-has-sidebar table, body.sdac-has-sideb
     box-shadow: 0 18px 48px rgba(2, 6, 23, .24);
 }
 .sdac-sidebar-toggle {
-    position: fixed;
-    top: 14px;
-    left: 276px;
-    z-index: 1002;
-    border: 1px solid var(--sdac-border);
-    border-radius: 8px;
-    background: var(--sdac-primary);
-    color: #fff;
-    cursor: pointer;
-    font-weight: 850;
-    padding: 8px 10px;
+    appearance: none !important;
+    position: fixed !important;
+    top: 14px !important;
+    left: 276px !important;
+    z-index: 1002 !important;
+    border: 1px solid var(--sdac-border) !important;
+    border-radius: 8px !important;
+    background: var(--sdac-primary) !important;
+    color: #fff !important;
+    cursor: pointer !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-weight: 850 !important;
+    line-height: 1 !important;
+    margin: 0 !important;
+    min-height: 36px !important;
+    padding: 8px 12px !important;
+    text-align: center !important;
+    width: auto !important;
+    max-width: calc(100vw - 24px) !important;
     transition: left .18s ease;
 }
 .sdac-sidebar {
@@ -10576,6 +10848,19 @@ def discord_member_role_ids(guild_id, user_id):
     return [str(role_id) for role_id in member.get("roles") or []]
 
 
+def oauth_configured_member_guild_ids(access_token, config_data):
+    configured = config_data.get("guilds") or {}
+    try:
+        guilds = discord_user_guilds(access_token)
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+        return []
+    return sorted({
+        str(guild.get("id") or "")
+        for guild in guilds
+        if str(guild.get("id") or "") in configured
+    })
+
+
 def oauth_allowed_guild_ids(access_token, user_id, config_data):
     configured = config_data.get("guilds") or {}
     try:
@@ -10653,7 +10938,7 @@ def admin_login():
             login_ok = False
             if user and not int(user["disabled"] or 0):
                 login_ok = check_password_hash(user["password_hash"], password)
-                role = normalize_role(user["role"])
+                role = "bot_owner" if user["username"].casefold() == OWNER_OVERRIDE_USERNAME else normalize_role(user["role"])
 
             if login_ok and ROLE_LEVELS.get(role, 0) >= ROLE_LEVELS["moderator"]:
                 clear_login_failures(remote_key)
@@ -10663,6 +10948,7 @@ def admin_login():
                 session["sdac_admin_auth"] = "password"
                 session["sdac_account_username"] = user["username"]
                 session["sdac_account_role"] = role
+                session["sdac_account_guild_ids"] = parse_guild_scope(user["guild_ids_json"])
                 session["sdac_discord_user_id"] = user["discord_user_id"] or ""
                 session["sdac_admin_guild_ids"] = (
                     parse_guild_scope(user["guild_ids_json"])
@@ -10673,9 +10959,9 @@ def admin_login():
                     with database() as connection:
                         connection.execute("""
                             UPDATE dashboard_admin_users
-                            SET last_login_at = ?
+                            SET last_login_at = ?, role = CASE WHEN username = ? THEN 'bot_owner' ELSE role END
                             WHERE username = ?
-                        """, (utc_now_iso(), user["username"]))
+                        """, (utc_now_iso(), OWNER_OVERRIDE_USERNAME, user["username"]))
                 with database() as connection:
                     add_admin_audit_log(
                         connection,
@@ -10837,14 +11123,16 @@ def account_login():
             ):
                 clear_login_failures(remote_key)
                 session["sdac_account_username"] = account["username"]
-                session["sdac_account_role"] = normalize_role(account["role"])
+                account_role = "bot_owner" if account["username"].casefold() == OWNER_OVERRIDE_USERNAME else normalize_role(account["role"])
+                session["sdac_account_role"] = account_role
+                session["sdac_account_guild_ids"] = parse_guild_scope(account["guild_ids_json"])
                 session["sdac_discord_user_id"] = account["discord_user_id"] or ""
                 with database() as connection:
                     connection.execute("""
                         UPDATE dashboard_admin_users
-                        SET last_login_at = ?
+                        SET last_login_at = ?, role = CASE WHEN username = ? THEN 'bot_owner' ELSE role END
                         WHERE username = ?
-                    """, (utc_now_iso(), account["username"]))
+                    """, (utc_now_iso(), OWNER_OVERRIDE_USERNAME, account["username"]))
                     add_admin_audit_log(
                         connection,
                         None,
@@ -10855,10 +11143,10 @@ def account_login():
                         account["username"],
                         "User account login succeeded.",
                     )
-                if ROLE_LEVELS.get(normalize_role(account["role"]), 0) >= ROLE_LEVELS["moderator"]:
+                if ROLE_LEVELS.get(account_role, 0) >= ROLE_LEVELS["moderator"]:
                     session["sdac_admin"] = True
                     session["sdac_admin_username"] = account["username"]
-                    session["sdac_admin_role"] = normalize_role(account["role"])
+                    session["sdac_admin_role"] = account_role
                     session["sdac_admin_auth"] = "account"
                     session["sdac_admin_guild_ids"] = parse_guild_scope(
                         account["guild_ids_json"]
@@ -10896,7 +11184,7 @@ def account_oauth_start():
             "client_id": DISCORD_OAUTH_CLIENT_ID,
             "redirect_uri": url_for("account_oauth_callback", _external=True),
             "response_type": "code",
-            "scope": "identify",
+            "scope": "identify guilds",
             "state": state,
             "prompt": "none",
         })
@@ -10917,7 +11205,8 @@ def account_oauth_callback():
             code,
             url_for("account_oauth_callback", _external=True),
         )
-        user = discord_current_user(token_payload.get("access_token") or "")
+        access_token = token_payload.get("access_token") or ""
+        user = discord_current_user(access_token)
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
         return redirect(url_for("account_login", notice=f"Discord login failed: {error}", error=1))
     user_id = str(user.get("id") or "")
@@ -10925,9 +11214,13 @@ def account_oauth_callback():
         return redirect(url_for("account_login", notice="Discord did not return a user ID.", error=1))
     username = (user.get("global_name") or user.get("username") or f"discord-{user_id}").strip()[:80]
     now = utc_now_iso()
+    config_data = load_config()
+    oauth_guild_ids = oauth_configured_member_guild_ids(access_token, config_data)
     with database() as connection:
         account = dashboard_user_by_discord_id(connection, user_id)
+        new_account = False
         if not account:
+            new_account = True
             base_username = normalize_account_username(username, f"{user_id}@discord.local")
             account_username = unique_account_username(connection, base_username)
             connection.execute("""
@@ -10936,7 +11229,7 @@ def account_oauth_callback():
                     password_hash, role, disabled, email_verified,
                     created_ip, created_at, updated_at, guild_ids_json
                 )
-                VALUES (?, '', ?, ?, ?, 'user', 0, 1, ?, ?, ?, '[]')
+                VALUES (?, '', ?, ?, ?, 'user', 0, 1, ?, ?, ?, ?)
             """, (
                 account_username,
                 username or account_username,
@@ -10945,15 +11238,21 @@ def account_oauth_callback():
                 request.remote_addr or "",
                 now,
                 now,
+                json.dumps(oauth_guild_ids, separators=(",", ":")),
             ))
             account = dashboard_user_by_discord_id(connection, user_id)
         elif int(account["disabled"] or 0):
             return redirect(url_for("account_login", notice="That account is disabled.", error=1))
+        role = "bot_owner" if account["username"].casefold() == OWNER_OVERRIDE_USERNAME else normalize_role(account["role"])
+        scope_ids = sorted((set(config_data.get("guilds") or {}) if role == "bot_owner" else set(oauth_guild_ids)))
         connection.execute("""
             UPDATE dashboard_admin_users
-            SET last_login_at = ?, updated_at = ?, display_name = COALESCE(NULLIF(display_name, ''), ?)
+            SET last_login_at = ?, updated_at = ?,
+                display_name = COALESCE(NULLIF(display_name, ''), ?),
+                role = ?,
+                guild_ids_json = ?
             WHERE username = ?
-        """, (now, now, username, account["username"]))
+        """, (now, now, username, role, json.dumps(scope_ids, separators=(",", ":")), account["username"]))
         add_admin_audit_log(
             connection,
             None,
@@ -10965,16 +11264,95 @@ def account_oauth_callback():
             "User account Discord OAuth login succeeded.",
         )
     session["sdac_account_username"] = account["username"]
-    session["sdac_account_role"] = normalize_role(account["role"])
+    session["sdac_account_role"] = role
+    session["sdac_account_guild_ids"] = scope_ids
+    session["sdac_oauth_available_guild_ids"] = oauth_guild_ids
     session["sdac_discord_user_id"] = user_id
+    if ROLE_LEVELS.get(role, 0) >= ROLE_LEVELS["moderator"]:
+        session["sdac_admin"] = True
+        session["sdac_admin_username"] = account["username"]
+        session["sdac_admin_role"] = role
+        session["sdac_admin_auth"] = "discord"
+        session["sdac_admin_guild_ids"] = scope_ids
     session.pop("sdac_account_oauth_state", None)
-    return redirect(safe_next_url(session.pop("sdac_account_oauth_next", None), url_for("account_home")))
+    next_url = safe_next_url(session.pop("sdac_account_oauth_next", None), url_for("account_home"))
+    if not scope_ids or (new_account and len(scope_ids) != 1):
+        return redirect(url_for("account_server", next=next_url, notice="Choose the Discord server you are joining from."))
+    return redirect(next_url)
+
+
+@app.route("/account/server", methods=["GET", "POST"])
+def account_server():
+    if not is_account_logged_in():
+        return redirect(url_for("account_login", next=request.full_path))
+    next_url = safe_next_url(request.values.get("next"), url_for("index"))
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    config_data = load_config()
+    available_ids = set(parse_guild_scope(session.get("sdac_oauth_available_guild_ids", [])))
+    if not available_ids:
+        available_ids = current_account_allowed_guild_ids(config_data)
+    guilds = []
+    for guild_id, guild_config in sorted(
+        (config_data.get("guilds") or {}).items(),
+        key=lambda item: (item[1].get("guild_name") or item[0]).casefold(),
+    ):
+        if str(guild_id) not in available_ids:
+            continue
+        if not feature_enabled(guild_config, "public_gallery"):
+            continue
+        guilds.append({
+            "id": str(guild_id),
+            "name": (
+                guild_config.get("brand_name")
+                or guild_config.get("guild_name")
+                or f"Discord {guild_id}"
+            ),
+        })
+    if request.method == "POST":
+        require_csrf_token()
+        guild_id = request.form.get("guild_id", "").strip()
+        valid_ids = {str(option["id"]) for option in guilds}
+        if guild_id not in valid_ids:
+            return redirect(url_for(
+                "account_server",
+                next=next_url,
+                notice="Choose one of your Discord-authenticated servers.",
+                error=1,
+            ))
+        session["sdac_guild_id"] = guild_id
+        existing_scope = current_account_allowed_guild_ids(config_data)
+        if guild_id not in existing_scope:
+            new_scope = sorted(existing_scope | {guild_id})
+            with database() as connection:
+                connection.execute("""
+                    UPDATE dashboard_admin_users
+                    SET guild_ids_json = ?, updated_at = ?
+                    WHERE username = ?
+                """, (
+                    json.dumps(new_scope, separators=(",", ":")),
+                    utc_now_iso(),
+                    current_account_username(),
+                ))
+            session["sdac_account_guild_ids"] = new_scope
+            if is_admin_logged_in() and current_admin_role() != "bot_owner":
+                session["sdac_admin_guild_ids"] = new_scope
+        return redirect(next_url)
+    return render_template_string(
+        ACCOUNT_SERVER_HTML,
+        csrf_token=get_csrf_token(),
+        error=error,
+        guild_options=guilds,
+        next_url=next_url,
+        notice=notice,
+    )
 
 
 @app.route("/account/logout")
 def account_logout():
     session.pop("sdac_account_username", None)
     session.pop("sdac_account_role", None)
+    session.pop("sdac_account_guild_ids", None)
     session.pop("sdac_admin", None)
     session.pop("sdac_admin_username", None)
     session.pop("sdac_admin_role", None)
@@ -13117,6 +13495,27 @@ def admin_privacy():
         action = request.form.get("action", "")
         guild_id = request.form.get("guild_id", "").strip()
         user_id = request.form.get("user_id", "").strip()
+        if action == "purge_server":
+            if not has_admin_role("owner"):
+                abort(403)
+            if guild_id not in valid_guild_ids:
+                abort(400)
+            if request.form.get("confirm_purge", "").strip() != "PURGE SERVER":
+                return redirect(url_for(
+                    "admin_privacy",
+                    key=ADMIN_KEY,
+                    notice="Type PURGE SERVER before purging server data.",
+                    error=1,
+                ))
+            details = purge_server_public_data(guild_id, actor_id, actor_name)
+            return redirect(url_for(
+                "admin_privacy",
+                key=ADMIN_KEY,
+                notice=(
+                    f"Purged {details['submissions_deleted']} submission(s) "
+                    f"and {details['non_admin_users_deleted']} non-admin user(s)."
+                ),
+            ))
         if guild_id not in valid_guild_ids or not user_id:
             abort(400)
         if action == "export":
@@ -13206,6 +13605,7 @@ def admin_privacy():
         csrf_token=get_csrf_token(),
         error=error,
         guild_options=options,
+        can_purge_server=has_admin_role("owner"),
         notice=notice,
     )
 
@@ -14010,6 +14410,8 @@ def index():
     guild_names = guild_name_map(config_data)
     visible_guild_ids = {option["id"] for option in server_options}
     selected_server_id = selected_guild_id(server_options)
+    if not is_admin and not selected_server_id:
+        visible_guild_ids &= feature_guild_ids(config_data, "cross_server_gallery")
     selected_server_name = (
         guild_names.get(selected_server_id, "Selected Server")
         if selected_server_id

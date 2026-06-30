@@ -1,3 +1,30 @@
+# SDAC Bot Version 3.0.11 Experimental
+
+Date: 2026-06-29
+
+Version 3.0.11 is an experimental sidebar, filter, and server-scope update.
+
+Included:
+
+- fixed the sidebar Menu button so page-level button styles cannot stretch it across the page
+- moved filters into dropdown panels only on Submissions, My Submissions, and Guessing pages
+- Discord OAuth now requests the `guilds` scope and stores configured server membership for account scoping
+- non-Bot-Owner admin server access now fails closed to the user's stored server scope
+- `baytae` is promoted to Bot Owner on login
+- added an account server chooser for first/new Discord logins and server switching
+- added a Cross Server sidebar section for all-allowed-server views
+- added a Server Owner purge tool for non-admin users and submissions in a selected server section
+- added a per-server Cross-Server Gallery Visibility feature toggle
+- darkened the Theme page file picker styling
+
+Release channel:
+
+- `version-3.0.11` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.11 line is validated
+
+---
+
 # SDAC Bot Version 3.0.10 Experimental
 
 Date: 2026-06-29
