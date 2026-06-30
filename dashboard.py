@@ -10181,7 +10181,7 @@ body.sdac-has-sidebar .section, body.sdac-has-sidebar table, body.sdac-has-sideb
 .sdac-sidebar-link { display: block; color: var(--sdac-text) !important; text-decoration: none; padding: 9px 11px; border-radius: 7px; margin: 2px 0; font-weight: 650; }
 .sdac-sidebar-link:hover, .sdac-sidebar-link.active { color: #fff !important; background: linear-gradient(90deg, var(--sdac-primary), var(--sdac-secondary)); }
 .sdac-sidebar-footer { border-top: 1px solid var(--sdac-border); margin-top: 18px; padding-top: 14px; }
-body.sdac-has-sidebar main > nav, body.sdac-has-sidebar body > nav, body.sdac-has-sidebar .admin-nav { display: none !important; }
+body.sdac-has-sidebar > nav, body.sdac-has-sidebar main > nav:not(.pagination), body.sdac-has-sidebar .admin-nav { display: none !important; }
 .sdac-dashboard-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin: 20px 0; }
 .sdac-dashboard-card { border: 1px solid var(--sdac-border); border-radius: 8px; padding: 16px; }
 .sdac-dashboard-card strong { display: block; font-size: 1.8rem; line-height: 1.1; }

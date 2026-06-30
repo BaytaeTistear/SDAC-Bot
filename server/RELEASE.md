@@ -1,3 +1,23 @@
+# SDAC Bot Version 3.0.9 Experimental
+
+Date: 2026-06-29
+
+Version 3.0.9 is an experimental sidebar cleanup update.
+
+Included:
+
+- removed the duplicate top navigation bar from sidebar-enabled pages
+- kept pagination navigation visible while hiding old header navigation links
+- applied the sidebar cleanup to both the dashboard and server copies
+
+Release channel:
+
+- `version-3.0.9` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.9 line is validated
+
+---
+
 # SDAC Bot Version 3.0.8 Experimental
 
 Date: 2026-06-29
