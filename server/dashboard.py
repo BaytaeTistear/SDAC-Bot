@@ -6145,6 +6145,34 @@ def guild_name_map(config_data=None):
     }
 
 
+def sidebar_server_options(config_data=None):
+    config_data = config_data or load_config()
+    allowed_ids = set()
+    if has_request_context() and is_admin_logged_in():
+        allowed_ids = current_admin_allowed_guild_ids(config_data)
+    elif has_request_context() and is_account_logged_in():
+        allowed_ids = current_account_allowed_guild_ids(config_data)
+    options = []
+    for guild_id, guild_config in sorted(
+        (config_data.get("guilds") or {}).items(),
+        key=lambda item: (
+            item[1].get("guild_name") or item[0]
+        ).casefold(),
+    ):
+        if str(guild_id) not in allowed_ids:
+            continue
+        display_name = (
+            guild_config.get("brand_name")
+            or guild_config.get("guild_name")
+            or f"Discord {guild_id}"
+        )
+        options.append({
+            "id": guild_id,
+            "name": display_name,
+        })
+    return options
+
+
 def bot_invite_url():
     client_id = (
         os.getenv("SDAC_BOT_CLIENT_ID")
@@ -9563,6 +9591,8 @@ def current_account_username():
 def current_account_allowed_guild_ids(config_data=None):
     config_data = config_data or load_config()
     all_ids = {str(guild_id) for guild_id in (config_data.get("guilds") or {})}
+    if current_account_username().casefold() == OWNER_OVERRIDE_USERNAME:
+        return all_ids
     if is_admin_logged_in():
         return current_admin_allowed_guild_ids(config_data)
     scoped_ids = set(parse_guild_scope(session.get("sdac_account_guild_ids", [])))
@@ -9578,6 +9608,8 @@ def current_admin_username():
 
 
 def current_admin_role():
+    if current_admin_username().casefold() == OWNER_OVERRIDE_USERNAME:
+        return "bot_owner"
     return normalize_role(session.get("sdac_admin_role") or "moderator")
 
 
@@ -9739,6 +9771,8 @@ def current_admin_allowed_guild_ids(config_data=None):
         str(guild_id)
         for guild_id in (config_data.get("guilds") or {})
     }
+    if current_admin_username().casefold() == OWNER_OVERRIDE_USERNAME:
+        return all_ids
     if current_admin_role() == "bot_owner":
         return all_ids
     scoped_ids = set(parse_guild_scope(session.get("sdac_admin_guild_ids", [])))
@@ -10339,7 +10373,8 @@ def admin_sidebar_html():
         username = current_admin_username()
         brand = "SDAC Admin"
     elif is_account_logged_in():
-        role = ROLE_LABELS.get(normalize_role(session.get("sdac_account_role")), "User")
+        account_role = "bot_owner" if current_account_username().casefold() == OWNER_OVERRIDE_USERNAME else normalize_role(session.get("sdac_account_role"))
+        role = ROLE_LABELS.get(account_role, "User")
         username = current_account_username()
         brand = "SDAC"
     else:
@@ -10349,7 +10384,7 @@ def admin_sidebar_html():
     switcher = ""
     if is_account_logged_in() or is_admin_logged_in():
         config_data = load_config()
-        option_rows = guild_options(config_data, public_only=not is_admin_logged_in())
+        option_rows = sidebar_server_options(config_data)
         options = ['<option value="all">All Allowed Servers</option>']
         current_guild = request.args.get("guild_id") or session.get("sdac_guild_id", "all") or "all"
         for guild in option_rows:

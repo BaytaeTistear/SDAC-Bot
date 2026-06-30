@@ -1,3 +1,24 @@
+# SDAC Bot Version 3.0.12 Experimental
+
+Date: 2026-06-30
+
+Version 3.0.12 is an experimental sidebar server selector fix.
+
+Included:
+
+- fixed the sidebar server selector so it lists every configured server the current user/admin can access
+- stopped the selector from depending on public gallery visibility
+- made the `baytae` Bot Owner override apply to existing sessions, including older sessions still labeled Server Owner
+- kept non-Bot-Owner admin server lists scoped to their stored Discord server access
+
+Release channel:
+
+- `version-3.0.12` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.12 line is validated
+
+---
+
 # SDAC Bot Version 3.0.11 Experimental
 
 Date: 2026-06-29
