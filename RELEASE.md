@@ -1,3 +1,49 @@
+# SDAC Bot Version 3.0.8 Experimental
+
+Date: 2026-06-29
+
+Version 3.0.8 is an experimental polls, public sidebar, and release page update.
+
+Included:
+
+- public and not-signed-in pages now render the shared sidebar
+- account login always shows the Discord login button
+- Discord login now redirects back with a setup notice when OAuth is not configured
+- new Discord poll commands: `/createpoll`, `/polls`, `/votepoll`, and `/closepoll`
+- new `/admin/polls` dashboard page to create, close, reopen, delete, and review polls
+- release page now shows recent version releases and only the latest local patch-notes block
+- admin pages keep the full role-aware sidebar
+
+Release channel:
+
+- `version-3.0.8` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.8 line is validated
+
+---
+
+# SDAC Bot Version 3.0.7 Experimental
+
+Date: 2026-06-29
+
+Version 3.0.7 is an experimental public sidebar and Discord-login visibility update.
+
+Included:
+
+- public and not-signed-in pages now render the shared sidebar
+- guest sidebar only shows user/public links and account actions
+- account login always shows the Discord login button
+- Discord login now redirects back with a setup notice when OAuth is not configured
+- admin pages keep the full role-aware sidebar
+
+Release channel:
+
+- `version-3.0.7` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.7 line is validated
+
+---
+
 # SDAC Bot Version 3.0.6 Experimental
 
 Date: 2026-06-29

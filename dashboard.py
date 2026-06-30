@@ -946,9 +946,7 @@ ACCOUNT_LOGIN_HTML = """
 <main>
     <h1>Account Login</h1>
     {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
-    {% if oauth_enabled %}
-        <a class="oauth" href="{{ url_for('account_oauth_start', next=next_url) }}">Continue with Discord</a>
-    {% endif %}
+    <a class="oauth" href="{{ url_for('account_oauth_start', next=next_url) }}">Continue with Discord</a>
     <form method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="next" value="{{ next_url }}">
@@ -981,6 +979,7 @@ ACCOUNT_HOME_HTML = """
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; }
         code { color: #cdd7ff; }
+        pre { background: #111318; border: 1px solid #30333b; border-radius: 8px; max-height: 360px; overflow: auto; padding: 12px; white-space: pre-wrap; }
     </style>
 </head>
 <body>
@@ -3682,6 +3681,107 @@ MONTHLY_REPORT_HTML = """
 """
 
 
+POLLS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Polls</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1100px); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 8px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        input, textarea, select, button { border: 1px solid #30333b; border-radius: 7px; box-sizing: border-box; font-size: 15px; padding: 9px 10px; width: 100%; }
+        button { background: #4f46e5; color: white; cursor: pointer; font-weight: bold; margin-top: 8px; }
+        .inline { display: inline; }
+        .inline button { width: auto; }
+        .muted { color: #a8adb8; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 16px; padding: 12px; }
+        .error { border-color: #e45d68; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Polls</h1>
+    {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
+    <section class="panel">
+        <h2>Create Poll</h2>
+        <form method="post">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="create_poll">
+            <p><label>Server</label><select name="guild_id">
+                {% for guild in guild_options %}
+                    <option value="{{ guild.id }}">{{ guild.name }} ({{ guild.id }})</option>
+                {% endfor %}
+            </select></p>
+            <p><label>Question</label><input name="question" maxlength="240" required></p>
+            <p><label>Options</label><textarea name="options" rows="5" placeholder="One option per line, or separate with |" required></textarea></p>
+            <p><label>Channel ID <span class="muted">(optional, for Discord-posted polls)</span></label><input name="channel_id" inputmode="numeric"></p>
+            <button type="submit">Create Poll</button>
+        </form>
+    </section>
+    <section class="panel">
+        <h2>Manage Polls</h2>
+        <table>
+            <thead><tr><th>ID</th><th>Server</th><th>Question</th><th>Status</th><th>Results</th><th>Actions</th></tr></thead>
+            <tbody>
+                {% for poll in polls %}
+                    <tr>
+                        <td><code>{{ poll.id }}</code></td>
+                        <td>{{ guild_names.get(poll.guild_id, poll.guild_id) }}</td>
+                        <td>{{ poll.question }}<br><span class="muted">Created {{ poll.created_at }} by {{ poll.created_by_name or poll.created_by }}</span></td>
+                        <td>{{ poll.status }}</td>
+                        <td>
+                            {% for option in poll.summary %}
+                                <div>{{ option.number }}. {{ option.label }} - {{ option.votes }} vote(s), {{ option.percent }}%</div>
+                            {% endfor %}
+                            <span class="muted">{{ poll.total_votes }} total vote(s)</span>
+                        </td>
+                        <td>
+                            {% if poll.status == "active" %}
+                                <form class="inline" method="post">
+                                    <input type="hidden" name="key" value="{{ admin_key }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="action" value="close_poll">
+                                    <input type="hidden" name="poll_id" value="{{ poll.id }}">
+                                    <button type="submit">Close</button>
+                                </form>
+                            {% else %}
+                                <form class="inline" method="post">
+                                    <input type="hidden" name="key" value="{{ admin_key }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="action" value="reopen_poll">
+                                    <input type="hidden" name="poll_id" value="{{ poll.id }}">
+                                    <button type="submit">Reopen</button>
+                                </form>
+                            {% endif %}
+                            <form class="inline" method="post" onsubmit="return confirm('Delete this poll and its votes?');">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="delete_poll">
+                                <input type="hidden" name="poll_id" value="{{ poll.id }}">
+                                <button type="submit">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="6" class="muted">No polls yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
 RELEASES_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -3748,6 +3848,31 @@ RELEASES_HTML = """
         <p>Experimental test channel:</p>
         <p><code>sudo sdac-update latest-experimental</code></p>
         <p class="muted">Recommendation: run <code>latest-experimental</code> only on a test/verification server, then update production with <code>latest-official</code> after the release is promoted.</p>
+    </section>
+    <section class="panel">
+        <h2>Recent Experimental Versions</h2>
+        <table>
+            <thead><tr><th>Version</th><th>Published</th><th>Type</th></tr></thead>
+            <tbody>
+                {% for release in recent_releases %}
+                    <tr>
+                        <td>{% if release.url %}<a href="{{ release.url }}">{{ release.name }}</a>{% else %}{{ release.name }}{% endif %}<br><code>{{ release.tag }}</code></td>
+                        <td>{{ release.published_at or "Unknown" }}</td>
+                        <td>{{ "Experimental" if release.prerelease else "Official" }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="3" class="muted">No recent release list available. Check GitHub credentials/network access.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    <section class="panel">
+        <h2>Latest Patch Notes</h2>
+        {% if latest_patch_notes %}
+            <pre>{{ latest_patch_notes }}</pre>
+        {% else %}
+            <p class="muted">No local release notes found.</p>
+        {% endif %}
     </section>
     <section class="panel">
         <h2>Rollback</h2>
@@ -6516,6 +6641,33 @@ def initialize_database():
                 UNIQUE (guild_id, event_key)
             )
         """)
+
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS polls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                channel_id TEXT,
+                message_id TEXT,
+                question TEXT NOT NULL,
+                options_json TEXT NOT NULL,
+                status TEXT DEFAULT 'active',
+                created_by TEXT,
+                created_by_name TEXT,
+                created_at TEXT,
+                closes_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS poll_votes (
+                poll_id INTEGER,
+                user_id TEXT,
+                username TEXT,
+                option_index INTEGER,
+                created_at TEXT,
+                updated_at TEXT,
+                PRIMARY KEY (poll_id, user_id)
+            )
+        """)
         connection.execute("""
             CREATE TABLE IF NOT EXISTS game_seasons (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -7100,6 +7252,15 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_admin_notifications_guild_event
             ON admin_notifications (guild_id, event_key, enabled)
+        """)
+
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_polls_guild_status
+            ON polls (guild_id, status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_poll_votes_poll
+            ON poll_votes (poll_id, option_index)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_game_seasons_guild_status
@@ -9602,6 +9763,117 @@ def update_dashboard_theme(form, uploaded_file=None):
     save_config(config_data)
     return theme
 
+def parse_poll_options(raw_value):
+    parts = [
+        part.strip()
+        for part in re.split(r"[\n|]+", str(raw_value or ""))
+        if part.strip()
+    ]
+    if len(parts) < 2:
+        raise ValueError("Polls need at least two options separated by | or new lines.")
+    if len(parts) > 10:
+        raise ValueError("Polls can have at most 10 options.")
+    return [part[:120] for part in parts]
+
+
+def poll_vote_summary(connection, poll_id, options):
+    rows = connection.execute("""
+        SELECT option_index, COUNT(*) AS total
+        FROM poll_votes
+        WHERE poll_id = ?
+        GROUP BY option_index
+    """, (poll_id,)).fetchall()
+    counts = {int(row["option_index"]): int(row["total"] or 0) for row in rows}
+    total = sum(counts.values())
+    return [
+        {
+            "index": index,
+            "number": index + 1,
+            "label": label,
+            "votes": counts.get(index, 0),
+            "percent": round((counts.get(index, 0) / total) * 100) if total else 0,
+        }
+        for index, label in enumerate(options)
+    ], total
+
+
+def poll_rows(connection, guild_ids=None, status=""):
+    where = []
+    params = []
+    if guild_ids is not None:
+        scope_sql, scope_params = guild_id_filter("guild_id", guild_ids)
+        where.append(scope_sql)
+        params.extend(scope_params)
+    if status:
+        where.append("status = ?")
+        params.append(status)
+    where_sql = "WHERE " + " AND ".join(where) if where else ""
+    rows = connection.execute(f"""
+        SELECT *
+        FROM polls
+        {where_sql}
+        ORDER BY created_at DESC, id DESC
+        LIMIT 200
+    """, params).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        try:
+            options = json.loads(item.get("options_json") or "[]")
+        except json.JSONDecodeError:
+            options = []
+        item["options"] = options
+        item["summary"], item["total_votes"] = poll_vote_summary(connection, item["id"], options)
+        result.append(item)
+    return result
+
+
+def latest_release_note_entry(path=None):
+    path = path or (BASE_DIR / "RELEASE.md")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    parts = re.split(r"\n---\n", text, maxsplit=1)
+    return parts[0].strip()
+
+
+def fetch_recent_releases(limit=8):
+    token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "SDAC-Dashboard/3.0",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    api_request = Request(
+        f"https://api.github.com/repos/{RELEASE_REPO}/releases?per_page={max(1, min(limit, 20))}",
+        headers=headers,
+    )
+    with urlopen(api_request, timeout=8) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    releases = []
+    for item in payload:
+        tag = item.get("tag_name") or ""
+        if tag in {"latest-official", "latest-experimental"}:
+            continue
+        releases.append({
+            "tag": tag,
+            "name": item.get("name") or tag,
+            "published_at": item.get("published_at") or "",
+            "prerelease": bool(item.get("prerelease")),
+            "url": item.get("html_url") or "",
+        })
+    return releases
+
+
+def recent_release_rows(limit=8):
+    try:
+        return fetch_recent_releases(limit)
+    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+        return []
+
+
 def admin_url(endpoint, **values):
     values.setdefault("key", ADMIN_KEY)
     return url_for(endpoint, **values)
@@ -9629,6 +9901,7 @@ def admin_sidebar_sections():
                 ("Users", "admin_users", {}),
                 ("Moderation", "admin_moderation", {}),
                 ("Approvals", "admin_approvals", {}),
+                ("Polls", "admin_polls", {}),
                 ("Audit", "admin_audit", {}),
                 ("Game Library", "admin_game_library", {}),
                 ("Seasons", "admin_seasons", {}),
@@ -9689,6 +9962,65 @@ def admin_sidebar_sections():
     return rendered_sections
 
 
+
+def public_sidebar_sections():
+    links = [
+        ("Home", "index", {}),
+        ("Submissions", "index", {}),
+        ("My Submissions", "my_submissions", {}),
+        ("Servers", "servers", {}),
+        ("Stats", "public_stats", {}),
+        ("Guessing", "guessing_leaderboard", {}),
+        ("Achievements", "achievements", {}),
+        ("About", "about", {}),
+        ("Setup Guide", "setup_guide", {}),
+    ]
+    rendered_links = []
+    section_active = False
+    for label, endpoint, values in links:
+        try:
+            active = request.endpoint == endpoint
+            section_active = section_active or active
+            rendered_links.append({
+                "label": label,
+                "url": url_for(endpoint, **values),
+                "active": active,
+            })
+        except Exception:
+            continue
+    return [{
+        "label": "User",
+        "active": section_active,
+        "links": rendered_links,
+    }]
+
+
+def sidebar_sections():
+    if is_admin_logged_in():
+        return admin_sidebar_sections()
+    return public_sidebar_sections()
+
+
+def should_render_public_sidebar():
+    public_endpoints = {
+        "index",
+        "about",
+        "setup_guide",
+        "servers",
+        "server_profile",
+        "public_stats",
+        "guessing_leaderboard",
+        "achievements",
+        "account_login",
+        "account_register",
+        "account_home",
+        "my_submissions",
+        "user_profile",
+        "report_submission",
+    }
+    return request.endpoint in public_endpoints
+
+
 def admin_sidebar_links():
     return [
         link
@@ -9698,15 +10030,17 @@ def admin_sidebar_links():
 
 
 def should_render_admin_sidebar():
-    if not is_admin_logged_in():
-        return False
     if request.endpoint in {
         "admin_login",
         "admin_logout",
         "admin_oauth_start",
         "admin_oauth_callback",
+        "account_oauth_start",
+        "account_oauth_callback",
     }:
         return False
+    if not is_admin_logged_in():
+        return should_render_public_sidebar()
     if request.path == "/admin" or request.path.startswith("/admin/"):
         return True
     if request.endpoint in {
@@ -9716,12 +10050,12 @@ def should_render_admin_sidebar():
         "user_profile",
     } and request.args.get("key") == ADMIN_KEY:
         return True
-    return False
+    return should_render_public_sidebar()
 
 
 def admin_sidebar_html():
     groups = []
-    for section in admin_sidebar_sections():
+    for section in sidebar_sections():
         links = []
         for link in section["links"]:
             active_class = " active" if link["active"] else ""
@@ -9737,16 +10071,26 @@ def admin_sidebar_html():
             f'<div class="sdac-sidebar-section-links">{"".join(links)}</div>'
             f'</details>'
         )
-    logout_url = admin_url("admin_logout")
     account_url = (
         url_for("account_home", key=ADMIN_KEY)
         if is_account_logged_in()
         else url_for("account_login", next=request.full_path)
     )
     account_label = "My Account" if is_account_logged_in() else "Account Login"
-    role = ROLE_LABELS.get(current_admin_role(), current_admin_role().title())
+    if is_admin_logged_in():
+        role = ROLE_LABELS.get(current_admin_role(), current_admin_role().title())
+        username = current_admin_username()
+        brand = "SDAC Admin"
+    elif is_account_logged_in():
+        role = ROLE_LABELS.get(normalize_role(session.get("sdac_account_role")), "User")
+        username = current_account_username()
+        brand = "SDAC"
+    else:
+        role = "Public"
+        username = "Guest"
+        brand = "SDAC"
     switcher = ""
-    if current_admin_role() == "bot_owner":
+    if is_admin_logged_in() and current_admin_role() == "bot_owner":
         options = ['<option value="all">All Servers</option>']
         for guild in guild_options(load_config()):
             selected = " selected" if request.args.get("guild_id", "all") == str(guild["id"]) else ""
@@ -9759,13 +10103,16 @@ def admin_sidebar_html():
         )
     return f"""
 <aside class="sdac-sidebar">
-    <div class="sdac-sidebar-brand">SDAC Admin</div>
-    <div class="sdac-sidebar-user">{html.escape(current_admin_username())}<br><span>{html.escape(role)}</span></div>
+    <div class="sdac-sidebar-brand">{html.escape(brand)}</div>
+    <div class="sdac-sidebar-user">{html.escape(username)}<br><span>{html.escape(role)}</span></div>
     {switcher}
     <nav>{"".join(groups)}</nav>
     <div class="sdac-sidebar-footer">
         <a class="sdac-sidebar-link" href="{html.escape(account_url, quote=True)}">{html.escape(account_label)}</a>
-        <a class="sdac-sidebar-link" href="{html.escape(logout_url, quote=True)}">Logout</a>
+        {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_oauth_start", next=request.full_path), quote=True) + '">Login with Discord</a>') if not is_account_logged_in() else ''}
+        {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_register"), quote=True) + '">Create Account</a>') if not is_account_logged_in() else ''}
+        {('<a class="sdac-sidebar-link" href="' + html.escape(admin_url("admin_logout"), quote=True) + '">Logout</a>') if is_admin_logged_in() else ''}
+        {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_logout"), quote=True) + '">Logout</a>') if is_account_logged_in() and not is_admin_logged_in() else ''}
     </div>
 </aside>
 """
@@ -10482,14 +10829,18 @@ def account_login():
         identifier=identifier,
         next_url=next_url,
         notice=notice,
-        oauth_enabled=oauth_enabled(),
     )
 
 
 @app.route("/account/oauth/start")
 def account_oauth_start():
     if not oauth_enabled():
-        abort(404)
+        return redirect(url_for(
+            "account_login",
+            notice="Discord login is visible, but OAuth is not configured yet. Set SDAC_DISCORD_CLIENT_ID and SDAC_DISCORD_CLIENT_SECRET.",
+            error=1,
+            next=request.args.get("next") or url_for("account_home"),
+        ))
     state = secrets.token_urlsafe(24)
     session["sdac_account_oauth_state"] = state
     session["sdac_account_oauth_next"] = request.args.get("next") or url_for("account_home")
@@ -13005,6 +13356,112 @@ def admin_monthly_report():
     )
 
 
+@app.route("/admin/polls", methods=["GET", "POST"])
+def admin_polls():
+    login_response = require_admin_login("moderator")
+    if login_response:
+        return login_response
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    config_data = load_config()
+    options = guild_options(config_data)
+    valid_guild_ids = {option["id"] for option in options}
+    actor_id, actor_name = web_actor()
+    if request.method == "POST":
+        require_csrf_token()
+        action = request.form.get("action", "")
+        try:
+            with database() as connection:
+                if action == "create_poll":
+                    guild_id = request.form.get("guild_id", "").strip()
+                    if guild_id not in valid_guild_ids:
+                        raise ValueError("Choose a server for this poll.")
+                    question = request.form.get("question", "").strip()[:240]
+                    if not question:
+                        raise ValueError("Question is required.")
+                    poll_options = parse_poll_options(request.form.get("options", ""))
+                    channel_id = request.form.get("channel_id", "").strip()
+                    cursor = connection.execute("""
+                        INSERT INTO polls (
+                            guild_id, channel_id, message_id, question,
+                            options_json, status, created_by, created_by_name,
+                            created_at, closes_at
+                        )
+                        VALUES (?, ?, '', ?, ?, 'active', ?, ?, ?, '')
+                    """, (
+                        guild_id,
+                        channel_id,
+                        question,
+                        json.dumps(poll_options, separators=(",", ":")),
+                        actor_id,
+                        actor_name,
+                        utc_now_iso(),
+                    ))
+                    poll_id = cursor.lastrowid
+                    add_admin_audit_log(
+                        connection,
+                        guild_id,
+                        "dashboard_create_poll",
+                        actor_id,
+                        actor_name,
+                        "poll",
+                        poll_id,
+                        f"Created poll: {question}",
+                    )
+                    notice = f"Poll {poll_id} created."
+                elif action in {"close_poll", "reopen_poll"}:
+                    poll_id = int(request.form.get("poll_id", "0") or 0)
+                    new_status = "closed" if action == "close_poll" else "active"
+                    connection.execute(
+                        "UPDATE polls SET status = ? WHERE id = ?",
+                        (new_status, poll_id),
+                    )
+                    add_admin_audit_log(
+                        connection,
+                        None,
+                        f"dashboard_{action}",
+                        actor_id,
+                        actor_name,
+                        "poll",
+                        poll_id,
+                        f"Set poll status to {new_status}.",
+                    )
+                    notice = f"Poll {poll_id} {new_status}."
+                elif action == "delete_poll":
+                    poll_id = int(request.form.get("poll_id", "0") or 0)
+                    connection.execute("DELETE FROM poll_votes WHERE poll_id = ?", (poll_id,))
+                    connection.execute("DELETE FROM polls WHERE id = ?", (poll_id,))
+                    add_admin_audit_log(
+                        connection,
+                        None,
+                        "dashboard_delete_poll",
+                        actor_id,
+                        actor_name,
+                        "poll",
+                        poll_id,
+                        "Deleted poll and votes.",
+                    )
+                    notice = f"Poll {poll_id} deleted."
+                else:
+                    raise ValueError("Unknown poll action.")
+            return redirect(url_for("admin_polls", key=ADMIN_KEY, notice=notice))
+        except (ValueError, sqlite3.Error) as exc:
+            notice = str(exc)
+            error = True
+    with closing(connect_db()) as connection:
+        rows = poll_rows(connection, current_admin_allowed_guild_ids(config_data))
+    return render_template_string(
+        POLLS_HTML,
+        admin_key=ADMIN_KEY,
+        csrf_token=get_csrf_token(),
+        error=error,
+        guild_names=guild_name_map(config_data),
+        guild_options=options,
+        notice=notice,
+        polls=rows,
+    )
+
+
 @app.route("/admin/releases")
 def admin_releases():
     login_response = require_admin_login("admin")
@@ -13014,6 +13471,8 @@ def admin_releases():
         RELEASES_HTML,
         admin_key=ADMIN_KEY,
         release_status=release_status(),
+        latest_patch_notes=latest_release_note_entry(),
+        recent_releases=recent_release_rows(),
         snapshots=latest_deploy_snapshots(),
     )
 

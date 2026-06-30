@@ -979,6 +979,33 @@ def initialize_database():
                 UNIQUE (guild_id, event_key)
             )
         """)
+
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS polls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT,
+                channel_id TEXT,
+                message_id TEXT,
+                question TEXT NOT NULL,
+                options_json TEXT NOT NULL,
+                status TEXT DEFAULT 'active',
+                created_by TEXT,
+                created_by_name TEXT,
+                created_at TEXT,
+                closes_at TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS poll_votes (
+                poll_id INTEGER,
+                user_id TEXT,
+                username TEXT,
+                option_index INTEGER,
+                created_at TEXT,
+                updated_at TEXT,
+                PRIMARY KEY (poll_id, user_id)
+            )
+        """)
         connection.execute("""
             CREATE TABLE IF NOT EXISTS game_seasons (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1616,6 +1643,15 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_admin_notifications_guild_event
             ON admin_notifications (guild_id, event_key, enabled)
+        """)
+
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_polls_guild_status
+            ON polls (guild_id, status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_poll_votes_poll
+            ON poll_votes (poll_id, option_index)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_game_seasons_guild_status
@@ -3823,6 +3859,54 @@ def add_moderation_history(
         details,
         utc_now_iso(),
     ))
+
+
+def parse_poll_options(raw_value):
+    parts = [
+        part.strip()
+        for part in re.split(r"[\n|]+", str(raw_value or ""))
+        if part.strip()
+    ]
+    if len(parts) < 2:
+        raise ValueError("Polls need at least two options separated by | or new lines.")
+    if len(parts) > 10:
+        raise ValueError("Polls can have at most 10 options.")
+    return [part[:120] for part in parts]
+
+
+def poll_vote_counts(connection, poll_id):
+    rows = connection.execute("""
+        SELECT option_index, COUNT(*) AS total
+        FROM poll_votes
+        WHERE poll_id = ?
+        GROUP BY option_index
+    """, (poll_id,)).fetchall()
+    return {int(row["option_index"]): int(row["total"] or 0) for row in rows}
+
+
+def poll_results_text(options, counts):
+    total = sum(counts.values())
+    lines = []
+    for index, option in enumerate(options):
+        votes = counts.get(index, 0)
+        percent = round((votes / total) * 100) if total else 0
+        lines.append(f"{index + 1}. {option} - {votes} vote(s), {percent}%")
+    lines.append(f"Total votes: {total}")
+    return "\n".join(lines)
+
+
+def poll_embed(poll_id, question, options, counts=None, status="active"):
+    counts = counts or {}
+    embed = discord.Embed(
+        title=f"Poll #{poll_id}: {question}",
+        description=(
+            "Vote with `/votepoll poll_id option_number`.\n\n"
+            + poll_results_text(options, counts)
+        ),
+        color=0x5865F2 if status == "active" else 0x6B7280,
+    )
+    embed.set_footer(text=f"Status: {status}")
+    return embed
 
 
 def admin_only(interaction):
@@ -6449,6 +6533,187 @@ async def setguesstimeout(
         f"Wrong-guess cooldown set to `{minutes}` minute(s).",
         ephemeral=True,
     )
+
+
+@tree.command(name="createpoll", description="Create an SDAC poll")
+@app_commands.guild_only()
+@app_commands.describe(
+    question="Poll question",
+    options="Options separated with |, for example: Red | Blue | Green",
+    channel="Optional channel to post the poll in",
+)
+async def createpoll(
+    interaction,
+    question: str,
+    options: str,
+    channel: Optional[discord.TextChannel] = None,
+):
+    if not await require_admin(interaction):
+        return
+    try:
+        poll_options = parse_poll_options(options)
+    except ValueError as exc:
+        await interaction.response.send_message(str(exc), ephemeral=True)
+        return
+    target_channel = channel or interaction.channel
+    now = utc_now_iso()
+    with database() as connection:
+        cursor = connection.execute("""
+            INSERT INTO polls (
+                guild_id, channel_id, message_id, question, options_json,
+                status, created_by, created_by_name, created_at, closes_at
+            )
+            VALUES (?, ?, '', ?, ?, 'active', ?, ?, ?, '')
+        """, (
+            str(interaction.guild_id),
+            str(target_channel.id),
+            question[:240],
+            json.dumps(poll_options, separators=(",", ":")),
+            str(interaction.user.id),
+            str(interaction.user),
+            now,
+        ))
+        poll_id = cursor.lastrowid
+    message = await target_channel.send(
+        embed=poll_embed(poll_id, question[:240], poll_options, {}, "active")
+    )
+    with database() as connection:
+        connection.execute(
+            "UPDATE polls SET message_id = ? WHERE id = ?",
+            (str(message.id), poll_id),
+        )
+        add_admin_audit_log(
+            connection,
+            interaction.guild_id,
+            "discord_create_poll",
+            interaction.user.id,
+            interaction.user,
+            "poll",
+            poll_id,
+            f"Created poll: {question[:240]}",
+        )
+    await interaction.response.send_message(
+        f"Poll `{poll_id}` created in {target_channel.mention}.",
+        ephemeral=True,
+    )
+
+
+@tree.command(name="polls", description="List active SDAC polls")
+@app_commands.guild_only()
+async def polls(interaction):
+    with closing(connect_db()) as connection:
+        rows = connection.execute("""
+            SELECT id, question, options_json, status
+            FROM polls
+            WHERE guild_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 10
+        """, (str(interaction.guild_id),)).fetchall()
+    if not rows:
+        await interaction.response.send_message("No polls found.", ephemeral=True)
+        return
+    lines = []
+    for row in rows:
+        status = row["status"] or "active"
+        lines.append(f"`{row['id']}` [{status}] {row['question']}")
+    await interaction.response.send_message("\n".join(lines), ephemeral=True)
+
+
+@tree.command(name="votepoll", description="Vote in an SDAC poll")
+@app_commands.guild_only()
+@app_commands.describe(poll_id="Poll ID", option_number="Option number from the poll")
+async def votepoll(
+    interaction,
+    poll_id: int,
+    option_number: app_commands.Range[int, 1, 10],
+):
+    with database() as connection:
+        poll = connection.execute("""
+            SELECT *
+            FROM polls
+            WHERE id = ? AND guild_id = ?
+            LIMIT 1
+        """, (poll_id, str(interaction.guild_id))).fetchone()
+        if not poll:
+            await interaction.response.send_message("Poll not found on this server.", ephemeral=True)
+            return
+        if (poll["status"] or "active") != "active":
+            await interaction.response.send_message("That poll is closed.", ephemeral=True)
+            return
+        options = json.loads(poll["options_json"] or "[]")
+        option_index = int(option_number) - 1
+        if option_index < 0 or option_index >= len(options):
+            await interaction.response.send_message("That option number is not valid for this poll.", ephemeral=True)
+            return
+        now = utc_now_iso()
+        connection.execute("""
+            INSERT INTO poll_votes (
+                poll_id, user_id, username, option_index, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(poll_id, user_id) DO UPDATE SET
+                username = excluded.username,
+                option_index = excluded.option_index,
+                updated_at = excluded.updated_at
+        """, (
+            poll_id,
+            str(interaction.user.id),
+            str(interaction.user),
+            option_index,
+            now,
+            now,
+        ))
+        counts = poll_vote_counts(connection, poll_id)
+    await interaction.response.send_message(
+        f"Vote saved for poll `{poll_id}`: **{options[option_index]}**",
+        ephemeral=True,
+    )
+    if poll["channel_id"] and poll["message_id"]:
+        try:
+            channel = bot.get_channel(int(poll["channel_id"])) or await bot.fetch_channel(int(poll["channel_id"]))
+            message = await channel.fetch_message(int(poll["message_id"]))
+            await message.edit(embed=poll_embed(poll_id, poll["question"], options, counts, poll["status"] or "active"))
+        except (discord.DiscordException, ValueError):
+            pass
+
+
+@tree.command(name="closepoll", description="Close an SDAC poll")
+@app_commands.guild_only()
+@app_commands.describe(poll_id="Poll ID to close")
+async def closepoll(interaction, poll_id: int):
+    if not await require_admin(interaction):
+        return
+    with database() as connection:
+        poll = connection.execute("""
+            SELECT *
+            FROM polls
+            WHERE id = ? AND guild_id = ?
+            LIMIT 1
+        """, (poll_id, str(interaction.guild_id))).fetchone()
+        if not poll:
+            await interaction.response.send_message("Poll not found on this server.", ephemeral=True)
+            return
+        connection.execute(
+            "UPDATE polls SET status = 'closed' WHERE id = ?",
+            (poll_id,),
+        )
+        options = json.loads(poll["options_json"] or "[]")
+        counts = poll_vote_counts(connection, poll_id)
+        add_admin_audit_log(
+            connection,
+            interaction.guild_id,
+            "discord_close_poll",
+            interaction.user.id,
+            interaction.user,
+            "poll",
+            poll_id,
+            "Closed poll.",
+        )
+    await interaction.response.send_message(
+        f"Poll `{poll_id}` closed.\n{poll_results_text(options, counts)}",
+        ephemeral=True,
+    )
+
 
 
 @tree.command(name="setadminrole", description="Allow a role to manage SDAC")
