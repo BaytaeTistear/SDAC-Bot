@@ -942,6 +942,17 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS dashboard_user_server_access (
+                username TEXT NOT NULL,
+                guild_id TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                source TEXT DEFAULT 'manual',
+                verified_at TEXT,
+                updated_at TEXT,
+                PRIMARY KEY (username, guild_id)
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS user_restrictions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 guild_id TEXT DEFAULT '',
@@ -1630,6 +1641,20 @@ def initialize_database():
             CREATE INDEX IF NOT EXISTS idx_dashboard_admin_users_discord_id
             ON dashboard_admin_users (discord_user_id, disabled)
         """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_dashboard_user_server_access_guild
+            ON dashboard_user_server_access (guild_id, role)
+        """)
+        connection.execute("""
+            INSERT OR IGNORE INTO dashboard_user_server_access (
+                username, guild_id, role, source, verified_at, updated_at
+            )
+            SELECT users.username, json_each.value,
+                   CASE WHEN users.username = ? THEN 'bot_owner' ELSE users.role END,
+                   'legacy', users.updated_at, users.updated_at
+            FROM dashboard_admin_users AS users, json_each(COALESCE(NULLIF(users.guild_ids_json, ''), '[]'))
+            WHERE json_valid(COALESCE(NULLIF(users.guild_ids_json, ''), '[]'))
+        """, (OWNER_OVERRIDE_USERNAME,))
         connection.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS idx_user_restrictions_guild_user
             ON user_restrictions (guild_id, user_id)

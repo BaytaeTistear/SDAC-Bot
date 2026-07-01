@@ -1,3 +1,28 @@
+# SDAC Bot Version 3.0.13 Experimental
+
+Date: 2026-06-30
+
+Version 3.0.13 is an experimental server-access and diagnostics update.
+
+Included:
+
+- added per-server dashboard roles so a user can be Server Owner on one server and User on another
+- added a `dashboard_user_server_access` table with legacy scope backfill
+- added an Access Debug page showing role, visibility, selected server, and access source
+- added Refresh Discord Servers links that re-run Discord OAuth guild syncing
+- added sidebar warnings when an account has no linked servers
+- added per-server role management to the Users admin page
+- added focused sidebar/server-access regression tests
+- added `tools/release_experimental.ps1` to standardize experimental release pushes
+
+Release channel:
+
+- `version-3.0.13` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.13 line is validated
+
+---
+
 # SDAC Bot Version 3.0.12 Experimental
 
 Date: 2026-06-30
