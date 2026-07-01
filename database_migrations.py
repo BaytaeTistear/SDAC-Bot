@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import sqlite3
 
 
-DATABASE_SCHEMA_VERSION = 15
+DATABASE_SCHEMA_VERSION = 16
 
 
 def utc_now_iso():
@@ -653,6 +653,52 @@ def migration_15_user_restrictions(connection):
     """)
 
 
+def migration_16_dashboard_access_and_bot_owners(connection):
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS dashboard_user_server_access (
+            username TEXT NOT NULL,
+            guild_id TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user',
+            source TEXT DEFAULT 'manual',
+            verified_at TEXT,
+            updated_at TEXT,
+            PRIMARY KEY (username, guild_id)
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dashboard_user_server_access_guild
+        ON dashboard_user_server_access (guild_id, role)
+    """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS dashboard_bot_owners (
+            username TEXT PRIMARY KEY,
+            source TEXT DEFAULT 'manual',
+            created_at TEXT,
+            updated_at TEXT
+        )
+    """)
+    now = utc_now_iso()
+    connection.execute("""
+        INSERT OR IGNORE INTO dashboard_bot_owners (
+            username, source, created_at, updated_at
+        )
+        VALUES ('baytae', 'bootstrap', ?, ?)
+    """, (now, now))
+    connection.execute("""
+        INSERT OR IGNORE INTO dashboard_user_server_access (
+            username, guild_id, role, source, verified_at, updated_at
+        )
+        SELECT users.username, json_each.value,
+               CASE WHEN owners.username IS NOT NULL THEN 'bot_owner' ELSE users.role END,
+               'legacy', users.updated_at, users.updated_at
+        FROM dashboard_admin_users AS users
+        LEFT JOIN dashboard_bot_owners AS owners
+          ON lower(owners.username) = lower(users.username)
+        , json_each(COALESCE(NULLIF(users.guild_ids_json, ''), '[]'))
+        WHERE json_valid(COALESCE(NULLIF(users.guild_ids_json, ''), '[]'))
+    """)
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -667,6 +713,7 @@ MIGRATIONS = (
     (13, migration_13_dashboard_accounts),
     (14, migration_14_dashboard_account_discord_id),
     (15, migration_15_user_restrictions),
+    (16, migration_16_dashboard_access_and_bot_owners),
 )
 
 

@@ -186,6 +186,10 @@ install_update_command() {
 
     say "Installing sdac-update command"
     sudo install -m 755 "$SCRIPT_PATH" "$COMMAND_PATH"
+    if [[ -f "$APP_DIR/scripts/sdac-doctor" ]]; then
+        say "Installing sdac-doctor command"
+        sudo install -m 755 "$APP_DIR/scripts/sdac-doctor" "/usr/local/bin/sdac-doctor"
+    fi
 
     local config_dir
     config_dir="$(dirname "$CONFIG_FILE")"

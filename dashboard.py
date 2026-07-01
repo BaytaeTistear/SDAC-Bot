@@ -2286,48 +2286,45 @@ USERS_HTML = """
         </table>
     </section>
     <section class="panel">
-        <h2>Per-Server Roles</h2>
-        <p class="muted">Use these when a person should have different access on different servers.</p>
+        <h2>Per-Server Role Matrix</h2>
+        <p class="muted">Use this when a person should have different access on different servers.</p>
         <table>
-            <thead><tr><th>User</th><th>Server Roles</th><th>Set Role</th></tr></thead>
+            <thead>
+                <tr>
+                    <th>User</th>
+                    {% for guild in guilds %}
+                        <th>{{ guild.name }}<br><code>{{ guild.id }}</code></th>
+                    {% endfor %}
+                </tr>
+            </thead>
             <tbody>
             {% for user in dashboard_users %}
                 {% set user_access = access_by_user.get(user.username, {}) %}
                 <tr>
                     <td><code>{{ user.username }}</code><br><span class="muted">Default: {{ role_labels.get(user.role, user.role) }}</span></td>
-                    <td>
-                        {% if user_access %}
-                            {% for guild_id, role_key in user_access.items() %}
-                                <div><code>{{ guild_id }}</code> - {{ guild_names.get(guild_id, guild_id) }}: <strong>{{ role_labels.get(role_key, role_key) }}</strong></div>
-                            {% endfor %}
-                        {% else %}
-                            <span class="muted">No per-server roles yet.</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <form method="post" class="stack">
-                            <input type="hidden" name="key" value="{{ admin_key }}">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                            <input type="hidden" name="action" value="set_dashboard_server_role">
-                            <input type="hidden" name="username" value="{{ user.username }}">
-                            <select name="guild_id">
-                                {% for guild in guilds %}
-                                    <option value="{{ guild.id }}">{{ guild.name }} ({{ guild.id }})</option>
-                                {% endfor %}
-                            </select>
-                            <select name="role">
-                                {% for role_key, role_label in role_labels.items() %}
-                                    {% if can_promote_dashboard_user(user_access.get(guilds[0].id, user.role) if guilds else user.role, role_key, user.username) %}
-                                        <option value="{{ role_key }}">{{ role_label }}</option>
-                                    {% endif %}
-                                {% endfor %}
-                            </select>
-                            <button type="submit">Save Server Role</button>
-                        </form>
-                    </td>
+                    {% for guild in guilds %}
+                        {% set current_role = user_access.get(guild.id, user.role) %}
+                        <td>
+                            <form method="post" class="stack">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="set_dashboard_server_role">
+                                <input type="hidden" name="username" value="{{ user.username }}">
+                                <input type="hidden" name="guild_id" value="{{ guild.id }}">
+                                <select name="role">
+                                    {% for role_key, role_label in role_labels.items() %}
+                                        {% if can_promote_dashboard_user(current_role, role_key, user.username) or role_key == current_role %}
+                                            <option value="{{ role_key }}" {% if current_role == role_key %}selected{% endif %}>{{ role_label }}</option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                                <button type="submit">Save</button>
+                            </form>
+                        </td>
+                    {% endfor %}
                 </tr>
             {% else %}
-                <tr><td colspan="3" class="muted">No dashboard accounts yet.</td></tr>
+                <tr><td colspan="{{ 1 + guilds|length }}" class="muted">No dashboard accounts yet.</td></tr>
             {% endfor %}
             </tbody>
         </table>
@@ -4033,6 +4030,12 @@ RELEASES_HTML = """
             The updater can restore the latest deploy snapshot with:
             <code>sudo sdac-update rollback</code>
         </p>
+        <p>Rollback to a known release:</p>
+        <p><code>sudo sdac-update 3.0.14</code></p>
+        <p><code>sudo sdac-update 3.0.13</code></p>
+        <p><code>sudo sdac-update 3.0.12</code></p>
+        <p>Run server diagnostics after any rollback or update:</p>
+        <p><code>sudo sdac-doctor</code></p>
         <p class="muted">
             You can also queue rollback from Maintenance. The dashboard service
             user must have permission to restart the SDAC systemd services.
@@ -4492,6 +4495,17 @@ SERVER_HEALTH_CARDS_HTML = """
         <a href="{{ url_for('admin_logout') }}">Log out</a>
     </nav>
     <section class="grid">
+        <article class="card">
+            <h2>Service Logs</h2>
+            <p>Last bot logs:</p>
+            <p><code>sudo journalctl -u sdac-bot -n 80 --no-pager</code></p>
+            <p>Follow bot logs live:</p>
+            <p><code>sudo journalctl -u sdac-bot -f</code></p>
+            <p>Service status:</p>
+            <p><code>sudo systemctl status sdac-bot --no-pager</code></p>
+            <p>Full server doctor:</p>
+            <p><code>sudo sdac-doctor</code></p>
+        </article>
         {% for row in servers %}
             <article class="card">
                 <h2>{{ row.name }}</h2>
@@ -6647,7 +6661,7 @@ def preserve_monthly_submission_top(connection, month):
                 media_names, media_types, media_sizes, media_metadata_json,
                 stars, voters, submitted_at, created_at, captured_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             month,
             category,
@@ -6791,6 +6805,14 @@ def initialize_database():
                 verified_at TEXT,
                 updated_at TEXT,
                 PRIMARY KEY (username, guild_id)
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS dashboard_bot_owners (
+                username TEXT PRIMARY KEY,
+                source TEXT DEFAULT 'manual',
+                created_at TEXT,
+                updated_at TEXT
             )
         """)
         connection.execute("""
@@ -7433,6 +7455,13 @@ def initialize_database():
             CREATE INDEX IF NOT EXISTS idx_dashboard_user_server_access_guild
             ON dashboard_user_server_access (guild_id, role)
         """)
+        now = utc_now_iso()
+        connection.execute("""
+            INSERT OR IGNORE INTO dashboard_bot_owners (
+                username, source, created_at, updated_at
+            )
+            VALUES (?, 'bootstrap', ?, ?)
+        """, (OWNER_OVERRIDE_USERNAME, now, now))
         connection.execute("""
             INSERT OR IGNORE INTO dashboard_user_server_access (
                 username, guild_id, role, source, verified_at, updated_at
@@ -9648,6 +9677,35 @@ def normalize_role(role):
     return key if key in ROLE_LEVELS else "user"
 
 
+def is_bot_owner_username(username):
+    username = str(username or "").strip().casefold()
+    if not username:
+        return False
+    if username == OWNER_OVERRIDE_USERNAME:
+        return True
+    try:
+        with closing(connect_db()) as connection:
+            row = connection.execute("""
+                SELECT 1
+                FROM dashboard_bot_owners
+                WHERE lower(username) = ?
+                LIMIT 1
+            """, (username,)).fetchone()
+            if row:
+                return True
+            user = connection.execute("""
+                SELECT 1
+                FROM dashboard_admin_users
+                WHERE lower(username) = ?
+                  AND role = 'bot_owner'
+                  AND COALESCE(disabled, 0) = 0
+                LIMIT 1
+            """, (username,)).fetchone()
+            return user is not None
+    except sqlite3.Error:
+        return False
+
+
 def is_admin_logged_in():
     return bool(session.get("sdac_admin"))
 
@@ -9672,7 +9730,7 @@ def current_requested_guild_id():
 def current_account_allowed_guild_ids(config_data=None):
     config_data = config_data or load_config()
     all_ids = {str(guild_id) for guild_id in (config_data.get("guilds") or {})}
-    if current_account_username().casefold() == OWNER_OVERRIDE_USERNAME:
+    if is_bot_owner_username(current_account_username()):
         return all_ids
     if is_admin_logged_in():
         return current_admin_allowed_guild_ids(config_data)
@@ -9692,7 +9750,7 @@ def current_admin_username():
 
 
 def current_admin_role():
-    if current_admin_username().casefold() == OWNER_OVERRIDE_USERNAME:
+    if is_bot_owner_username(current_admin_username()):
         return "bot_owner"
     guild_id = current_requested_guild_id()
     if guild_id:
@@ -9860,7 +9918,7 @@ def current_admin_allowed_guild_ids(config_data=None):
         str(guild_id)
         for guild_id in (config_data.get("guilds") or {})
     }
-    if current_admin_username().casefold() == OWNER_OVERRIDE_USERNAME:
+    if is_bot_owner_username(current_admin_username()):
         return all_ids
     if current_admin_role() == "bot_owner":
         return all_ids
@@ -10014,7 +10072,7 @@ def set_user_server_role(connection, username, guild_id, role, source="manual"):
 
 def dashboard_user_max_role(username, fallback_role="user"):
     username = normalize_account_username(username)
-    if username.casefold() == OWNER_OVERRIDE_USERNAME:
+    if is_bot_owner_username(username):
         return "bot_owner"
     max_role = normalize_role(fallback_role)
     for row in dashboard_user_server_access(username):
@@ -10382,6 +10440,7 @@ def admin_sidebar_sections():
             "required_role": "bot_owner",
             "links": [
                 ("Server Switcher", "admin_server_switcher", {}),
+                ("Preview As", "admin_preview_as", {}),
                 ("All Servers", "index", {"guild_id": "all"}),
             ],
         },
@@ -10558,7 +10617,7 @@ def admin_sidebar_html():
         username = current_admin_username()
         brand = "SDAC Admin"
     elif is_account_logged_in():
-        account_role = "bot_owner" if current_account_username().casefold() == OWNER_OVERRIDE_USERNAME else normalize_role(session.get("sdac_account_role"))
+        account_role = "bot_owner" if is_bot_owner_username(current_account_username()) else normalize_role(session.get("sdac_account_role"))
         role = ROLE_LABELS.get(account_role, "User")
         username = current_account_username()
         brand = "SDAC"
@@ -11165,7 +11224,7 @@ def admin_login():
             login_ok = False
             if user and not int(user["disabled"] or 0):
                 login_ok = check_password_hash(user["password_hash"], password)
-                role = "bot_owner" if user["username"].casefold() == OWNER_OVERRIDE_USERNAME else normalize_role(user["role"])
+                role = "bot_owner" if is_bot_owner_username(user["username"]) else normalize_role(user["role"])
                 role = dashboard_user_max_role(user["username"], role)
 
             if login_ok and ROLE_LEVELS.get(role, 0) >= ROLE_LEVELS["moderator"]:
@@ -11358,7 +11417,7 @@ def account_login():
             ):
                 clear_login_failures(remote_key)
                 session["sdac_account_username"] = account["username"]
-                account_role = "bot_owner" if account["username"].casefold() == OWNER_OVERRIDE_USERNAME else normalize_role(account["role"])
+                account_role = "bot_owner" if is_bot_owner_username(account["username"]) else normalize_role(account["role"])
                 login_role = dashboard_user_max_role(account["username"], account_role)
                 session["sdac_account_role"] = account_role
                 session["sdac_account_guild_ids"] = parse_guild_scope(account["guild_ids_json"])
@@ -11486,7 +11545,7 @@ def account_oauth_callback():
             account = dashboard_user_by_discord_id(connection, user_id)
         elif int(account["disabled"] or 0):
             return redirect(url_for("account_login", notice="That account is disabled.", error=1))
-        role = "bot_owner" if account["username"].casefold() == OWNER_OVERRIDE_USERNAME else normalize_role(account["role"])
+        role = "bot_owner" if is_bot_owner_username(account["username"]) else normalize_role(account["role"])
         scope_ids = sorted((set(config_data.get("guilds") or {}) if role == "bot_owner" else set(oauth_guild_ids)))
         upsert_user_server_access(
             connection,
@@ -11630,7 +11689,7 @@ def account_access_debug():
     ):
         guild_id = str(guild_id)
         role = access_map.get(guild_id, normalize_role(account["role"] if account else "user"))
-        if current_account_username().casefold() == OWNER_OVERRIDE_USERNAME:
+        if is_bot_owner_username(current_account_username()):
             role = "bot_owner"
         reason = "per-server access row" if guild_id in access_map else "legacy account scope"
         if guild_id not in allowed_ids:
@@ -12450,6 +12509,21 @@ def admin_users():
                             approved_at = COALESCE(approved_at, ?), updated_at = ?
                         WHERE username = ?
                     """, (new_role, current_admin_username(), now, now, username))
+                    if new_role == "bot_owner":
+                        connection.execute("""
+                            INSERT INTO dashboard_bot_owners (
+                                username, source, created_at, updated_at
+                            )
+                            VALUES (?, 'manual', ?, ?)
+                            ON CONFLICT(username) DO UPDATE SET
+                                source = excluded.source,
+                                updated_at = excluded.updated_at
+                        """, (username, now, now))
+                    elif username != OWNER_OVERRIDE_USERNAME:
+                        connection.execute("""
+                            DELETE FROM dashboard_bot_owners
+                            WHERE lower(username) = ?
+                        """, (username,))
                     if username == current_admin_username().casefold():
                         session["sdac_admin_role"] = new_role
                     add_admin_audit_log(
@@ -12637,6 +12711,126 @@ def admin_users():
     )
 
 
+@app.route("/admin/preview-as")
+def admin_preview_as():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    users = dashboard_users()
+    username = normalize_account_username(
+        request.args.get("username") or (users[0]["username"] if users else current_admin_username())
+    )
+    guild_options_rows = guild_options(config_data)
+    guild_id = request.args.get("guild_id", "").strip()
+    if not guild_id and guild_options_rows:
+        guild_id = str(guild_options_rows[0]["id"])
+    user = dashboard_user(username)
+    access_map = dashboard_user_server_access_map(username)
+    role = "bot_owner" if is_bot_owner_username(username) else normalize_role(user["role"] if user else "user")
+    if guild_id and guild_id in access_map:
+        role = access_map[guild_id]
+    allowed_ids = set(config_data.get("guilds") or {}) if is_bot_owner_username(username) else set(access_map)
+    if not allowed_ids and user:
+        allowed_ids = set(parse_guild_scope(user["guild_ids_json"]))
+    visible_sections = []
+    for label, required_role in [
+        ("User", "user"),
+        ("Cross Server", "moderator"),
+        ("Moderation", "moderator"),
+        ("Server Owner", "owner"),
+        ("Bot Owner", "bot_owner"),
+    ]:
+        visible_sections.append({
+            "label": label,
+            "visible": ROLE_LEVELS[role] >= ROLE_LEVELS[required_role],
+            "required": ROLE_LABELS[required_role],
+        })
+    return render_template_string("""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Preview Access</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1000px); }
+        h1, h2 { text-align: center; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        input, select, button { border: 1px solid #30333b; border-radius: 7px; font-size: 15px; padding: 9px 10px; }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; }
+        .ok { color: #63c174; font-weight: bold; }
+        .bad { color: #e45d68; font-weight: bold; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Preview Access</h1>
+    <section class="panel">
+        <form method="get">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <label>User
+                <select name="username">
+                    {% for row in users %}
+                        <option value="{{ row.username }}" {% if row.username == username %}selected{% endif %}>{{ row.username }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Server
+                <select name="guild_id">
+                    {% for guild in guilds %}
+                        <option value="{{ guild.id }}" {% if guild.id == guild_id %}selected{% endif %}>{{ guild.name }} ({{ guild.id }})</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <button type="submit">Preview</button>
+        </form>
+    </section>
+    <section class="panel">
+        <h2>Result</h2>
+        <p>User: <code>{{ username }}</code></p>
+        <p>Server: <code>{{ guild_id or 'all' }}</code></p>
+        <p>Effective role: <strong>{{ role_labels.get(role, role) }}</strong></p>
+        <p>Server access: <span class="{{ 'ok' if guild_id in allowed_ids else 'bad' }}">{{ 'Allowed' if guild_id in allowed_ids else 'Not linked' }}</span></p>
+        <p class="muted">This is a read-only preview. It does not change your session or perform actions as the selected user.</p>
+    </section>
+    <section class="panel">
+        <h2>Sidebar Sections</h2>
+        <table>
+            <thead><tr><th>Section</th><th>Required</th><th>Visible</th></tr></thead>
+            <tbody>
+                {% for section in visible_sections %}
+                    <tr>
+                        <td>{{ section.label }}</td>
+                        <td>{{ section.required }}</td>
+                        <td><span class="{{ 'ok' if section.visible else 'bad' }}">{{ 'Yes' if section.visible else 'No' }}</span></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>
+""",
+        admin_key=ADMIN_KEY,
+        allowed_ids=allowed_ids,
+        guild_id=guild_id,
+        guilds=guild_options_rows,
+        role=role,
+        role_labels=ROLE_LABELS,
+        username=username,
+        users=users,
+        visible_sections=visible_sections,
+    )
+
+
 @app.route("/admin/settings", methods=["GET", "POST"])
 def admin_settings():
     login_response = require_admin_login("admin")
@@ -12758,6 +12952,21 @@ def admin_settings():
                         role=role,
                         source="manual",
                     )
+                    if role == "bot_owner":
+                        connection.execute("""
+                            INSERT INTO dashboard_bot_owners (
+                                username, source, created_at, updated_at
+                            )
+                            VALUES (?, 'manual', ?, ?)
+                            ON CONFLICT(username) DO UPDATE SET
+                                source = excluded.source,
+                                updated_at = excluded.updated_at
+                        """, (username, now, now))
+                    elif username != OWNER_OVERRIDE_USERNAME:
+                        connection.execute("""
+                            DELETE FROM dashboard_bot_owners
+                            WHERE lower(username) = ?
+                        """, (username,))
                     message = f"Dashboard user {username} saved as {role}."
                 elif action == "update_dashboard_user":
                     user = connection.execute("""
@@ -12857,6 +13066,21 @@ def admin_settings():
                         role=role,
                         source="manual",
                     )
+                    if role == "bot_owner":
+                        connection.execute("""
+                            INSERT INTO dashboard_bot_owners (
+                                username, source, created_at, updated_at
+                            )
+                            VALUES (?, 'manual', ?, ?)
+                            ON CONFLICT(username) DO UPDATE SET
+                                source = excluded.source,
+                                updated_at = excluded.updated_at
+                        """, (username, now, now))
+                    elif username != OWNER_OVERRIDE_USERNAME:
+                        connection.execute("""
+                            DELETE FROM dashboard_bot_owners
+                            WHERE lower(username) = ?
+                        """, (username,))
                     message = f"Dashboard user {username} updated."
                     if username == current_account_username().casefold():
                         session["sdac_account_role"] = role

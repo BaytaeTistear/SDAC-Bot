@@ -34,7 +34,11 @@ Update with:
 "@
 
 Run-Step "Compile dashboard and bot" {
-    py -3.12 -m py_compile dashboard.py server\dashboard.py bot.py
+    py -3.12 -m py_compile dashboard.py server\dashboard.py bot.py scripts\pre_release_smoke.py
+}
+
+Run-Step "Run release smoke tests" {
+    py -3.12 scripts\pre_release_smoke.py
 }
 
 Run-Step "Build installers" {

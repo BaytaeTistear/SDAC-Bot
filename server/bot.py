@@ -954,6 +954,14 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS dashboard_bot_owners (
+                username TEXT PRIMARY KEY,
+                source TEXT DEFAULT 'manual',
+                created_at TEXT,
+                updated_at TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS user_restrictions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 guild_id TEXT DEFAULT '',
@@ -1646,6 +1654,13 @@ def initialize_database():
             CREATE INDEX IF NOT EXISTS idx_dashboard_user_server_access_guild
             ON dashboard_user_server_access (guild_id, role)
         """)
+        now = datetime.now(timezone.utc).isoformat()
+        connection.execute("""
+            INSERT OR IGNORE INTO dashboard_bot_owners (
+                username, source, created_at, updated_at
+            )
+            VALUES (?, 'bootstrap', ?, ?)
+        """, (OWNER_OVERRIDE_USERNAME, now, now))
         connection.execute("""
             INSERT OR IGNORE INTO dashboard_user_server_access (
                 username, guild_id, role, source, verified_at, updated_at
@@ -2615,7 +2630,7 @@ def preserve_monthly_submission_top(connection, month):
                 media_names, media_types, media_sizes, media_metadata_json,
                 stars, voters, submitted_at, created_at, captured_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             month,
             category,

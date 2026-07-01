@@ -103,6 +103,10 @@ install_update_command() {
 
     echo "Installing sdac-update command"
     sudo install -m 755 "$APP_DIR/scripts/update_from_github.sh" "/usr/local/bin/sdac-update"
+    if [[ -f "$APP_DIR/scripts/sdac-doctor" ]]; then
+        echo "Installing sdac-doctor command"
+        sudo install -m 755 "$APP_DIR/scripts/sdac-doctor" "/usr/local/bin/sdac-doctor"
+    fi
 
     UPDATE_CONFIG_TMP="$(mktemp)"
     {

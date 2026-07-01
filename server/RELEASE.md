@@ -1,3 +1,29 @@
+# SDAC Bot Version 3.0.15 Experimental
+
+Date: 2026-07-01
+
+Version 3.0.15 is an experimental release-safety and diagnostics update.
+
+Included:
+
+- fixed `monthly_leaderboard_scheduler` failing with `21 values for 22 columns`
+- added pre-release smoke tests for bot import, dashboard import, key page rendering, migrations, and monthly leaderboard preservation
+- wired `tools/release_experimental.ps1` to run the smoke tests before building or tagging
+- added `sdac-doctor` server diagnostics for config, database, environment, disk, updater, service status, and recent logs
+- added schema migration 16 for dashboard server access and DB-backed Bot Owners
+- moved Bot Owner recognition into `dashboard_bot_owners` while keeping `baytae` as bootstrap/rescue owner
+- redesigned per-server role management into a user/server role matrix
+- added a Bot Owner read-only Preview As page
+- added rollback/version commands and service log commands to the dashboard
+
+Release channel:
+
+- `version-3.0.15` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.15 line is validated
+
+---
+
 # SDAC Bot Version 3.0.14 Experimental
 
 Date: 2026-06-30
