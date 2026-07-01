@@ -143,6 +143,7 @@ DEFAULT_GUILD_CONFIG = {
     "brand_name": "",
     "brand_accent": "#7c9cff",
     "brand_logo_url": "",
+    "bot_nickname": "",
     "setup_preset": "",
     "admin_role_ids": [],
     "submit_channel": None,

@@ -1,3 +1,25 @@
+# SDAC Bot Version 3.0.18 Experimental
+
+Date: 2026-07-01
+
+Version 3.0.18 is an experimental bot identity management update.
+
+Included:
+
+- added Server Owner controls on Admin Settings to update the bot nickname shown inside a selected Discord server
+- added Bot Owner-only control for changing the global Discord bot username
+- validates Discord bot names before calling the Discord API and surfaces Discord API failures in the dashboard
+- stores each server's bot nickname in config for imports, exports, and future setup flows
+- added Admin Settings rendering to the pre-release smoke test
+
+Release channel:
+
+- `version-3.0.18` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.18 line is validated
+
+---
+
 # SDAC Bot Version 3.0.17 Experimental
 
 Date: 2026-07-01

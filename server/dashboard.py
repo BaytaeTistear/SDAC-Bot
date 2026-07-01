@@ -236,6 +236,7 @@ DEFAULT_GUILD_FIELDS = {
     "brand_name": "",
     "brand_accent": "#7c9cff",
     "brand_logo_url": "",
+    "bot_nickname": "",
     "setup_preset": "",
     "admin_role_ids": [],
     "submit_channel": None,
@@ -2500,6 +2501,61 @@ SETTINGS_HTML = """
             {% endfor %}
         </section>
     {% endif %}
+
+    <section class="panel">
+        <h2>Bot Discord Name</h2>
+        <p class="muted">
+            Server Owners can change the nickname users see inside a selected Discord server.
+            Bot Owners can also change the global bot username, which affects every server and may be rate limited by Discord.
+        </p>
+        {% if can_manage_bot_identity and guilds %}
+            <form method="post">
+                <input type="hidden" name="key" value="{{ admin_key }}">
+                <input type="hidden" name="action" value="set_bot_nickname">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <table>
+                    <tbody>
+                        <tr><th>Server</th><td>
+                            <select name="guild_id">
+                                {% for guild in guilds %}
+                                    <option value="{{ guild.id }}" data-nickname="{{ guild.bot_nickname }}" {% if selected_settings_guild_id == guild.id %}selected{% endif %}>{{ guild.name }} ({{ guild.id }})</option>
+                                {% endfor %}
+                            </select>
+                        </td></tr>
+                        <tr><th>Bot nickname</th><td><input id="bot-nickname-input" name="bot_nickname" maxlength="32" value="{{ selected_bot_nickname }}" placeholder="Blank resets to the bot's global username"></td></tr>
+                    </tbody>
+                </table>
+                <button type="submit">Save Server Nickname</button>
+            </form>
+        {% elif guilds %}
+            <p class="muted">Server Owner access is required to update this server's bot nickname.</p>
+        {% else %}
+            <p class="muted">No accessible servers are configured yet.</p>
+        {% endif %}
+        {% if can_manage_global_bot_username %}
+            <form method="post">
+                <input type="hidden" name="key" value="{{ admin_key }}">
+                <input type="hidden" name="action" value="set_global_bot_username">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <table>
+                    <tbody>
+                        <tr><th>Global bot username</th><td><input name="bot_username" maxlength="32" value="{{ global_bot_username }}" placeholder="SDAC Bot"></td></tr>
+                    </tbody>
+                </table>
+                <button type="submit">Save Global Username</button>
+            </form>
+        {% endif %}
+        <script>
+        (() => {
+            const select = document.querySelector('select[name="guild_id"]');
+            const input = document.getElementById('bot-nickname-input');
+            if (!select || !input) return;
+            select.addEventListener('change', () => {
+                input.value = select.selectedOptions[0]?.dataset.nickname || '';
+            });
+        })();
+        </script>
+    </section>
 
     <section class="panel">
         <h2>Dashboard Access</h2>
@@ -6195,6 +6251,7 @@ def guild_options(config_data=None, public_only=False, cross_server_only=False):
             "guild_name": guild_config.get("guild_name") or display_name,
             "brand_accent": guild_config.get("brand_accent") or "#7c9cff",
             "brand_logo_url": guild_config.get("brand_logo_url") or "",
+            "bot_nickname": guild_config.get("bot_nickname") or "",
         })
     return options
 
@@ -6408,6 +6465,7 @@ def build_onboarding_rows(config_data):
             "guild_name": guild_config.get("guild_name") or f"Discord {guild_id}",
             "brand_accent": guild_config.get("brand_accent") or "#7c9cff",
             "brand_logo_url": guild_config.get("brand_logo_url") or "",
+            "bot_nickname": guild_config.get("bot_nickname") or "",
             "last_setup_test": setup_tests.get(guild_id),
             "command_steps": [
                 "/setup",
@@ -11073,16 +11131,77 @@ def oauth_redirect_uri():
     return url_for("admin_oauth_callback", key=ADMIN_KEY, _external=True)
 
 
-def discord_json_request(url, token, token_type="Bearer"):
+def discord_json_request(url, token, token_type="Bearer", method="GET", payload=None):
     headers = {
         "Accept": "application/json",
-        "User-Agent": "SDAC-Dashboard/2.7",
+        "User-Agent": "SDAC-Dashboard/3.0",
         "Authorization": f"{token_type} {token}",
     }
-    api_request = Request(url, headers=headers)
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    api_request = Request(url, data=data, method=method, headers=headers)
     with urlopen(api_request, timeout=12) as response:
-        return json.loads(response.read().decode("utf-8"))
+        body = response.read().decode("utf-8")
+        return json.loads(body) if body else {}
 
+
+def discord_api_error_message(error):
+    try:
+        body = error.read().decode("utf-8")
+    except Exception:
+        body = ""
+    if body:
+        try:
+            parsed = json.loads(body)
+            message = parsed.get("message") or body
+        except (TypeError, ValueError):
+            message = body
+        return f"Discord API returned {error.code}: {message[:300]}"
+    return f"Discord API returned {error.code}: {error.reason}"
+
+
+def normalize_bot_nickname(value):
+    nickname = str(value or "").strip()
+    if len(nickname) > 32:
+        raise ValueError("Bot nickname must be 32 characters or fewer.")
+    if any(character in nickname for character in "\r\n"):
+        raise ValueError("Bot nickname cannot contain line breaks.")
+    return nickname
+
+
+def normalize_bot_username(value):
+    username = str(value or "").strip()
+    if not 2 <= len(username) <= 32:
+        raise ValueError("Global bot username must be 2-32 characters.")
+    if any(character in username for character in "\r\n"):
+        raise ValueError("Global bot username cannot contain line breaks.")
+    return username
+
+
+def update_discord_bot_nickname(guild_id, nickname):
+    if not TOKEN:
+        raise ValueError("DISCORD_TOKEN is missing, so the dashboard cannot update the bot nickname.")
+    return discord_json_request(
+        f"https://discord.com/api/v10/guilds/{guild_id}/members/@me",
+        TOKEN,
+        token_type="Bot",
+        method="PATCH",
+        payload={"nick": nickname or None},
+    )
+
+
+def update_discord_bot_username(username):
+    if not TOKEN:
+        raise ValueError("DISCORD_TOKEN is missing, so the dashboard cannot update the bot username.")
+    return discord_json_request(
+        "https://discord.com/api/v10/users/@me",
+        TOKEN,
+        token_type="Bot",
+        method="PATCH",
+        payload={"username": username},
+    )
 
 def exchange_discord_oauth_code(code, redirect_uri=None):
     payload = urlencode({
@@ -13124,6 +13243,119 @@ def admin_settings():
                 key=ADMIN_KEY,
                 notice=message,
             ))
+        if action == "set_bot_nickname":
+            config_data = load_config()
+            guild_id = request.form.get("guild_id", "").strip()
+            guild_config = (config_data.get("guilds") or {}).get(guild_id)
+            if not guild_config:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice="Unknown guild for bot nickname.",
+                    error=1,
+                ))
+            if not can_admin_access_guild(guild_id, config_data):
+                abort(403)
+            if not has_admin_role("owner"):
+                abort(403)
+            try:
+                nickname = normalize_bot_nickname(request.form.get("bot_nickname"))
+                update_discord_bot_nickname(guild_id, nickname)
+            except ValueError as form_error:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice=str(form_error),
+                    error=1,
+                    guild_id=guild_id,
+                ))
+            except HTTPError as discord_error:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice=discord_api_error_message(discord_error),
+                    error=1,
+                    guild_id=guild_id,
+                ))
+            except (URLError, TimeoutError, json.JSONDecodeError) as discord_error:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice=f"Discord API request failed: {discord_error}",
+                    error=1,
+                    guild_id=guild_id,
+                ))
+            guild_config["bot_nickname"] = nickname
+            save_config(config_data)
+            message = (
+                f"Bot nickname saved for {guild_config.get('guild_name') or guild_id}."
+                if nickname
+                else f"Bot nickname reset for {guild_config.get('guild_name') or guild_id}."
+            )
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    guild_id,
+                    "dashboard_set_bot_nickname",
+                    actor_id,
+                    actor_name,
+                    "guild",
+                    guild_id,
+                    message,
+                )
+            return redirect(url_for(
+                "admin_settings",
+                key=ADMIN_KEY,
+                notice=message,
+                guild_id=guild_id,
+            ))
+        if action == "set_global_bot_username":
+            if not has_admin_role("bot_owner"):
+                abort(403)
+            try:
+                username = normalize_bot_username(request.form.get("bot_username"))
+                update_discord_bot_username(username)
+            except ValueError as form_error:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice=str(form_error),
+                    error=1,
+                ))
+            except HTTPError as discord_error:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice=discord_api_error_message(discord_error),
+                    error=1,
+                ))
+            except (URLError, TimeoutError, json.JSONDecodeError) as discord_error:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice=f"Discord API request failed: {discord_error}",
+                    error=1,
+                ))
+            config_data = load_config()
+            config_data["bot_username"] = username
+            save_config(config_data)
+            message = f"Global bot username saved as {username}."
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    "dashboard_set_global_bot_username",
+                    actor_id,
+                    actor_name,
+                    "bot",
+                    "@me",
+                    message,
+                )
+            return redirect(url_for(
+                "admin_settings",
+                key=ADMIN_KEY,
+                notice=message,
+            ))
         if action == "set_notification_route":
             config_data = load_config()
             guild_id = request.form.get("guild_id", "").strip()
@@ -13613,6 +13845,7 @@ def admin_settings():
             "brand_name": guild_config.get("brand_name") or "",
             "brand_accent": guild_config.get("brand_accent") or "#7c9cff",
             "brand_logo_url": guild_config.get("brand_logo_url") or "",
+            "bot_nickname": guild_config.get("bot_nickname") or "",
             "submit_channel": guild_config.get("submit_channel"),
             "daily_top_channel": guild_config.get("daily_top_channel"),
             "daily_top_time_utc": guild_config.get(
@@ -13659,6 +13892,26 @@ def admin_settings():
             ],
         })
 
+    requested_settings_guild_id = request.args.get("guild_id", "").strip()
+    if requested_settings_guild_id not in allowed_settings_ids:
+        requested_settings_guild_id = guilds[0]["id"] if guilds else ""
+    selected_bot_nickname = ""
+    for guild in guilds:
+        if guild["id"] == requested_settings_guild_id:
+            selected_bot_nickname = guild.get("bot_nickname") or ""
+            break
+    selected_settings_role = current_admin_role()
+    if selected_settings_role != "bot_owner" and requested_settings_guild_id:
+        selected_settings_role = normalize_role(
+            dashboard_user_server_access_map(current_admin_username()).get(
+                requested_settings_guild_id,
+                selected_settings_role,
+            )
+        )
+    can_manage_selected_bot_identity = (
+        ROLE_LEVELS[selected_settings_role] >= ROLE_LEVELS["owner"]
+    )
+
     scope_sql, scope_params = guild_id_filter("guild_id", allowed_settings_ids)
     with closing(connect_db()) as connection:
         stats = {
@@ -13700,6 +13953,8 @@ def admin_settings():
         admin_key=ADMIN_KEY,
         backups=recent_database_backups(),
         admin_role_choices=ADMIN_ROLE_CHOICES,
+        can_manage_bot_identity=can_manage_selected_bot_identity,
+        can_manage_global_bot_username=has_admin_role("bot_owner"),
         can_manage_users=has_admin_role("admin"),
         csrf_token=get_csrf_token(),
         current_admin_role=current_admin_role(),
@@ -13708,6 +13963,7 @@ def admin_settings():
         db_file=DB_FILE,
         db_size=db_size,
         error=error,
+        global_bot_username=config_data.get("bot_username") or "",
         guilds=guilds,
         limits=limits,
         notice=notice,
@@ -13716,6 +13972,8 @@ def admin_settings():
         parse_guild_scope=parse_guild_scope,
         role_labels=ROLE_LABELS,
         security_warnings=warnings,
+        selected_bot_nickname=selected_bot_nickname,
+        selected_settings_guild_id=requested_settings_guild_id,
         stats=stats,
         weekdays=WEEKDAYS,
     )
