@@ -1,3 +1,22 @@
+# SDAC Bot Version 3.0.16 Experimental
+
+Date: 2026-07-01
+
+Version 3.0.16 is an experimental doctor-command packaging hotfix.
+
+Included:
+
+- fixed release payload packaging so `scripts/sdac_doctor.py`, `scripts/sdac-doctor`, and the pre-release smoke script are included
+- hardened Ubuntu install/update scripts so `sudo sdac-doctor` is installed even if only `sdac_doctor.py` is present
+
+Release channel:
+
+- `version-3.0.16` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.16 line is validated
+
+---
+
 # SDAC Bot Version 3.0.15 Experimental
 
 Date: 2026-07-01

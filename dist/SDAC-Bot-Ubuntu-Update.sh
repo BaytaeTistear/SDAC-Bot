@@ -189,6 +189,22 @@ install_update_command() {
     if [[ -f "$APP_DIR/scripts/sdac-doctor" ]]; then
         say "Installing sdac-doctor command"
         sudo install -m 755 "$APP_DIR/scripts/sdac-doctor" "/usr/local/bin/sdac-doctor"
+    elif [[ -f "$APP_DIR/scripts/sdac_doctor.py" ]]; then
+        say "Installing sdac-doctor command"
+        local doctor_tmp
+        doctor_tmp="$(mktemp)"
+        cat > "$doctor_tmp" <<'DOCTOR'
+#!/usr/bin/env bash
+set -euo pipefail
+APP_DIR="${SDAC_BASE_DIR:-/home/ubuntu/discord-screenshot-bot}"
+PYTHON_BIN="${SDAC_PYTHON:-$APP_DIR/venv/bin/python}"
+if [[ ! -x "$PYTHON_BIN" ]]; then
+    PYTHON_BIN="python3"
+fi
+exec "$PYTHON_BIN" "$APP_DIR/scripts/sdac_doctor.py" "$@"
+DOCTOR
+        sudo install -m 755 "$doctor_tmp" "/usr/local/bin/sdac-doctor"
+        rm -f "$doctor_tmp"
     fi
 
     local config_dir
