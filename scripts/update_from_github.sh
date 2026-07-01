@@ -206,6 +206,9 @@ DOCTOR
         sudo install -m 755 "$doctor_tmp" "/usr/local/bin/sdac-doctor"
         rm -f "$doctor_tmp"
     fi
+    if [[ -f "/usr/local/bin/sdac-doctor" ]]; then
+        sudo sed -i 's/\r$//' "/usr/local/bin/sdac-doctor"
+    fi
 
     local config_dir
     config_dir="$(dirname "$CONFIG_FILE")"

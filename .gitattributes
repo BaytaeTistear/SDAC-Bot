@@ -1,34 +1,5 @@
-* text=auto
-.gitattributes text eol=lf
-.dockerignore text eol=lf
-.env* text eol=lf
-Dockerfile text eol=lf
-
-*.bat text eol=crlf
-*.cmd text eol=crlf
-*.ps1 text eol=crlf
-
-*.conf text eol=lf
-*.css text eol=lf
-*.html text eol=lf
-*.json text eol=lf
-*.md text eol=lf
-*.py text eol=lf
-*.service text eol=lf
 *.sh text eol=lf
-*.template text eol=lf
-*.txt text eol=lf
-*.yml text eol=lf
-*.yaml text eol=lf
+scripts/sdac-doctor text eol=lf
+server/scripts/sdac-doctor text eol=lf
 dist/sdac-update text eol=lf
-
-*.db binary
-*.db-shm binary
-*.db-wal binary
-*.exe binary
-*.gif binary
-*.jpeg binary
-*.jpg binary
-*.png binary
-*.webp binary
-*.zip binary
+dist/SDAC-Bot-Ubuntu-Update.sh text eol=lf

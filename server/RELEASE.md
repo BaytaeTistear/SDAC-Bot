@@ -1,3 +1,24 @@
+# SDAC Bot Version 3.0.17 Experimental
+
+Date: 2026-07-01
+
+Version 3.0.17 is an experimental doctor-command line-ending hotfix.
+
+Included:
+
+- fixed `sdac-doctor` installing with CRLF line endings that caused `/usr/bin/env: 'bash\r': No such file or directory`
+- updated release packaging to normalize extensionless shell wrappers to LF
+- added Git line-ending rules for shell/update wrappers
+- update/install scripts now strip CRLF from `/usr/local/bin/sdac-doctor` after installation
+
+Release channel:
+
+- `version-3.0.17` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.17 line is validated
+
+---
+
 # SDAC Bot Version 3.0.16 Experimental
 
 Date: 2026-07-01

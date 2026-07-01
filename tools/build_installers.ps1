@@ -90,11 +90,15 @@ function Convert-PayloadTextFilesToLf {
         ".yml",
         ".yaml"
     )
+    $textFileNames = @(
+        "Dockerfile",
+        "sdac-doctor"
+    )
 
     Get-ChildItem -LiteralPath $PayloadRoot -Recurse -File |
         Where-Object {
             ($textExtensions -contains $_.Extension.ToLowerInvariant()) -or
-            ($_.Name -eq "Dockerfile")
+            ($textFileNames -contains $_.Name)
         } |
         ForEach-Object {
             $content = [IO.File]::ReadAllText($_.FullName)

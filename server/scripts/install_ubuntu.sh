@@ -122,6 +122,9 @@ DOCTOR
         sudo install -m 755 "$DOCTOR_TMP" "/usr/local/bin/sdac-doctor"
         rm -f "$DOCTOR_TMP"
     fi
+    if [[ -f "/usr/local/bin/sdac-doctor" ]]; then
+        sudo sed -i 's/\r$//' "/usr/local/bin/sdac-doctor"
+    fi
 
     UPDATE_CONFIG_TMP="$(mktemp)"
     {
