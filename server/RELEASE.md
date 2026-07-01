@@ -1,3 +1,22 @@
+# SDAC Bot Version 3.0.14 Experimental
+
+Date: 2026-06-30
+
+Version 3.0.14 is an experimental startup hotfix.
+
+Included:
+
+- fixed bot startup after the per-server access update by defining the Bot Owner override username in `bot.py`
+- added a bot import/startup regression test that exercises database initialization
+
+Release channel:
+
+- `version-3.0.14` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.14 line is validated
+
+---
+
 # SDAC Bot Version 3.0.13 Experimental
 
 Date: 2026-06-30

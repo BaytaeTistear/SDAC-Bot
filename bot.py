@@ -41,6 +41,7 @@ BOT_INSTANCE_ID = (
 )
 BACKUP_KEEP_COUNT = 30
 SCHEMA_VERSION = DATABASE_SCHEMA_VERSION
+OWNER_OVERRIDE_USERNAME = "baytae"
 
 ALLOWED_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp",
