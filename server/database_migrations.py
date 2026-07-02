@@ -102,6 +102,10 @@ def migration_3_media_metadata_and_rate_limits(connection):
         CREATE INDEX IF NOT EXISTS idx_rate_limit_events_bucket
         ON rate_limit_events (guild_id, bucket, created_at)
     """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_rate_limit_events_guild_created
+        ON rate_limit_events (guild_id, created_at, id)
+    """)
 
 
 def migration_4_restore_test_runs(connection):

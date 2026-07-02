@@ -1,3 +1,30 @@
+# SDAC Bot and App Version 3.0.24 Experimental
+
+Date: 2026-07-02
+
+Version 3.0.24 is an experimental bot and app optimization update that reduces database, media, Discord API, and recurring background load.
+
+Included:
+
+- enabled SQLite busy timeout, foreign keys, WAL mode, and NORMAL synchronous mode for local SQLite installs
+- added more database indexes for server/status/date admin, moderation, quarantine, setup-test, submission-report, and submission queries
+- moved the rate-limit event server/date index into the migration that owns the table
+- added retention cleanup for old setup-test runs, restore-test runs, and closed submission reports
+- added global slash-command cooldown buckets for lightweight list/profile/status commands to reduce repeated Discord command load
+- enabled image compression by default for new installs while keeping the existing dashboard controls
+- added dashboard TTL caching for Owner Portal, Server Health Cards, and media cleanup report data
+- added a lazy `/thumbnail/...` route so dashboard galleries can generate/use thumbnails without forcing full original image loads first
+- increased dashboard GitHub release and Discord OAuth/member-role cache lifetimes to avoid repeated network lookups during normal browsing
+- added longer media and thumbnail cache headers for browser-side reuse
+
+Release channel:
+
+- `version-3.0.24` is this experimental bot and app optimization build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.24 line is validated
+
+---
+
 # SDAC Bot and App Version 3.0.23 Experimental
 
 Date: 2026-07-02

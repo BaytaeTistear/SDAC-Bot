@@ -99,7 +99,7 @@ DEFAULT_CONFIG = {
         "offsite_backup_warning_hours": 72,
         "local_original_retention_days": 30,
         "thumbnail_max_dimension": 640,
-        "image_compression_enabled": False,
+        "image_compression_enabled": True,
         "image_compression_quality": 85,
         "archive_full_history_after_months": 18,
         "spam_review_threshold": 40,
@@ -942,8 +942,27 @@ def get_guild_config(guild_id, create=True):
     return guild_config
 
 
+SQLITE_WAL_ENABLED = False
+
+
+def tune_sqlite_connection(connection):
+    global SQLITE_WAL_ENABLED
+    if using_postgres():
+        return connection
+    try:
+        connection.execute("PRAGMA busy_timeout = 30000")
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA synchronous = NORMAL")
+        if not SQLITE_WAL_ENABLED:
+            connection.execute("PRAGMA journal_mode = WAL")
+            SQLITE_WAL_ENABLED = True
+    except sqlite3.Error as error:
+        print(f"SQLite tuning skipped: {error}", flush=True)
+    return connection
+
+
 def connect_db():
-    return connect_database(DB_FILE, timeout=30)
+    return tune_sqlite_connection(connect_database(DB_FILE, timeout=30))
 
 
 @contextmanager
@@ -1904,6 +1923,30 @@ def initialize_database():
             CREATE INDEX IF NOT EXISTS idx_submission_reports_submission
             ON submission_reports (submission_id)
         """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submission_reports_guild_status_created
+            ON submission_reports (guild_id, status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_admin_audit_log_guild_created
+            ON admin_audit_log (guild_id, created_at, id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_moderation_history_guild_created
+            ON moderation_history (guild_id, created_at, id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_media_quarantine_guild_status
+            ON media_quarantine (guild_id, status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submissions_guild_status_created_id
+            ON submissions (guild_id, status, created_at, id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_setup_test_runs_guild_created_id
+            ON setup_test_runs (guild_id, created_at, id)
+        """)
         apply_database_migrations(connection)
 
 
@@ -2761,6 +2804,20 @@ def cleanup_background_data():
             connection.execute("""
                 DELETE FROM moderation_history
                 WHERE created_at IS NOT NULL AND created_at < ?
+            """, (audit_cutoff,))
+            connection.execute("""
+                DELETE FROM setup_test_runs
+                WHERE created_at IS NOT NULL AND created_at < ?
+            """, (audit_cutoff,))
+            connection.execute("""
+                DELETE FROM restore_test_runs
+                WHERE created_at IS NOT NULL AND created_at < ?
+            """, (audit_cutoff,))
+            connection.execute("""
+                DELETE FROM submission_reports
+                WHERE created_at IS NOT NULL
+                  AND created_at < ?
+                  AND status IN ('closed', 'dismissed', 'resolved')
             """, (audit_cutoff,))
         if rate_limit_days:
             connection.execute("""
@@ -4401,6 +4458,22 @@ tree = bot.tree
 user_cooldowns = {}
 category_cooldowns = {}
 command_cooldowns = {}
+LOW_COST_COMMAND_COOLDOWNS = {
+    "admincommands": 5,
+    "animeactivities": 10,
+    "animeleaderboard": 15,
+    "animeprofile": 5,
+    "backupstatus": 30,
+    "categories": 10,
+    "commands": 5,
+    "leaderboard": 10,
+    "privacy": 10,
+    "rank": 5,
+    "repository": 30,
+    "season": 5,
+    "serverbackupstatus": 30,
+    "setupstatus": 20,
+}
 active_submission_sessions = set()
 slash_commands_synced = False
 persistent_views_registered = False
@@ -4420,21 +4493,50 @@ def bot_access_disabled_message(guild_config):
     return "\n".join(lines)
 
 
-async def sdac_global_interaction_check(interaction):
-    if not interaction.guild_id:
-        return True
-    guild_config = get_guild_config(interaction.guild_id, create=False)
-    if not guild_config.get("bot_access_disabled"):
-        return True
+async def apply_global_command_cooldown(interaction):
     command_name = interaction.command.name if interaction.command else ""
-    if command_name in {"commands", "admincommands"}:
+    seconds = LOW_COST_COMMAND_COOLDOWNS.get(command_name, 0)
+    if seconds <= 0:
         return True
-    message = bot_access_disabled_message(guild_config)
+    message, remaining = command_cooldown_message(
+        f"slash:{command_name}",
+        interaction.guild_id,
+        interaction.user.id,
+        seconds,
+    )
+    if not message:
+        return True
+    record_rate_limit_event(
+        interaction.guild_id,
+        interaction.user.id,
+        interaction.user,
+        f"slash:{command_name}",
+        command_name,
+        remaining,
+        "Global slash command cooldown.",
+    )
     try:
         await interaction.response.send_message(message, ephemeral=True)
     except discord.InteractionResponded:
         await interaction.followup.send(message, ephemeral=True)
     return False
+
+
+async def sdac_global_interaction_check(interaction):
+    if not interaction.guild_id:
+        return True
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    command_name = interaction.command.name if interaction.command else ""
+    if guild_config.get("bot_access_disabled"):
+        if command_name in {"commands", "admincommands"}:
+            return True
+        message = bot_access_disabled_message(guild_config)
+        try:
+            await interaction.response.send_message(message, ephemeral=True)
+        except discord.InteractionResponded:
+            await interaction.followup.send(message, ephemeral=True)
+        return False
+    return await apply_global_command_cooldown(interaction)
 
 
 tree.interaction_check = sdac_global_interaction_check

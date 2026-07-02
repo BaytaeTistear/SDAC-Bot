@@ -124,7 +124,7 @@ DEFAULT_LIMITS = {
     "offsite_backup_warning_hours": 72,
     "local_original_retention_days": 30,
     "thumbnail_max_dimension": 640,
-    "image_compression_enabled": False,
+    "image_compression_enabled": True,
     "image_compression_quality": 85,
     "archive_full_history_after_months": 18,
     "spam_review_threshold": 40,
@@ -6140,6 +6140,10 @@ def install_doctor_report():
 
 
 def owner_portal_rows():
+    cache_id = cache_key("owner_portal_rows")
+    cached = ttl_cache_get(cache_id)
+    if cached is not None:
+        return cached
     config_data = load_config()
     onboarding = {row["id"]: row for row in build_onboarding_rows(config_data)}
     forecasts = {row["guild_id"]: row for row in storage_forecast_rows(config_data)}
@@ -6167,10 +6171,16 @@ def owner_portal_rows():
                 "/serverbackupstatus",
             ],
         })
-    return rows
+    return ttl_cache_set(cache_id, rows, 60)
 
 
 def server_health_card_rows(config_data=None):
+    use_cache = config_data is None
+    cache_id = cache_key("server_health_card_rows")
+    if use_cache:
+        cached = ttl_cache_get(cache_id)
+        if cached is not None:
+            return cached
     config_data = config_data or load_config()
     onboarding = {row["id"]: row for row in build_onboarding_rows(config_data)}
     forecasts = {row["guild_id"]: row for row in storage_forecast_rows(config_data)}
@@ -6243,7 +6253,9 @@ def server_health_card_rows(config_data=None):
                 "last_archive": dict(archive) if archive else {},
                 **stats,
             })
-    return rows
+    if not use_cache:
+        return rows
+    return ttl_cache_set(cache_id, rows, 60)
 
 
 def csv_response(filename, rows, columns):
@@ -7022,8 +7034,27 @@ def preserve_monthly_submission_top(connection, month):
         ))
 
 
+SQLITE_WAL_ENABLED = False
+
+
+def tune_sqlite_connection(connection):
+    global SQLITE_WAL_ENABLED
+    if using_postgres():
+        return connection
+    try:
+        connection.execute("PRAGMA busy_timeout = 30000")
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA synchronous = NORMAL")
+        if not SQLITE_WAL_ENABLED:
+            connection.execute("PRAGMA journal_mode = WAL")
+            SQLITE_WAL_ENABLED = True
+    except sqlite3.Error:
+        pass
+    return connection
+
+
 def connect_db():
-    return connect_database(DB_FILE, timeout=30)
+    return tune_sqlite_connection(connect_database(DB_FILE, timeout=30))
 
 
 @contextmanager
@@ -7886,6 +7917,30 @@ def initialize_database():
             CREATE INDEX IF NOT EXISTS idx_submission_reports_submission
             ON submission_reports (submission_id)
         """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submission_reports_guild_status_created
+            ON submission_reports (guild_id, status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_admin_audit_log_guild_created
+            ON admin_audit_log (guild_id, created_at, id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_moderation_history_guild_created
+            ON moderation_history (guild_id, created_at, id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_media_quarantine_guild_status
+            ON media_quarantine (guild_id, status, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submissions_guild_status_created_id
+            ON submissions (guild_id, status, created_at, id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_setup_test_runs_guild_created_id
+            ON setup_test_runs (guild_id, created_at, id)
+        """)
         apply_database_migrations(connection)
 
 
@@ -8058,6 +8113,12 @@ def maybe_compress_image(path, filename):
         return False
 
 
+def thumbnail_url(relative_path):
+    if not relative_path:
+        return None
+    return url_for("serve_thumbnail", filename=relative_path)
+
+
 def thumbnail_url_from_metadata(metadata, fallback_path, filename):
     thumbnail_path = metadata.get("thumbnail_path") if isinstance(metadata, dict) else ""
     thumbnail_relative = media_relative_path(thumbnail_path) if thumbnail_path else None
@@ -8068,7 +8129,10 @@ def thumbnail_url_from_metadata(metadata, fallback_path, filename):
         predicted_relative = media_relative_path(predicted_thumb)
         if predicted_relative:
             return local_media_url(predicted_relative)
-    if fallback_path and Path(fallback_path).is_file():
+    if fallback_path and Path(fallback_path).is_file() and get_media_type(filename) == "image":
+        fallback_relative = media_relative_path(fallback_path)
+        if fallback_relative and Path(filename).suffix.lower() != ".gif":
+            return thumbnail_url(fallback_relative)
         created = create_media_thumbnail(fallback_path, filename)
         created_relative = media_relative_path(created) if created else None
         if created_relative:
@@ -8099,6 +8163,10 @@ def referenced_media_paths(connection):
 
 
 def media_cleanup_report(limit=200):
+    cache_id = cache_key("media_cleanup_report", limit)
+    cached = ttl_cache_get(cache_id)
+    if cached is not None:
+        return cached
     max_file_bytes = int(
         load_config().get("limits", {}).get(
             "max_file_bytes",
@@ -8145,7 +8213,7 @@ def media_cleanup_report(limit=200):
                 "size": 0,
                 "size_label": "Missing",
             })
-    return {
+    report = {
         "orphaned": orphaned[:limit],
         "orphaned_total": len(orphaned),
         "oversized": oversized[:limit],
@@ -8153,6 +8221,7 @@ def media_cleanup_report(limit=200):
         "missing": missing[:limit],
         "missing_total": len(missing),
     }
+    return ttl_cache_set(cache_id, report, 60)
 
 
 def delete_orphaned_media_files():
@@ -11557,7 +11626,7 @@ def release_status():
         status["error"] = str(error)
 
     RELEASE_CACHE["status"] = status
-    RELEASE_CACHE["expires_at"] = time.time() + 600
+    RELEASE_CACHE["expires_at"] = time.time() + 3600
     return status
 
 
@@ -11674,7 +11743,7 @@ def discord_user_guilds(access_token):
     return ttl_cache_set(cache_id, discord_json_request(
         "https://discord.com/api/users/@me/guilds",
         access_token,
-    ), 300)
+    ), 900)
 
 
 def discord_current_user(access_token):
@@ -11686,7 +11755,7 @@ def discord_current_user(access_token):
     return ttl_cache_set(cache_id, discord_json_request(
         "https://discord.com/api/users/@me",
         access_token,
-    ), 300)
+    ), 900)
 
 
 def discord_member_role_ids(guild_id, user_id):
@@ -11707,7 +11776,7 @@ def discord_member_role_ids(guild_id, user_id):
     return ttl_cache_set(
         cache_id,
         [str(role_id) for role_id in member.get("roles") or []],
-        120,
+        300,
     )
 
 
@@ -17507,6 +17576,26 @@ self.addEventListener('fetch', (event) => {
         },
     )
 
+@app.route("/thumbnail/<path:filename>")
+def serve_thumbnail(filename):
+    resolved_path = (MEDIA_DIR / filename).resolve()
+    try:
+        resolved_path.relative_to(MEDIA_DIR)
+    except ValueError:
+        abort(404)
+    if not resolved_path.is_file():
+        abort(404)
+    if get_media_type(resolved_path.name) != "image" or resolved_path.suffix.lower() == ".gif":
+        return send_from_directory(MEDIA_DIR, filename)
+    thumbnail_path = create_media_thumbnail(resolved_path, resolved_path.name)
+    thumbnail_relative = media_relative_path(thumbnail_path) if thumbnail_path else None
+    if thumbnail_relative and (MEDIA_DIR / thumbnail_relative).is_file():
+        response = send_from_directory(MEDIA_DIR, thumbnail_relative)
+        response.headers["Cache-Control"] = "public, max-age=604800"
+        return response
+    return send_from_directory(MEDIA_DIR, filename)
+
+
 @app.route("/media/<path:filename>")
 def serve_media(filename):
     resolved_path = (MEDIA_DIR / filename).resolve()
@@ -17516,7 +17605,9 @@ def serve_media(filename):
         abort(404)
     if not resolved_path.is_file():
         abort(404)
-    return send_from_directory(MEDIA_DIR, filename)
+    response = send_from_directory(MEDIA_DIR, filename)
+    response.headers["Cache-Control"] = "public, max-age=604800"
+    return response
 
 
 @app.post("/admin/submission/<int:submission_id>/status")
