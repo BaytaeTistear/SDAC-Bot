@@ -97,6 +97,7 @@ class PreReleaseSmokeTests(unittest.TestCase):
             "/admin/users?key=ImTheBestAdmin",
             "/admin/server-health?key=ImTheBestAdmin",
             "/admin/settings?key=ImTheBestAdmin&guild_id=111",
+            "/admin/anime-activities?key=ImTheBestAdmin",
         ]:
             response = client.get(path)
             self.assertLess(response.status_code, 500, path)

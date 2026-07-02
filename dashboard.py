@@ -164,6 +164,77 @@ DEFAULT_GUILD_EXTERNAL_BACKUP = {
     "last_archive_path": "",
 }
 
+ANIME_ACTIVITY_RETIREMENT_NOTE = "Experimental anime activity idea; it may be changed or deleted in a future release."
+
+ANIME_ACTIVITY_CATALOG = [
+    {
+        "category": "Guessing Games",
+        "items": [
+            {"name": "Guess the anime from a screenshot", "summary": "Players identify the show from an uploaded scene or still frame."},
+            {"name": "Guess the character from a cropped image", "summary": "Admins post a cropped face, outfit, silhouette, or prop and players guess the character."},
+            {"name": "Guess the opening or ending", "summary": "Players identify an OP or ED from a short audio/video clip or clue."},
+            {"name": "Guess the anime from a quote", "summary": "Players identify the anime, character, or both from a quote prompt."},
+            {"name": "Guess the studio", "summary": "Players guess the animation studio from a title, screenshot, or production clue."},
+            {"name": "Guess the episode or arc", "summary": "Players identify the episode, season, or story arc from an image or clue."},
+        ],
+    },
+    {
+        "category": "Community Events",
+        "items": [
+            {"name": "Anime of the week/month voting", "summary": "Run recurring polls where the server picks a featured anime."},
+            {"name": "Seasonal watchlist polls", "summary": "Let members vote on currently airing shows to watch or follow together."},
+            {"name": "Best character tournament brackets", "summary": "Bracket-style polls for favorite characters, ships, villains, or mascots."},
+            {"name": "Opening song tournament", "summary": "Poll bracket for OPs, EDs, insert songs, or soundtrack tracks."},
+            {"name": "Screenshot theme contests", "summary": "Theme-based submissions like best fight scene, coziest scene, or funniest face."},
+            {"name": "Watch party RSVP and reminders", "summary": "Collect signups and remind members about anime watch parties."},
+        ],
+    },
+    {
+        "category": "Collection and Profiles",
+        "items": [
+            {"name": "User anime favorites list", "summary": "Members keep favorite shows, characters, genres, or studios on their profile."},
+            {"name": "Currently watching status", "summary": "Members can share what they are watching and optionally an episode progress note."},
+            {"name": "Server anime leaderboard", "summary": "Rank submissions, correct guesses, poll wins, and event participation."},
+            {"name": "Anime badges", "summary": "Award badges such as OP Expert, Screenshot Sage, Seasonal Voter, or Tournament Winner."},
+        ],
+    },
+    {
+        "category": "Moderation and Utility",
+        "items": [
+            {"name": "Spoiler-tagged submission categories", "summary": "Mark categories as spoiler-sensitive so submissions are labeled or hidden appropriately."},
+            {"name": "Anime spoiler warning presets", "summary": "Preset spoiler warnings by show, season, episode, or arc."},
+            {"name": "NSFW/ecchi category controls", "summary": "Extra category controls for servers that separate mature or sensitive anime content."},
+            {"name": "Per-anime channels or categories", "summary": "Organize submissions and reposts by anime title or franchise."},
+        ],
+    },
+    {
+        "category": "Advanced Ideas",
+        "items": [
+            {"name": "Anime challenge library", "summary": "Admins manage shows, aliases, screenshots, quotes, songs, studios, and characters for multiple game modes."},
+            {"name": "Daily anime challenge", "summary": "Automatically post one anime prompt per day with scoring and streak support."},
+            {"name": "Correct-guess streaks", "summary": "Track consecutive anime game wins or daily challenge participation."},
+            {"name": "Team-based guessing games", "summary": "Split members into teams for anime guessing events and score by team."},
+            {"name": "Who said it quote mode", "summary": "Players guess the speaker, show, or both from a quote."},
+            {"name": "Wrong answers only poll mode", "summary": "A light event mode where members vote on the funniest intentionally wrong answer."},
+            {"name": "Auto-generated hint ladder", "summary": "Reveal hints such as year, genre, studio, character initials, or source material over time."},
+        ],
+    },
+]
+
+
+def anime_activity_catalog_lines(include_note=True):
+    lines = []
+    if include_note:
+        lines.append(ANIME_ACTIVITY_RETIREMENT_NOTE)
+    for group in ANIME_ACTIVITY_CATALOG:
+        lines.append(f"**{group['category']}**")
+        for item in group["items"]:
+            lines.append(f"- {item['name']}: {item['summary']} Note: {ANIME_ACTIVITY_RETIREMENT_NOTE}")
+    return lines
+
+
+def anime_activity_catalog_count():
+    return sum(len(group["items"]) for group in ANIME_ACTIVITY_CATALOG)
 FEATURE_LABELS = {
     "submissions": "Submissions",
     "approval_queue": "Approval Queue",
@@ -2179,6 +2250,62 @@ GAME_LIBRARY_HTML = """
 </html>
 """
 
+ANIME_ACTIVITIES_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Anime Activities</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1100px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+        .card { background: #111318; border: 1px solid #30333b; border-radius: 8px; padding: 14px; }
+        .card h3 { margin: 0 0 8px; }
+        .muted { color: #a8adb8; }
+        .warning { border-color: #f59e0b; color: #ffd28a; }
+        code { color: #cdd7ff; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Anime Activities</h1>
+    <nav>
+        <a href="{{ url_for('index', key=admin_key) }}">Submissions</a>
+        <a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a>
+        <a href="{{ url_for('admin_polls', key=admin_key) }}">Polls</a>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+    <section class="panel warning">
+        <h2>Experimental Notice</h2>
+        <p>{{ retirement_note }}</p>
+        <p class="muted">These are planned activity ideas, not a promise that every mode is fully built yet. Use them as templates for events, polls, and Game Library content.</p>
+    </section>
+    {% for group in catalog %}
+        <section class="panel">
+            <h2>{{ group["category"] }}</h2>
+            <div class="grid">
+                {% for item in group["items"] %}
+                    <article class="card">
+                        <h3>{{ item["name"] }}</h3>
+                        <p>{{ item["summary"] }}</p>
+                        <p class="muted"><strong>Note:</strong> {{ retirement_note }}</p>
+                    </article>
+                {% endfor %}
+            </div>
+        </section>
+    {% endfor %}
+</main>
+</body>
+</html>
+"""
 
 USERS_HTML = """
 <!DOCTYPE html>
@@ -10470,6 +10597,7 @@ def admin_sidebar_sections():
                 ("Polls", "admin_polls", {}),
                 ("Audit", "admin_audit", {}),
                 ("Game Library", "admin_game_library", {}),
+                ("Anime Activities", "admin_anime_activities", {}),
                 ("Seasons", "admin_seasons", {}),
                 ("Media", "admin_media", {}),
                 ("Jobs", "admin_jobs", {}),
@@ -11986,6 +12114,18 @@ def game_library_redirect(message, error=False, guild_id="all"):
         error=1 if error else 0,
     ))
 
+
+@app.route("/admin/anime-activities")
+def admin_anime_activities():
+    login_response = require_admin_login("moderator")
+    if login_response:
+        return login_response
+    return render_template_string(
+        ANIME_ACTIVITIES_HTML,
+        admin_key=ADMIN_KEY,
+        catalog=ANIME_ACTIVITY_CATALOG,
+        retirement_note=ANIME_ACTIVITY_RETIREMENT_NOTE,
+    )
 
 @app.route("/admin/game-library", methods=["GET", "POST"])
 def admin_game_library():

@@ -191,6 +191,77 @@ DEFAULT_GUILD_CONFIG = {
     "features": DEFAULT_FEATURES,
 }
 
+ANIME_ACTIVITY_RETIREMENT_NOTE = "Experimental anime activity idea; it may be changed or deleted in a future release."
+
+ANIME_ACTIVITY_CATALOG = [
+    {
+        "category": "Guessing Games",
+        "items": [
+            {"name": "Guess the anime from a screenshot", "summary": "Players identify the show from an uploaded scene or still frame."},
+            {"name": "Guess the character from a cropped image", "summary": "Admins post a cropped face, outfit, silhouette, or prop and players guess the character."},
+            {"name": "Guess the opening or ending", "summary": "Players identify an OP or ED from a short audio/video clip or clue."},
+            {"name": "Guess the anime from a quote", "summary": "Players identify the anime, character, or both from a quote prompt."},
+            {"name": "Guess the studio", "summary": "Players guess the animation studio from a title, screenshot, or production clue."},
+            {"name": "Guess the episode or arc", "summary": "Players identify the episode, season, or story arc from an image or clue."},
+        ],
+    },
+    {
+        "category": "Community Events",
+        "items": [
+            {"name": "Anime of the week/month voting", "summary": "Run recurring polls where the server picks a featured anime."},
+            {"name": "Seasonal watchlist polls", "summary": "Let members vote on currently airing shows to watch or follow together."},
+            {"name": "Best character tournament brackets", "summary": "Bracket-style polls for favorite characters, ships, villains, or mascots."},
+            {"name": "Opening song tournament", "summary": "Poll bracket for OPs, EDs, insert songs, or soundtrack tracks."},
+            {"name": "Screenshot theme contests", "summary": "Theme-based submissions like best fight scene, coziest scene, or funniest face."},
+            {"name": "Watch party RSVP and reminders", "summary": "Collect signups and remind members about anime watch parties."},
+        ],
+    },
+    {
+        "category": "Collection and Profiles",
+        "items": [
+            {"name": "User anime favorites list", "summary": "Members keep favorite shows, characters, genres, or studios on their profile."},
+            {"name": "Currently watching status", "summary": "Members can share what they are watching and optionally an episode progress note."},
+            {"name": "Server anime leaderboard", "summary": "Rank submissions, correct guesses, poll wins, and event participation."},
+            {"name": "Anime badges", "summary": "Award badges such as OP Expert, Screenshot Sage, Seasonal Voter, or Tournament Winner."},
+        ],
+    },
+    {
+        "category": "Moderation and Utility",
+        "items": [
+            {"name": "Spoiler-tagged submission categories", "summary": "Mark categories as spoiler-sensitive so submissions are labeled or hidden appropriately."},
+            {"name": "Anime spoiler warning presets", "summary": "Preset spoiler warnings by show, season, episode, or arc."},
+            {"name": "NSFW/ecchi category controls", "summary": "Extra category controls for servers that separate mature or sensitive anime content."},
+            {"name": "Per-anime channels or categories", "summary": "Organize submissions and reposts by anime title or franchise."},
+        ],
+    },
+    {
+        "category": "Advanced Ideas",
+        "items": [
+            {"name": "Anime challenge library", "summary": "Admins manage shows, aliases, screenshots, quotes, songs, studios, and characters for multiple game modes."},
+            {"name": "Daily anime challenge", "summary": "Automatically post one anime prompt per day with scoring and streak support."},
+            {"name": "Correct-guess streaks", "summary": "Track consecutive anime game wins or daily challenge participation."},
+            {"name": "Team-based guessing games", "summary": "Split members into teams for anime guessing events and score by team."},
+            {"name": "Who said it quote mode", "summary": "Players guess the speaker, show, or both from a quote."},
+            {"name": "Wrong answers only poll mode", "summary": "A light event mode where members vote on the funniest intentionally wrong answer."},
+            {"name": "Auto-generated hint ladder", "summary": "Reveal hints such as year, genre, studio, character initials, or source material over time."},
+        ],
+    },
+]
+
+
+def anime_activity_catalog_lines(include_note=True):
+    lines = []
+    if include_note:
+        lines.append(ANIME_ACTIVITY_RETIREMENT_NOTE)
+    for group in ANIME_ACTIVITY_CATALOG:
+        lines.append(f"**{group['category']}**")
+        for item in group["items"]:
+            lines.append(f"- {item['name']}: {item['summary']} Note: {ANIME_ACTIVITY_RETIREMENT_NOTE}")
+    return lines
+
+
+def anime_activity_catalog_count():
+    return sum(len(group["items"]) for group in ANIME_ACTIVITY_CATALOG)
 FEATURE_LABELS = {
     "submissions": "Submissions",
     "approval_queue": "Approval Queue",
@@ -319,6 +390,7 @@ NOTIFICATION_EVENT_CHOICES = [
 
 USER_COMMAND_HELP = [
     ("/commands", "Show the public SDAC command list."),
+    ("/animeactivities", "Show experimental anime activity ideas."),
     ("/submit", "Start a guided media submission."),
     ("/categories", "Show configured categories and basic server setup."),
     ("/guess guess", "Guess the active game answer in the current channel."),
@@ -330,6 +402,9 @@ USER_COMMAND_GROUPS = {
     "Submissions": [
         ("/submit", "Start a guided media submission."),
         ("/categories", "Show configured categories and basic server setup."),
+    ],
+    "Anime Activities": [
+        ("/animeactivities", "Show experimental anime game and community activity ideas."),
     ],
     "Guessing Games": [
         ("/guess guess", "Guess the active game answer in the current channel."),
@@ -5671,6 +5746,26 @@ async def commands_list(interaction):
         "These commands are available to regular users. Use the menu to switch sections.",
     )
 
+
+@tree.command(name="animeactivities", description="Show experimental anime activity ideas")
+@app_commands.guild_only()
+async def animeactivities(interaction):
+    lines = [f"**Anime Activities ({anime_activity_catalog_count()} ideas)**"]
+    lines.extend(anime_activity_catalog_lines(include_note=True))
+    chunks = []
+    current = ""
+    for line in lines:
+        next_value = f"{current}\n{line}" if current else line
+        if len(next_value) > 1900 and current:
+            chunks.append(current)
+            current = line
+        else:
+            current = next_value
+    if current:
+        chunks.append(current)
+    await interaction.response.send_message(chunks[0], ephemeral=True)
+    for chunk in chunks[1:]:
+        await interaction.followup.send(chunk, ephemeral=True)
 
 @tree.command(name="admincommands", description="Show SDAC admin commands")
 @app_commands.guild_only()

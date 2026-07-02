@@ -1,3 +1,24 @@
+# SDAC Bot Version 3.0.19 Experimental
+
+Date: 2026-07-01
+
+Version 3.0.19 is an experimental anime activity catalog update.
+
+Included:
+
+- added 27 anime-related activity ideas across guessing games, community events, profiles, moderation utilities, and advanced challenge modes
+- added `/animeactivities` to show the experimental anime activity list in Discord
+- added an Admin Anime Activities dashboard page under moderation tools
+- each anime activity includes a note that it is experimental and may be changed or deleted in a future release
+- added the Anime Activities dashboard page to the pre-release smoke test
+
+Release channel:
+
+- `version-3.0.19` is this experimental build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.19 line is validated
+
+---
 # SDAC Bot Version 3.0.18 Experimental
 
 Date: 2026-07-01
