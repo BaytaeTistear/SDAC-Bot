@@ -639,3 +639,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\SDAC-Bot-Windows-Update.ps
 - `__pycache__/`
 
 The local `server/` folder is the clean upload folder for manual Ubuntu updates.
+
+## SDAC App Install
+
+The dashboard also works as an installable web app. Open the dashboard in a modern mobile or desktop browser and use the browser install prompt, or tap the in-page **Install App** button when it appears. This uses the existing website, Discord login, server selector, submissions, games, and admin pages; no app-store install is required.
+
+The app entry point is `/app`. It sends admins to the admin overview, signed-in users to their account, and guests to the public dashboard.

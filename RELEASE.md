@@ -1,3 +1,26 @@
+# SDAC Bot and App Version 3.0.20 Experimental
+
+Date: 2026-07-01
+
+Version 3.0.20 is an experimental bot and app update that makes the dashboard installable as a web app.
+
+Included:
+
+- added a Progressive Web App manifest for SDAC
+- added a service worker for app install support and light offline shell caching
+- added an `/app` entry point that opens the right dashboard/account landing page for the current session
+- added an install-app button that appears when the browser supports PWA installation
+- added an SVG app icon endpoint and mobile app metadata
+- documented the installable SDAC app flow in README
+- added PWA endpoints and install metadata to the pre-release smoke test
+
+Release channel:
+
+- `version-3.0.20` is this experimental bot and app build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.20 line is validated
+
+---
 # SDAC Bot Version 3.0.19 Experimental
 
 Date: 2026-07-01

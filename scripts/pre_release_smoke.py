@@ -82,9 +82,13 @@ class PreReleaseSmokeTests(unittest.TestCase):
 
     def test_public_and_admin_pages_render(self):
         client = self.dashboard.app.test_client()
-        for path in ["/", "/account/login", "/servers"]:
+        for path in ["/", "/account/login", "/servers", "/app", "/manifest.webmanifest", "/sw.js", "/app-icon.svg"]:
             response = client.get(path)
             self.assertLess(response.status_code, 500, path)
+        manifest_response = client.get("/manifest.webmanifest")
+        self.assertEqual(manifest_response.status_code, 200)
+        self.assertEqual(manifest_response.json["short_name"], "SDAC")
+        self.assertIn("/sw.js", client.get("/account/login").get_data(as_text=True))
         with client.session_transaction() as session:
             session["sdac_account_username"] = "baytae"
             session["sdac_account_role"] = "bot_owner"
@@ -101,7 +105,6 @@ class PreReleaseSmokeTests(unittest.TestCase):
         ]:
             response = client.get(path)
             self.assertLess(response.status_code, 500, path)
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

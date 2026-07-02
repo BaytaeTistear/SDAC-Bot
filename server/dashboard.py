@@ -10870,6 +10870,79 @@ def admin_sidebar_html():
 </script>
 """
 
+
+PWA_HEAD_HTML = """
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="application-name" content="SDAC">
+<meta name="apple-mobile-web-app-title" content="SDAC">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#4f46e5">
+<link rel="icon" href="/app-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/app-icon.svg">
+"""
+
+PWA_INSTALL_HTML = """
+<style id="sdac-pwa-style">
+.sdac-install-app-button {
+    align-items: center;
+    background: linear-gradient(90deg, var(--sdac-primary, #4f46e5), var(--sdac-secondary, #06b6d4));
+    border: 0;
+    border-radius: 8px;
+    bottom: 16px;
+    box-shadow: 0 16px 42px rgba(2, 6, 23, .34);
+    color: #fff;
+    cursor: pointer;
+    display: none;
+    font-weight: 850;
+    gap: 8px;
+    justify-content: center;
+    line-height: 1;
+    margin: 0;
+    max-width: calc(100vw - 32px);
+    min-height: 42px;
+    padding: 11px 14px;
+    position: fixed;
+    right: 16px;
+    width: auto;
+    z-index: 1003;
+}
+.sdac-install-app-button.is-visible { display: inline-flex; }
+@media (max-width: 900px) {
+    .sdac-install-app-button { bottom: 12px; right: 12px; }
+}
+</style>
+<button class="sdac-install-app-button" id="sdac-install-app-button" type="button">Install App</button>
+<script id="sdac-pwa-script">
+(() => {
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js').catch(() => {});
+        });
+    }
+    let deferredInstallPrompt = null;
+    const installButton = document.getElementById('sdac-install-app-button');
+    if (!installButton) return;
+    window.addEventListener('beforeinstallprompt', (event) => {
+        event.preventDefault();
+        deferredInstallPrompt = event;
+        installButton.classList.add('is-visible');
+    });
+    installButton.addEventListener('click', async () => {
+        if (!deferredInstallPrompt) return;
+        installButton.classList.remove('is-visible');
+        deferredInstallPrompt.prompt();
+        try { await deferredInstallPrompt.userChoice; } catch (error) {}
+        deferredInstallPrompt = null;
+    });
+    window.addEventListener('appinstalled', () => {
+        installButton.classList.remove('is-visible');
+        deferredInstallPrompt = null;
+    });
+})();
+</script>
+"""
 SIDEBAR_STYLE = """
 <style id="sdac-sidebar-style">
 :root {
@@ -10999,6 +11072,8 @@ def inject_admin_sidebar(response):
     page_html = response.get_data(as_text=True)
     if "<body" not in page_html:
         return response
+    if "sdac-pwa-head" not in page_html:
+        page_html = page_html.replace("</head>", PWA_HEAD_HTML.replace("<link", "<link id=\"sdac-pwa-head\"", 1) + "\n</head>", 1)
     if "sdac-theme-vars" not in page_html:
         page_html = page_html.replace("</head>", dashboard_theme_css() + "\n</head>", 1)
     page_html = re.sub(r"<body([^>]*)>", r'<body\1 class="sdac-theme">', page_html, count=1)
@@ -11012,6 +11087,8 @@ def inject_admin_sidebar(response):
             page_html,
             count=1,
         )
+    if "sdac-pwa-script" not in page_html:
+        page_html = page_html.replace("</body>", PWA_INSTALL_HTML + "\n</body>", 1)
     response.set_data(page_html)
     response.headers["Content-Length"] = str(len(response.get_data()))
     return response
@@ -16985,6 +17062,100 @@ def download_backup(name):
         download_name=backup_name,
     )
 
+
+
+@app.route("/app")
+def app_home():
+    if is_admin_logged_in():
+        return redirect(url_for("admin_overview", key=ADMIN_KEY))
+    if is_account_logged_in():
+        return redirect(url_for("account_home"))
+    return redirect(url_for("index"))
+
+
+@app.route("/manifest.webmanifest")
+def pwa_manifest():
+    manifest = {
+        "name": "SDAC Bot and App",
+        "short_name": "SDAC",
+        "description": "SDAC submissions, games, moderation, and server tools.",
+        "start_url": url_for("app_home"),
+        "scope": "/",
+        "display": "standalone",
+        "display_override": ["window-controls-overlay", "standalone", "browser"],
+        "background_color": "#0f172a",
+        "theme_color": dashboard_theme().get("primary", "#4f46e5"),
+        "orientation": "any",
+        "categories": ["social", "utilities", "entertainment"],
+        "icons": [
+            {
+                "src": url_for("pwa_icon", _external=False),
+                "sizes": "any",
+                "type": "image/svg+xml",
+                "purpose": "any maskable",
+            }
+        ],
+        "shortcuts": [
+            {"name": "Submissions", "url": url_for("index"), "description": "Open SDAC submissions."},
+            {"name": "My Account", "url": url_for("account_home"), "description": "Open your SDAC account."},
+            {"name": "Guessing", "url": url_for("guessing_leaderboard"), "description": "Open guessing leaderboards."},
+        ],
+    }
+    return Response(
+        json.dumps(manifest, indent=2) + "\n",
+        mimetype="application/manifest+json",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+@app.route("/app-icon.svg")
+def pwa_icon():
+    svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#06b6d4"/></linearGradient></defs>
+<rect width="512" height="512" rx="96" fill="url(#g)"/>
+<path d="M126 174c0-31 25-56 56-56h148c31 0 56 25 56 56v164c0 31-25 56-56 56H182c-31 0-56-25-56-56V174Z" fill="#0f172a" opacity=".92"/>
+<path d="M176 194h160v44H176v-44Zm0 70h116v44H176v-44Zm0 70h160v44H176v-44Z" fill="#f8fafc"/>
+<circle cx="342" cy="286" r="34" fill="#f59e0b"/>
+</svg>"""
+    return Response(svg, mimetype="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.route("/sw.js")
+def pwa_service_worker():
+    script = """
+const SDAC_CACHE = 'sdac-app-v1';
+const SDAC_CORE = ['/', '/app', '/manifest.webmanifest', '/app-icon.svg'];
+self.addEventListener('install', (event) => {
+  event.waitUntil(caches.open(SDAC_CACHE).then((cache) => cache.addAll(SDAC_CORE)).catch(() => undefined));
+  self.skipWaiting();
+});
+self.addEventListener('activate', (event) => {
+  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== SDAC_CACHE).map((key) => caches.delete(key)))));
+  self.clients.claim();
+});
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  if (request.method !== 'GET') return;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/media/') || url.pathname.startsWith('/admin/backup/')) return;
+  event.respondWith(fetch(request).then((response) => {
+    const copy = response.clone();
+    if (response.ok && (request.mode === 'navigate' || url.pathname === '/manifest.webmanifest' || url.pathname === '/app-icon.svg')) {
+      caches.open(SDAC_CACHE).then((cache) => cache.put(request, copy)).catch(() => undefined);
+    }
+    return response;
+  }).catch(() => caches.match(request).then((cached) => cached || caches.match('/'))));
+});
+""".strip() + "\n"
+    return Response(
+        script,
+        mimetype="application/javascript",
+        headers={
+            "Cache-Control": "no-cache",
+            "Service-Worker-Allowed": "/",
+        },
+    )
 
 @app.route("/media/<path:filename>")
 def serve_media(filename):
