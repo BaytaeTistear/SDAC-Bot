@@ -77,6 +77,7 @@ SCHEMA_VERSION = DATABASE_SCHEMA_VERSION
 PAGE_SIZE = 20
 CACHE_TTL_SECONDS = 45
 PUBLIC_PAGE_CACHE = {}
+TTL_CACHE = {}
 LOGIN_ATTEMPTS = {}
 NOTIFICATION_THROTTLES = {}
 LOGIN_WINDOW_SECONDS = 300
@@ -405,6 +406,30 @@ GUILD_MEDIA_BASE_CACHE = {
 }
 BACKGROUND_JOB_THREADS = {}
 BACKGROUND_JOB_LOCK = threading.Lock()
+
+
+def ttl_cache_get(key):
+    cached = TTL_CACHE.get(key)
+    if not cached:
+        return None
+    expires_at, value = cached
+    if expires_at < time.time():
+        TTL_CACHE.pop(key, None)
+        return None
+    return value
+
+
+def ttl_cache_set(key, value, seconds=CACHE_TTL_SECONDS):
+    TTL_CACHE[key] = (time.time() + max(1, int(seconds or CACHE_TTL_SECONDS)), value)
+    if len(TTL_CACHE) > 256:
+        oldest_key = min(TTL_CACHE, key=lambda item: TTL_CACHE[item][0])
+        TTL_CACHE.pop(oldest_key, None)
+    return value
+
+
+def clear_runtime_caches():
+    PUBLIC_PAGE_CACHE.clear()
+    TTL_CACHE.clear()
 
 
 HTML = """
@@ -1285,6 +1310,8 @@ MY_SUBMISSIONS_HTML = """
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; }
         .muted { color: #a8adb8; }
         .status { border: 1px solid #30333b; border-radius: 999px; display: inline-block; padding: 2px 7px; }
+        .pagination { align-items: center; display: flex; gap: 18px; justify-content: center; margin: 22px 0 0; }
+        .pagination .disabled { color: #a8adb8; }
     </style>
 </head>
 <body>
@@ -1328,6 +1355,19 @@ MY_SUBMISSIONS_HTML = """
                 {% endfor %}
             </tbody>
         </table>
+        <nav class="pagination">
+            {% if page > 1 %}
+                <a href="{{ page_url(page - 1) }}">Previous</a>
+            {% else %}
+                <span class="disabled">Previous</span>
+            {% endif %}
+            <span>Page {{ page }} of {{ total_pages }}</span>
+            {% if page < total_pages %}
+                <a href="{{ page_url(page + 1) }}">Next</a>
+            {% else %}
+                <span class="disabled">Next</span>
+            {% endif %}
+        </nav>
     </section>
 </main>
 </body>
@@ -5534,7 +5574,7 @@ def save_config(data):
         backup_config_file()
     with CONFIG_FILE.open("w", encoding="utf-8", newline="\n") as file:
         file.write(payload)
-    PUBLIC_PAGE_CACHE.clear()
+    clear_runtime_caches()
 
 
 def cache_key(name, *parts):
@@ -7533,6 +7573,18 @@ def initialize_database():
             ON submissions (guild_id, user_id, created_at)
         """)
         connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submissions_status_created
+            ON submissions (status, created_at, id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submissions_user_status_created
+            ON submissions (user_id, status, created_at, id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submissions_created
+            ON submissions (created_at, id)
+        """)
+        connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_background_jobs_status_created
             ON background_jobs (status, created_at)
         """)
@@ -7599,6 +7651,14 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_guess_points_global_month
             ON guess_points (month, user_id, points)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guess_points_guild_user_month
+            ON guess_points (guild_id, user_id, month)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guess_games_guild_status
+            ON guess_games (guild_id, status, started_at)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_guess_library_items_guild_status
@@ -9166,7 +9226,7 @@ def delete_user_privacy_data(guild_id, user_id, actor_id, actor_name):
 
     for row in submissions:
         delete_local_media(row)
-    PUBLIC_PAGE_CACHE.clear()
+    clear_runtime_caches()
     return details
 
 
@@ -9375,7 +9435,7 @@ def quarantine_submission_media(submission_id, reason, actor_id, actor_name):
                 f"Quarantined {moved} file(s): {reason}",
             )
     if moved:
-        PUBLIC_PAGE_CACHE.clear()
+        clear_runtime_caches()
         return True, f"Quarantined {moved} media file(s)."
     return False, "No local media files were available to quarantine."
 
@@ -9459,7 +9519,7 @@ def resolve_quarantine_item(item_id, action, actor_id, actor_name):
             item_id,
             details,
         )
-    PUBLIC_PAGE_CACHE.clear()
+    clear_runtime_caches()
     return True, details
 
 
@@ -9523,7 +9583,7 @@ def remove_submission_from_dashboard(submission_id, actor_id, actor_name):
             (submission_id,),
         )
     delete_local_media(row)
-    PUBLIC_PAGE_CACHE.clear()
+    clear_runtime_caches()
     return True, "Submission removed from the website and Discord."
 
 
@@ -11063,12 +11123,13 @@ body.sdac-has-sidebar > nav, body.sdac-has-sidebar main > nav:not(.pagination), 
 
 @app.after_request
 def inject_admin_sidebar(response):
+    response = optimize_response(response, compress=False)
     if (
         response.status_code != 200
         or response.direct_passthrough
         or not response.mimetype.startswith("text/html")
     ):
-        return response
+        return optimize_response(response)
     page_html = response.get_data(as_text=True)
     if "<body" not in page_html:
         return response
@@ -11091,7 +11152,57 @@ def inject_admin_sidebar(response):
         page_html = page_html.replace("</body>", PWA_INSTALL_HTML + "\n</body>", 1)
     response.set_data(page_html)
     response.headers["Content-Length"] = str(len(response.get_data()))
+    return optimize_response(response)
+
+
+def optimize_response(response, compress=True):
+    if response.status_code == 200:
+        path = request.path if has_request_context() else ""
+        if path.startswith("/media/") or path == "/app-icon.svg":
+            response.headers.setdefault("Cache-Control", "public, max-age=604800, immutable")
+        elif path in {"/manifest.webmanifest", "/sw.js"}:
+            response.headers.setdefault("Cache-Control", "public, max-age=300")
+        elif path.startswith("/api/"):
+            response.headers.setdefault("Cache-Control", "public, max-age=30")
+        elif response.mimetype.startswith("text/html"):
+            response.headers.setdefault("Cache-Control", "private, max-age=15")
+
+    if (
+        not compress
+        or response.status_code != 200
+        or response.direct_passthrough
+        or response.headers.get("Content-Encoding")
+        or "gzip" not in request.headers.get("Accept-Encoding", "")
+        or not (
+            response.mimetype.startswith("text/")
+            or response.mimetype in {
+                "application/json",
+                "application/javascript",
+                "application/manifest+json",
+                "image/svg+xml",
+            }
+        )
+    ):
+        return response
+
+    body = response.get_data()
+    if len(body) < 1024:
+        return response
+    compressed = gzip.compress(body, compresslevel=5)
+    if len(compressed) >= len(body):
+        return response
+    response.set_data(compressed)
+    response.headers["Content-Encoding"] = "gzip"
+    response.headers["Content-Length"] = str(len(compressed))
+    response.headers["Vary"] = add_vary_header(response.headers.get("Vary"), "Accept-Encoding")
     return response
+
+
+def add_vary_header(current, value):
+    existing = [item.strip() for item in str(current or "").split(",") if item.strip()]
+    if value.lower() not in {item.lower() for item in existing}:
+        existing.append(value)
+    return ", ".join(existing)
 
 
 def require_admin_key():
@@ -11214,7 +11325,7 @@ def restore_latest_config_backup():
         return None, False, "No config backup was found."
     backup_config_file("pre-restore")
     shutil.copy2(backup_path, CONFIG_FILE)
-    PUBLIC_PAGE_CACHE.clear()
+    clear_runtime_caches()
     return backup_path, True, f"Restored config backup {backup_path.name}."
 
 
@@ -11431,22 +11542,36 @@ def exchange_discord_oauth_code(code, redirect_uri=None):
 
 
 def discord_user_guilds(access_token):
-    return discord_json_request(
+    token_hash = hashlib.sha256(str(access_token or "").encode("utf-8")).hexdigest()
+    cache_id = cache_key("discord_user_guilds", token_hash)
+    cached = ttl_cache_get(cache_id)
+    if cached is not None:
+        return cached
+    return ttl_cache_set(cache_id, discord_json_request(
         "https://discord.com/api/users/@me/guilds",
         access_token,
-    )
+    ), 300)
 
 
 def discord_current_user(access_token):
-    return discord_json_request(
+    token_hash = hashlib.sha256(str(access_token or "").encode("utf-8")).hexdigest()
+    cache_id = cache_key("discord_current_user", token_hash)
+    cached = ttl_cache_get(cache_id)
+    if cached is not None:
+        return cached
+    return ttl_cache_set(cache_id, discord_json_request(
         "https://discord.com/api/users/@me",
         access_token,
-    )
+    ), 300)
 
 
 def discord_member_role_ids(guild_id, user_id):
     if not TOKEN:
         return []
+    cache_id = cache_key("discord_member_roles", guild_id, user_id)
+    cached = ttl_cache_get(cache_id)
+    if cached is not None:
+        return cached
     try:
         member = discord_json_request(
             f"https://discord.com/api/v10/guilds/{guild_id}/members/{user_id}",
@@ -11455,7 +11580,11 @@ def discord_member_role_ids(guild_id, user_id):
         )
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
         return []
-    return [str(role_id) for role_id in member.get("roles") or []]
+    return ttl_cache_set(
+        cache_id,
+        [str(role_id) for role_id in member.get("roles") or []],
+        120,
+    )
 
 
 def oauth_configured_member_guild_ids(access_token, config_data):
@@ -15182,7 +15311,7 @@ def admin_moderation():
                     notice = "Report marked reviewed."
                 else:
                     notice = "Report not found."
-            PUBLIC_PAGE_CACHE.clear()
+            clear_runtime_caches()
             return redirect(url_for(
                 "admin_moderation",
                 key=ADMIN_KEY,
@@ -15473,6 +15602,15 @@ def dashboard_submission_range(range_key):
 
 def admin_dashboard_summary(connection, selected_server_id, visible_guild_ids, range_key):
     range_key, start_at = dashboard_submission_range(range_key)
+    summary_cache_key = cache_key(
+        "admin_summary",
+        selected_server_id or "all",
+        ",".join(sorted(str(item) for item in visible_guild_ids)),
+        range_key,
+    )
+    cached = ttl_cache_get(summary_cache_key)
+    if cached is not None:
+        return cached
     scope_sql, scope_params = guild_id_filter("guild_id", visible_guild_ids)
     where = [scope_sql]
     params = list(scope_params)
@@ -15487,7 +15625,7 @@ def admin_dashboard_summary(connection, selected_server_id, visible_guild_ids, r
     base_params = [selected_server_id] if selected_server_id else list(scope_params)
     backups = recent_database_backups()
     bot_status = read_bot_status()
-    return {
+    summary = {
         "range_key": range_key,
         "submission_count": connection.execute(f"SELECT COUNT(*) FROM submissions{where_sql}", params).fetchone()[0],
         "total_users": connection.execute("SELECT COUNT(DISTINCT user_id) FROM submissions" + base_scope, base_params).fetchone()[0],
@@ -15502,6 +15640,7 @@ def admin_dashboard_summary(connection, selected_server_id, visible_guild_ids, r
         "db_size": format_bytes(DB_FILE.stat().st_size) if DB_FILE.exists() else "0 B",
         "media_size": format_bytes(media_directory_size()),
     }
+    return ttl_cache_set(summary_cache_key, summary, 30)
 
 
 @app.route("/admin")
@@ -15891,7 +16030,7 @@ def report_submission(submission_id):
                     row["id"],
                     reason,
                 )
-            PUBLIC_PAGE_CACHE.clear()
+            clear_runtime_caches()
             notice = "Report sent. Thank you."
 
     submission = dict(row)
@@ -16042,6 +16181,8 @@ def my_submissions():
     selected_server_id = selected_guild_id(server_options)
     visible_guild_ids = {option["id"] for option in server_options}
     rows = []
+    page = positive_page(request.args.get("page"))
+    total_pages = 1
 
     if search_query:
         where = []
@@ -16066,14 +16207,31 @@ def my_submissions():
             parameters.extend(visible_params)
 
         with closing(connect_db()) as connection:
+            total_items = connection.execute(f"""
+                SELECT COUNT(*)
+                FROM submissions
+                WHERE {" AND ".join(where)}
+            """, parameters).fetchone()[0]
+            total_pages = max(1, math.ceil(total_items / PAGE_SIZE))
+            page = min(page, total_pages)
             rows = connection.execute(f"""
                 SELECT id, guild_id, user_id, username, category, stars,
                        status, created_at, submitted_at
                 FROM submissions
                 WHERE {" AND ".join(where)}
                 ORDER BY created_at DESC, id DESC
-                LIMIT 100
-            """, parameters).fetchall()
+                LIMIT ? OFFSET ?
+            """, parameters + [PAGE_SIZE, (page - 1) * PAGE_SIZE]).fetchall()
+
+    def page_url(page_number):
+        values = {
+            "q": search_query,
+            "guild_id": selected_server_id or "all",
+            "page": page_number,
+        }
+        if is_admin:
+            values["key"] = ADMIN_KEY
+        return url_for("my_submissions", **values)
 
     return render_template_string(
         MY_SUBMISSIONS_HTML,
@@ -16081,9 +16239,12 @@ def my_submissions():
         guild_names=guild_names,
         guild_options=server_options,
         is_admin=is_admin,
+        page=page,
+        page_url=page_url,
         rows=rows,
         search_query=search_query,
         selected_guild_id=selected_server_id,
+        total_pages=total_pages,
     )
 
 
@@ -16479,6 +16640,10 @@ def api_stats():
         .get(option["id"], {})
         .get("public_stats_enabled", True)
     }
+    cache_id = cache_key("api_stats", ",".join(sorted(public_guilds)))
+    cached = ttl_cache_get(cache_id)
+    if cached is not None:
+        return jsonify(cached)
     scope_sql, scope_params = guild_id_filter("guild_id", set(public_guilds))
     with closing(connect_db()) as connection:
         payload = {
@@ -16496,12 +16661,17 @@ def api_stats():
                 scope_params,
             ).fetchone()[0],
         }
-    return jsonify(payload)
+    return jsonify(ttl_cache_set(cache_id, payload, 30))
 
 
 @app.route("/api/servers")
 def api_servers():
     config_data = load_config()
+    config_mtime = CONFIG_FILE.stat().st_mtime if CONFIG_FILE.exists() else 0
+    cache_id = cache_key("api_servers", config_mtime)
+    cached = ttl_cache_get(cache_id)
+    if cached is not None:
+        return jsonify(cached)
     rows = []
     with closing(connect_db()) as connection:
         for option in guild_options(config_data, public_only=True):
@@ -16522,7 +16692,8 @@ def api_servers():
                     WHERE guild_id = ?
                 """, (option["id"],)).fetchone()[0],
             })
-    return jsonify({"servers": rows})
+    payload = {"servers": rows}
+    return jsonify(ttl_cache_set(cache_id, payload, 30))
 
 
 @app.route("/api/leaderboard")
@@ -16538,6 +16709,10 @@ def api_leaderboard():
     month = request.args.get("month", current_month_key()).strip()
     if not re.match(r"^\d{4}-\d{2}$", month):
         month = current_month_key()
+    cache_id = cache_key("api_leaderboard", month, ",".join(sorted(visible_ids)))
+    cached = ttl_cache_get(cache_id)
+    if cached is not None:
+        return jsonify(cached)
     scope_sql, scope_params = guild_id_filter("guild_id", visible_ids)
     with closing(connect_db()) as connection:
         rows = connection.execute(f"""
@@ -16549,10 +16724,11 @@ def api_leaderboard():
             ORDER BY points DESC, username ASC
             LIMIT 25
         """, scope_params + [month]).fetchall()
-    return jsonify({
+    payload = {
         "month": month,
         "leaderboard": rows_as_dicts(rows),
-    })
+    }
+    return jsonify(ttl_cache_set(cache_id, payload, 30))
 
 
 @app.route("/api/server/<guild_id>")
@@ -16563,6 +16739,10 @@ def api_server(guild_id):
         abort(404)
     if not guild_config.get("public_stats_enabled", True):
         abort(404)
+    cache_id = cache_key("api_server", str(guild_id))
+    cached = ttl_cache_get(cache_id)
+    if cached is not None:
+        return jsonify(cached)
     with closing(connect_db()) as connection:
         recent = connection.execute("""
             SELECT id, username, category, stars, created_at
@@ -16584,7 +16764,7 @@ def api_server(guild_id):
                 WHERE guild_id = ?
             """, (str(guild_id),)).fetchone()[0],
         }
-    return jsonify({
+    payload = {
         "id": str(guild_id),
         "name": (
             guild_config.get("brand_name")
@@ -16593,7 +16773,8 @@ def api_server(guild_id):
         ),
         "totals": totals,
         "recent_submissions": rows_as_dicts(recent),
-    })
+    }
+    return jsonify(ttl_cache_set(cache_id, payload, 30))
 
 
 @app.route("/server/<guild_id>")
@@ -17104,7 +17285,7 @@ def pwa_manifest():
     return Response(
         json.dumps(manifest, indent=2) + "\n",
         mimetype="application/manifest+json",
-        headers={"Cache-Control": "no-cache"},
+        headers={"Cache-Control": "public, max-age=300"},
     )
 
 
@@ -17123,7 +17304,7 @@ def pwa_icon():
 @app.route("/sw.js")
 def pwa_service_worker():
     script = """
-const SDAC_CACHE = 'sdac-app-v1';
+const SDAC_CACHE = 'sdac-app-v2';
 const SDAC_CORE = ['/', '/app', '/manifest.webmanifest', '/app-icon.svg'];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(SDAC_CACHE).then((cache) => cache.addAll(SDAC_CORE)).catch(() => undefined));
@@ -17152,7 +17333,7 @@ self.addEventListener('fetch', (event) => {
         script,
         mimetype="application/javascript",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "public, max-age=300",
             "Service-Worker-Allowed": "/",
         },
     )
@@ -17235,7 +17416,7 @@ def set_submission_status(submission_id):
             row["id"],
             f"Set status to {new_status}.",
         )
-    PUBLIC_PAGE_CACHE.clear()
+    clear_runtime_caches()
     return redirect(url_for(
         "index",
         notice=f"Submission marked {new_status}.",

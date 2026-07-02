@@ -88,6 +88,10 @@ class PreReleaseSmokeTests(unittest.TestCase):
         manifest_response = client.get("/manifest.webmanifest")
         self.assertEqual(manifest_response.status_code, 200)
         self.assertEqual(manifest_response.json["short_name"], "SDAC")
+        self.assertIn("max-age", manifest_response.headers.get("Cache-Control", ""))
+        compressed_response = client.get("/account/login", headers={"Accept-Encoding": "gzip"})
+        self.assertEqual(compressed_response.headers.get("Content-Encoding"), "gzip")
+        self.assertIn("Accept-Encoding", compressed_response.headers.get("Vary", ""))
         self.assertIn("/sw.js", client.get("/account/login").get_data(as_text=True))
         with client.session_transaction() as session:
             session["sdac_account_username"] = "baytae"

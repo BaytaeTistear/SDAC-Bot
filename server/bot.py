@@ -1607,6 +1607,18 @@ def initialize_database():
             ON submissions (guild_id, user_id, created_at)
         """)
         connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submissions_status_created
+            ON submissions (status, created_at, id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submissions_user_status_created
+            ON submissions (user_id, status, created_at, id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_submissions_created
+            ON submissions (created_at, id)
+        """)
+        connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_background_jobs_status_created
             ON background_jobs (status, created_at)
         """)
@@ -1697,6 +1709,14 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_guess_points_global_month
             ON guess_points (month, user_id, points)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guess_points_guild_user_month
+            ON guess_points (guild_id, user_id, month)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guess_games_guild_status
+            ON guess_games (guild_id, status, started_at)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_guess_cooldowns_timeout

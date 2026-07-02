@@ -645,3 +645,9 @@ The local `server/` folder is the clean upload folder for manual Ubuntu updates.
 The dashboard also works as an installable web app. Open the dashboard in a modern mobile or desktop browser and use the browser install prompt, or tap the in-page **Install App** button when it appears. This uses the existing website, Discord login, server selector, submissions, games, and admin pages; no app-store install is required.
 
 The app entry point is `/app`. It sends admins to the admin overview, signed-in users to their account, and guests to the public dashboard.
+
+## Dashboard Performance
+
+The dashboard uses short-lived runtime caching for public stats, admin overview metrics, and Discord OAuth server/member lookups. Media and PWA assets receive browser cache headers, larger text/JSON responses are gzip-compressed when supported, image galleries use thumbnails plus lazy loading, and My Submissions is paginated to avoid large single-page responses.
+
+If the nginx template is installed with `scripts/install_nginx_site.sh`, nginx also enables gzip and sends cache headers for media, the PWA manifest, the service worker, and the app icon.

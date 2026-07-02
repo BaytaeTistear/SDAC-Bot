@@ -1,3 +1,27 @@
+# SDAC Bot and App Version 3.0.21 Experimental
+
+Date: 2026-07-01
+
+Version 3.0.21 is an experimental bot and app performance update that reduces repeated dashboard, API, media, and Discord lookup work.
+
+Included:
+
+- added short-lived runtime caching for public stats APIs, admin overview metrics, and Discord OAuth guild/user/member-role lookups
+- added cache invalidation for stats/API caches when submissions, reports, config, moderation, privacy, or quarantine actions change data
+- added gzip compression for larger text, JSON, JavaScript, manifest, and SVG dashboard responses when the browser supports it
+- added browser cache headers for media, PWA icon, manifest, service worker, API, and HTML responses
+- added nginx template gzip and cache rules for media and PWA assets
+- changed My Submissions from a fixed 100-row response to paginated loading
+- added database indexes for status/date, user/status/date, created date, guess points, and active game queries
+- kept image gallery rendering on generated thumbnails with lazy image loading and full-size originals available when opened
+
+Release channel:
+
+- `version-3.0.21` is this experimental bot and app performance build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.21 line is validated
+
+---
 # SDAC Bot and App Version 3.0.20 Experimental
 
 Date: 2026-07-01
