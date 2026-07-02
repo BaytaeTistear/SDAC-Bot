@@ -359,6 +359,9 @@ DEFAULT_GUILD_FIELDS = {
     "brand_accent": "#7c9cff",
     "brand_logo_url": "",
     "bot_nickname": "",
+    "bot_access_disabled": False,
+    "bot_access_contact": "",
+    "bot_access_reason": "",
     "setup_preset": "",
     "admin_role_ids": [],
     "submit_channel": None,
@@ -4700,7 +4703,14 @@ OWNER_PORTAL_HTML = """
         .server { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        input, button, textarea { border: 1px solid #30333b; border-radius: 7px; font-size: 15px; margin: 4px 0; padding: 9px 10px; width: min(100%, 560px); }
+        textarea { min-height: 76px; }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; width: auto; }
+        .danger { background: #e45d68; color: #19080b; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin: 0 auto 16px; padding: 12px; }
         .muted { color: #a8adb8; }
+        .bad { color: #e45d68; font-weight: bold; }
+        .ok { color: #63c174; font-weight: bold; }
         code { color: #cdd7ff; }
     </style>
 </head>
@@ -4714,11 +4724,21 @@ OWNER_PORTAL_HTML = """
         <a href="{{ url_for('admin_server_health_cards', key=admin_key) }}">Server Health</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
     </nav>
+    {% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
     {% for server in servers %}
         <article class="server">
             <h2>{{ server.name }} <span class="muted">({{ server.id }})</span></h2>
             <table>
                 <tbody>
+                    <tr><th>Bot access</th><td>
+                        {% if server.bot_access_disabled %}
+                            <span class="bad">Disabled</span><br>
+                            Reason: {{ server.bot_access_reason or "No reason provided." }}<br>
+                            Contact: {{ server.bot_access_contact or "No contact provided." }}
+                        {% else %}
+                            <span class="ok">Enabled</span>
+                        {% endif %}
+                    </td></tr>
                     <tr><th>Setup score</th><td>{{ server.health }}%</td></tr>
                     <tr><th>Storage</th><td>{{ server.forecast.current if server.forecast else "Unknown" }}; {{ server.forecast.forecast if server.forecast else "No forecast yet." }}</td></tr>
                     <tr><th>Backup</th><td>
@@ -4732,6 +4752,24 @@ OWNER_PORTAL_HTML = """
                     <tr><th>Invite link</th><td>
                         {% if server.invite_url %}<a href="{{ server.invite_url }}" target="_blank">Invite/Re-authorize SDAC</a>{% else %}<span class="muted">Set bot client ID to show invite link.</span>{% endif %}
                     </td></tr>
+                    {% if can_manage_bot_access %}
+                        <tr><th>Bot Owner Access Control</th><td>
+                            <form method="post">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="guild_id" value="{{ server.id }}">
+                                <label>Contact details shown in Discord/dashboard</label><br>
+                                <input name="contact" value="{{ server.bot_access_contact }}" placeholder="Discord username, email, support server, or website"><br>
+                                <label>Reason shown to this server</label><br>
+                                <textarea name="reason" placeholder="Why access is disabled or restored">{{ server.bot_access_reason }}</textarea><br>
+                                {% if server.bot_access_disabled %}
+                                    <button name="action" value="enable_bot_access" type="submit">Restore Access</button>
+                                {% else %}
+                                    <button class="danger" name="action" value="disable_bot_access" type="submit" onclick="return confirm('Disable SDAC access for this server?');">Remove Access</button>
+                                {% endif %}
+                            </form>
+                        </td></tr>
+                    {% endif %}
                 </tbody>
             </table>
         </article>
@@ -6114,6 +6152,9 @@ def owner_portal_rows():
         rows.append({
             "id": guild_id,
             "name": option["name"],
+            "bot_access_disabled": bool(guild_config.get("bot_access_disabled")),
+            "bot_access_contact": guild_config.get("bot_access_contact") or "",
+            "bot_access_reason": guild_config.get("bot_access_reason") or "",
             "health": (onboarding.get(guild_id) or {}).get("health_score", 0),
             "forecast": forecasts.get(guild_id),
             "storage": backup_rows.get(guild_id),
@@ -6414,6 +6455,8 @@ def validate_time(value):
 
 
 def feature_enabled(guild_config, feature):
+    if (guild_config or {}).get("bot_access_disabled"):
+        return False
     features = (guild_config or {}).get("features") or {}
     return bool(features.get(feature, DEFAULT_FEATURES.get(feature, True)))
 
@@ -6461,6 +6504,10 @@ def guild_options(config_data=None, public_only=False, cross_server_only=False):
             item[1].get("guild_name") or item[0]
         ).casefold(),
     ):
+        if guild_config.get("bot_access_disabled") and (
+            not has_request_context() or current_admin_role() != "bot_owner"
+        ):
+            continue
         if allowed_admin_ids is not None and str(guild_id) not in allowed_admin_ids:
             continue
         if allowed_account_ids is not None and str(guild_id) not in allowed_account_ids:
@@ -15502,14 +15549,58 @@ def admin_server_switcher():
     return redirect(url_for("index", key=ADMIN_KEY, guild_id=request.args.get("guild_id", "all")))
 
 
-@app.route("/admin/owner-portal")
+@app.route("/admin/owner-portal", methods=["GET", "POST"])
 def admin_owner_portal():
     login_response = require_admin_login("moderator")
     if login_response:
         return login_response
+    notice = request.args.get("notice", "")
+    if request.method == "POST":
+        require_admin_login("bot_owner")
+        require_csrf_token()
+        action = request.form.get("action", "")
+        guild_id = request.form.get("guild_id", "").strip()
+        config_data = load_config()
+        guild_config = (config_data.get("guilds") or {}).get(guild_id)
+        if not guild_config:
+            abort(404)
+        if action not in {"disable_bot_access", "enable_bot_access"}:
+            abort(400)
+        contact = request.form.get("contact", "").strip()[:500]
+        reason = request.form.get("reason", "").strip()[:500]
+        disabled = action == "disable_bot_access"
+        guild_config["bot_access_disabled"] = disabled
+        guild_config["bot_access_contact"] = contact
+        guild_config["bot_access_reason"] = reason
+        save_config(config_data)
+        actor_id, actor_name = web_actor()
+        with database() as connection:
+            add_admin_audit_log(
+                connection,
+                guild_id,
+                action,
+                actor_id,
+                actor_name,
+                "guild",
+                guild_id,
+                json.dumps({
+                    "disabled": disabled,
+                    "contact": contact,
+                    "reason": reason,
+                }, separators=(",", ":")),
+            )
+        state = "removed" if disabled else "restored"
+        return redirect(url_for(
+            "admin_owner_portal",
+            key=ADMIN_KEY,
+            notice=f"Bot access {state} for {guild_config.get('guild_name') or guild_id}.",
+        ))
     return render_template_string(
         OWNER_PORTAL_HTML,
         admin_key=ADMIN_KEY,
+        can_manage_bot_access=has_admin_role("bot_owner"),
+        csrf_token=get_csrf_token(),
+        notice=notice,
         servers=owner_portal_rows(),
     )
 

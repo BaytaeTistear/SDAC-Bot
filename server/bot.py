@@ -146,6 +146,9 @@ DEFAULT_GUILD_CONFIG = {
     "brand_accent": "#7c9cff",
     "brand_logo_url": "",
     "bot_nickname": "",
+    "bot_access_disabled": False,
+    "bot_access_contact": "",
+    "bot_access_reason": "",
     "setup_preset": "",
     "admin_role_ids": [],
     "submit_channel": None,
@@ -529,6 +532,7 @@ ADMIN_COMMAND_HELP = [
     ("/setdigest enabled frequency #channel", "Configure admin notification digest."),
     ("/supportbundle", "Create a small diagnostic bundle."),
     ("/sdacpanic paused reason", "Pause or resume SDAC activity."),
+    ("/sdacreset RESET reason", "Restart the SDAC bot process."),
     ("/schedulegame #channel start_time ...", "Schedule a saved library game."),
     ("/scheduledgames", "List queued and running scheduled games."),
     ("/cancelscheduledgame id", "Cancel a queued scheduled game."),
@@ -1991,6 +1995,8 @@ def normalize_guess(value):
 
 
 def feature_enabled(guild_config, feature):
+    if (guild_config or {}).get("bot_access_disabled"):
+        return False
     features = (guild_config or {}).get("features") or {}
     return bool(features.get(feature, DEFAULT_FEATURES.get(feature, True)))
 
@@ -4403,6 +4409,37 @@ last_storage_warning_date = None
 last_permission_drift_date = {}
 
 
+def bot_access_disabled_message(guild_config):
+    contact = str((guild_config or {}).get("bot_access_contact") or "").strip()
+    reason = str((guild_config or {}).get("bot_access_reason") or "").strip()
+    lines = ["SDAC access is currently disabled for this server by the Bot Owner."]
+    if reason:
+        lines.append(f"Reason: {reason[:500]}")
+    if contact:
+        lines.append(f"Contact: {contact[:500]}")
+    return "\n".join(lines)
+
+
+async def sdac_global_interaction_check(interaction):
+    if not interaction.guild_id:
+        return True
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    if not guild_config.get("bot_access_disabled"):
+        return True
+    command_name = interaction.command.name if interaction.command else ""
+    if command_name in {"commands", "admincommands"}:
+        return True
+    message = bot_access_disabled_message(guild_config)
+    try:
+        await interaction.response.send_message(message, ephemeral=True)
+    except discord.InteractionResponded:
+        await interaction.followup.send(message, ephemeral=True)
+    return False
+
+
+tree.interaction_check = sdac_global_interaction_check
+
+
 def refresh_known_guilds():
     changed = False
     for guild in bot.guilds:
@@ -6784,6 +6821,46 @@ async def sdacpanic(
         ),
         ephemeral=True,
     )
+
+
+@tree.command(name="sdacreset", description="Restart the SDAC bot process from Discord")
+@app_commands.guild_only()
+@app_commands.describe(
+    confirm="Type RESET to confirm the bot process restart",
+    reason="Optional reason recorded in the audit log and bot status",
+)
+async def sdacreset(
+    interaction,
+    confirm: str,
+    reason: str = "",
+):
+    if not await require_admin(interaction):
+        return
+    if str(confirm or "").strip() != "RESET":
+        await interaction.response.send_message(
+            "Type `RESET` in the confirm field to restart the bot process.",
+            ephemeral=True,
+        )
+        return
+    reason = (reason or "Discord reset requested.").strip()[:300]
+    audit_interaction(
+        interaction,
+        "sdac_bot_reset",
+        "bot",
+        BOT_INSTANCE_ID,
+        reason,
+    )
+    write_bot_status("discord_reset_requested")
+    await interaction.response.send_message(
+        "SDAC bot reset requested. The service should come back automatically if systemd restart is enabled.",
+        ephemeral=True,
+    )
+
+    async def delayed_exit():
+        await asyncio.sleep(2)
+        os._exit(0)
+
+    asyncio.create_task(delayed_exit())
 
 
 @tree.command(name="checkpermissions", description="Check SDAC bot channel permissions")

@@ -1,3 +1,26 @@
+# SDAC Bot and App Version 3.0.23 Experimental
+
+Date: 2026-07-02
+
+Version 3.0.23 is an experimental bot reset and Bot Owner access-control update.
+
+Included:
+
+- added `/sdacreset confirm:RESET reason:...` so Discord admins can request a bot process restart
+- reset requests are audited, write bot status, reply to Discord first, then exit so systemd restarts the bot
+- added Bot Owner controls on Owner Portal to remove or restore bot access for a server
+- Bot Owner access removal stores contact details and a reason in config
+- disabled servers receive the configured reason/contact message when trying to use bot slash commands
+- non-Bot-Owners no longer see disabled servers in dashboard server lists
+- disabled server features are treated as off by bot and dashboard feature checks
+
+Release channel:
+
+- `version-3.0.23` is this experimental bot and app build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.23 line is validated
+
+---
 # SDAC Bot and App Version 3.0.22 Experimental
 
 Date: 2026-07-02

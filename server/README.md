@@ -545,6 +545,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /supportbundle
 /sdacpanic true "Cleaning up spam"
 /sdacpanic false
+/sdacreset RESET "Restart after config changes"
 /startgame #channel answer media text category hint auto_hint_minutes
 /animeevent screenshot-guess #channel "Theme: opening scenes"
 /animechallenge quote-guess "Who said this quote?" "Answer" "Optional hint"
