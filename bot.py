@@ -15,6 +15,8 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import discord
@@ -256,12 +258,77 @@ def anime_activity_catalog_lines(include_note=True):
     for group in ANIME_ACTIVITY_CATALOG:
         lines.append(f"**{group['category']}**")
         for item in group["items"]:
-            lines.append(f"- {item['name']}: {item['summary']} Note: {ANIME_ACTIVITY_RETIREMENT_NOTE}")
+            key = anime_activity_key(item["name"])
+            lines.append(f"- `{key}` - {item['name']}: {item['summary']} Note: {ANIME_ACTIVITY_RETIREMENT_NOTE}")
     return lines
 
 
 def anime_activity_catalog_count():
     return sum(len(group["items"]) for group in ANIME_ACTIVITY_CATALOG)
+
+
+def anime_activity_key(name):
+    key = re.sub(r"[^a-z0-9]+", "-", str(name or "").casefold()).strip("-")
+    aliases = {
+        "guess-the-anime-from-a-screenshot": "screenshot-guess",
+        "guess-the-character-from-a-cropped-image": "character-guess",
+        "guess-the-opening-or-ending": "op-ed-guess",
+        "guess-the-anime-from-a-quote": "quote-guess",
+        "guess-the-studio": "studio-guess",
+        "guess-the-episode-or-arc": "episode-arc-guess",
+        "anime-of-the-week-month-voting": "anime-vote",
+        "seasonal-watchlist-polls": "seasonal-watchlist",
+        "best-character-tournament-brackets": "character-bracket",
+        "opening-song-tournament": "opening-tournament",
+        "screenshot-theme-contests": "screenshot-contest",
+        "watch-party-rsvp-and-reminders": "watch-party",
+        "user-anime-favorites-list": "favorites-profile",
+        "currently-watching-status": "watching-status",
+        "server-anime-leaderboard": "anime-leaderboard",
+        "anime-badges": "anime-badges",
+        "spoiler-tagged-submission-categories": "spoiler-categories",
+        "anime-spoiler-warning-presets": "spoiler-warning",
+        "nsfw-ecchi-category-controls": "sensitive-category-controls",
+        "per-anime-channels-or-categories": "anime-channels",
+        "anime-challenge-library": "challenge-library",
+        "daily-anime-challenge": "daily-challenge",
+        "correct-guess-streaks": "guess-streaks",
+        "team-based-guessing-games": "team-guessing",
+        "who-said-it-quote-mode": "who-said-it",
+        "wrong-answers-only-poll-mode": "wrong-answers",
+        "auto-generated-hint-ladder": "hint-ladder",
+    }
+    return aliases.get(key, key)
+
+
+def anime_activity_templates():
+    templates = []
+    for group in ANIME_ACTIVITY_CATALOG:
+        for item in group["items"]:
+            key = anime_activity_key(item["name"])
+            templates.append({
+                "key": key,
+                "category": group["category"],
+                "name": item["name"],
+                "summary": item["summary"],
+                "warning": ANIME_ACTIVITY_RETIREMENT_NOTE,
+            })
+    return templates
+
+
+def find_anime_activity(value):
+    wanted = re.sub(r"\s+", "-", str(value or "").strip().casefold())
+    if not wanted:
+        return None
+    for template in anime_activity_templates():
+        candidates = {
+            template["key"].casefold(),
+            template["name"].casefold(),
+            re.sub(r"\s+", "-", template["name"].casefold()),
+        }
+        if wanted in candidates:
+            return template
+    return None
 FEATURE_LABELS = {
     "submissions": "Submissions",
     "approval_queue": "Approval Queue",
@@ -381,6 +448,7 @@ NOTIFICATION_EVENT_LABELS = {
     "permission_drift": "Permission Drift",
     "restore_drill_failed": "Restore Drill Failed",
     "monthly_digest": "Monthly Digest",
+    "release_announcements": "Release Announcements",
 }
 
 NOTIFICATION_EVENT_CHOICES = [
@@ -391,6 +459,9 @@ NOTIFICATION_EVENT_CHOICES = [
 USER_COMMAND_HELP = [
     ("/commands", "Show the public SDAC command list."),
     ("/animeactivities", "Show experimental anime activity ideas."),
+    ("/animeprofile", "Save your experimental anime favorites/watching profile."),
+    ("/animeprofileview", "View an experimental anime profile."),
+    ("/animeleaderboard", "Show the experimental anime community leaderboard."),
     ("/submit", "Start a guided media submission."),
     ("/categories", "Show configured categories and basic server setup."),
     ("/guess guess", "Guess the active game answer in the current channel."),
@@ -404,7 +475,9 @@ USER_COMMAND_GROUPS = {
         ("/categories", "Show configured categories and basic server setup."),
     ],
     "Anime Activities": [
-        ("/animeactivities", "Show experimental anime game and community activity ideas."),
+    ("/animeactivities", "Show experimental anime game and community activity ideas."),
+    ("/animeevent activity #channel details", "Post an experimental anime activity prompt."),
+    ("/animechallenge mode prompt answer hint", "Create an experimental anime guessing library item."),
     ],
     "Guessing Games": [
         ("/guess guess", "Guess the active game answer in the current channel."),
@@ -1075,6 +1148,17 @@ def initialize_database():
                 created_at TEXT,
                 updated_at TEXT,
                 UNIQUE (guild_id, event_key)
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS anime_profiles (
+                guild_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                username TEXT,
+                favorites TEXT,
+                watching TEXT,
+                updated_at TEXT,
+                PRIMARY KEY (guild_id, user_id)
             )
         """)
 
@@ -1782,6 +1866,10 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_admin_notifications_guild_event
             ON admin_notifications (guild_id, event_key, enabled)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_anime_profiles_updated
+            ON anime_profiles (guild_id, updated_at)
         """)
 
         connection.execute("""
@@ -4503,6 +4591,54 @@ async def report_background_error(name, error):
     )
 
 
+def fetch_github_release(tag):
+    token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "SDAC-Bot/3.0",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    api_request = Request(
+        f"https://api.github.com/repos/{RELEASE_REPO}/releases/tags/{tag}",
+        headers=headers,
+    )
+    with urlopen(api_request, timeout=12) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    return {
+        "tag": payload.get("tag_name") or tag,
+        "name": payload.get("name") or "",
+        "published_at": payload.get("published_at") or "",
+        "html_url": payload.get("html_url") or f"https://github.com/{RELEASE_REPO}/releases/tag/{tag}",
+    }
+
+
+async def announce_official_release_if_changed():
+    release = await asyncio.to_thread(fetch_github_release, "latest-official")
+    tag = str(release.get("tag") or "").strip()
+    if not tag:
+        return
+    state = config.setdefault("release_announcements", {})
+    previous_tag = str(state.get("latest_official_tag") or "").strip()
+    if previous_tag == tag:
+        return
+    state["latest_official_tag"] = tag
+    state["latest_official_name"] = release.get("name") or ""
+    state["latest_official_published_at"] = release.get("published_at") or ""
+    state["updated_at"] = utc_now_iso()
+    save_config(config)
+    if not previous_tag and not os.getenv("SDAC_ANNOUNCE_EXISTING_OFFICIAL_RELEASE"):
+        return
+    message = (
+        f"New official SDAC release available: **{release.get('name') or tag}**\n"
+        f"Tag: `{tag}`\n"
+        f"Published: `{release.get('published_at') or 'unknown'}`\n"
+        f"Release: {release.get('html_url')}\n"
+        "Update with `sdac-update latest-official` after you are ready to deploy it."
+    )
+    await send_system_error_notification(message, "release_announcements")
+
+
 async def announce_guess_summary(channel, game, reason):
     guild_config = get_guild_config(game["guild_id"], create=False)
     target_channel = await configured_summary_channel(game, channel)
@@ -5772,6 +5908,14 @@ async def commands_list(interaction):
 async def animeactivities(interaction):
     lines = [f"**Anime Activities ({anime_activity_catalog_count()} ideas)**"]
     lines.extend(anime_activity_catalog_lines(include_note=True))
+    lines.extend([
+        "",
+        "**Implemented experimental entry points**",
+        "- `/animeevent activity channel details` posts one activity prompt.",
+        "- `/animechallenge mode prompt answer hint` creates a Game Library item for guessing modes.",
+        "- `/animeprofile` and `/animeprofileview` store and show member anime profile notes.",
+        "- `/animeleaderboard` combines submission votes and guessing points.",
+    ])
     chunks = []
     current = ""
     for line in lines:
@@ -5786,6 +5930,241 @@ async def animeactivities(interaction):
     await interaction.response.send_message(chunks[0], ephemeral=True)
     for chunk in chunks[1:]:
         await interaction.followup.send(chunk, ephemeral=True)
+
+
+@tree.command(name="animeevent", description="Post an experimental anime activity prompt")
+@app_commands.guild_only()
+@app_commands.describe(
+    activity="Activity key from /animeactivities, such as screenshot-guess or watch-party",
+    channel="Channel where the activity prompt should be posted",
+    details="Optional server-specific details, rules, date, or prize notes",
+)
+async def animeevent(
+    interaction,
+    activity: str,
+    channel: discord.TextChannel,
+    details: Optional[str] = "",
+):
+    if not await require_admin(interaction):
+        return
+    template = find_anime_activity(activity)
+    if template is None:
+        await interaction.response.send_message(
+            "Unknown anime activity. Run `/animeactivities` and use one of the listed keys.",
+            ephemeral=True,
+        )
+        return
+    message = (
+        f"**{template['name']}**\n"
+        f"{template['summary']}\n\n"
+        f"**Activity key:** `{template['key']}`\n"
+        f"**Experimental note:** {ANIME_ACTIVITY_RETIREMENT_NOTE}"
+    )
+    if details:
+        message += f"\n\n**Server details:** {details[:700]}"
+    try:
+        posted = await channel.send(message[:1900])
+    except discord.HTTPException as error:
+        await interaction.response.send_message(
+            f"Could not post the anime activity: `{error}`",
+            ephemeral=True,
+        )
+        return
+    audit_interaction(
+        interaction,
+        "post_anime_activity",
+        "channel",
+        channel.id,
+        f"{template['key']} posted to {channel.id}; message {posted.id}.",
+    )
+    await interaction.response.send_message(
+        f"Posted `{template['name']}` to {channel.mention}.",
+        ephemeral=True,
+    )
+
+
+@tree.command(name="animeprofile", description="Save your experimental anime favorites and watching status")
+@app_commands.guild_only()
+@app_commands.describe(
+    favorites="Favorite anime, characters, genres, or studios",
+    watching="What you are currently watching or planning to watch",
+)
+async def animeprofile(
+    interaction,
+    favorites: str,
+    watching: Optional[str] = "",
+):
+    with database() as connection:
+        connection.execute("""
+            INSERT INTO anime_profiles (
+                guild_id, user_id, username, favorites, watching, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                username = excluded.username,
+                favorites = excluded.favorites,
+                watching = excluded.watching,
+                updated_at = excluded.updated_at
+        """, (
+            str(interaction.guild_id),
+            str(interaction.user.id),
+            str(interaction.user),
+            favorites[:500],
+            (watching or "")[:500],
+            utc_now_iso(),
+        ))
+    await interaction.response.send_message(
+        "Anime profile saved.\n"
+        f"Experimental note: {ANIME_ACTIVITY_RETIREMENT_NOTE}",
+        ephemeral=True,
+    )
+
+
+@tree.command(name="animeprofileview", description="View an experimental anime profile")
+@app_commands.guild_only()
+@app_commands.describe(member="Member to view. Defaults to you.")
+async def animeprofileview(
+    interaction,
+    member: Optional[discord.Member] = None,
+):
+    member = member or interaction.user
+    with database() as connection:
+        row = connection.execute("""
+            SELECT username, favorites, watching, updated_at
+            FROM anime_profiles
+            WHERE guild_id = ? AND user_id = ?
+        """, (str(interaction.guild_id), str(member.id))).fetchone()
+    if not row:
+        await interaction.response.send_message(
+            f"No anime profile found for {member.mention} yet.",
+            ephemeral=True,
+        )
+        return
+    lines = [
+        f"**Anime Profile: {row['username'] or member.display_name}**",
+        f"Favorites: {row['favorites'] or 'Not set'}",
+        f"Watching: {row['watching'] or 'Not set'}",
+        f"Updated: `{row['updated_at'] or 'unknown'}`",
+        f"Experimental note: {ANIME_ACTIVITY_RETIREMENT_NOTE}",
+    ]
+    await interaction.response.send_message("\n".join(lines)[:1900])
+
+
+@tree.command(name="animeleaderboard", description="Show the experimental anime community leaderboard")
+@app_commands.guild_only()
+@app_commands.describe(month="Optional month in YYYY-MM format. Defaults to current month.")
+async def animeleaderboard(interaction, month: Optional[str] = ""):
+    month = (month or current_month_key()).strip()
+    if not re.match(r"^\d{4}-\d{2}$", month):
+        month = current_month_key()
+    scores = {}
+    with database() as connection:
+        submission_rows = connection.execute("""
+            SELECT user_id, COALESCE(MAX(NULLIF(username, '')), user_id) AS username,
+                   COALESCE(SUM(stars), 0) AS votes
+            FROM submissions
+            WHERE guild_id = ?
+              AND status = 'posted'
+              AND substr(COALESCE(created_at, submitted_at), 1, 7) = ?
+            GROUP BY user_id
+        """, (str(interaction.guild_id), month)).fetchall()
+        guess_rows = connection.execute("""
+            SELECT user_id, COALESCE(MAX(NULLIF(username, '')), user_id) AS username,
+                   COALESCE(SUM(points), 0) AS points
+            FROM guess_points
+            WHERE guild_id = ?
+              AND month = ?
+            GROUP BY user_id
+        """, (str(interaction.guild_id), month)).fetchall()
+    for row in submission_rows:
+        entry = scores.setdefault(row["user_id"], {"username": row["username"], "votes": 0, "points": 0})
+        entry["votes"] += int(row["votes"] or 0)
+    for row in guess_rows:
+        entry = scores.setdefault(row["user_id"], {"username": row["username"], "votes": 0, "points": 0})
+        entry["points"] += int(row["points"] or 0)
+    ranked = sorted(
+        scores.values(),
+        key=lambda item: (item["votes"] + item["points"], item["points"], item["votes"], item["username"]),
+        reverse=True,
+    )[:10]
+    lines = [
+        f"**Experimental Anime Leaderboard - {month}**",
+        f"Experimental note: {ANIME_ACTIVITY_RETIREMENT_NOTE}",
+    ]
+    if ranked:
+        for index, row in enumerate(ranked, start=1):
+            total = row["votes"] + row["points"]
+            lines.append(
+                f"{index}. {row['username']} - {total} total ({row['points']} guess, {row['votes']} vote)"
+            )
+    else:
+        lines.append("No anime activity score yet.")
+    await interaction.response.send_message("\n".join(lines)[:1900])
+
+
+@tree.command(name="animechallenge", description="Create an experimental anime Game Library challenge")
+@app_commands.guild_only()
+@app_commands.describe(
+    mode="Activity key or mode, such as quote-guess, studio-guess, who-said-it, or hint-ladder",
+    prompt="Prompt shown to players",
+    answer="Correct answer",
+    hint="Optional hint text",
+)
+async def animechallenge(
+    interaction,
+    mode: str,
+    prompt: str,
+    answer: str,
+    hint: Optional[str] = "",
+):
+    if not await require_admin(interaction):
+        return
+    template = find_anime_activity(mode) or {
+        "key": anime_activity_key(mode),
+        "name": mode[:80],
+        "category": "Anime Challenge",
+        "summary": "Custom anime challenge.",
+    }
+    now = utc_now_iso()
+    with database() as connection:
+        cursor = connection.execute("""
+            INSERT INTO guess_library_items (
+                guild_id, title, answer, answer_display, answer_aliases_json,
+                prompt_text, category, hint_text, auto_hint_minutes,
+                media_path, media_name, media_type, media_size,
+                media_metadata_json, status, times_used, tags_json,
+                pack_name, enabled, notes, created_by, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, '[]', ?, ?, ?, 0, '', '', '', 0, '{}',
+                    'active', 0, ?, 'Experimental Anime Activities', 1, ?, ?, ?, ?)
+        """, (
+            str(interaction.guild_id),
+            template["name"][:120],
+            answer.strip()[:200],
+            answer.strip()[:200],
+            prompt.strip()[:1000],
+            template["key"][:120],
+            (hint or "").strip()[:500],
+            json.dumps(["anime", template["key"]], separators=(",", ":")),
+            ANIME_ACTIVITY_RETIREMENT_NOTE,
+            str(interaction.user.id),
+            now,
+            now,
+        ))
+        item_id = cursor.lastrowid
+    audit_interaction(
+        interaction,
+        "create_anime_challenge",
+        "guess_library_item",
+        item_id,
+        f"{template['key']} created from Discord.",
+    )
+    await interaction.response.send_message(
+        f"Created experimental anime challenge item `{item_id}` for `{template['key']}`.\n"
+        f"Experimental note: {ANIME_ACTIVITY_RETIREMENT_NOTE}",
+        ephemeral=True,
+    )
+
 
 @tree.command(name="admincommands", description="Show SDAC admin commands")
 @app_commands.guild_only()
@@ -10840,6 +11219,21 @@ async def before_permission_drift_scheduler():
     await bot.wait_until_ready()
 
 
+@tasks.loop(hours=6)
+async def official_release_announcement_scheduler():
+    try:
+        await announce_official_release_if_changed()
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, OSError) as error:
+        print(f"official_release_announcement_scheduler skipped: {error}", flush=True)
+    except Exception as error:
+        await report_background_error("official_release_announcement_scheduler", error)
+
+
+@official_release_announcement_scheduler.before_loop
+async def before_official_release_announcement_scheduler():
+    await bot.wait_until_ready()
+
+
 @tasks.loop(minutes=5)
 async def bot_status_scheduler():
     try:
@@ -10925,6 +11319,8 @@ async def on_ready():
         storage_warning_scheduler.start()
     if not permission_drift_scheduler.is_running():
         permission_drift_scheduler.start()
+    if not official_release_announcement_scheduler.is_running():
+        official_release_announcement_scheduler.start()
     if not bot_status_scheduler.is_running():
         bot_status_scheduler.start()
     write_bot_status("ready")

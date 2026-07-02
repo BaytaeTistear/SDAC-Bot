@@ -489,6 +489,10 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 
 ```text
 /commands
+/animeactivities
+/animeprofile favorites watching
+/animeprofileview @member
+/animeleaderboard 2026-07
 /submit
 /categories
 /guess guess
@@ -527,6 +531,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /setgamesummarychannel #channel
 /seterrorchannel #channel
 /setnotification system_errors #channel true
+/setnotification release_announcements #channel true
 /setdigest true weekly #channel
 /setlimit max_file_mb 25
 /setmoderation "badword1,badword2" "image,video,audio" false 7 false
@@ -541,6 +546,8 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /sdacpanic true "Cleaning up spam"
 /sdacpanic false
 /startgame #channel answer media text category hint auto_hint_minutes
+/animeevent screenshot-guess #channel "Theme: opening scenes"
+/animechallenge quote-guess "Who said this quote?" "Answer" "Optional hint"
 /startlibrarygame #channel item_id category random_item
 /schedulegame channel:#channel start_time:"2026-07-01 19:30" item_id:0 category:movie random_item:true close_after_minutes:60
 /scheduledgames

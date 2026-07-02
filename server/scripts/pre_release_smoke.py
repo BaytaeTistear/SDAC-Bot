@@ -109,6 +109,9 @@ class PreReleaseSmokeTests(unittest.TestCase):
         ]:
             response = client.get(path)
             self.assertLess(response.status_code, 500, path)
+        anime_page = client.get("/admin/anime-activities?key=ImTheBestAdmin").get_data(as_text=True)
+        self.assertIn("/animeevent", anime_page)
+        self.assertIn("screenshot-guess", anime_page)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

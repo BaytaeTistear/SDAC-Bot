@@ -230,12 +230,61 @@ def anime_activity_catalog_lines(include_note=True):
     for group in ANIME_ACTIVITY_CATALOG:
         lines.append(f"**{group['category']}**")
         for item in group["items"]:
-            lines.append(f"- {item['name']}: {item['summary']} Note: {ANIME_ACTIVITY_RETIREMENT_NOTE}")
+            key = anime_activity_key(item["name"])
+            lines.append(f"- `{key}` - {item['name']}: {item['summary']} Note: {ANIME_ACTIVITY_RETIREMENT_NOTE}")
     return lines
 
 
 def anime_activity_catalog_count():
     return sum(len(group["items"]) for group in ANIME_ACTIVITY_CATALOG)
+
+
+def anime_activity_key(name):
+    key = re.sub(r"[^a-z0-9]+", "-", str(name or "").casefold()).strip("-")
+    aliases = {
+        "guess-the-anime-from-a-screenshot": "screenshot-guess",
+        "guess-the-character-from-a-cropped-image": "character-guess",
+        "guess-the-opening-or-ending": "op-ed-guess",
+        "guess-the-anime-from-a-quote": "quote-guess",
+        "guess-the-studio": "studio-guess",
+        "guess-the-episode-or-arc": "episode-arc-guess",
+        "anime-of-the-week-month-voting": "anime-vote",
+        "seasonal-watchlist-polls": "seasonal-watchlist",
+        "best-character-tournament-brackets": "character-bracket",
+        "opening-song-tournament": "opening-tournament",
+        "screenshot-theme-contests": "screenshot-contest",
+        "watch-party-rsvp-and-reminders": "watch-party",
+        "user-anime-favorites-list": "favorites-profile",
+        "currently-watching-status": "watching-status",
+        "server-anime-leaderboard": "anime-leaderboard",
+        "anime-badges": "anime-badges",
+        "spoiler-tagged-submission-categories": "spoiler-categories",
+        "anime-spoiler-warning-presets": "spoiler-warning",
+        "nsfw-ecchi-category-controls": "sensitive-category-controls",
+        "per-anime-channels-or-categories": "anime-channels",
+        "anime-challenge-library": "challenge-library",
+        "daily-anime-challenge": "daily-challenge",
+        "correct-guess-streaks": "guess-streaks",
+        "team-based-guessing-games": "team-guessing",
+        "who-said-it-quote-mode": "who-said-it",
+        "wrong-answers-only-poll-mode": "wrong-answers",
+        "auto-generated-hint-ladder": "hint-ladder",
+    }
+    return aliases.get(key, key)
+
+
+def anime_activity_templates():
+    templates = []
+    for group in ANIME_ACTIVITY_CATALOG:
+        for item in group["items"]:
+            templates.append({
+                "key": anime_activity_key(item["name"]),
+                "category": group["category"],
+                "name": item["name"],
+                "summary": item["summary"],
+                "warning": ANIME_ACTIVITY_RETIREMENT_NOTE,
+            })
+    return templates
 FEATURE_LABELS = {
     "submissions": "Submissions",
     "approval_queue": "Approval Queue",
@@ -301,6 +350,7 @@ NOTIFICATION_EVENT_LABELS = {
     "permission_drift": "Permission Drift",
     "restore_drill_failed": "Restore Drill Failed",
     "monthly_digest": "Monthly Digest",
+    "release_announcements": "Release Announcements",
 }
 
 DEFAULT_GUILD_FIELDS = {
@@ -2310,6 +2360,8 @@ ANIME_ACTIVITIES_HTML = """
         .card h3 { margin: 0 0 8px; }
         .muted { color: #a8adb8; }
         .warning { border-color: #f59e0b; color: #ffd28a; }
+        .commands { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+        .commands code { display: block; white-space: normal; }
         code { color: #cdd7ff; }
     </style>
 </head>
@@ -2326,7 +2378,16 @@ ANIME_ACTIVITIES_HTML = """
     <section class="panel warning">
         <h2>Experimental Notice</h2>
         <p>{{ retirement_note }}</p>
-        <p class="muted">These are planned activity ideas, not a promise that every mode is fully built yet. Use them as templates for events, polls, and Game Library content.</p>
+        <p class="muted">These commands are experimental wrappers around events, profiles, leaderboards, polls, and Game Library content. Individual modes may change or be removed.</p>
+    </section>
+    <section class="panel">
+        <h2>Implemented Entry Points</h2>
+        <div class="commands">
+            <div class="card"><code>/animeevent activity channel details</code><p>Post an activity prompt to Discord using one of the keys below.</p></div>
+            <div class="card"><code>/animechallenge mode prompt answer hint</code><p>Create a Game Library item for anime guessing modes.</p></div>
+            <div class="card"><code>/animeprofile favorites watching</code><p>Let users save favorite anime and currently watching notes.</p></div>
+            <div class="card"><code>/animeleaderboard month</code><p>Show a combined anime score from submission votes and guessing points.</p></div>
+        </div>
     </section>
     {% for group in catalog %}
         <section class="panel">
@@ -2335,6 +2396,7 @@ ANIME_ACTIVITIES_HTML = """
                 {% for item in group["items"] %}
                     <article class="card">
                         <h3>{{ item["name"] }}</h3>
+                        <p><code>{{ activity_key(item["name"]) }}</code></p>
                         <p>{{ item["summary"] }}</p>
                         <p class="muted"><strong>Note:</strong> {{ retirement_note }}</p>
                     </article>
@@ -7080,6 +7142,17 @@ def initialize_database():
                 UNIQUE (guild_id, event_key)
             )
         """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS anime_profiles (
+                guild_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                username TEXT,
+                favorites TEXT,
+                watching TEXT,
+                updated_at TEXT,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """)
 
         connection.execute("""
             CREATE TABLE IF NOT EXISTS polls (
@@ -7732,6 +7805,10 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_admin_notifications_guild_event
             ON admin_notifications (guild_id, event_key, enabled)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_anime_profiles_updated
+            ON anime_profiles (guild_id, updated_at)
         """)
 
         connection.execute("""
@@ -12328,6 +12405,7 @@ def admin_anime_activities():
         return login_response
     return render_template_string(
         ANIME_ACTIVITIES_HTML,
+        activity_key=anime_activity_key,
         admin_key=ADMIN_KEY,
         catalog=ANIME_ACTIVITY_CATALOG,
         retirement_note=ANIME_ACTIVITY_RETIREMENT_NOTE,

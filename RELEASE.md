@@ -1,3 +1,28 @@
+# SDAC Bot and App Version 3.0.22 Experimental
+
+Date: 2026-07-02
+
+Version 3.0.22 is an experimental anime activities and official-release announcement update.
+
+Included:
+
+- added stable keys for every experimental anime activity while keeping the warning that activities may change or be removed
+- added `/animeevent` so admins can post any anime activity prompt to a Discord channel
+- added `/animechallenge` so admins can create Game Library guessing items from anime activity modes
+- added `/animeprofile` and `/animeprofileview` for experimental member anime favorite/currently-watching profiles
+- added `/animeleaderboard` combining monthly submission votes and guessing points
+- expanded the Admin Anime Activities page with command entry points and activity keys
+- added `release_announcements` notification routing for `/setnotification`
+- added a bot scheduler that checks `latest-official` and announces to Discord when the official release changes
+- added smoke coverage for the anime activities dashboard entry points
+
+Release channel:
+
+- `version-3.0.22` is this experimental bot and app build
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.0.2 until the Version 3.0.3-3.0.22 line is validated
+
+---
 # SDAC Bot and App Version 3.0.21 Experimental
 
 Date: 2026-07-01
