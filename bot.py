@@ -101,6 +101,8 @@ DEFAULT_CONFIG = {
         "thumbnail_max_dimension": 640,
         "image_compression_enabled": True,
         "image_compression_quality": 85,
+        "thumbnail_pregeneration_enabled": True,
+        "database_maintenance_enabled": True,
         "archive_full_history_after_months": 18,
         "spam_review_threshold": 40,
         "spam_burst_count": 5,
@@ -2933,6 +2935,25 @@ def thumbnail_path_for_media(path):
     return (MEDIA_DIR / "_thumbs" / relative_path).with_suffix(".webp")
 
 
+def media_relative_path(stored_path):
+    if not stored_path:
+        return ""
+    try:
+        path = Path(stored_path)
+        resolved = path.resolve()
+        media_root = MEDIA_DIR.resolve()
+        try:
+            return resolved.relative_to(media_root).as_posix()
+        except ValueError:
+            pass
+        text = str(stored_path).replace("\\", "/").lstrip("/")
+        if text.startswith("media/"):
+            return text.split("media/", 1)[1]
+        return text
+    except (OSError, ValueError):
+        return ""
+
+
 def maybe_compress_image(path, filename):
     if not config["limits"].get("image_compression_enabled", False):
         return False
@@ -2984,6 +3005,51 @@ def create_media_thumbnail(path, filename):
         return str(thumb_path)
     except (OSError, ValueError):
         return ""
+
+
+def generate_missing_thumbnails(limit=500):
+    generated = 0
+    if not config["limits"].get("thumbnail_pregeneration_enabled", True):
+        return generated
+    with database() as connection:
+        rows = connection.execute("""
+            SELECT media_paths, file_paths, media_names
+            FROM submissions
+            WHERE status != 'removed'
+              AND COALESCE(media_paths, file_paths, '') != ''
+            ORDER BY id DESC
+            LIMIT ?
+        """, (int(limit),)).fetchall()
+    for row in rows:
+        paths = split_values(row["media_paths"] or row["file_paths"])
+        names = split_values(row["media_names"])
+        for index, raw_path in enumerate(paths):
+            if generated >= limit:
+                return generated
+            name = names[index] if index < len(names) else Path(raw_path).name
+            if get_media_type(name) != "image" or Path(name).suffix.lower() == ".gif":
+                continue
+            relative_path = media_relative_path(raw_path)
+            path = (MEDIA_DIR / relative_path) if relative_path else Path(raw_path)
+            thumb_path = thumbnail_path_for_media(path)
+            if not path.is_file() or thumb_path is None or thumb_path.is_file():
+                continue
+            if create_media_thumbnail(path, name):
+                generated += 1
+    return generated
+
+
+def run_light_database_maintenance():
+    if using_postgres() or not config["limits"].get("database_maintenance_enabled", True):
+        return "Skipped."
+    try:
+        with connect_db() as connection:
+            connection.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            connection.execute("ANALYZE")
+            connection.commit()
+    except sqlite3.Error as error:
+        return f"Skipped: {error}"
+    return "SQLite WAL checkpoint and ANALYZE completed."
 
 
 def format_bytes(size):
@@ -4480,6 +4546,7 @@ persistent_views_registered = False
 last_backup_date = None
 last_storage_warning_date = None
 last_permission_drift_date = {}
+last_optimization_maintenance_date = None
 
 
 def bot_access_disabled_message(guild_config):
@@ -11345,6 +11412,41 @@ async def before_cleanup_scheduler():
 
 
 @tasks.loop(hours=6)
+async def optimization_maintenance_scheduler():
+    global last_optimization_maintenance_date
+    try:
+        now = datetime.now(timezone.utc)
+        today = now.date().isoformat()
+        if last_optimization_maintenance_date == today or now.hour < 3:
+            return
+        generated = await asyncio.to_thread(generate_missing_thumbnails, 500)
+        database_result = await asyncio.to_thread(run_light_database_maintenance)
+        last_optimization_maintenance_date = today
+        if generated:
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    "scheduled_optimization_maintenance",
+                    "system",
+                    "system",
+                    "maintenance",
+                    "",
+                    (
+                        f"Generated {generated} thumbnail(s). "
+                        f"{database_result}"
+                    ),
+                )
+    except Exception as error:
+        await report_background_error("optimization_maintenance_scheduler", error)
+
+
+@optimization_maintenance_scheduler.before_loop
+async def before_optimization_maintenance_scheduler():
+    await bot.wait_until_ready()
+
+
+@tasks.loop(hours=6)
 async def storage_warning_scheduler():
     global last_storage_warning_date
     try:
@@ -11494,6 +11596,8 @@ async def on_ready():
         monthly_leaderboard_scheduler.start()
     if not cleanup_scheduler.is_running():
         cleanup_scheduler.start()
+    if not optimization_maintenance_scheduler.is_running():
+        optimization_maintenance_scheduler.start()
     if not storage_warning_scheduler.is_running():
         storage_warning_scheduler.start()
     if not permission_drift_scheduler.is_running():

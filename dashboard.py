@@ -126,6 +126,8 @@ DEFAULT_LIMITS = {
     "thumbnail_max_dimension": 640,
     "image_compression_enabled": True,
     "image_compression_quality": 85,
+    "thumbnail_pregeneration_enabled": True,
+    "database_maintenance_enabled": True,
     "archive_full_history_after_months": 18,
     "spam_review_threshold": 40,
     "spam_burst_count": 5,
@@ -351,6 +353,126 @@ NOTIFICATION_EVENT_LABELS = {
     "restore_drill_failed": "Restore Drill Failed",
     "monthly_digest": "Monthly Digest",
     "release_announcements": "Release Announcements",
+}
+
+PERFORMANCE_PRESETS = {
+    "small": {
+        "label": "Small Server",
+        "description": "Balanced defaults for low traffic and small communities.",
+        "limits": {
+            "thumbnail_max_dimension": 640,
+            "image_compression_enabled": True,
+            "image_compression_quality": 86,
+            "rate_limit_retention_days": 30,
+            "audit_retention_days": 365,
+            "local_original_retention_days": 30,
+            "pending_submission_retention_hours": 48,
+            "archive_full_history_after_months": 18,
+            "thumbnail_pregeneration_enabled": True,
+            "database_maintenance_enabled": True,
+        },
+    },
+    "medium": {
+        "label": "Medium Server",
+        "description": "More retention with compression and scheduled maintenance kept on.",
+        "limits": {
+            "thumbnail_max_dimension": 720,
+            "image_compression_enabled": True,
+            "image_compression_quality": 88,
+            "rate_limit_retention_days": 45,
+            "audit_retention_days": 540,
+            "local_original_retention_days": 45,
+            "pending_submission_retention_hours": 72,
+            "archive_full_history_after_months": 24,
+            "thumbnail_pregeneration_enabled": True,
+            "database_maintenance_enabled": True,
+        },
+    },
+    "large": {
+        "label": "Large Server",
+        "description": "Keeps more history while relying on thumbnails and indexes for browsing.",
+        "limits": {
+            "thumbnail_max_dimension": 800,
+            "image_compression_enabled": True,
+            "image_compression_quality": 88,
+            "rate_limit_retention_days": 60,
+            "audit_retention_days": 730,
+            "local_original_retention_days": 60,
+            "pending_submission_retention_hours": 72,
+            "archive_full_history_after_months": 30,
+            "thumbnail_pregeneration_enabled": True,
+            "database_maintenance_enabled": True,
+        },
+    },
+    "low_storage": {
+        "label": "Low Storage",
+        "description": "Prioritizes smaller uploads, shorter local retention, and aggressive cleanup.",
+        "limits": {
+            "thumbnail_max_dimension": 512,
+            "image_compression_enabled": True,
+            "image_compression_quality": 78,
+            "rate_limit_retention_days": 14,
+            "audit_retention_days": 180,
+            "local_original_retention_days": 7,
+            "pending_submission_retention_hours": 24,
+            "archive_full_history_after_months": 12,
+            "thumbnail_pregeneration_enabled": True,
+            "database_maintenance_enabled": True,
+        },
+    },
+    "low_cpu": {
+        "label": "Low CPU",
+        "description": "Reduces image work and keeps cleanup conservative for weak hosts.",
+        "limits": {
+            "thumbnail_max_dimension": 480,
+            "image_compression_enabled": False,
+            "image_compression_quality": 85,
+            "rate_limit_retention_days": 21,
+            "audit_retention_days": 365,
+            "local_original_retention_days": 30,
+            "pending_submission_retention_hours": 48,
+            "archive_full_history_after_months": 18,
+            "thumbnail_pregeneration_enabled": False,
+            "database_maintenance_enabled": True,
+        },
+    },
+}
+
+NOTIFICATION_PRESETS = {
+    "quiet": {
+        "label": "Quiet",
+        "enable": {"system_errors"},
+        "disable": set(NOTIFICATION_EVENT_LABELS) - {"system_errors"},
+    },
+    "critical_only": {
+        "label": "Critical Only",
+        "enable": {
+            "system_errors",
+            "backup_failed",
+            "restore_test_failed",
+            "heartbeat_stale",
+        },
+        "disable": set(NOTIFICATION_EVENT_LABELS)
+        - {"system_errors", "backup_failed", "restore_test_failed", "heartbeat_stale"},
+    },
+    "normal": {
+        "label": "Normal",
+        "enable": {
+            "system_errors",
+            "backup_failed",
+            "restore_test_failed",
+            "storage_warning",
+            "heartbeat_stale",
+            "permission_drift",
+            "release_announcements",
+        },
+        "disable": {"monthly_digest"},
+    },
+    "verbose": {
+        "label": "Verbose",
+        "enable": set(NOTIFICATION_EVENT_LABELS),
+        "disable": set(),
+    },
 }
 
 DEFAULT_GUILD_FIELDS = {
@@ -3032,6 +3154,18 @@ SETTINGS_HTML = """
                             <option value="1" {% if limits.get('image_compression_enabled', False) %}selected{% endif %}>Enabled</option>
                         </select>
                     </td></tr>
+                    <tr><th>Scheduled thumbnail pre-generation</th><td>
+                        <select name="thumbnail_pregeneration_enabled">
+                            <option value="1" {% if limits.get('thumbnail_pregeneration_enabled', True) %}selected{% endif %}>Enabled</option>
+                            <option value="0" {% if not limits.get('thumbnail_pregeneration_enabled', True) %}selected{% endif %}>Disabled</option>
+                        </select>
+                    </td></tr>
+                    <tr><th>Scheduled database maintenance</th><td>
+                        <select name="database_maintenance_enabled">
+                            <option value="1" {% if limits.get('database_maintenance_enabled', True) %}selected{% endif %}>Enabled</option>
+                            <option value="0" {% if not limits.get('database_maintenance_enabled', True) %}selected{% endif %}>Disabled</option>
+                        </select>
+                    </td></tr>
                 </tbody>
             </table>
             <button type="submit">Save Limits</button>
@@ -3534,6 +3668,225 @@ MAINTENANCE_HTML = """
                     </tr>
                 {% else %}
                     <tr><td colspan="3" class="muted">No config backups found yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+OPTIMIZATION_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Optimization</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1160px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .metric { background: #111827; border: 1px solid #30333b; border-radius: 10px; padding: 14px; }
+        .metric strong { display: block; font-size: 1.7rem; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        button, select, input { border-radius: 7px; padding: 9px 10px; }
+        button { background: #7c9cff; border: 0; color: #0b1020; cursor: pointer; font-weight: bold; }
+        input, select { background: #12151c; border: 1px solid #30333b; color: #f4f5f7; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin: 0 auto 20px; padding: 12px; text-align: center; }
+        .notice.error { border-color: #e45d68; }
+        .ok { color: #63c174; font-weight: bold; }
+        .bad { color: #e45d68; font-weight: bold; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; }
+        @media (max-width: 760px) {
+            body { padding: 12px; }
+            table, thead, tbody, tr, th, td { display: block; }
+            thead { display: none; }
+            tr { border-bottom: 1px solid #30333b; padding: 10px 0; }
+            th, td { border-bottom: 0; padding: 6px 0; }
+            button, select, input { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Optimization</h1>
+    <nav>
+        <a href="{{ url_for('admin_maintenance', key=admin_key) }}">Maintenance</a>
+        <a href="{{ url_for('admin_media_cleanup', key=admin_key) }}">Media</a>
+        <a href="{{ url_for('admin_jobs', key=admin_key) }}">Jobs</a>
+        <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
+        <a href="{{ url_for('admin_server_health_cards', key=admin_key) }}">Server Health</a>
+        <a href="{{ url_for('admin_releases', key=admin_key) }}">Releases</a>
+    </nav>
+
+    {% if notice %}
+        <div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>
+    {% endif %}
+
+    {% if metrics.warnings %}
+        <section class="panel">
+            <h2>Warnings</h2>
+            {% for warning in metrics.warnings %}
+                <p class="notice error">{{ warning }}</p>
+            {% endfor %}
+        </section>
+    {% endif %}
+
+    <section class="grid">
+        <div class="metric"><span>Database</span><strong>{{ metrics.database_size }}</strong><code>{{ metrics.database_file }}</code></div>
+        <div class="metric"><span>Media</span><strong>{{ metrics.media_size }}</strong><span class="muted">{{ metrics.media_files }} file(s)</span></div>
+        <div class="metric"><span>Runtime Cache</span><strong>{{ metrics.cache_entries }}</strong><span class="muted">{{ metrics.ttl_cache_entries }} TTL entries</span></div>
+        <div class="metric"><span>Bot Watchdog</span><strong class="{{ 'ok' if metrics.bot_status.fresh else 'bad' }}">{{ "Fresh" if metrics.bot_status.fresh else "Stale" }}</strong><span class="muted">{{ metrics.bot_status.message }}</span></div>
+    </section>
+
+    <section class="panel">
+        <h2>Run Optimization</h2>
+        <form method="post">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button name="action" value="optimization_suite" type="submit">Queue Full Optimization Suite</button>
+            <button name="action" value="generate_thumbnails" type="submit">Queue Thumbnail Pre-Generation</button>
+            <button name="action" value="rebuild_media_fingerprints" type="submit">Queue Duplicate Index Rebuild</button>
+            <button name="action" value="optimize_database" type="submit">Queue SQLite Optimize</button>
+            <button name="action" value="clear_caches" type="submit">Clear Runtime Caches</button>
+        </form>
+        <p class="muted">The full suite generates missing thumbnails, rebuilds media fingerprints, and runs the database optimize job with a pre-optimize backup.</p>
+    </section>
+
+    <section class="panel">
+        <h2>Performance Presets</h2>
+        <table>
+            <thead><tr><th>Preset</th><th>Purpose</th><th>Apply</th></tr></thead>
+            <tbody>
+                {% for key, preset in performance_presets.items() %}
+                    <tr>
+                        <td>{{ preset.label }}</td>
+                        <td>{{ preset.description }}</td>
+                        <td>
+                            <form method="post">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="preset" value="{{ key }}">
+                                <button name="action" value="apply_performance_preset" type="submit">Apply</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h2>Notification Presets</h2>
+        <form method="post">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <table>
+                <tbody>
+                    <tr><th>Server</th><td>
+                        <select name="guild_id">
+                            {% for guild in guilds %}
+                                <option value="{{ guild.id }}">{{ guild.name }} ({{ guild.id }})</option>
+                            {% endfor %}
+                        </select>
+                    </td></tr>
+                    <tr><th>Preset</th><td>
+                        <select name="preset">
+                            {% for key, preset in notification_presets.items() %}
+                                <option value="{{ key }}">{{ preset.label }}</option>
+                            {% endfor %}
+                        </select>
+                    </td></tr>
+                    <tr><th>Channel ID</th><td><input name="channel_id" placeholder="Optional, reused when routes already have channels"></td></tr>
+                </tbody>
+            </table>
+            <button name="action" value="apply_notification_preset" type="submit">Apply Notification Preset</button>
+        </form>
+    </section>
+
+    <section class="panel">
+        <h2>SQLite Status</h2>
+        <table>
+            <tbody>
+                {% for row in metrics.sqlite %}
+                    <tr><th>{{ row.name }}</th><td><code>{{ row.value }}</code></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h2>Storage Forecast</h2>
+        <table>
+            <thead><tr><th>Server</th><th>Current</th><th>Limit</th><th>Growth</th><th>Forecast</th></tr></thead>
+            <tbody>
+                {% for row in metrics.storage %}
+                    <tr>
+                        <td>{{ row.name }}<br><code>{{ row.guild_id }}</code></td>
+                        <td>{{ row.current }}</td>
+                        <td>{{ row.limit }}</td>
+                        <td>{{ row.average }}</td>
+                        <td>{{ row.forecast }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="muted">No storage data yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="grid">
+        <div class="panel">
+            <h2>Cleanup Snapshot</h2>
+            <p>Orphaned files: <code>{{ metrics.cleanup.orphaned_total }}</code></p>
+            <p>Missing references: <code>{{ metrics.cleanup.missing_total }}</code></p>
+            <p>Oversized files: <code>{{ metrics.cleanup.oversized_total }}</code></p>
+            <p><a href="{{ url_for('admin_media_cleanup', key=admin_key) }}">Open media cleanup</a></p>
+        </div>
+        <div class="panel">
+            <h2>Exports</h2>
+            <p><a href="{{ metrics.audit_export_url }}">Download audit CSV</a></p>
+            <p><a href="{{ url_for('export_submissions', key=admin_key) }}">Download submissions CSV</a></p>
+            <p><a href="{{ url_for('export_guessing', key=admin_key) }}">Download guessing CSV</a></p>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Largest Tables</h2>
+        <table>
+            <thead><tr><th>Table</th><th>Rows</th></tr></thead>
+            <tbody>
+                {% for row in metrics.tables|sort(attribute='rows', reverse=True) %}
+                    <tr><td><code>{{ row.table }}</code></td><td>{{ row.rows }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h2>Recent Jobs</h2>
+        <table>
+            <thead><tr><th>ID</th><th>Job</th><th>Status</th><th>Requested</th><th>Result/Error</th></tr></thead>
+            <tbody>
+                {% for job in metrics.recent_jobs %}
+                    <tr>
+                        <td>{{ job.id }}</td>
+                        <td>{{ job.label }}</td>
+                        <td><code>{{ job.status }}</code></td>
+                        <td>{{ job.created_at }}</td>
+                        <td><code>{{ job.error or job.result }}</code></td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="muted">No jobs yet.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -5894,6 +6247,190 @@ def storage_warnings(config_data=None):
             f"(warning at {format_bytes(database_limit)})."
         )
     return warnings
+
+
+def table_count_rows():
+    tables = [
+        "submissions",
+        "guess_games",
+        "guess_points",
+        "admin_audit_log",
+        "moderation_history",
+        "rate_limit_events",
+        "background_jobs",
+        "media_fingerprints",
+        "submission_reports",
+    ]
+    rows = []
+    with closing(connect_db()) as connection:
+        for table in tables:
+            try:
+                total = connection.execute(
+                    f"SELECT COUNT(*) FROM {table}"
+                ).fetchone()[0]
+            except sqlite3.Error:
+                total = 0
+            rows.append({"table": table, "rows": int(total or 0)})
+    return rows
+
+
+def sqlite_status_rows():
+    if using_postgres():
+        return [{"name": "Backend", "value": "PostgreSQL"}]
+    rows = []
+    with closing(connect_db()) as connection:
+        for pragma in ("journal_mode", "synchronous", "busy_timeout", "foreign_keys"):
+            try:
+                value = connection.execute(f"PRAGMA {pragma}").fetchone()[0]
+            except sqlite3.Error as error:
+                value = f"Unavailable: {error}"
+            rows.append({"name": pragma, "value": value})
+        try:
+            checkpoint = connection.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone()
+            rows.append({"name": "wal_checkpoint", "value": tuple(checkpoint)})
+        except sqlite3.Error as error:
+            rows.append({"name": "wal_checkpoint", "value": f"Unavailable: {error}"})
+    return rows
+
+
+def background_job_status_counts():
+    with closing(connect_db()) as connection:
+        rows = connection.execute("""
+            SELECT status, COUNT(*) AS total
+            FROM background_jobs
+            GROUP BY status
+            ORDER BY status
+        """).fetchall()
+    return [{"status": row["status"] or "unknown", "total": row["total"]} for row in rows]
+
+
+def optimization_metrics(config_data=None):
+    config_data = config_data or load_config()
+    media_stats = media_directory_stats()
+    cleanup = media_cleanup_report(limit=25)
+    bot_status = read_bot_status()
+    maybe_notify_stale_bot(bot_status)
+    return {
+        "database_size": format_bytes(DB_FILE.stat().st_size) if DB_FILE.exists() else "0 B",
+        "database_file": str(DB_FILE),
+        "media_size": format_bytes(media_stats["bytes"]),
+        "media_files": media_stats["files"],
+        "cache_entries": len(PUBLIC_PAGE_CACHE),
+        "ttl_cache_entries": len(TTL_CACHE),
+        "sqlite": sqlite_status_rows(),
+        "tables": table_count_rows(),
+        "job_counts": background_job_status_counts(),
+        "cleanup": cleanup,
+        "storage": storage_forecast_rows(config_data),
+        "warnings": security_warnings() + storage_warnings(config_data),
+        "bot_status": bot_status,
+        "deploy_snapshots": latest_deploy_snapshots(),
+        "recent_jobs": recent_background_jobs(limit=12),
+        "audit_export_url": url_for("export_audit", key=ADMIN_KEY),
+    }
+
+
+def apply_performance_preset(preset_key, actor_id="", actor_name=""):
+    preset = PERFORMANCE_PRESETS.get(preset_key)
+    if not preset:
+        raise ValueError("Unknown performance preset.")
+    config_data = load_config()
+    limits = config_data.setdefault("limits", {})
+    for key, value in preset["limits"].items():
+        limits[key] = value
+    save_config(config_data)
+    with database() as connection:
+        add_admin_audit_log(
+            connection,
+            None,
+            "dashboard_apply_performance_preset",
+            actor_id,
+            actor_name,
+            "limits",
+            preset_key,
+            f"Applied {preset['label']} performance preset.",
+        )
+    return preset["label"]
+
+
+def existing_notification_channel(connection, guild_id, event_key):
+    row = connection.execute("""
+        SELECT channel_id
+        FROM admin_notifications
+        WHERE guild_id = ? AND event_key = ?
+        LIMIT 1
+    """, (str(guild_id), event_key)).fetchone()
+    return str(row["channel_id"] or "").strip() if row else ""
+
+
+def apply_notification_preset(preset_key, guild_id, channel_id, actor_id="", actor_name=""):
+    preset = NOTIFICATION_PRESETS.get(preset_key)
+    if not preset:
+        raise ValueError("Unknown notification preset.")
+    config_data = load_config()
+    guild_id = str(guild_id or "").strip()
+    if guild_id not in (config_data.get("guilds") or {}):
+        raise ValueError("Choose a configured server for notification presets.")
+    if not can_admin_access_guild(guild_id, config_data):
+        abort(403)
+    channel_id = str(channel_id or "").strip()
+    if channel_id and not channel_id.isdigit():
+        raise ValueError("Channel ID must be numeric.")
+    enabled_count = 0
+    disabled_count = 0
+    skipped_count = 0
+    now = utc_now_iso()
+    with database() as connection:
+        for event_key in sorted(NOTIFICATION_EVENT_LABELS):
+            should_enable = event_key in preset["enable"]
+            should_disable = event_key in preset["disable"]
+            if not should_enable and not should_disable:
+                continue
+            target_channel = channel_id or existing_notification_channel(
+                connection,
+                guild_id,
+                event_key,
+            )
+            if should_enable and not target_channel:
+                skipped_count += 1
+                continue
+            connection.execute("""
+                INSERT INTO admin_notifications (
+                    guild_id, event_key, channel_id, enabled,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(guild_id, event_key) DO UPDATE SET
+                    channel_id = excluded.channel_id,
+                    enabled = excluded.enabled,
+                    updated_at = excluded.updated_at
+            """, (
+                guild_id,
+                event_key,
+                target_channel,
+                1 if should_enable else 0,
+                now,
+                now,
+            ))
+            if should_enable:
+                enabled_count += 1
+            else:
+                disabled_count += 1
+        add_admin_audit_log(
+            connection,
+            guild_id,
+            "dashboard_apply_notification_preset",
+            actor_id,
+            actor_name,
+            "admin_notification",
+            preset_key,
+            (
+                f"Applied {preset['label']} notification preset: "
+                f"{enabled_count} enabled, {disabled_count} disabled, "
+                f"{skipped_count} skipped."
+            ),
+        )
+    return preset["label"], enabled_count, disabled_count, skipped_count
 
 
 def security_warnings():
@@ -8946,6 +9483,7 @@ def background_job_label(job_type):
         "rebuild_media_fingerprints": "Rebuild media fingerprints",
         "rollback_latest_snapshot": "Rollback latest deploy snapshot",
         "optimize_database": "Optimize SQLite database",
+        "optimization_suite": "Optimization suite",
     }
     return labels.get(job_type, str(job_type or "").replace("_", " ").title())
 
@@ -8953,8 +9491,6 @@ def background_job_label(job_type):
 def create_background_job(job_type, guild_id=None, payload=None, actor_id="", actor_name=""):
     payload = payload or {}
     now = utc_now_iso()
-    config_data = load_config()
-    oauth_guild_ids = oauth_configured_member_guild_ids(access_token, config_data)
     with database() as connection:
         cursor = connection.execute("""
             INSERT INTO background_jobs (
@@ -9075,6 +9611,17 @@ def process_background_job(job_id):
                 result = {"ok": ok, "message": message}
                 if not ok:
                     raise RuntimeError(message)
+            elif job["job_type"] == "optimization_suite":
+                generated = generate_missing_thumbnails(limit=1000)
+                fingerprints = rebuild_media_fingerprints(limit=10000)
+                ok, message = optimize_database()
+                if not ok:
+                    raise RuntimeError(message)
+                result = {
+                    "generated_thumbnails": generated,
+                    "fingerprints": fingerprints,
+                    "database": message,
+                }
             else:
                 raise ValueError(f"Unknown background job type: {job['job_type']}")
             update_background_job(
@@ -10864,6 +11411,7 @@ def admin_sidebar_sections():
             "links": [
                 ("Settings", "admin_settings", {}),
                 ("Theme", "admin_theme", {}),
+                ("Optimization", "admin_optimization", {}),
                 ("Maintenance", "admin_maintenance", {}),
                 ("Server Health", "admin_server_health_cards", {}),
                 ("Production", "admin_production_health", {}),
@@ -14074,6 +14622,12 @@ def admin_settings():
                 limits["image_compression_enabled"] = (
                     request.form.get("image_compression_enabled") == "1"
                 )
+                limits["thumbnail_pregeneration_enabled"] = (
+                    request.form.get("thumbnail_pregeneration_enabled") == "1"
+                )
+                limits["database_maintenance_enabled"] = (
+                    request.form.get("database_maintenance_enabled") == "1"
+                )
             except ValueError as form_error:
                 return redirect(url_for(
                     "admin_settings",
@@ -14516,6 +15070,97 @@ def admin_settings():
         selected_settings_guild_id=requested_settings_guild_id,
         stats=stats,
         weekdays=WEEKDAYS,
+    )
+
+
+@app.route("/admin/optimization", methods=["GET", "POST"])
+def admin_optimization():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    actor_id, actor_name = web_actor()
+
+    if request.method == "POST":
+        require_csrf_token()
+        action = request.form.get("action", "")
+        try:
+            if action == "apply_performance_preset":
+                label = apply_performance_preset(
+                    request.form.get("preset", ""),
+                    actor_id,
+                    actor_name,
+                )
+                clear_runtime_caches()
+                return redirect(url_for(
+                    "admin_optimization",
+                    key=ADMIN_KEY,
+                    notice=f"Applied {label} performance preset.",
+                ))
+            if action == "apply_notification_preset":
+                label, enabled, disabled, skipped = apply_notification_preset(
+                    request.form.get("preset", ""),
+                    request.form.get("guild_id", ""),
+                    request.form.get("channel_id", ""),
+                    actor_id,
+                    actor_name,
+                )
+                return redirect(url_for(
+                    "admin_optimization",
+                    key=ADMIN_KEY,
+                    notice=(
+                        f"Applied {label} notification preset: {enabled} "
+                        f"enabled, {disabled} disabled, {skipped} skipped."
+                    ),
+                ))
+            if action == "clear_caches":
+                clear_runtime_caches()
+                return redirect(url_for(
+                    "admin_optimization",
+                    key=ADMIN_KEY,
+                    notice="Runtime caches cleared.",
+                ))
+            queue_actions = {
+                "optimization_suite",
+                "generate_thumbnails",
+                "rebuild_media_fingerprints",
+                "optimize_database",
+            }
+            if action in queue_actions:
+                payload = {"limit": 10000} if action == "rebuild_media_fingerprints" else {}
+                job_id = queue_background_job(
+                    action,
+                    payload=payload,
+                    actor_id=actor_id,
+                    actor_name=actor_name,
+                )
+                return redirect(url_for(
+                    "admin_optimization",
+                    key=ADMIN_KEY,
+                    notice=f"Queued {background_job_label(action)} as job #{job_id}.",
+                ))
+        except ValueError as form_error:
+            return redirect(url_for(
+                "admin_optimization",
+                key=ADMIN_KEY,
+                notice=str(form_error),
+                error=1,
+            ))
+
+    config_data = load_config()
+    guilds = guild_options(config_data)
+    return render_template_string(
+        OPTIMIZATION_HTML,
+        admin_key=ADMIN_KEY,
+        csrf_token=get_csrf_token(),
+        error=error,
+        guilds=guilds,
+        metrics=optimization_metrics(config_data),
+        notice=notice,
+        notification_presets=NOTIFICATION_PRESETS,
+        performance_presets=PERFORMANCE_PRESETS,
     )
 
 

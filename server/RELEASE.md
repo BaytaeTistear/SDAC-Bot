@@ -1,3 +1,30 @@
+# SDAC Bot and App Version 3.0.25 Official
+
+Date: 2026-07-02
+
+Version 3.0.25 is an official optimization and operations release for the bot and dashboard.
+
+Included:
+
+- added the Admin Optimization dashboard for database, media, cache, watchdog, storage, table, and job visibility
+- added Small Server, Medium Server, Large Server, Low Storage, and Low CPU performance presets
+- added notification presets for quiet, critical-only, normal, and verbose routing
+- added one-click queued optimization actions for thumbnails, media fingerprints, SQLite optimize, cache clearing, and a full optimization suite
+- added scheduled bot-side thumbnail pre-generation controlled by dashboard limits
+- added scheduled low-impact SQLite maintenance using WAL checkpoint and ANALYZE, while keeping full VACUUM as a queued admin action
+- surfaced audit/submissions/guessing exports, storage forecasts, cleanup counts, and recent background jobs from the Optimization page
+- fixed dashboard background job queue creation so queued jobs no longer touch undefined OAuth state
+- kept per-server storage limits and warnings visible from the new optimization workflow
+
+Release channel:
+
+- `version-3.0.25` is this official bot and app build
+- `latest-official` points to this build
+- `Version 3`, `3`, `v3`, and `version-3` resolve to this official channel
+- `latest-experimental` remains available for future test builds
+
+---
+
 # SDAC Bot and App Version 3.0.24 Experimental
 
 Date: 2026-07-02

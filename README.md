@@ -50,6 +50,8 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
   status, storage forecast, rollback queueing, and health
 - Install Doctor, owner portal, config import diff preview, SQLite optimize,
   monthly restore drills, permission drift alerts, and monthly digest posts
+- Admin Optimization dashboard with performance presets, notification presets,
+  storage forecasts, cache metrics, queued maintenance, and watchdog status
 - Server Health Cards page for quick per-server setup, storage, backup, game,
   library, and achievement status
 - Release channel dashboard for installed, official, and experimental versions
