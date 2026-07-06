@@ -1,8 +1,8 @@
-# SDAC Bot and App Version 3.0.25 Official
+# SDAC Bot and App Version 3.1.0 Official
 
-Date: 2026-07-02
+Date: 2026-07-06
 
-Version 3.0.25 is an official optimization and operations release for the bot and dashboard.
+Version 3.1.0 is an official optimization, operations, and site customization release for the bot and dashboard.
 
 Included:
 
@@ -15,10 +15,14 @@ Included:
 - surfaced audit/submissions/guessing exports, storage forecasts, cleanup counts, and recent background jobs from the Optimization page
 - fixed dashboard background job queue creation so queued jobs no longer touch undefined OAuth state
 - kept per-server storage limits and warnings visible from the new optimization workflow
+- added a Server Owner Layout page for content width, sidebar width, card radius, panel spacing, dashboard grid sizing, background image opacity, background position, and compact/comfortable/spacious density
+- applied saved layout settings across all themed dashboard and public pages, matching the theme editor behavior
+- fixed official release announcements for the moving `latest-official` channel by tracking release fingerprints instead of only the static alias tag
+- added a Releases page test button so admins can verify `release_announcements` notification routing immediately
 
 Release channel:
 
-- `version-3.0.25` is this official bot and app build
+- `version-3.1.0` is this official bot and app build
 - `latest-official` points to this build
 - `Version 3`, `3`, `v3`, and `version-3` resolve to this official channel
 - `latest-experimental` remains available for future test builds

@@ -4764,7 +4764,7 @@ async def send_error_notification(guild_id, message, event_key="system_errors"):
         channel_id = None
     channel_id = channel_id or guild_config.get("error_channel")
     if not channel_id:
-        return
+        return False
     channel = bot.get_channel(int(channel_id))
     if channel is None:
         try:
@@ -4775,17 +4775,22 @@ async def send_error_notification(guild_id, message, event_key="system_errors"):
         try:
             event_label = NOTIFICATION_EVENT_LABELS.get(event_key, "System Error")
             await channel.send(f"**SDAC {event_label}**\n{message}")
+            return True
         except discord.HTTPException:
             pass
+    return False
 
 
 async def send_system_error_notification(message, event_key="system_errors"):
     sent_guilds = set()
+    sent = 0
     for guild_id in config.get("guilds", {}):
         if guild_id in sent_guilds:
             continue
         sent_guilds.add(guild_id)
-        await send_error_notification(guild_id, message, event_key)
+        if await send_error_notification(guild_id, message, event_key):
+            sent += 1
+    return sent
 
 
 async def report_background_error(name, error):
@@ -4815,6 +4820,7 @@ def fetch_github_release(tag):
         "tag": payload.get("tag_name") or tag,
         "name": payload.get("name") or "",
         "published_at": payload.get("published_at") or "",
+        "updated_at": payload.get("updated_at") or "",
         "html_url": payload.get("html_url") or f"https://github.com/{RELEASE_REPO}/releases/tag/{tag}",
     }
 
@@ -4824,16 +4830,26 @@ async def announce_official_release_if_changed():
     tag = str(release.get("tag") or "").strip()
     if not tag:
         return
+    release_key = "|".join([
+        tag,
+        str(release.get("name") or ""),
+        str(release.get("published_at") or ""),
+        str(release.get("updated_at") or ""),
+    ])
     state = config.setdefault("release_announcements", {})
+    previous_key = str(state.get("latest_official_key") or "").strip()
     previous_tag = str(state.get("latest_official_tag") or "").strip()
-    if previous_tag == tag:
+    if previous_key == release_key:
         return
-    state["latest_official_tag"] = tag
-    state["latest_official_name"] = release.get("name") or ""
-    state["latest_official_published_at"] = release.get("published_at") or ""
-    state["updated_at"] = utc_now_iso()
-    save_config(config)
     if not previous_tag and not os.getenv("SDAC_ANNOUNCE_EXISTING_OFFICIAL_RELEASE"):
+        state["latest_official_tag"] = tag
+        state["latest_official_key"] = release_key
+        state["latest_official_name"] = release.get("name") or ""
+        state["latest_official_published_at"] = release.get("published_at") or ""
+        state["updated_at"] = utc_now_iso()
+        state["last_send_count"] = 0
+        state["last_skip_reason"] = "initial_release_seen"
+        save_config(config)
         return
     message = (
         f"New official SDAC release available: **{release.get('name') or tag}**\n"
@@ -4842,7 +4858,18 @@ async def announce_official_release_if_changed():
         f"Release: {release.get('html_url')}\n"
         "Update with `sdac-update latest-official` after you are ready to deploy it."
     )
-    await send_system_error_notification(message, "release_announcements")
+    sent = await send_system_error_notification(message, "release_announcements")
+    state["latest_official_name"] = release.get("name") or ""
+    state["latest_official_published_at"] = release.get("published_at") or ""
+    state["updated_at"] = utc_now_iso()
+    state["last_send_count"] = sent
+    if sent:
+        state["latest_official_tag"] = tag
+        state["latest_official_key"] = release_key
+        state["last_skip_reason"] = ""
+    else:
+        state["last_skip_reason"] = "no_release_announcement_routes"
+    save_config(config)
 
 
 async def announce_guess_summary(channel, game, reason):

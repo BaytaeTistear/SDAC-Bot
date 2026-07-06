@@ -29,6 +29,8 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 - Dashboard admin promotion controls for user, trusted, moderator, admin, and
   owner roles
 - Consistent admin sidebar navigation across dashboard pages
+- Server Owner theme and layout editors for shared colors, background images,
+  content width, sidebar width, spacing, card radius, and dashboard density
 - Optional Discord OAuth dashboard login with per-server admin scoping
 - Admin alert routing for system errors, backup/restore failures, storage
   warnings, repost deletion failures, and stale bot heartbeat warnings
@@ -54,7 +56,8 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
   storage forecasts, cache metrics, queued maintenance, and watchdog status
 - Server Health Cards page for quick per-server setup, storage, backup, game,
   library, and achievement status
-- Release channel dashboard for installed, official, and experimental versions
+- Release channel dashboard for installed, official, and experimental versions,
+  with release-announcement notification testing
 - Moderation page for pending submissions, public reports, and recent decisions
 - Admin audit log under `/audit` and `/admin/audit`
 - Admin Privacy page for per-server user data export/delete requests

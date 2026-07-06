@@ -334,6 +334,16 @@ DEFAULT_DASHBOARD_THEME = {
     "muted": "#94a3b8",
     "background_image": "",
 }
+DEFAULT_DASHBOARD_LAYOUT = {
+    "content_width": "1220",
+    "sidebar_width": "260",
+    "card_radius": "8",
+    "panel_padding": "16",
+    "grid_min_width": "190",
+    "background_opacity": "18",
+    "background_position": "center",
+    "density": "comfortable",
+}
 THEME_UPLOAD_DIR = MEDIA_DIR / "dashboard_theme"
 
 ADMIN_ROLE_CHOICES = {
@@ -4605,6 +4615,7 @@ RELEASES_HTML = """
         <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
     </nav>
+    {% if notice %}<div class="notice {{ 'bad' if error else 'ok' }}">{{ notice }}</div>{% endif %}
     <section class="panel">
         <h2>Installed And Available</h2>
         <table>
@@ -4618,6 +4629,12 @@ RELEASES_HTML = """
                 {% if release_status.error %}<tr><th>Release check</th><td class="bad">{{ release_status.error }}</td></tr>{% endif %}
             </tbody>
         </table>
+        <form method="post" style="margin-top: 12px;">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="test_release_notification">
+            <button type="submit">Send Test Release Notification</button>
+        </form>
     </section>
     <section class="panel">
         <h2>Update Commands</h2>
@@ -4635,7 +4652,7 @@ RELEASES_HTML = """
         <p>Last Version 2 official:</p>
         <p><code>sudo sdac-update "Version 2"</code></p>
         <p>Exact release:</p>
-        <p><code>sudo sdac-update 3.0</code></p>
+        <p><code>sudo sdac-update 3.1.0</code></p>
         <p>Experimental test channel:</p>
         <p><code>sudo sdac-update latest-experimental</code></p>
         <p class="muted">Recommendation: run <code>latest-experimental</code> only on a test/verification server, then update production with <code>latest-official</code> after the release is promoted.</p>
@@ -5030,6 +5047,83 @@ THEME_HTML = """
             <div class="sdac-dashboard-grid">
                 <div class="sdac-dashboard-card"><strong>128</strong><span>Submissions</span></div>
                 <div class="sdac-dashboard-card"><strong>42</strong><span>Users</span></div>
+            </div>
+        </div>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+LAYOUT_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Layout</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #0f172a; color: #f8fafc; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 980px); }
+        .panel { background: #111827; border: 1px solid #30333b; border-radius: 8px; margin: 16px 0; padding: 16px; }
+        .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+        label { display: block; font-weight: bold; margin: 10px 0 6px; }
+        input, select, button { background: #1f2937; border: 1px solid #30333b; border-radius: 7px; box-sizing: border-box; color: #f8fafc; font-size: 15px; padding: 10px; width: 100%; }
+        button { background: #4f46e5; color: white; cursor: pointer; font-weight: bold; margin-top: 16px; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 14px; padding: 12px; }
+        .preview { background: var(--sdac-bg); border-radius: var(--sdac-card-radius); min-height: 220px; overflow: hidden; padding: var(--sdac-panel-padding); position: relative; }
+        .preview::before { content: ""; position: absolute; inset: 0; background-image: var(--sdac-theme-image, linear-gradient(135deg, var(--sdac-primary), var(--sdac-secondary))); background-position: var(--sdac-bg-position); background-size: cover; opacity: var(--sdac-theme-image-opacity); pointer-events: none; }
+        .preview-inner { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(var(--sdac-grid-min), 1fr)); max-width: var(--sdac-content-width); position: relative; }
+        .preview-card { background: var(--sdac-surface); border: 1px solid var(--sdac-border); border-radius: var(--sdac-card-radius); padding: var(--sdac-panel-padding); }
+        .preview-card strong { display: block; font-size: 1.6rem; }
+        .preview-card span { color: var(--sdac-muted); display: block; font-size: .8rem; font-weight: 750; margin-top: 6px; text-transform: uppercase; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Layout</h1>
+    {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
+    <section class="panel">
+        <h2>Site Layout</h2>
+        <form method="post">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="grid">
+                <div><label for="content_width">Content Width</label><input id="content_width" name="content_width" type="number" min="840" max="1600" value="{{ layout.content_width }}"></div>
+                <div><label for="sidebar_width">Sidebar Width</label><input id="sidebar_width" name="sidebar_width" type="number" min="220" max="360" value="{{ layout.sidebar_width }}"></div>
+                <div><label for="card_radius">Card Radius</label><input id="card_radius" name="card_radius" type="number" min="0" max="24" value="{{ layout.card_radius }}"></div>
+                <div><label for="panel_padding">Panel Padding</label><input id="panel_padding" name="panel_padding" type="number" min="10" max="34" value="{{ layout.panel_padding }}"></div>
+                <div><label for="grid_min_width">Card Grid Minimum</label><input id="grid_min_width" name="grid_min_width" type="number" min="150" max="360" value="{{ layout.grid_min_width }}"></div>
+                <div><label for="background_opacity">Background Image Opacity</label><input id="background_opacity" name="background_opacity" type="number" min="0" max="60" value="{{ layout.background_opacity }}"></div>
+                <div>
+                    <label for="background_position">Background Position</label>
+                    <select id="background_position" name="background_position">
+                        {% for value, label in background_positions %}
+                            <option value="{{ value }}" {% if layout.background_position == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="density">Density</label>
+                    <select id="density" name="density">
+                        {% for value, label in densities %}
+                            <option value="{{ value }}" {% if layout.density == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <button type="submit">Save Layout</button>
+        </form>
+    </section>
+    <section class="panel">
+        <h2>Preview</h2>
+        <div class="preview">
+            <div class="preview-inner">
+                <div class="preview-card"><strong>128</strong><span>Submissions</span></div>
+                <div class="preview-card"><strong>42</strong><span>Users</span></div>
+                <div class="preview-card"><strong>6</strong><span>Active Games</span></div>
             </div>
         </div>
     </section>
@@ -9349,19 +9443,22 @@ def send_admin_notification(
     throttle_seconds=3600,
 ):
     if event_key not in NOTIFICATION_EVENT_LABELS:
-        return
+        return 0
     route_rows = configured_notification_rows(event_key, guild_id)
     if not route_rows:
-        return
+        return 0
     throttle_id = throttle_key or f"{event_key}:{guild_id or 'all'}:{message[:80]}"
     now = time.time()
     if now - NOTIFICATION_THROTTLES.get(throttle_id, 0) < throttle_seconds:
-        return
+        return 0
     NOTIFICATION_THROTTLES[throttle_id] = now
     title = NOTIFICATION_EVENT_LABELS.get(event_key, event_key)
     content = f"**SDAC {title}**\n{message}"
+    sent = 0
     for row in route_rows:
-        post_discord_channel_message(row["channel_id"], content)
+        if post_discord_channel_message(row["channel_id"], content):
+            sent += 1
+    return sent
 
 
 def maybe_notify_stale_bot(bot_status):
@@ -11171,6 +11268,32 @@ def sanitize_theme_color(value, fallback):
     return fallback
 
 
+def clamp_int(value, fallback, minimum, maximum):
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        number = int(fallback)
+    return max(minimum, min(maximum, number))
+
+
+def dashboard_layout(config_data=None):
+    config_data = config_data or load_config()
+    raw = config_data.get("dashboard_layout") or {}
+    layout = dict(DEFAULT_DASHBOARD_LAYOUT)
+    layout.update({key: raw.get(key, layout[key]) for key in layout})
+    layout["content_width"] = str(clamp_int(layout.get("content_width"), DEFAULT_DASHBOARD_LAYOUT["content_width"], 840, 1600))
+    layout["sidebar_width"] = str(clamp_int(layout.get("sidebar_width"), DEFAULT_DASHBOARD_LAYOUT["sidebar_width"], 220, 360))
+    layout["card_radius"] = str(clamp_int(layout.get("card_radius"), DEFAULT_DASHBOARD_LAYOUT["card_radius"], 0, 24))
+    layout["panel_padding"] = str(clamp_int(layout.get("panel_padding"), DEFAULT_DASHBOARD_LAYOUT["panel_padding"], 10, 34))
+    layout["grid_min_width"] = str(clamp_int(layout.get("grid_min_width"), DEFAULT_DASHBOARD_LAYOUT["grid_min_width"], 150, 360))
+    layout["background_opacity"] = str(clamp_int(layout.get("background_opacity"), DEFAULT_DASHBOARD_LAYOUT["background_opacity"], 0, 60))
+    if layout.get("background_position") not in {"center", "top", "bottom", "left", "right"}:
+        layout["background_position"] = DEFAULT_DASHBOARD_LAYOUT["background_position"]
+    if layout.get("density") not in {"comfortable", "compact", "spacious"}:
+        layout["density"] = DEFAULT_DASHBOARD_LAYOUT["density"]
+    return layout
+
+
 def dashboard_theme(config_data=None):
     config_data = config_data or load_config()
     raw = config_data.get("dashboard_theme") or {}
@@ -11184,9 +11307,11 @@ def dashboard_theme(config_data=None):
 
 def dashboard_theme_css(config_data=None):
     theme = dashboard_theme(config_data)
+    layout = dashboard_layout(config_data)
+    density_gap = {"compact": "10px", "comfortable": "14px", "spacious": "18px"}[layout["density"]]
     image_rule = ""
     if theme.get("background_image"):
-        image_rule = f"--sdac-theme-image: url('{theme['background_image']}'); --sdac-theme-image-opacity: .22;"
+        image_rule = f"--sdac-theme-image: url('{theme['background_image']}');"
     return (
         "<style id=\"sdac-theme-vars\">"
         ":root {"
@@ -11204,20 +11329,28 @@ def dashboard_theme_css(config_data=None):
         "--border: var(--sdac-border);"
         "--muted: var(--sdac-muted);"
         "--accent: var(--sdac-secondary);"
+        f"--sdac-content-width: {layout['content_width']}px;"
+        f"--sdac-sidebar-width: {layout['sidebar_width']}px;"
+        f"--sdac-card-radius: {layout['card_radius']}px;"
+        f"--sdac-panel-padding: {layout['panel_padding']}px;"
+        f"--sdac-grid-min: {layout['grid_min_width']}px;"
+        f"--sdac-layout-gap: {density_gap};"
+        f"--sdac-theme-image-opacity: .{int(layout['background_opacity']):02d};"
+        f"--sdac-bg-position: {layout['background_position']};"
         f"{image_rule}"
         "}"
         "body.sdac-theme{background-color:var(--sdac-bg)!important;color:var(--sdac-text)!important;}"
-        "body.sdac-theme::before{content:'';position:fixed;inset:0;background-image:var(--sdac-theme-image,linear-gradient(135deg,rgba(79,70,229,.20),rgba(6,182,212,.13) 45%,rgba(245,158,11,.10)));background-size:cover;background-position:center;opacity:var(--sdac-theme-image-opacity,.16);pointer-events:none;z-index:-1;}"
+        "body.sdac-theme::before{content:'';position:fixed;inset:0;background-image:var(--sdac-theme-image,linear-gradient(135deg,rgba(79,70,229,.20),rgba(6,182,212,.13) 45%,rgba(245,158,11,.10)));background-size:cover;background-position:var(--sdac-bg-position);opacity:var(--sdac-theme-image-opacity,.16);pointer-events:none;z-index:-1;}"
         "body.sdac-theme main{position:relative;}"
         "body.sdac-theme .admin-nav,body.sdac-theme main>nav{background:color-mix(in srgb,var(--sdac-surface) 84%,transparent);border:1px solid var(--sdac-border);border-radius:8px;padding:10px;}"
-        "body.sdac-theme .panel,body.sdac-theme .post,body.sdac-theme .audit-row,body.sdac-theme .section,body.sdac-theme .notice,body.sdac-theme table,.sdac-dashboard-card,.sdac-dashboard-panel{background:color-mix(in srgb,var(--sdac-surface) 88%,transparent)!important;border-color:var(--sdac-border)!important;box-shadow:0 18px 48px rgba(2,6,23,.20);}"
+        "body.sdac-theme .panel,body.sdac-theme .post,body.sdac-theme .audit-row,body.sdac-theme .section,body.sdac-theme .notice,body.sdac-theme table,.sdac-dashboard-card,.sdac-dashboard-panel{background:color-mix(in srgb,var(--sdac-surface) 88%,transparent)!important;border-color:var(--sdac-border)!important;border-radius:var(--sdac-card-radius)!important;box-shadow:0 18px 48px rgba(2,6,23,.20);}"
         "body.sdac-theme a{color:var(--sdac-secondary)!important;}"
         "body.sdac-theme button{background:linear-gradient(90deg,var(--sdac-primary),var(--sdac-secondary))!important;color:#fff!important;border-color:transparent!important;}"
-        ".sdac-dashboard-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));margin:20px 0;}"
-        ".sdac-dashboard-card{border:1px solid var(--sdac-border);border-radius:8px;padding:16px;}"
+        ".sdac-dashboard-grid{display:grid;gap:var(--sdac-layout-gap);grid-template-columns:repeat(auto-fit,minmax(var(--sdac-grid-min),1fr));margin:20px 0;}"
+        ".sdac-dashboard-card{border:1px solid var(--sdac-border);border-radius:var(--sdac-card-radius);padding:var(--sdac-panel-padding);}"
         ".sdac-dashboard-card strong{display:block;font-size:1.8rem;line-height:1.1;}"
         ".sdac-dashboard-card span{color:var(--sdac-muted);display:block;font-size:.82rem;font-weight:750;margin-top:6px;text-transform:uppercase;}"
-        ".sdac-dashboard-panel{border:1px solid var(--sdac-border);border-radius:8px;margin:18px 0;padding:16px;}"
+        ".sdac-dashboard-panel{border:1px solid var(--sdac-border);border-radius:var(--sdac-card-radius);margin:18px 0;padding:var(--sdac-panel-padding);}"
         ".sdac-range-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;}"
         ".sdac-range-tabs a{border:1px solid var(--sdac-border);border-radius:7px;padding:8px 10px;text-decoration:none;}"
         ".sdac-range-tabs a.active{background:var(--sdac-primary);color:#fff!important;}"
@@ -11245,6 +11378,30 @@ def update_dashboard_theme(form, uploaded_file=None):
     config_data["dashboard_theme"] = theme
     save_config(config_data)
     return theme
+
+
+def update_dashboard_layout(form):
+    config_data = load_config()
+    layout = dashboard_layout(config_data)
+    for key, minimum, maximum in (
+        ("content_width", 840, 1600),
+        ("sidebar_width", 220, 360),
+        ("card_radius", 0, 24),
+        ("panel_padding", 10, 34),
+        ("grid_min_width", 150, 360),
+        ("background_opacity", 0, 60),
+    ):
+        layout[key] = str(clamp_int(form.get(key), layout[key], minimum, maximum))
+    background_position = str(form.get("background_position") or "").strip()
+    if background_position in {"center", "top", "bottom", "left", "right"}:
+        layout["background_position"] = background_position
+    density = str(form.get("density") or "").strip()
+    if density in {"comfortable", "compact", "spacious"}:
+        layout["density"] = density
+    config_data["dashboard_layout"] = layout
+    save_config(config_data)
+    return layout
+
 
 def parse_poll_options(raw_value):
     parts = [
@@ -11411,6 +11568,7 @@ def admin_sidebar_sections():
             "links": [
                 ("Settings", "admin_settings", {}),
                 ("Theme", "admin_theme", {}),
+                ("Layout", "admin_layout", {}),
                 ("Optimization", "admin_optimization", {}),
                 ("Maintenance", "admin_maintenance", {}),
                 ("Server Health", "admin_server_health_cards", {}),
@@ -11756,6 +11914,13 @@ SIDEBAR_STYLE = """
     --sdac-text: #f8fafc;
     --sdac-muted: #94a3b8;
     --sdac-border: rgba(148, 163, 184, 0.24);
+    --sdac-content-width: 1220px;
+    --sdac-sidebar-width: 260px;
+    --sdac-card-radius: 8px;
+    --sdac-panel-padding: 16px;
+    --sdac-grid-min: 190px;
+    --sdac-layout-gap: 14px;
+    --sdac-bg-position: center;
 }
 body.sdac-theme { background-color: var(--sdac-bg) !important; color: var(--sdac-text) !important; }
 body.sdac-theme::before {
@@ -11764,14 +11929,14 @@ body.sdac-theme::before {
     inset: 0;
     background-image: var(--sdac-theme-image, linear-gradient(135deg, rgba(79,70,229,.24), rgba(6,182,212,.14) 45%, rgba(245,158,11,.10)));
     background-size: cover;
-    background-position: center;
+    background-position: var(--sdac-bg-position, center);
     opacity: var(--sdac-theme-image-opacity, .18);
     pointer-events: none;
     z-index: -1;
 }
-body.sdac-has-sidebar { padding-left: 280px !important; transition: padding-left .18s ease; }
+body.sdac-has-sidebar { padding-left: calc(var(--sdac-sidebar-width) + 20px) !important; transition: padding-left .18s ease; }
 body.sdac-has-sidebar.sdac-sidebar-collapsed { padding-left: 0 !important; }
-body.sdac-has-sidebar main { max-width: 1220px !important; width: min(100%, 1220px) !important; }
+body.sdac-has-sidebar main { max-width: var(--sdac-content-width) !important; width: min(100%, var(--sdac-content-width)) !important; }
 body.sdac-has-sidebar h1, body.sdac-has-sidebar h2 { text-align: left !important; }
 body.sdac-has-sidebar a { color: var(--sdac-secondary) !important; }
 body.sdac-has-sidebar .panel, body.sdac-has-sidebar .post, body.sdac-has-sidebar .audit-row,
@@ -11779,13 +11944,14 @@ body.sdac-has-sidebar .section, body.sdac-has-sidebar table, body.sdac-has-sideb
 .sdac-dashboard-card, .sdac-dashboard-panel {
     background: color-mix(in srgb, var(--sdac-surface) 88%, transparent) !important;
     border-color: var(--sdac-border) !important;
+    border-radius: var(--sdac-card-radius) !important;
     box-shadow: 0 18px 48px rgba(2, 6, 23, .24);
 }
 .sdac-sidebar-toggle {
     appearance: none !important;
     position: fixed !important;
     top: 14px !important;
-    left: 276px !important;
+    left: calc(var(--sdac-sidebar-width) + 16px) !important;
     z-index: 1002 !important;
     border: 1px solid var(--sdac-border) !important;
     border-radius: 8px !important;
@@ -11809,7 +11975,7 @@ body.sdac-has-sidebar .section, body.sdac-has-sidebar table, body.sdac-has-sideb
     position: fixed;
     inset: 0 auto 0 0;
     box-sizing: border-box;
-    width: 260px;
+    width: var(--sdac-sidebar-width);
     max-width: calc(100vw - 24px);
     overflow-x: hidden;
     overflow-y: auto;
@@ -11842,11 +12008,11 @@ body.sdac-sidebar-collapsed .sdac-sidebar-toggle { left: 14px; }
 .sdac-sidebar-link:hover, .sdac-sidebar-link.active { color: #fff !important; background: linear-gradient(90deg, var(--sdac-primary), var(--sdac-secondary)); }
 .sdac-sidebar-footer { border-top: 1px solid var(--sdac-border); margin-top: 18px; padding-top: 14px; }
 body.sdac-has-sidebar > nav, body.sdac-has-sidebar main > nav:not(.pagination), body.sdac-has-sidebar .admin-nav { display: none !important; }
-.sdac-dashboard-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin: 20px 0; }
-.sdac-dashboard-card { border: 1px solid var(--sdac-border); border-radius: 8px; padding: 16px; }
+.sdac-dashboard-grid { display: grid; gap: var(--sdac-layout-gap); grid-template-columns: repeat(auto-fit, minmax(var(--sdac-grid-min), 1fr)); margin: 20px 0; }
+.sdac-dashboard-card { border: 1px solid var(--sdac-border); border-radius: var(--sdac-card-radius); padding: var(--sdac-panel-padding); }
 .sdac-dashboard-card strong { display: block; font-size: 1.8rem; line-height: 1.1; }
 .sdac-dashboard-card span { color: var(--sdac-muted); display: block; font-size: .82rem; font-weight: 750; margin-top: 6px; text-transform: uppercase; }
-.sdac-dashboard-panel { border: 1px solid var(--sdac-border); border-radius: 8px; margin: 18px 0; padding: 16px; }
+.sdac-dashboard-panel { border: 1px solid var(--sdac-border); border-radius: var(--sdac-card-radius); margin: 18px 0; padding: var(--sdac-panel-padding); }
 .sdac-range-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .sdac-range-tabs a { border: 1px solid var(--sdac-border); border-radius: 7px; padding: 8px 10px; text-decoration: none; }
 .sdac-range-tabs a.active { background: var(--sdac-primary); color: #fff !important; }
@@ -11855,7 +12021,7 @@ body.sdac-has-sidebar > nav, body.sdac-has-sidebar main > nav:not(.pagination), 
     .sdac-sidebar-toggle { left: 12px; top: 12px; }
     .sdac-sidebar { border-radius: 0 14px 14px 0; box-shadow: 18px 0 40px rgba(2, 6, 23, 0.48); transform: translateX(-105%); }
     body.sdac-sidebar-open .sdac-sidebar { transform: translateX(0); }
-    body.sdac-sidebar-open .sdac-sidebar-toggle { left: min(276px, calc(100vw - 72px)); }
+    body.sdac-sidebar-open .sdac-sidebar-toggle { left: min(calc(var(--sdac-sidebar-width) + 16px), calc(100vw - 72px)); }
     body.sdac-has-sidebar main { padding-top: 46px !important; }
 }
 </style>
@@ -16028,14 +16194,47 @@ def admin_polls():
     )
 
 
-@app.route("/admin/releases")
+@app.route("/admin/releases", methods=["GET", "POST"])
 def admin_releases():
     login_response = require_admin_login("admin")
     if login_response:
         return login_response
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    if request.method == "POST":
+        require_csrf_token()
+        action = request.form.get("action", "")
+        if action == "test_release_notification":
+            status = release_status()
+            release = status.get("official") or {}
+            release_name = release.get("name") or release.get("tag") or "latest-official"
+            sent = send_admin_notification(
+                "release_announcements",
+                (
+                    f"Test official release announcement for **{release_name}**.\n"
+                    "If you can see this, release announcement routing is working."
+                ),
+                throttle_key=f"test_release_notification:{time.time()}",
+                throttle_seconds=0,
+            )
+            if sent:
+                return redirect(url_for(
+                    "admin_releases",
+                    key=ADMIN_KEY,
+                    notice=f"Sent test release notification to {sent} configured channel(s).",
+                ))
+            return redirect(url_for(
+                "admin_releases",
+                key=ADMIN_KEY,
+                notice="No release notification channels received the test. Configure `/setnotification release_announcements #channel true` or use Settings > Notifications.",
+                error=1,
+            ))
     return render_template_string(
         RELEASES_HTML,
         admin_key=ADMIN_KEY,
+        csrf_token=get_csrf_token(),
+        error=error,
+        notice=notice,
         release_status=release_status(),
         latest_patch_notes=latest_release_note_entry(),
         recent_releases=recent_release_rows(),
@@ -16252,6 +16451,43 @@ def admin_theme():
         error=error,
         notice=notice,
         theme=dashboard_theme(),
+    )
+
+
+@app.route("/admin/layout", methods=["GET", "POST"])
+def admin_layout():
+    login_response = require_admin_login("owner")
+    if login_response:
+        return login_response
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    if request.method == "POST":
+        require_csrf_token()
+        try:
+            update_dashboard_layout(request.form)
+            return redirect(url_for("admin_layout", key=ADMIN_KEY, notice="Layout saved across all pages."))
+        except ValueError as exc:
+            notice = str(exc)
+            error = True
+    return render_template_string(
+        LAYOUT_HTML,
+        admin_key=ADMIN_KEY,
+        background_positions=[
+            ("center", "Center"),
+            ("top", "Top"),
+            ("bottom", "Bottom"),
+            ("left", "Left"),
+            ("right", "Right"),
+        ],
+        csrf_token=get_csrf_token(),
+        densities=[
+            ("comfortable", "Comfortable"),
+            ("compact", "Compact"),
+            ("spacious", "Spacious"),
+        ],
+        error=error,
+        layout=dashboard_layout(),
+        notice=notice,
     )
 
 
