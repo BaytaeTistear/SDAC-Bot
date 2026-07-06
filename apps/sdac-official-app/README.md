@@ -1,6 +1,6 @@
-# SDAC Official App Scaffold
+# SDACCompanion Official App Scaffold
 
-This is the first native-app scaffold for SDAC. The Flask dashboard remains the backend and source of truth for login, server selection, submissions, guessing games, admin permissions, theme/layout settings, and release/update views.
+This is the first native-app scaffold for SDACCompanion. The Flask dashboard remains the backend and source of truth for login, server selection, submissions, guessing games, admin permissions, theme/layout settings, and release/update views.
 
 ## Recommendation
 
@@ -21,7 +21,16 @@ copy .env.example .env
 npm run dev
 ```
 
-Set `VITE_SDAC_DASHBOARD_URL` to the hosted dashboard URL. For native builds, set `SDAC_APP_DASHBOARD_URL` before running Capacitor sync so the native app opens the hosted dashboard directly.
+The default dashboard URL is `https://freethefishies.us.to`. For local dashboard testing, change `.env` to `http://127.0.0.1:5000`.
+
+Set `VITE_SDAC_DASHBOARD_URL` to the hosted dashboard URL for the Vite shell. For native builds, set `SDAC_APP_DASHBOARD_URL` before running Capacitor sync so the native app opens the hosted dashboard directly.
+
+The app name is configurable:
+
+```powershell
+$env:SDAC_APP_NAME="SDACCompanion"
+$env:SDAC_APP_ID="app.sdac.companion"
+```
 
 If the app shell runs from a different origin than the dashboard during development, set this on the Flask dashboard server:
 
@@ -31,15 +40,57 @@ SDAC_APP_ALLOWED_ORIGINS=http://localhost:5174,capacitor://localhost
 
 ## Android
 
+Install Android Studio and the Android SDK first. Then run:
+
 ```bash
 cd apps/sdac-official-app
 npm install
 npm run build
-$env:SDAC_APP_DASHBOARD_URL="https://your-sdac-domain.example"
+$env:SDAC_APP_DASHBOARD_URL="https://freethefishies.us.to"
+$env:SDAC_APP_NAME="SDACCompanion"
 npm run cap:add:android
+npm run assets:generate
 npm run cap:sync
 npm run cap:open:android
 ```
+
+### Direct APK / Sideload Install
+
+Use this for testing outside the Play Store:
+
+```powershell
+cd apps\sdac-official-app\android
+.\gradlew assembleDebug
+```
+
+The debug APK will be under:
+
+```text
+apps/sdac-official-app/android/app/build/outputs/apk/debug/
+```
+
+Install with Android Debug Bridge:
+
+```powershell
+adb install -r app\build\outputs\apk\debug\app-debug.apk
+```
+
+### Store Install / Play Store
+
+Use this for a Play Store upload:
+
+```powershell
+cd apps\sdac-official-app\android
+.\gradlew bundleRelease
+```
+
+The release AAB will be under:
+
+```text
+apps/sdac-official-app/android/app/build/outputs/bundle/release/
+```
+
+Before uploading to the Play Store, configure a signing key in Android Studio or `android/gradle.properties`. Do not commit the keystore or keystore passwords.
 
 ## iOS
 
@@ -49,8 +100,10 @@ Run the same setup on macOS with Xcode installed:
 cd apps/sdac-official-app
 npm install
 npm run build
-export SDAC_APP_DASHBOARD_URL="https://your-sdac-domain.example"
+export SDAC_APP_DASHBOARD_URL="https://freethefishies.us.to"
+export SDAC_APP_NAME="SDACCompanion"
 npm run cap:add:ios
+npm run assets:generate
 npm run cap:sync
 npm run cap:open:ios
 ```
@@ -95,3 +148,13 @@ The current app shell can ship as a wrapper. A full native UI would need these a
 - `POST /api/app/admin/releases/test-notification`
 
 Keep admin APIs protected by the existing dashboard login/session, CSRF strategy, and per-server role checks.
+
+## App Artwork
+
+The first generated SDACCompanion artwork is saved at:
+
+```text
+apps/sdac-official-app/public/sdac-companion-art.png
+```
+
+It is an original anime companion illustration holding an SD-style baseball emblem. It intentionally avoids copying an official sports logo.

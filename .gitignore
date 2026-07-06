@@ -8,3 +8,7 @@ deploy-backups/
 *.db
 *.db-wal
 *.db-shm
+apps/sdac-official-app/node_modules/
+apps/sdac-official-app/dist/
+apps/sdac-official-app/icons/
+apps/sdac-official-app/public/manifest.webmanifest

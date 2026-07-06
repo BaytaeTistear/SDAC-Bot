@@ -32,7 +32,7 @@ type BootstrapPayload = {
   };
 };
 
-const dashboardBase = (import.meta.env.VITE_SDAC_DASHBOARD_URL || window.location.origin).replace(/\/$/, "");
+const dashboardBase = (import.meta.env.VITE_SDAC_DASHBOARD_URL || "https://freethefishies.us.to").replace(/\/$/, "");
 const appRoot = document.querySelector<HTMLDivElement>("#app");
 
 function absoluteUrl(path: string): string {
@@ -89,7 +89,7 @@ function render(payload: BootstrapPayload): void {
   appRoot!.innerHTML = `
     <main class="shell">
       <section class="hero">
-        <img src="${escapeHtml(absoluteUrl(payload.app.icon_url))}" alt="" />
+        <img src="/sdac-companion-art.png" alt="" />
         <div>
           <h1>${escapeHtml(payload.app.display_name)}</h1>
           <p>${escapeHtml(accountLabel)}</p>

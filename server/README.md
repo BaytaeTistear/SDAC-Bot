@@ -661,7 +661,7 @@ The app entry point is `/app`. It sends admins to the admin overview, signed-in 
 
 ## Official Native App Scaffold
 
-The first official app scaffold lives in `apps/sdac-official-app`. It uses Vite and Capacitor so the existing Flask dashboard remains the source of truth while mobile builds can wrap the hosted dashboard.
+The first official app scaffold lives in `apps/sdac-official-app`. It uses Vite and Capacitor so the existing Flask dashboard remains the source of truth while mobile builds can wrap the hosted dashboard. The current app display name is `SDACCompanion`, and it defaults to `https://freethefishies.us.to`.
 
 Recommended path:
 
@@ -673,6 +673,8 @@ Recommended path:
 The native scaffold reads `GET /api/app/bootstrap` for app metadata, current login/session state, server access, theme/layout settings, useful routes, and release info.
 
 If the app shell runs from another origin during development, set `SDAC_APP_ALLOWED_ORIGINS` on the dashboard server, for example `http://localhost:5174,capacitor://localhost`.
+
+Android supports both direct APK/sideload testing and Play Store AAB builds. See `apps/sdac-official-app/README.md` for the exact Android SDK, APK, and store build commands.
 
 ## Dashboard Performance
 

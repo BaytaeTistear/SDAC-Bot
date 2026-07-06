@@ -1,8 +1,8 @@
 {
-  "name": "sdac-official-app",
+  "name": "sdac-companion",
   "version": "0.1.0",
   "private": true,
-  "description": "Official SDAC mobile/desktop app shell for the Flask dashboard.",
+  "description": "Official SDACCompanion mobile/desktop app shell for the Flask dashboard.",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
@@ -12,7 +12,10 @@
     "cap:add:ios": "cap add ios",
     "cap:sync": "cap sync",
     "cap:open:android": "cap open android",
-    "cap:open:ios": "cap open ios"
+    "cap:open:ios": "cap open ios",
+    "android:sync": "cap sync android",
+    "android:open": "cap open android",
+    "assets:generate": "capacitor-assets generate --assetPath assets"
   },
   "dependencies": {
     "@capacitor/android": "^6.1.2",
@@ -22,6 +25,7 @@
     "@capacitor/ios": "^6.1.2"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^6.1.2",
     "typescript": "^5.5.4",
     "vite": "^5.4.0"
