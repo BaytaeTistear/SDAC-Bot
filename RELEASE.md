@@ -2,6 +2,8 @@
 
 Date: 2026-07-06
 
+Update scope: Bot and App update
+
 Version 3.1.0 is an official optimization, operations, and site customization release for the bot and dashboard.
 
 Included:

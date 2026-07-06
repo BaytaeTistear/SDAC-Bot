@@ -676,6 +676,16 @@ If the app shell runs from another origin during development, set `SDAC_APP_ALLO
 
 Android supports both direct APK/sideload testing and Play Store AAB builds. See `apps/sdac-official-app/README.md` for the exact Android SDK, APK, and store build commands.
 
+## Update Scope Labels
+
+SDAC keeps the bot, dashboard, and companion app in one repository while the app depends on the dashboard backend. Every release note should identify the affected product scope:
+
+- `Bot update` for bot/dashboard/server-only changes.
+- `App update` for SDACCompanion-only changes.
+- `Bot and App update` for changes that affect both the server/dashboard and SDACCompanion.
+
+Use the same scope wording in GitHub release titles, Discord update announcements, and `RELEASE.md` entries so server owners know whether they need to update the server, the Android app, or both.
+
 ## Dashboard Performance
 
 The dashboard uses short-lived runtime caching for public stats, admin overview metrics, and Discord OAuth server/member lookups. Media and PWA assets receive browser cache headers, larger text/JSON responses are gzip-compressed when supported, image galleries use thumbnails plus lazy loading, and My Submissions is paginated to avoid large single-page responses.

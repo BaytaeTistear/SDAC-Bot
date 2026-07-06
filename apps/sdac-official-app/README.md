@@ -92,6 +92,71 @@ apps/sdac-official-app/android/app/build/outputs/bundle/release/
 
 Before uploading to the Play Store, configure a signing key in Android Studio or `android/gradle.properties`. Do not commit the keystore or keystore passwords.
 
+### Signing The Release AAB
+
+For Play Store/App Bundle signing, create a release keystore outside the repo:
+
+```powershell
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.sdac\android-signing"
+keytool -genkeypair `
+  -v `
+  -keystore "$env:USERPROFILE\.sdac\android-signing\sdaccompanion-release.jks" `
+  -alias sdaccompanion `
+  -keyalg RSA `
+  -keysize 2048 `
+  -validity 10000
+```
+
+Create `apps/sdac-official-app/android/keystore.properties` and do not commit it:
+
+```properties
+storeFile=C:\\Users\\YOUR_USER\\.sdac\\android-signing\\sdaccompanion-release.jks
+storePassword=YOUR_STORE_PASSWORD
+keyAlias=sdaccompanion
+keyPassword=YOUR_KEY_PASSWORD
+```
+
+Then add signing config to `apps/sdac-official-app/android/app/build.gradle`:
+
+```gradle
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+android {
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties["storeFile"])
+                storePassword keystoreProperties["storePassword"]
+                keyAlias keystoreProperties["keyAlias"]
+                keyPassword keystoreProperties["keyPassword"]
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
+    }
+}
+```
+
+Build the signed bundle:
+
+```powershell
+$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
+$env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
+cd apps\sdac-official-app\android
+.\gradlew bundleRelease
+```
+
+Upload `app-release.aab` to Play Console. Back up the `.jks`, alias, and passwords somewhere private; losing them can block future updates unless Play App Signing key reset is available.
+
 ## iOS
 
 Run the same setup on macOS with Xcode installed:
