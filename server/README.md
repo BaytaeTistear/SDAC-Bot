@@ -659,6 +659,21 @@ The dashboard also works as an installable web app. Open the dashboard in a mode
 
 The app entry point is `/app`. It sends admins to the admin overview, signed-in users to their account, and guests to the public dashboard.
 
+## Official Native App Scaffold
+
+The first official app scaffold lives in `apps/sdac-official-app`. It uses Vite and Capacitor so the existing Flask dashboard remains the source of truth while mobile builds can wrap the hosted dashboard.
+
+Recommended path:
+
+- Use Capacitor first for iOS and Android.
+- Use Tauri later for desktop builds if a smaller Windows/macOS/Linux app is needed.
+- Avoid React Native until SDAC has dedicated JSON APIs for every dashboard workflow.
+- Use the Discord Embedded App SDK only for an in-Discord activity, not for a normal app-store app.
+
+The native scaffold reads `GET /api/app/bootstrap` for app metadata, current login/session state, server access, theme/layout settings, useful routes, and release info.
+
+If the app shell runs from another origin during development, set `SDAC_APP_ALLOWED_ORIGINS` on the dashboard server, for example `http://localhost:5174,capacitor://localhost`.
+
 ## Dashboard Performance
 
 The dashboard uses short-lived runtime caching for public stats, admin overview metrics, and Discord OAuth server/member lookups. Media and PWA assets receive browser cache headers, larger text/JSON responses are gzip-compressed when supported, image galleries use thumbnails plus lazy loading, and My Submissions is paginated to avoid large single-page responses.

@@ -17896,6 +17896,104 @@ def api_server(guild_id):
     return jsonify(ttl_cache_set(cache_id, payload, 30))
 
 
+def app_allowed_cors_origin():
+    origin = request.headers.get("Origin", "").strip()
+    if not origin:
+        return ""
+    allowed = {
+        item.strip().rstrip("/")
+        for item in os.getenv("SDAC_APP_ALLOWED_ORIGINS", "").split(",")
+        if item.strip()
+    }
+    if origin.rstrip("/") in allowed:
+        return origin
+    return ""
+
+
+def app_json_response(payload, status=200):
+    response = jsonify(payload)
+    response.status_code = status
+    origin = app_allowed_cors_origin()
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response.headers["Vary"] = "Origin"
+    return response
+
+
+@app.route("/api/app/bootstrap", methods=["GET", "OPTIONS"])
+def api_app_bootstrap():
+    if request.method == "OPTIONS":
+        return app_json_response({})
+    config_data = load_config()
+    account_logged_in = is_account_logged_in()
+    admin_logged_in = is_admin_logged_in()
+    account_role = normalize_role(session.get("sdac_account_role") or "user")
+    if account_logged_in and is_bot_owner_username(current_account_username()):
+        account_role = "bot_owner"
+    current_guild = (
+        request.args.get("guild_id")
+        or session.get("sdac_guild_id")
+        or "all"
+    )
+    if account_logged_in or admin_logged_in:
+        server_rows = sidebar_server_options(config_data)
+    else:
+        server_rows = guild_options(config_data, public_only=True)
+    payload = {
+        "app": {
+            "name": "SDAC",
+            "display_name": "SDAC Bot and App",
+            "entry_url": url_for("app_home"),
+            "manifest_url": url_for("pwa_manifest"),
+            "icon_url": url_for("pwa_icon"),
+        },
+        "auth": {
+            "account_logged_in": account_logged_in,
+            "account_username": current_account_username() if account_logged_in else "",
+            "account_role": account_role,
+            "admin_logged_in": admin_logged_in,
+            "admin_username": current_admin_username() if admin_logged_in else "",
+            "admin_role": current_admin_role() if admin_logged_in else "",
+            "discord_oauth_enabled": oauth_enabled(),
+        },
+        "theme": dashboard_theme(config_data),
+        "layout": dashboard_layout(config_data),
+        "server": {
+            "selected_guild_id": current_guild,
+            "servers": server_rows,
+            "allow_all_servers": bool(account_logged_in or admin_logged_in),
+        },
+        "routes": {
+            "home": url_for("app_home"),
+            "login": url_for("account_login"),
+            "discord_login": url_for("account_oauth_start", next=url_for("app_home")),
+            "account": url_for("account_home"),
+            "submissions": url_for("index"),
+            "my_submissions": url_for("my_submissions"),
+            "guessing": url_for("guessing_leaderboard"),
+            "servers": url_for("servers"),
+            "stats": url_for("public_stats"),
+            "admin": url_for("admin_overview") if admin_logged_in else url_for("admin_login"),
+            "admin_releases": url_for("admin_releases") if admin_logged_in else url_for("admin_login"),
+            "admin_theme": url_for("admin_theme") if admin_logged_in else url_for("admin_login"),
+            "admin_layout": url_for("admin_layout") if admin_logged_in else url_for("admin_login"),
+        },
+        "api": {
+            "stats": url_for("api_stats"),
+            "servers": url_for("api_servers"),
+            "leaderboard": url_for("api_leaderboard"),
+        },
+        "release": {
+            "installed": os.getenv("SDAC_RELEASE") or "development",
+            "configured_tag": os.getenv("SDAC_RELEASE_TAG") or "latest-official",
+        },
+    }
+    return app_json_response(payload)
+
+
 @app.route("/server/<guild_id>")
 def server_profile(guild_id):
     config_data = load_config()
