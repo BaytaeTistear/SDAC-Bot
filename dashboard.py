@@ -343,7 +343,7 @@ DEFAULT_DASHBOARD_LAYOUT = {
     "background_opacity": "18",
     "background_position": "center",
     "density": "comfortable",
-    "menu_button_alignment": "page_left",
+    "menu_button_alignment": "sidebar_edge",
     "item_order": "submissions,users,games,storage,release,health",
     "item_properties": {},
 }
@@ -12220,8 +12220,8 @@ SIDEBAR_STYLE = """
     --sdac-grid-min: 190px;
     --sdac-layout-gap: 14px;
     --sdac-bg-position: center;
-    --sdac-content-left: max(14px, calc((100vw - var(--sdac-content-width)) / 2));
-    --sdac-open-content-left: max(14px, calc(var(--sdac-sidebar-width) + 20px + ((100vw - var(--sdac-sidebar-width) - 20px - var(--sdac-content-width)) / 2)));
+    --sdac-content-left: 14px;
+    --sdac-open-content-left: max(14px, calc(var(--sdac-sidebar-width) - 74px));
     --sdac-sidebar-edge-left: max(14px, calc(var(--sdac-sidebar-width) - 74px));
 }
 body.sdac-theme { background-color: var(--sdac-bg) !important; color: var(--sdac-text) !important; }
@@ -12253,7 +12253,7 @@ body.sdac-has-sidebar .section, body.sdac-has-sidebar table, body.sdac-has-sideb
     appearance: none !important;
     position: fixed !important;
     top: 14px !important;
-    left: var(--sdac-open-content-left) !important;
+    left: var(--sdac-sidebar-edge-left) !important;
     z-index: 1002 !important;
     border: 1px solid var(--sdac-border) !important;
     border-radius: 8px !important;
@@ -12273,6 +12273,7 @@ body.sdac-has-sidebar .section, body.sdac-has-sidebar table, body.sdac-has-sideb
     max-width: calc(100vw - 24px) !important;
     transition: left .18s ease, transform .18s ease;
 }
+body.sdac-menu-page-left .sdac-sidebar-toggle { left: 14px !important; }
 body.sdac-menu-sidebar-edge .sdac-sidebar-toggle { left: var(--sdac-sidebar-edge-left) !important; }
 body.sdac-menu-viewport-left .sdac-sidebar-toggle { left: 14px !important; }
 .sdac-sidebar {
@@ -12292,7 +12293,7 @@ body.sdac-menu-viewport-left .sdac-sidebar-toggle { left: 14px !important; }
     z-index: 1001;
 }
 body.sdac-sidebar-collapsed .sdac-sidebar { transform: translateX(-105%); }
-body.sdac-sidebar-collapsed .sdac-sidebar-toggle { left: var(--sdac-content-left) !important; }
+body.sdac-sidebar-collapsed .sdac-sidebar-toggle { left: 14px !important; }
 body.sdac-sidebar-collapsed.sdac-menu-sidebar-edge .sdac-sidebar-toggle,
 body.sdac-sidebar-collapsed.sdac-menu-viewport-left .sdac-sidebar-toggle { left: 14px !important; }
 .sdac-sidebar nav { display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; gap: 0 !important; justify-content: flex-start !important; margin: 0 !important; text-align: left !important; }
@@ -12356,7 +12357,7 @@ def inject_admin_sidebar(response):
     if should_render_admin_sidebar() and 'class="sdac-sidebar"' not in page_html:
         if "sdac-sidebar-style" not in page_html:
             page_html = page_html.replace("</head>", SIDEBAR_STYLE + "\n</head>", 1)
-        menu_alignment = dashboard_layout().get("menu_button_alignment", "page_left")
+        menu_alignment = dashboard_layout().get("menu_button_alignment", "sidebar_edge")
         menu_class = f"sdac-menu-{menu_alignment.replace('_', '-')}"
         page_html = page_html.replace('class="sdac-theme"', f'class="sdac-theme sdac-has-sidebar {menu_class}"', 1)
         page_html = re.sub(

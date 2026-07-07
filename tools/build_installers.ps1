@@ -143,6 +143,11 @@ function New-LinuxInstaller {
     $payloadBase64 = Split-Base64 ([Convert]::ToBase64String($payloadBytes))
     $payloadSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
     $payloadSize = (Get-Item -LiteralPath $archive).Length
+    $releaseText = Get-Content -Raw -LiteralPath (Join-Path $Root "RELEASE.md")
+    $installerVersion = "unknown"
+    if ($releaseText -match "Version\s+([0-9]+(?:\.[0-9]+){1,2})") {
+        $installerVersion = $Matches[1]
+    }
 
     $header = @"
 #!/usr/bin/env bash
@@ -174,6 +179,7 @@ SKIP_SERVICES="`${SDAC_SKIP_SERVICES:-0}"
 INSTALL_JOURNAL_LIMITS="`${SDAC_INSTALL_JOURNAL_LIMITS:-0}"
 PAYLOAD_SHA256="$payloadSha"
 PAYLOAD_SIZE_BYTES="$payloadSize"
+SDAC_INSTALLER_VERSION="$installerVersion"
 STAMP="`$(date -u +%Y%m%d-%H%M%S)"
 
 say() {
@@ -328,6 +334,8 @@ if [[ "`$INSTALL_JOURNAL_LIMITS" == "1" ]]; then
 fi
 
 say "SDAC single-file install complete"
+echo "Installer result: SUCCESS"
+echo "Installer version: `$SDAC_INSTALLER_VERSION"
 echo "App directory: `$APP_DIR"
 echo "Environment file: `$ENV_FILE"
 echo "Logs:"

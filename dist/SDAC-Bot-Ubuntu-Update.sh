@@ -23,6 +23,7 @@ REPO="${SDAC_GITHUB_REPO:-BaytaeTistear/SDAC-Bot}"
 RELEASE_TAG="${SDAC_RELEASE_TAG:-latest-official}"
 REQUESTED_RELEASE_TAG="$RELEASE_TAG"
 RESOLVED_VERSION="unknown"
+UPDATE_FINISHED=0
 APP_DIR="${SDAC_APP_DIR:-/home/ubuntu/discord-screenshot-bot}"
 ENV_FILE="${SDAC_ENV_FILE:-/etc/sdac-bot/sdac.env}"
 DASHBOARD_BIND="${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}"
@@ -34,6 +35,24 @@ RELOAD_NGINX="${SDAC_RELOAD_NGINX:-1}"
 INSTALL_COMMAND=0
 ROLLBACK_MODE=0
 ROLLBACK_TARGET=""
+
+print_failure_summary() {
+    local exit_code="$1"
+    if [[ "$exit_code" == "0" || "$UPDATE_FINISHED" == "1" ]]; then
+        return
+    fi
+    echo
+    echo "Update result: FAILED"
+    echo "Requested update: $REQUESTED_RELEASE_TAG"
+    echo "Resolved release tag: $RELEASE_TAG"
+    echo "Resolved version: $RESOLVED_VERSION"
+    echo "Exit code: $exit_code"
+    echo "Review the lines above, then run:"
+    echo "  journalctl -u sdac-bot -n 80 --no-pager"
+    echo "  journalctl -u sdac-dashboard -n 80 --no-pager"
+}
+
+trap 'exit_code=$?; print_failure_summary "$exit_code"' EXIT
 
 usage() {
     cat <<EOF
@@ -400,9 +419,12 @@ print_summary() {
     echo "Environment file: $ENV_FILE"
     echo "Dashboard bind: $DASHBOARD_BIND"
     echo
-    echo "Status:"
-    sudo systemctl status sdac-bot --no-pager -l
-    sudo systemctl status sdac-dashboard --no-pager -l
+    echo "Service status:"
+    printf '  sdac-bot:       %s\n' "$(systemctl is-active sdac-bot 2>/dev/null || echo unknown)"
+    printf '  sdac-dashboard: %s\n' "$(systemctl is-active sdac-dashboard 2>/dev/null || echo unknown)"
+    if [[ "$RELOAD_NGINX" == "1" ]] && systemctl list-unit-files nginx.service >/dev/null 2>&1; then
+        printf '  nginx:          %s\n' "$(systemctl is-active nginx 2>/dev/null || echo unknown)"
+    fi
     echo
     echo "Useful commands:"
     echo "  journalctl -u sdac-bot -n 80 --no-pager"
@@ -411,6 +433,7 @@ print_summary() {
     if [[ -n "$DOMAIN" ]]; then
         echo "  curl -I https://$DOMAIN/health"
     fi
+    UPDATE_FINISHED=1
 }
 
 if [[ "$(uname -s)" != "Linux" ]]; then

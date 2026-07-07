@@ -99,9 +99,9 @@ PY
 fi
 
 if [[ -f "$APP_DIR/requirements.txt" ]]; then
-    "$PYTHON" -m pip install -r "$APP_DIR/requirements.txt"
+    PIP_DISABLE_PIP_VERSION_CHECK=1 "$PYTHON" -m pip install -q -r "$APP_DIR/requirements.txt"
 else
-    "$PYTHON" -m pip install "discord.py>=2.3.2" "Flask>=3.0.0" "gunicorn>=22.0.0"
+    PIP_DISABLE_PIP_VERSION_CHECK=1 "$PYTHON" -m pip install -q "discord.py>=2.3.2" "Flask>=3.0.0" "gunicorn>=22.0.0"
 fi
 
 "$PYTHON" -m py_compile \
@@ -143,8 +143,8 @@ echo "Update complete."
 echo "Environment file: $ENV_FILE"
 echo "Dashboard bind: $DASHBOARD_BIND"
 echo "Service status:"
-sudo systemctl status sdac-bot --no-pager -l
-sudo systemctl status sdac-dashboard --no-pager -l
+printf '  sdac-bot:       %s\n' "$(systemctl is-active sdac-bot 2>/dev/null || echo unknown)"
+printf '  sdac-dashboard: %s\n' "$(systemctl is-active sdac-dashboard 2>/dev/null || echo unknown)"
 
 if [[ -n "$previous_backup" ]]; then
     echo

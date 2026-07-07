@@ -214,11 +214,12 @@ else
 fi
 
 python3 -m venv "$APP_DIR/venv"
-"$APP_DIR/venv/bin/python" -m pip install --upgrade pip
+export PIP_DISABLE_PIP_VERSION_CHECK=1
+"$APP_DIR/venv/bin/python" -m pip install -q --upgrade pip
 if [[ -f "$APP_DIR/requirements.txt" ]]; then
-    "$APP_DIR/venv/bin/python" -m pip install -r "$APP_DIR/requirements.txt"
+    "$APP_DIR/venv/bin/python" -m pip install -q -r "$APP_DIR/requirements.txt"
 else
-    "$APP_DIR/venv/bin/python" -m pip install "discord.py>=2.3.2" "Flask>=3.0.0" "gunicorn>=22.0.0"
+    "$APP_DIR/venv/bin/python" -m pip install -q "discord.py>=2.3.2" "Flask>=3.0.0" "gunicorn>=22.0.0"
 fi
 
 if [[ "$INSTALL_BACKUP_PREREQS" == "1" && -f "$APP_DIR/scripts/install_backup_prereqs.sh" ]]; then

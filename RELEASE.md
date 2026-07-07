@@ -1,3 +1,28 @@
+# SDAC Bot Version 3.1.2 Experimental
+
+Date: 2026-07-07
+
+Update scope: Bot update
+
+Version 3.1.2 is an experimental dashboard sidebar and updater log polish update.
+
+Included:
+
+- fixed the sidebar Menu button so saved Page Left layouts no longer inherit the centered content offset
+- changed the default Menu button alignment to Sidebar Edge so the button stays attached to the sidebar when open and returns to the left edge when collapsed
+- reduced updater log noise by quieting repeated pip dependency output during server install/update runs
+- replaced the full `systemctl status` dump at the end of updates with compact active/inactive service lines
+- added an updater failure summary so failed updates end with `Update result: FAILED`, the requested update, the resolved tag, and the resolved version when available
+- added installer success/version output so the release installer itself reports `Installer result: SUCCESS` and the packaged version number
+
+Release channel:
+
+- `version-3.1.2` is this experimental bot update
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
+
 # SDAC Bot Version 3.1.1 Experimental
 
 Date: 2026-07-07
