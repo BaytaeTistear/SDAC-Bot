@@ -1,3 +1,26 @@
+# SDAC Bot Version 3.1.4 Experimental
+
+Date: 2026-07-07
+
+Update scope: Bot update
+
+Version 3.1.4 is an experimental server-owner layout preview update.
+
+Included:
+
+- expanded the Server Owner Layout visual test environment so the site layout parameters update the preview live
+- added a miniature sidebar, Menu button, content area, filter panel, dashboard cards, and grid sample to the layout sandbox
+- made Content Width, Sidebar Width, Card Radius, Panel Padding, Card Grid Minimum, Background Image Opacity, Menu Button Alignment, Background Position, and Density visibly affect the preview before saving
+- kept the existing drag/drop dashboard item ordering and selected-item property editing inside the same test environment
+
+Release channel:
+
+- `version-3.1.4` is this experimental bot update
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
+
 # SDAC Bot Version 3.1.3 Experimental
 
 Date: 2026-07-07

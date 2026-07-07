@@ -5085,9 +5085,59 @@ LAYOUT_HTML = """
         button { background: #4f46e5; color: white; cursor: pointer; font-weight: bold; margin-top: 16px; }
         .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 14px; padding: 12px; }
         .editor-shell { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 300px; }
-        .preview { background: var(--sdac-bg); border-radius: var(--sdac-card-radius); min-height: 360px; overflow: hidden; padding: var(--sdac-panel-padding); position: relative; }
+        .preview {
+            --preview-content-width: min(calc(100% - var(--preview-sidebar-width) - 32px), calc(var(--sdac-content-width) * .52));
+            --preview-grid-min: calc(var(--sdac-grid-min) * .54);
+            --preview-sidebar-width: calc(var(--sdac-sidebar-width) * .62);
+            background: var(--sdac-bg);
+            border-radius: var(--sdac-card-radius);
+            min-height: 440px;
+            overflow: hidden;
+            padding: 0;
+            position: relative;
+        }
         .preview::before { content: ""; position: absolute; inset: 0; background-image: var(--sdac-theme-image, linear-gradient(135deg, var(--sdac-primary), var(--sdac-secondary))); background-position: var(--sdac-bg-position); background-size: cover; opacity: var(--sdac-theme-image-opacity); pointer-events: none; }
-        .preview-inner { align-items: stretch; display: grid; gap: var(--sdac-layout-gap); grid-template-columns: repeat(12, minmax(0, 1fr)); max-width: var(--sdac-content-width); position: relative; }
+        .preview-shell { display: flex; min-height: 440px; position: relative; z-index: 1; }
+        .preview-sidebar {
+            background: linear-gradient(180deg, var(--sdac-sidebar-bg), color-mix(in srgb, var(--sdac-sidebar-bg) 88%, #020617));
+            border-right: 1px solid var(--sdac-border);
+            box-sizing: border-box;
+            flex: 0 0 var(--preview-sidebar-width);
+            padding: calc(var(--sdac-panel-padding) * .78);
+            transition: flex-basis .18s ease, padding .18s ease;
+        }
+        .preview-sidebar strong { display: block; font-size: .95rem; margin-bottom: 8px; }
+        .preview-sidebar span { color: var(--sdac-muted); display: block; font-size: .72rem; margin-bottom: var(--sdac-layout-gap); }
+        .preview-nav-line { background: color-mix(in srgb, var(--sdac-text) 14%, transparent); border-radius: var(--sdac-card-radius); height: 18px; margin: 8px 0; }
+        .preview-nav-line.active { background: linear-gradient(90deg, var(--sdac-primary), var(--sdac-secondary)); }
+        .preview-menu-button {
+            background: linear-gradient(90deg, var(--sdac-primary), var(--sdac-secondary));
+            border: 1px solid var(--sdac-border);
+            border-radius: var(--sdac-card-radius);
+            box-shadow: 0 10px 26px rgba(2, 6, 23, .26);
+            color: #fff;
+            font-size: .78rem;
+            font-weight: 850;
+            left: min(calc(var(--preview-sidebar-width) + 12px), calc(100% - 82px));
+            padding: 8px 11px;
+            position: absolute;
+            top: 12px;
+            transition: left .18s ease, border-radius .18s ease;
+            z-index: 2;
+        }
+        .preview[data-menu-alignment="page_left"] .preview-menu-button,
+        .preview[data-menu-alignment="viewport_left"] .preview-menu-button { left: 12px; }
+        .preview-content {
+            box-sizing: border-box;
+            margin: 0 auto;
+            max-width: var(--preview-content-width);
+            padding: calc(var(--sdac-panel-padding) * 2.2) var(--sdac-panel-padding) var(--sdac-panel-padding);
+            transition: max-width .18s ease, padding .18s ease;
+            width: 100%;
+        }
+        .preview-heading { font-size: 1.15rem; font-weight: 850; margin-bottom: var(--sdac-layout-gap); }
+        .preview-filter { border: 1px solid var(--sdac-border); border-radius: var(--sdac-card-radius); margin-bottom: var(--sdac-layout-gap); padding: calc(var(--sdac-panel-padding) * .55); text-align: center; }
+        .preview-inner { align-items: stretch; display: grid; gap: var(--sdac-layout-gap); grid-template-columns: repeat(12, minmax(0, 1fr)); position: relative; }
         .preview-card { background: var(--sdac-surface); border: 1px solid var(--sdac-border); border-radius: var(--sdac-card-radius); cursor: grab; min-height: 104px; padding: var(--sdac-panel-padding); user-select: none; }
         .preview-card:active { cursor: grabbing; }
         .preview-card.is-selected { outline: 2px solid var(--sdac-accent); outline-offset: 2px; }
@@ -5102,12 +5152,18 @@ LAYOUT_HTML = """
         .preview-card[data-tone="secondary"] { background: color-mix(in srgb, var(--sdac-secondary) 22%, var(--sdac-surface)); }
         .preview-card[data-tone="accent"] { background: color-mix(in srgb, var(--sdac-accent) 24%, var(--sdac-surface)); }
         .preview-card[data-visible="false"] { opacity: .42; }
+        .preview-grid-demo { display: grid; gap: var(--sdac-layout-gap); grid-template-columns: repeat(auto-fit, minmax(max(70px, var(--preview-grid-min)), 1fr)); margin-top: var(--sdac-layout-gap); }
+        .preview-grid-demo div { background: color-mix(in srgb, var(--sdac-secondary) 14%, var(--sdac-surface)); border: 1px solid var(--sdac-border); border-radius: var(--sdac-card-radius); min-height: 44px; padding: calc(var(--sdac-panel-padding) * .48); }
+        .preview[data-density="compact"] { --sdac-layout-gap: 8px; }
+        .preview[data-density="comfortable"] { --sdac-layout-gap: 14px; }
+        .preview[data-density="spacious"] { --sdac-layout-gap: 20px; }
         .property-panel { align-self: start; background: #0b1220; border: 1px solid #30333b; border-radius: 8px; padding: 14px; position: sticky; top: 14px; }
         .property-panel h3 { margin: 0 0 8px; }
         .muted { color: #94a3b8; }
         @media (max-width: 900px) {
             .editor-shell { grid-template-columns: 1fr; }
             .property-panel { position: static; }
+            .preview { --preview-content-width: 100%; --preview-sidebar-width: min(calc(var(--sdac-sidebar-width) * .62), 62%); }
             .preview-card[data-width] { grid-column: span 12; }
         }
     </style>
@@ -5161,19 +5217,40 @@ LAYOUT_HTML = """
     <section class="panel">
         <h2>Visual Test Environment</h2>
         <div class="editor-shell">
-            <div class="preview">
-                <div class="preview-inner" id="layout-preview">
-                    {% for item in layout_items %}
-                        <div class="preview-card"
-                             draggable="true"
-                             data-id="{{ item.id }}"
-                             data-width="{{ item.width }}"
-                             data-tone="{{ item.tone }}"
-                             data-visible="{{ 'true' if item.visible else 'false' }}">
-                            <strong>{{ item.value }}</strong>
-                            <span>{{ item.label }}</span>
+            <div class="preview" id="layout-preview-frame" data-density="{{ layout.density }}" data-menu-alignment="{{ layout.menu_button_alignment }}">
+                <div class="preview-menu-button">Menu</div>
+                <div class="preview-shell">
+                    <aside class="preview-sidebar">
+                        <strong>SDAC Admin</strong>
+                        <span>Server Owner</span>
+                        <div class="preview-nav-line active"></div>
+                        <div class="preview-nav-line"></div>
+                        <div class="preview-nav-line"></div>
+                        <div class="preview-nav-line"></div>
+                    </aside>
+                    <div class="preview-content">
+                        <div class="preview-heading">SDAC Dashboard</div>
+                        <div class="preview-filter">Filters</div>
+                        <div class="preview-inner" id="layout-preview">
+                            {% for item in layout_items %}
+                                <div class="preview-card"
+                                     draggable="true"
+                                     data-id="{{ item.id }}"
+                                     data-width="{{ item.width }}"
+                                     data-tone="{{ item.tone }}"
+                                     data-visible="{{ 'true' if item.visible else 'false' }}">
+                                    <strong>{{ item.value }}</strong>
+                                    <span>{{ item.label }}</span>
+                                </div>
+                            {% endfor %}
                         </div>
-                    {% endfor %}
+                        <div class="preview-grid-demo" aria-hidden="true">
+                            <div></div>
+                            <div></div>
+                            <div></div>
+                            <div></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <aside class="property-panel">
@@ -5205,6 +5282,7 @@ LAYOUT_HTML = """
         <script>
         (function () {
             const defaults = {{ item_defaults_json | safe }};
+            const previewFrame = document.getElementById("layout-preview-frame");
             const preview = document.getElementById("layout-preview");
             const orderInput = document.getElementById("item_order");
             const propertiesInput = document.getElementById("item_properties");
@@ -5220,6 +5298,41 @@ LAYOUT_HTML = """
             let dragging = null;
             let properties = {};
             try { properties = JSON.parse(propertiesInput.value || "{}"); } catch (error) { properties = {}; }
+            const layoutControls = {
+                contentWidth: document.getElementById("content_width"),
+                sidebarWidth: document.getElementById("sidebar_width"),
+                cardRadius: document.getElementById("card_radius"),
+                panelPadding: document.getElementById("panel_padding"),
+                gridMinWidth: document.getElementById("grid_min_width"),
+                backgroundOpacity: document.getElementById("background_opacity"),
+                menuButtonAlignment: document.getElementById("menu_button_alignment"),
+                backgroundPosition: document.getElementById("background_position"),
+                density: document.getElementById("density")
+            };
+
+            function numberValue(input, fallback, min, max) {
+                const parsed = parseInt(input.value, 10);
+                if (Number.isNaN(parsed)) return fallback;
+                return Math.max(min, Math.min(max, parsed));
+            }
+
+            function updateLayoutPreview() {
+                const contentWidth = numberValue(layoutControls.contentWidth, 1220, 840, 1600);
+                const sidebarWidth = numberValue(layoutControls.sidebarWidth, 260, 220, 360);
+                const cardRadius = numberValue(layoutControls.cardRadius, 8, 0, 24);
+                const panelPadding = numberValue(layoutControls.panelPadding, 16, 10, 34);
+                const gridMinWidth = numberValue(layoutControls.gridMinWidth, 190, 150, 360);
+                const backgroundOpacity = numberValue(layoutControls.backgroundOpacity, 18, 0, 60);
+                previewFrame.style.setProperty("--sdac-content-width", contentWidth + "px");
+                previewFrame.style.setProperty("--sdac-sidebar-width", sidebarWidth + "px");
+                previewFrame.style.setProperty("--sdac-card-radius", cardRadius + "px");
+                previewFrame.style.setProperty("--sdac-panel-padding", panelPadding + "px");
+                previewFrame.style.setProperty("--sdac-grid-min", gridMinWidth + "px");
+                previewFrame.style.setProperty("--sdac-theme-image-opacity", (backgroundOpacity / 100).toFixed(2));
+                previewFrame.style.setProperty("--sdac-bg-position", layoutControls.backgroundPosition.value || "center");
+                previewFrame.dataset.menuAlignment = layoutControls.menuButtonAlignment.value || "sidebar_edge";
+                previewFrame.dataset.density = layoutControls.density.value || "comfortable";
+            }
 
             function cards() {
                 return Array.from(preview.querySelectorAll(".preview-card"));
@@ -5341,6 +5454,11 @@ LAYOUT_HTML = """
                 selectedHelp.textContent = "Click a preview item to edit its properties. Drag cards to reorder them.";
                 [labelInput, valueInput, widthInput, toneInput, visibleInput, resetItem].forEach((input) => input.disabled = true);
             });
+            Object.values(layoutControls).forEach((input) => {
+                input.addEventListener("input", updateLayoutPreview);
+                input.addEventListener("change", updateLayoutPreview);
+            });
+            updateLayoutPreview();
             applyAll();
         }());
         </script>
