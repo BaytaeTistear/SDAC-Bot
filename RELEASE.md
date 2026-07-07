@@ -1,3 +1,25 @@
+# SDAC Bot Version 3.1.3 Experimental
+
+Date: 2026-07-07
+
+Update scope: Bot update
+
+Version 3.1.3 is an experimental sidebar menu positioning update.
+
+Included:
+
+- fixed the open sidebar Menu button position so Sidebar Edge places the button just outside the opened sidebar instead of inside the sidebar header area
+- kept the collapsed sidebar Menu button on the left edge of the page
+- kept the mobile/open button position clamped so it does not overflow narrow screens
+
+Release channel:
+
+- `version-3.1.3` is this experimental bot update
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
+
 # SDAC Bot Version 3.1.2 Experimental
 
 Date: 2026-07-07
