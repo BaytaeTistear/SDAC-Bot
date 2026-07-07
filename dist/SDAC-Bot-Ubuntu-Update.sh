@@ -21,6 +21,8 @@ fi
 
 REPO="${SDAC_GITHUB_REPO:-BaytaeTistear/SDAC-Bot}"
 RELEASE_TAG="${SDAC_RELEASE_TAG:-latest-official}"
+REQUESTED_RELEASE_TAG="$RELEASE_TAG"
+RESOLVED_VERSION="unknown"
 APP_DIR="${SDAC_APP_DIR:-/home/ubuntu/discord-screenshot-bot}"
 ENV_FILE="${SDAC_ENV_FILE:-/etc/sdac-bot/sdac.env}"
 DASHBOARD_BIND="${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}"
@@ -137,7 +139,29 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$ROLLBACK_MODE" != "1" ]]; then
+    REQUESTED_RELEASE_TAG="$RELEASE_TAG"
     RELEASE_TAG="$(normalize_release_tag "$RELEASE_TAG")"
+fi
+
+resolve_release_version() {
+    local tag="$1"
+    local metadata=""
+    if [[ "$tag" == version-* ]]; then
+        printf '%s\n' "${tag#version-}"
+        return
+    fi
+    if command -v gh >/dev/null 2>&1; then
+        metadata="$(gh release view "$tag" --repo "$REPO" --json tagName,name --jq '.tagName + " " + .name' 2>/dev/null || true)"
+    fi
+    if [[ "$metadata" =~ ([0-9]+\.[0-9]+(\.[0-9]+)?) ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
+        return
+    fi
+    printf '%s\n' "unknown"
+}
+
+if [[ "$ROLLBACK_MODE" != "1" ]]; then
+    RESOLVED_VERSION="$(resolve_release_version "$RELEASE_TAG")"
 fi
 
 default_app_user() {
@@ -366,8 +390,11 @@ run_rollback() {
 
 print_summary() {
     say "Update complete"
+    echo "Update result: SUCCESS"
+    echo "Requested update: $REQUESTED_RELEASE_TAG"
+    echo "Resolved release tag: $RELEASE_TAG"
+    echo "Resolved version: $RESOLVED_VERSION"
     echo "Repository: $REPO"
-    echo "Release tag: $RELEASE_TAG"
     echo "App directory: $APP_DIR"
     echo "App user: $APP_USER"
     echo "Environment file: $ENV_FILE"

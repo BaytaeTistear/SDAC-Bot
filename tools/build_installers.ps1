@@ -880,7 +880,6 @@ function Copy-ReleaseHelperScripts {
     $windowsSource = Join-Path $Root "scripts\update_from_github_windows.ps1"
     $windowsContent = [IO.File]::ReadAllText($windowsSource)
     $windowsContent = $windowsContent -replace "`r`n", "`n" -replace "`r", "`n"
-    $windowsContent = $windowsContent -replace "`n", "`r`n"
     [IO.File]::WriteAllText(
         (Join-Path $Dist "SDAC-Bot-Windows-Update.ps1"),
         $windowsContent,

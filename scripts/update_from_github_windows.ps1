@@ -27,6 +27,7 @@ if ([string]::IsNullOrWhiteSpace($ReleaseTag)) {
 if ([string]::IsNullOrWhiteSpace($ReleaseTag)) {
     $ReleaseTag = "latest-official"
 }
+$RequestedReleaseTag = $ReleaseTag
 
 function Resolve-ReleaseTag {
     param([string]$Value)
@@ -94,7 +95,27 @@ if ($ReleaseTag.Trim().ToLowerInvariant() -eq "rollback") {
     Write-Error "Rollback is currently available through the Ubuntu updater only. Restore a Windows deploy backup manually from the deploy-backups folder."
 }
 
+$RequestedReleaseTag = $ReleaseTag
 $ReleaseTag = Resolve-ReleaseTag -Value $ReleaseTag
+$ResolvedVersion = "unknown"
+
+function Resolve-ReleaseVersion {
+    param([string]$Tag)
+
+    if ($Tag -match "^version-(\d+\.\d+(?:\.\d+)?)$") {
+        return $Matches[1]
+    }
+    $gh = Get-Command gh -ErrorAction SilentlyContinue
+    if ($gh) {
+        $metadata = (& gh release view $Tag --repo $Repo --json tagName,name --jq '.tagName + " " + .name' 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $metadata -match "(\d+\.\d+(?:\.\d+)?)") {
+            return $Matches[1]
+        }
+    }
+    return "unknown"
+}
+
+$ResolvedVersion = Resolve-ReleaseVersion -Tag $ReleaseTag
 $tempDir = Join-Path ([IO.Path]::GetTempPath()) ("sdac-update-" + [Guid]::NewGuid().ToString("N"))
 $installerPath = Join-Path $tempDir $AssetName
 
@@ -159,7 +180,10 @@ try {
 
     Write-Host ""
     Write-Host "Update complete."
-    Write-Host "Release tag: $ReleaseTag"
+    Write-Host "Update result: SUCCESS"
+    Write-Host "Requested update: $RequestedReleaseTag"
+    Write-Host "Resolved release tag: $ReleaseTag"
+    Write-Host "Resolved version: $ResolvedVersion"
     Write-Host "Installer: $AssetName"
     Test-SdacHealth
 }

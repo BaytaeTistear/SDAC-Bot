@@ -1,3 +1,27 @@
+# SDAC Bot Version 3.1.1 Experimental
+
+Date: 2026-07-07
+
+Update scope: Bot update
+
+Version 3.1.1 is an experimental updater and dashboard sidebar alignment update.
+
+Included:
+
+- added final updater success output that shows `Update result: SUCCESS`
+- added `Requested update` to show what the user typed, such as `latest-experimental`
+- added `Resolved release tag` and `Resolved version` so moving aliases still report the actual version number
+- fixed the dashboard sidebar Menu button alignment so Page Left follows the content area instead of the old sidebar-width offset
+- kept Sidebar Edge and Viewport Left as separate editable layout options
+
+Release channel:
+
+- `version-3.1.1` is this experimental bot update
+- `latest-experimental` points to this build
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
+
 # SDAC Bot and App Version 3.1.0 Official
 
 Date: 2026-07-06
