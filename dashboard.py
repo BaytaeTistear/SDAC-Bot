@@ -343,7 +343,17 @@ DEFAULT_DASHBOARD_LAYOUT = {
     "background_opacity": "18",
     "background_position": "center",
     "density": "comfortable",
+    "item_order": "submissions,users,games,storage,release,health",
+    "item_properties": {},
 }
+LAYOUT_EDITOR_ITEMS = [
+    ("submissions", "Submissions", "128", "primary"),
+    ("users", "Users", "42", "secondary"),
+    ("games", "Active Games", "6", "accent"),
+    ("storage", "Storage", "8.4 GB", "surface"),
+    ("release", "Release", "3.1.0", "primary"),
+    ("health", "Health", "Good", "secondary"),
+]
 THEME_UPLOAD_DIR = MEDIA_DIR / "dashboard_theme"
 
 ADMIN_ROLE_CHOICES = {
@@ -5066,19 +5076,39 @@ LAYOUT_HTML = """
     <style>
         :root { color-scheme: dark; }
         body { background: #0f172a; color: #f8fafc; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
-        main { margin: 0 auto; width: min(100%, 980px); }
+        main { margin: 0 auto; width: min(100%, 1180px); }
         .panel { background: #111827; border: 1px solid #30333b; border-radius: 8px; margin: 16px 0; padding: 16px; }
         .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
         label { display: block; font-weight: bold; margin: 10px 0 6px; }
         input, select, button { background: #1f2937; border: 1px solid #30333b; border-radius: 7px; box-sizing: border-box; color: #f8fafc; font-size: 15px; padding: 10px; width: 100%; }
         button { background: #4f46e5; color: white; cursor: pointer; font-weight: bold; margin-top: 16px; }
         .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 14px; padding: 12px; }
-        .preview { background: var(--sdac-bg); border-radius: var(--sdac-card-radius); min-height: 220px; overflow: hidden; padding: var(--sdac-panel-padding); position: relative; }
+        .editor-shell { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 300px; }
+        .preview { background: var(--sdac-bg); border-radius: var(--sdac-card-radius); min-height: 360px; overflow: hidden; padding: var(--sdac-panel-padding); position: relative; }
         .preview::before { content: ""; position: absolute; inset: 0; background-image: var(--sdac-theme-image, linear-gradient(135deg, var(--sdac-primary), var(--sdac-secondary))); background-position: var(--sdac-bg-position); background-size: cover; opacity: var(--sdac-theme-image-opacity); pointer-events: none; }
-        .preview-inner { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(var(--sdac-grid-min), 1fr)); max-width: var(--sdac-content-width); position: relative; }
-        .preview-card { background: var(--sdac-surface); border: 1px solid var(--sdac-border); border-radius: var(--sdac-card-radius); padding: var(--sdac-panel-padding); }
-        .preview-card strong { display: block; font-size: 1.6rem; }
+        .preview-inner { align-items: stretch; display: grid; gap: var(--sdac-layout-gap); grid-template-columns: repeat(12, minmax(0, 1fr)); max-width: var(--sdac-content-width); position: relative; }
+        .preview-card { background: var(--sdac-surface); border: 1px solid var(--sdac-border); border-radius: var(--sdac-card-radius); cursor: grab; min-height: 104px; padding: var(--sdac-panel-padding); user-select: none; }
+        .preview-card:active { cursor: grabbing; }
+        .preview-card.is-selected { outline: 2px solid var(--sdac-accent); outline-offset: 2px; }
+        .preview-card.is-dragging { opacity: .42; }
+        .preview-card strong { display: block; font-size: 1.6rem; line-height: 1.1; }
         .preview-card span { color: var(--sdac-muted); display: block; font-size: .8rem; font-weight: 750; margin-top: 6px; text-transform: uppercase; }
+        .preview-card[data-width="small"] { grid-column: span 3; }
+        .preview-card[data-width="medium"] { grid-column: span 4; }
+        .preview-card[data-width="wide"] { grid-column: span 6; }
+        .preview-card[data-width="full"] { grid-column: span 12; }
+        .preview-card[data-tone="primary"] { background: color-mix(in srgb, var(--sdac-primary) 24%, var(--sdac-surface)); }
+        .preview-card[data-tone="secondary"] { background: color-mix(in srgb, var(--sdac-secondary) 22%, var(--sdac-surface)); }
+        .preview-card[data-tone="accent"] { background: color-mix(in srgb, var(--sdac-accent) 24%, var(--sdac-surface)); }
+        .preview-card[data-visible="false"] { opacity: .42; }
+        .property-panel { align-self: start; background: #0b1220; border: 1px solid #30333b; border-radius: 8px; padding: 14px; position: sticky; top: 14px; }
+        .property-panel h3 { margin: 0 0 8px; }
+        .muted { color: #94a3b8; }
+        @media (max-width: 900px) {
+            .editor-shell { grid-template-columns: 1fr; }
+            .property-panel { position: static; }
+            .preview-card[data-width] { grid-column: span 12; }
+        }
     </style>
 </head>
 <body>
@@ -5114,18 +5144,197 @@ LAYOUT_HTML = """
                     </select>
                 </div>
             </div>
+            <input id="item_order" name="item_order" type="hidden" value="{{ layout.item_order }}">
+            <input id="item_properties" name="item_properties" type="hidden" value='{{ item_properties_json | safe }}'>
             <button type="submit">Save Layout</button>
         </form>
     </section>
     <section class="panel">
-        <h2>Preview</h2>
-        <div class="preview">
-            <div class="preview-inner">
-                <div class="preview-card"><strong>128</strong><span>Submissions</span></div>
-                <div class="preview-card"><strong>42</strong><span>Users</span></div>
-                <div class="preview-card"><strong>6</strong><span>Active Games</span></div>
+        <h2>Visual Test Environment</h2>
+        <div class="editor-shell">
+            <div class="preview">
+                <div class="preview-inner" id="layout-preview">
+                    {% for item in layout_items %}
+                        <div class="preview-card"
+                             draggable="true"
+                             data-id="{{ item.id }}"
+                             data-width="{{ item.width }}"
+                             data-tone="{{ item.tone }}"
+                             data-visible="{{ 'true' if item.visible else 'false' }}">
+                            <strong>{{ item.value }}</strong>
+                            <span>{{ item.label }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
             </div>
+            <aside class="property-panel">
+                <h3 id="selected-title">Select an item</h3>
+                <p class="muted" id="selected-help">Click a preview item to edit its properties. Drag cards to reorder them.</p>
+                <label for="prop_label">Label</label>
+                <input id="prop_label" disabled>
+                <label for="prop_value">Value</label>
+                <input id="prop_value" disabled>
+                <label for="prop_width">Width</label>
+                <select id="prop_width" disabled>
+                    <option value="small">Small</option>
+                    <option value="medium">Medium</option>
+                    <option value="wide">Wide</option>
+                    <option value="full">Full</option>
+                </select>
+                <label for="prop_tone">Tone</label>
+                <select id="prop_tone" disabled>
+                    <option value="surface">Surface</option>
+                    <option value="primary">Primary</option>
+                    <option value="secondary">Secondary</option>
+                    <option value="accent">Accent</option>
+                </select>
+                <label><input id="prop_visible" type="checkbox" disabled> Visible</label>
+                <button id="reset-item" type="button" disabled>Reset Selected Item</button>
+                <button id="reset-layout" type="button">Reset Test Layout</button>
+            </aside>
         </div>
+        <script>
+        (function () {
+            const defaults = {{ item_defaults_json | safe }};
+            const preview = document.getElementById("layout-preview");
+            const orderInput = document.getElementById("item_order");
+            const propertiesInput = document.getElementById("item_properties");
+            const labelInput = document.getElementById("prop_label");
+            const valueInput = document.getElementById("prop_value");
+            const widthInput = document.getElementById("prop_width");
+            const toneInput = document.getElementById("prop_tone");
+            const visibleInput = document.getElementById("prop_visible");
+            const selectedTitle = document.getElementById("selected-title");
+            const selectedHelp = document.getElementById("selected-help");
+            const resetItem = document.getElementById("reset-item");
+            let selected = null;
+            let dragging = null;
+            let properties = {};
+            try { properties = JSON.parse(propertiesInput.value || "{}"); } catch (error) { properties = {}; }
+
+            function cards() {
+                return Array.from(preview.querySelectorAll(".preview-card"));
+            }
+
+            function itemDefaults(id) {
+                return defaults.find((item) => item.id === id) || {};
+            }
+
+            function itemProps(id) {
+                return Object.assign({}, itemDefaults(id), properties[id] || {});
+            }
+
+            function syncHiddenInputs() {
+                orderInput.value = cards().map((card) => card.dataset.id).join(",");
+                propertiesInput.value = JSON.stringify(properties);
+            }
+
+            function applyCard(card) {
+                const props = itemProps(card.dataset.id);
+                card.dataset.width = props.width || "medium";
+                card.dataset.tone = props.tone || "surface";
+                card.dataset.visible = props.visible === false ? "false" : "true";
+                card.querySelector("strong").textContent = props.value || "";
+                card.querySelector("span").textContent = props.label || "";
+            }
+
+            function applyAll() {
+                cards().forEach(applyCard);
+                syncHiddenInputs();
+            }
+
+            function selectCard(card) {
+                selected = card;
+                cards().forEach((item) => item.classList.toggle("is-selected", item === card));
+                const props = itemProps(card.dataset.id);
+                selectedTitle.textContent = props.label || "Selected item";
+                selectedHelp.textContent = "Editing " + card.dataset.id;
+                [labelInput, valueInput, widthInput, toneInput, visibleInput, resetItem].forEach((input) => input.disabled = false);
+                labelInput.value = props.label || "";
+                valueInput.value = props.value || "";
+                widthInput.value = props.width || "medium";
+                toneInput.value = props.tone || "surface";
+                visibleInput.checked = props.visible !== false;
+            }
+
+            function updateSelected() {
+                if (!selected) return;
+                const id = selected.dataset.id;
+                properties[id] = {
+                    label: labelInput.value.trim() || itemDefaults(id).label,
+                    value: valueInput.value.trim() || itemDefaults(id).value,
+                    width: widthInput.value,
+                    tone: toneInput.value,
+                    visible: visibleInput.checked
+                };
+                applyCard(selected);
+                syncHiddenInputs();
+            }
+
+            function dragAfterElement(y) {
+                return cards().filter((card) => card !== dragging).reduce((closest, child) => {
+                    const box = child.getBoundingClientRect();
+                    const offset = y - box.top - box.height / 2;
+                    if (offset < 0 && offset > closest.offset) {
+                        return { offset: offset, element: child };
+                    }
+                    return closest;
+                }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+            }
+
+            preview.addEventListener("click", (event) => {
+                const card = event.target.closest(".preview-card");
+                if (card) selectCard(card);
+            });
+            preview.addEventListener("dragstart", (event) => {
+                dragging = event.target.closest(".preview-card");
+                if (!dragging) return;
+                dragging.classList.add("is-dragging");
+                event.dataTransfer.effectAllowed = "move";
+            });
+            preview.addEventListener("dragover", (event) => {
+                event.preventDefault();
+                if (!dragging) return;
+                const after = dragAfterElement(event.clientY);
+                if (after == null) {
+                    preview.appendChild(dragging);
+                } else {
+                    preview.insertBefore(dragging, after);
+                }
+                syncHiddenInputs();
+            });
+            preview.addEventListener("dragend", () => {
+                if (dragging) dragging.classList.remove("is-dragging");
+                dragging = null;
+                syncHiddenInputs();
+            });
+            [labelInput, valueInput, widthInput, toneInput, visibleInput].forEach((input) => {
+                input.addEventListener("input", updateSelected);
+                input.addEventListener("change", updateSelected);
+            });
+            resetItem.addEventListener("click", () => {
+                if (!selected) return;
+                delete properties[selected.dataset.id];
+                applyCard(selected);
+                selectCard(selected);
+                syncHiddenInputs();
+            });
+            document.getElementById("reset-layout").addEventListener("click", () => {
+                properties = {};
+                defaults.forEach((item) => {
+                    const card = preview.querySelector('[data-id="' + item.id + '"]');
+                    if (card) preview.appendChild(card);
+                });
+                applyAll();
+                selected = null;
+                cards().forEach((item) => item.classList.remove("is-selected"));
+                selectedTitle.textContent = "Select an item";
+                selectedHelp.textContent = "Click a preview item to edit its properties. Drag cards to reorder them.";
+                [labelInput, valueInput, widthInput, toneInput, visibleInput, resetItem].forEach((input) => input.disabled = true);
+            });
+            applyAll();
+        }());
+        </script>
     </section>
 </main>
 </body>
@@ -11276,6 +11485,78 @@ def clamp_int(value, fallback, minimum, maximum):
     return max(minimum, min(maximum, number))
 
 
+def layout_item_defaults():
+    return [
+        {
+            "id": item_id,
+            "label": label,
+            "value": value,
+            "tone": tone,
+            "width": "medium",
+            "visible": True,
+        }
+        for item_id, label, value, tone in LAYOUT_EDITOR_ITEMS
+    ]
+
+
+def sanitize_layout_item_order(raw_value):
+    allowed = [item["id"] for item in layout_item_defaults()]
+    seen = set()
+    order = []
+    for item_id in str(raw_value or "").split(","):
+        item_id = item_id.strip()
+        if item_id in allowed and item_id not in seen:
+            order.append(item_id)
+            seen.add(item_id)
+    for item_id in allowed:
+        if item_id not in seen:
+            order.append(item_id)
+    return order
+
+
+def sanitize_layout_item_properties(raw_value):
+    if isinstance(raw_value, str):
+        try:
+            raw_value = json.loads(raw_value or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            raw_value = {}
+    if not isinstance(raw_value, dict):
+        raw_value = {}
+    defaults = {item["id"]: item for item in layout_item_defaults()}
+    clean = {}
+    for item_id, values in raw_value.items():
+        if item_id not in defaults or not isinstance(values, dict):
+            continue
+        default = defaults[item_id]
+        label = re.sub(r"\s+", " ", str(values.get("label") or default["label"]).strip())[:40]
+        value = re.sub(r"\s+", " ", str(values.get("value") or default["value"]).strip())[:40]
+        width = str(values.get("width") or default["width"]).strip()
+        tone = str(values.get("tone") or default["tone"]).strip()
+        if width not in {"small", "medium", "wide", "full"}:
+            width = default["width"]
+        if tone not in {"surface", "primary", "secondary", "accent"}:
+            tone = default["tone"]
+        clean[item_id] = {
+            "label": label or default["label"],
+            "value": value or default["value"],
+            "width": width,
+            "tone": tone,
+            "visible": values.get("visible") is not False,
+        }
+    return clean
+
+
+def layout_items_for_editor(layout):
+    defaults = {item["id"]: item for item in layout_item_defaults()}
+    properties = layout.get("item_properties") or {}
+    rows = []
+    for item_id in sanitize_layout_item_order(layout.get("item_order")):
+        item = dict(defaults[item_id])
+        item.update(properties.get(item_id) or {})
+        rows.append(item)
+    return rows
+
+
 def dashboard_layout(config_data=None):
     config_data = config_data or load_config()
     raw = config_data.get("dashboard_layout") or {}
@@ -11291,6 +11572,8 @@ def dashboard_layout(config_data=None):
         layout["background_position"] = DEFAULT_DASHBOARD_LAYOUT["background_position"]
     if layout.get("density") not in {"comfortable", "compact", "spacious"}:
         layout["density"] = DEFAULT_DASHBOARD_LAYOUT["density"]
+    layout["item_order"] = ",".join(sanitize_layout_item_order(layout.get("item_order")))
+    layout["item_properties"] = sanitize_layout_item_properties(layout.get("item_properties"))
     return layout
 
 
@@ -11398,6 +11681,8 @@ def update_dashboard_layout(form):
     density = str(form.get("density") or "").strip()
     if density in {"comfortable", "compact", "spacious"}:
         layout["density"] = density
+    layout["item_order"] = ",".join(sanitize_layout_item_order(form.get("item_order")))
+    layout["item_properties"] = sanitize_layout_item_properties(form.get("item_properties"))
     config_data["dashboard_layout"] = layout
     save_config(config_data)
     return layout
@@ -11951,7 +12236,7 @@ body.sdac-has-sidebar .section, body.sdac-has-sidebar table, body.sdac-has-sideb
     appearance: none !important;
     position: fixed !important;
     top: 14px !important;
-    left: calc(var(--sdac-sidebar-width) + 16px) !important;
+    left: max(14px, calc(var(--sdac-sidebar-width) - 74px)) !important;
     z-index: 1002 !important;
     border: 1px solid var(--sdac-border) !important;
     border-radius: 8px !important;
@@ -11988,7 +12273,7 @@ body.sdac-has-sidebar .section, body.sdac-has-sidebar table, body.sdac-has-sideb
     z-index: 1001;
 }
 body.sdac-sidebar-collapsed .sdac-sidebar { transform: translateX(-105%); }
-body.sdac-sidebar-collapsed .sdac-sidebar-toggle { left: 14px; }
+body.sdac-sidebar-collapsed .sdac-sidebar-toggle { left: 14px !important; }
 .sdac-sidebar nav { display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; gap: 0 !important; justify-content: flex-start !important; margin: 0 !important; text-align: left !important; }
 .sdac-sidebar-brand { font-size: 1.25rem; font-weight: 900; margin-bottom: 10px; }
 .sdac-sidebar-user { color: var(--sdac-muted); font-size: 0.9rem; line-height: 1.35; margin-bottom: 18px; }
@@ -12018,10 +12303,10 @@ body.sdac-has-sidebar > nav, body.sdac-has-sidebar main > nav:not(.pagination), 
 .sdac-range-tabs a.active { background: var(--sdac-primary); color: #fff !important; }
 @media (max-width: 900px) {
     body.sdac-has-sidebar { padding-left: 0 !important; }
-    .sdac-sidebar-toggle { left: 12px; top: 12px; }
+    .sdac-sidebar-toggle { left: 12px !important; top: 12px; }
     .sdac-sidebar { border-radius: 0 14px 14px 0; box-shadow: 18px 0 40px rgba(2, 6, 23, 0.48); transform: translateX(-105%); }
     body.sdac-sidebar-open .sdac-sidebar { transform: translateX(0); }
-    body.sdac-sidebar-open .sdac-sidebar-toggle { left: min(calc(var(--sdac-sidebar-width) + 16px), calc(100vw - 72px)); }
+    body.sdac-sidebar-open .sdac-sidebar-toggle { left: min(max(14px, calc(var(--sdac-sidebar-width) - 74px)), calc(100vw - 86px)) !important; }
     body.sdac-has-sidebar main { padding-top: 46px !important; }
 }
 </style>
@@ -16461,6 +16746,7 @@ def admin_layout():
         return login_response
     notice = request.args.get("notice", "")
     error = request.args.get("error") == "1"
+    layout = dashboard_layout()
     if request.method == "POST":
         require_csrf_token()
         try:
@@ -16469,6 +16755,7 @@ def admin_layout():
         except ValueError as exc:
             notice = str(exc)
             error = True
+        layout = dashboard_layout()
     return render_template_string(
         LAYOUT_HTML,
         admin_key=ADMIN_KEY,
@@ -16486,7 +16773,10 @@ def admin_layout():
             ("spacious", "Spacious"),
         ],
         error=error,
-        layout=dashboard_layout(),
+        item_defaults_json=json.dumps(layout_item_defaults()),
+        item_properties_json=html.escape(json.dumps(layout.get("item_properties") or {}), quote=True),
+        layout=layout,
+        layout_items=layout_items_for_editor(layout),
         notice=notice,
     )
 
