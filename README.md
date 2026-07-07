@@ -2,8 +2,6 @@
 
 SDAC Bot is a Discord media submission and guessing-game system with a web dashboard. Discord users submit images, audio, or video through `/submit`. Admins configure categories, review pending submissions, run guessing games, and view submissions, votes, leaderboards, maintenance status, and moderation history from the dashboard.
 
-Project wiki pages live in [`wiki/`](wiki/README.md), with categories for the bot, server, dashboard, and app.
-
 ## What It Does
 
 - Guided Discord `/submit` flow with category, media/text, and confirmation
