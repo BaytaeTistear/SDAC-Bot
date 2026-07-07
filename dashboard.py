@@ -343,6 +343,7 @@ DEFAULT_DASHBOARD_LAYOUT = {
     "background_opacity": "18",
     "background_position": "center",
     "density": "comfortable",
+    "menu_button_alignment": "page_left",
     "item_order": "submissions,users,games,storage,release,health",
     "item_properties": {},
 }
@@ -5127,6 +5128,14 @@ LAYOUT_HTML = """
                 <div><label for="panel_padding">Panel Padding</label><input id="panel_padding" name="panel_padding" type="number" min="10" max="34" value="{{ layout.panel_padding }}"></div>
                 <div><label for="grid_min_width">Card Grid Minimum</label><input id="grid_min_width" name="grid_min_width" type="number" min="150" max="360" value="{{ layout.grid_min_width }}"></div>
                 <div><label for="background_opacity">Background Image Opacity</label><input id="background_opacity" name="background_opacity" type="number" min="0" max="60" value="{{ layout.background_opacity }}"></div>
+                <div>
+                    <label for="menu_button_alignment">Menu Button Alignment</label>
+                    <select id="menu_button_alignment" name="menu_button_alignment">
+                        {% for value, label in menu_button_alignments %}
+                            <option value="{{ value }}" {% if layout.menu_button_alignment == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
                 <div>
                     <label for="background_position">Background Position</label>
                     <select id="background_position" name="background_position">
@@ -11572,6 +11581,8 @@ def dashboard_layout(config_data=None):
         layout["background_position"] = DEFAULT_DASHBOARD_LAYOUT["background_position"]
     if layout.get("density") not in {"comfortable", "compact", "spacious"}:
         layout["density"] = DEFAULT_DASHBOARD_LAYOUT["density"]
+    if layout.get("menu_button_alignment") not in {"page_left", "sidebar_edge", "viewport_left"}:
+        layout["menu_button_alignment"] = DEFAULT_DASHBOARD_LAYOUT["menu_button_alignment"]
     layout["item_order"] = ",".join(sanitize_layout_item_order(layout.get("item_order")))
     layout["item_properties"] = sanitize_layout_item_properties(layout.get("item_properties"))
     return layout
@@ -11681,6 +11692,9 @@ def update_dashboard_layout(form):
     density = str(form.get("density") or "").strip()
     if density in {"comfortable", "compact", "spacious"}:
         layout["density"] = density
+    menu_button_alignment = str(form.get("menu_button_alignment") or "").strip()
+    if menu_button_alignment in {"page_left", "sidebar_edge", "viewport_left"}:
+        layout["menu_button_alignment"] = menu_button_alignment
     layout["item_order"] = ",".join(sanitize_layout_item_order(form.get("item_order")))
     layout["item_properties"] = sanitize_layout_item_properties(form.get("item_properties"))
     config_data["dashboard_layout"] = layout
@@ -12236,7 +12250,7 @@ body.sdac-has-sidebar .section, body.sdac-has-sidebar table, body.sdac-has-sideb
     appearance: none !important;
     position: fixed !important;
     top: 14px !important;
-    left: max(14px, calc(var(--sdac-sidebar-width) - 74px)) !important;
+    left: calc(var(--sdac-sidebar-width) + 20px) !important;
     z-index: 1002 !important;
     border: 1px solid var(--sdac-border) !important;
     border-radius: 8px !important;
@@ -12254,8 +12268,10 @@ body.sdac-has-sidebar .section, body.sdac-has-sidebar table, body.sdac-has-sideb
     text-align: center !important;
     width: auto !important;
     max-width: calc(100vw - 24px) !important;
-    transition: left .18s ease;
+    transition: left .18s ease, transform .18s ease;
 }
+body.sdac-menu-sidebar-edge .sdac-sidebar-toggle { left: max(14px, calc(var(--sdac-sidebar-width) - 74px)) !important; }
+body.sdac-menu-viewport-left .sdac-sidebar-toggle { left: 14px !important; }
 .sdac-sidebar {
     position: fixed;
     inset: 0 auto 0 0;
@@ -12306,7 +12322,9 @@ body.sdac-has-sidebar > nav, body.sdac-has-sidebar main > nav:not(.pagination), 
     .sdac-sidebar-toggle { left: 12px !important; top: 12px; }
     .sdac-sidebar { border-radius: 0 14px 14px 0; box-shadow: 18px 0 40px rgba(2, 6, 23, 0.48); transform: translateX(-105%); }
     body.sdac-sidebar-open .sdac-sidebar { transform: translateX(0); }
-    body.sdac-sidebar-open .sdac-sidebar-toggle { left: min(max(14px, calc(var(--sdac-sidebar-width) - 74px)), calc(100vw - 86px)) !important; }
+    body.sdac-sidebar-open .sdac-sidebar-toggle { left: min(calc(var(--sdac-sidebar-width) + 12px), calc(100vw - 86px)) !important; }
+    body.sdac-sidebar-open.sdac-menu-sidebar-edge .sdac-sidebar-toggle { left: min(max(14px, calc(var(--sdac-sidebar-width) - 74px)), calc(100vw - 86px)) !important; }
+    body.sdac-sidebar-open.sdac-menu-viewport-left .sdac-sidebar-toggle { left: 12px !important; }
     body.sdac-has-sidebar main { padding-top: 46px !important; }
 }
 </style>
@@ -12333,7 +12351,9 @@ def inject_admin_sidebar(response):
     if should_render_admin_sidebar() and 'class="sdac-sidebar"' not in page_html:
         if "sdac-sidebar-style" not in page_html:
             page_html = page_html.replace("</head>", SIDEBAR_STYLE + "\n</head>", 1)
-        page_html = page_html.replace('class="sdac-theme"', 'class="sdac-theme sdac-has-sidebar"', 1)
+        menu_alignment = dashboard_layout().get("menu_button_alignment", "page_left")
+        menu_class = f"sdac-menu-{menu_alignment.replace('_', '-')}"
+        page_html = page_html.replace('class="sdac-theme"', f'class="sdac-theme sdac-has-sidebar {menu_class}"', 1)
         page_html = re.sub(
             r'(<body[^>]*>)',
             r'\1' + admin_sidebar_html(),
@@ -16777,6 +16797,11 @@ def admin_layout():
         item_properties_json=html.escape(json.dumps(layout.get("item_properties") or {}), quote=True),
         layout=layout,
         layout_items=layout_items_for_editor(layout),
+        menu_button_alignments=[
+            ("page_left", "Page Left"),
+            ("sidebar_edge", "Sidebar Edge"),
+            ("viewport_left", "Viewport Left"),
+        ],
         notice=notice,
     )
 
