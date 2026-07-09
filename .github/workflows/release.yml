@@ -81,8 +81,8 @@ jobs:
           client = app.test_client()
           with client.session_transaction() as session:
               session["sdac_admin"] = True
-              session["sdac_admin_role"] = "owner"
-              session["sdac_admin_username"] = "ci-owner"
+              session["sdac_admin_role"] = "bot_owner"
+              session["sdac_admin_username"] = "baytae"
           for path in (
               "/health",
               "/admin/settings?key=ImTheBestAdmin",
@@ -206,13 +206,16 @@ jobs:
             TITLE="$REF_NAME"
           fi
 
-          NOTES_FILE="RELEASE.md"
-          if [[ ! -f "$NOTES_FILE" ]]; then
-            NOTES_FILE="$(mktemp)"
+          NOTES_FILE="$(mktemp)"
+          if [[ -f RELEASE.md ]]; then
+            awk 'BEGIN { first=1 } /^---$/ { exit } { print }' RELEASE.md > "$NOTES_FILE"
+          fi
+          if [[ ! -s "$NOTES_FILE" ]]; then
             echo "Automated SDAC Bot release." > "$NOTES_FILE"
           fi
 
           if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes-file "$NOTES_FILE"
             gh release upload "$TAG" artifacts/* --clobber
           else
             gh release create "$TAG" artifacts/* --title "$TITLE" --notes-file "$NOTES_FILE"

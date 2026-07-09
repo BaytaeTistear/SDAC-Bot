@@ -1,3 +1,25 @@
+# SDAC Bot Version 3.1.8 Experimental
+
+Date: 2026-07-09
+
+Update scope: Release pipeline update
+
+Version 3.1.8 is an experimental release sync fix.
+
+Included:
+
+- fixed release workflow smoke tests so scoped dashboard access is tested with a bot-owner session
+- changed GitHub release publishing to use only the newest RELEASE.md section instead of the entire release history
+- made existing GitHub release objects update their title and notes when assets are refreshed
+- republished latest-experimental through the normal release workflow so updater resolution and installer assets stay in sync
+
+Release channel:
+
+- `version-3.1.8` is this experimental release pipeline update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.7 Experimental
 
 Date: 2026-07-09
