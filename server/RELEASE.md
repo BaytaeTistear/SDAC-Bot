@@ -1,4 +1,28 @@
-# SDAC Bot Version 3.1.10 Experimental
+# SDAC Bot Version 3.1.11 Experimental
+
+Date: 2026-07-09
+
+Update scope: Admin review and setup fixes
+
+Version 3.1.11 is an experimental admin-side reliability and moderation workflow update.
+
+Included:
+
+- added more premade removal reasons for faster moderator actions
+- fixed the Review Queue so it includes both pending and needs-review submissions
+- kept quarantined submissions out of public viewing by keeping them in needs-review until a moderator posts them again
+- fixed the Server Owner Setup Checklist 500 error
+- fixed the Moderator Metrics 500 error
+- made the Theme color changer show the selected swatches and current hex values clearly
+- mirrored the dashboard fixes into the server deployment copy
+
+Release channel:
+
+- `version-3.1.11` is this experimental admin review and setup fix update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---# SDAC Bot Version 3.1.10 Experimental
 
 Date: 2026-07-09
 

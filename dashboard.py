@@ -342,6 +342,14 @@ MODERATION_REMOVAL_REASONS = [
     ("nsfw", "NSFW or sensitive"),
     ("spam", "Spam"),
     ("bad_file", "Bad file"),
+    ("low_quality", "Low quality"),
+    ("off_topic", "Off topic"),
+    ("repost", "Repost"),
+    ("spoiler", "Spoiler"),
+    ("privacy", "Privacy concern"),
+    ("broken_media", "Broken media"),
+    ("missing_context", "Missing context"),
+    ("copyright", "Copyright concern"),
     ("policy", "Server policy"),
     ("custom", "Custom"),
 ]
@@ -5282,6 +5290,12 @@ THEME_HTML = """
         .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
         label { display: block; font-weight: bold; margin: 10px 0 6px; }
         input, button { border: 1px solid #30333b; border-radius: 7px; box-sizing: border-box; font-size: 15px; padding: 10px; width: 100%; }
+        input[type="color"] { appearance: auto; background: transparent; height: 46px; padding: 3px; }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 5px; }
+        .color-field { background: #0b1220; border: 1px solid #30333b; border-radius: 8px; padding: 12px; }
+        .color-field label { align-items: center; display: flex; justify-content: space-between; margin-top: 0; }
+        .color-field code { color: #cbd5e1; font-size: 12px; font-weight: 700; }
         input[type="file"] { background: #2b3038; color: #e5e7eb; }
         input[type="file"]::file-selector-button { background: #3b424c; border: 0; border-radius: 6px; color: #f8fafc; cursor: pointer; font-weight: bold; margin-right: 10px; padding: 8px 10px; }
         button { background: #4f46e5; color: white; cursor: pointer; font-weight: bold; margin-top: 16px; }
@@ -5300,7 +5314,7 @@ THEME_HTML = """
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="grid">
                 {% for key, label in color_fields %}
-                    <div><label for="{{ key }}">{{ label }}</label><input id="{{ key }}" name="{{ key }}" type="color" value="{{ theme[key] }}"></div>
+                    <div class="color-field"><label for="{{ key }}">{{ label }} <code>{{ theme[key] }}</code></label><input id="{{ key }}" name="{{ key }}" type="color" value="{{ theme[key] }}"></div>
                 {% endfor %}
             </div>
             <label for="background_image">Background Image URL</label>
@@ -6145,14 +6159,15 @@ MODERATION_HTML = """
     </section>
 
     <section class="panel">
-        <h2>Pending Queue</h2>
+        <h2>Review Queue</h2>
         <table>
-            <thead><tr><th>ID</th><th>Server</th><th>User</th><th>Category</th><th>Media</th><th>Text</th><th>Created</th><th>Actions</th></tr></thead>
+            <thead><tr><th>ID</th><th>Server</th><th>Status</th><th>User</th><th>Category</th><th>Media</th><th>Text</th><th>Created</th><th>Actions</th></tr></thead>
             <tbody>
                 {% for post in pending_posts %}
                     <tr>
                         <td><a href="{{ url_for('index', key=admin_key, status='pending', q=post.id) }}">{{ post.id }}</a></td>
                         <td>{{ guild_names.get(post.guild_id, post.guild_id) }}</td>
+                        <td><code>{{ post.status }}</code></td>
                         <td>{{ post.username }}</td>
                         <td>{{ post.category }}</td>
                         <td>
@@ -6192,7 +6207,7 @@ MODERATION_HTML = """
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="8" class="muted">No pending submissions.</td></tr>
+                    <tr><td colspan="9" class="muted">No submissions need review.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -17074,7 +17089,7 @@ def admin_setup_checklist():
                         <td>{{ row.health_score }}%</td>
                         <td><span class="{{ 'ok' if row.complete_count == row.total_count else 'warn' }}">{{ row.complete_count }}/{{ row.total_count }}</span></td>
                         <td>
-                            {% set missing = row.items | selectattr('ok', 'equalto', false) | list %}
+                            {% set missing = row["items"] | selectattr('ok', 'equalto', false) | list %}
                             {% if missing %}
                                 {% for item in missing[:4] %}<div>{{ item.label }}: <code>{{ item.fix }}</code></div>{% endfor %}
                             {% else %}
@@ -17562,7 +17577,7 @@ def admin_moderation():
         pending_rows = connection.execute(f"""
             SELECT *
             FROM submissions
-            WHERE status = 'pending'
+            WHERE status IN ('pending', 'needs_review')
               AND {scope_sql}
             ORDER BY created_at DESC, id DESC
             LIMIT 50
@@ -18386,8 +18401,7 @@ def admin_overview():
     if login_response:
         return login_response
     config_data = load_config()
-    mode_required_role = STAFF_HOME_MODES[mode_key]["required_role"]
-    options = guild_options(config_data, minimum_role=mode_required_role)
+    options = guild_options(config_data, minimum_role="moderator")
     guild_names = guild_name_map(config_data)
     visible_guild_ids = {option["id"] for option in options}
     selected_server_id = selected_guild_id(options)
