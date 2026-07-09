@@ -336,6 +336,16 @@ STAFF_HOME_MODES = {
     },
 }
 
+MODERATION_REMOVAL_REASONS = [
+    ("duplicate", "Duplicate"),
+    ("wrong_category", "Wrong category"),
+    ("nsfw", "NSFW or sensitive"),
+    ("spam", "Spam"),
+    ("bad_file", "Bad file"),
+    ("policy", "Server policy"),
+    ("custom", "Custom"),
+]
+
 LOCKOUT_SCOPE_LABELS = {
     "games": "Games only",
     "submissions": "Submissions only",
@@ -1003,6 +1013,10 @@ HTML = """
                                       ) }}"
                                       onsubmit="return confirm('Remove this submission from the website and Discord?');">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <select name="reason_preset" aria-label="Removal reason">
+                                        {% for value, label in removal_reasons %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                                    </select>
+                                    <input name="reason" placeholder="Optional note" aria-label="Removal note">
                                     <button class="delete-button" type="submit">Remove</button>
                                 </form>
                                 <form method="post"
@@ -5091,6 +5105,18 @@ STAFF_HOME_HTML = """
         <p class="muted">Viewing: {{ selected_guild_name }}</p>
     </section>
 
+    {% if release_banner %}
+    <section class="panel">
+        <h2>Release Banner</h2>
+        <div class="grid">
+            <div class="card"><strong>{{ release_banner.installed }}</strong><span>Running Version</span></div>
+            <div class="card"><strong>{{ release_banner.experimental }}</strong><span>Latest Experimental</span></div>
+            <div class="card"><strong>{{ release_banner.official }}</strong><span>Latest Official</span></div>
+        </div>
+        <p class="muted">{{ release_banner.detail }}</p>
+    </section>
+    {% endif %}
+
     <section class="panel">
         <h2>At A Glance</h2>
         <div class="grid">
@@ -5127,6 +5153,60 @@ STAFF_HOME_HTML = """
             {% endfor %}
         </div>
     </section>
+</main>
+</body>
+</html>
+"""
+
+ADMIN_SIMPLE_TOOLS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #0f172a; color: #f8fafc; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1180px); }
+        a { color: #7dd3fc; }
+        nav, .toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+        .panel { background: #111827; border: 1px solid #30333b; border-radius: 8px; margin: 16px 0; padding: 16px; }
+        .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+        .card { background: #0b1220; border: 1px solid #30333b; border-radius: 8px; padding: 14px; }
+        .card strong { display: block; font-size: 1.4rem; }
+        .muted { color: #94a3b8; }
+        .ok { color: #63c174; font-weight: bold; }
+        .warn { color: #fbbf24; font-weight: bold; }
+        .bad { color: #fb7185; font-weight: bold; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        input, select, textarea, button { background: #1f2937; border: 1px solid #30333b; border-radius: 7px; box-sizing: border-box; color: #f8fafc; font-size: 15px; padding: 9px 10px; }
+        textarea { min-height: 76px; width: 100%; }
+        button, .button { background: #4f46e5; color: white; cursor: pointer; display: inline-block; font-weight: bold; text-decoration: none; }
+        .button.secondary, button.secondary { background: #1f2937; }
+        .button.danger, button.danger { background: #be123c; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 14px; padding: 12px; }
+        code { color: #cdd7ff; }
+        @media (max-width: 760px) { body { padding: 16px; } input, select, textarea, button, .button { width: 100%; } }
+    </style>
+</head>
+<body>
+<main>
+    <h1>{{ title }}</h1>
+    <p class="muted">{{ subtitle }}</p>
+    <nav>
+        <a href="{{ url_for('admin_staff_home', key=admin_key) }}">Staff Home</a>
+        <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
+        <a href="{{ url_for('admin_setup_checklist', key=admin_key) }}">Setup Checklist</a>
+        <a href="{{ url_for('admin_category_manager', key=admin_key) }}">Categories</a>
+        <a href="{{ url_for('admin_permission_health', key=admin_key) }}">Permissions</a>
+        <a href="{{ url_for('admin_global_control', key=admin_key) }}">Global Control</a>
+        <a href="{{ url_for('admin_config_history', key=admin_key) }}">Config History</a>
+        <a href="{{ url_for('audit_log', key=admin_key) }}">Audit</a>
+    </nav>
+    {% if notice %}<div class="notice {{ 'bad' if error else '' }}">{{ notice }}</div>{% endif %}
+    {{ body | safe }}
 </main>
 </body>
 </html>
@@ -6011,7 +6091,7 @@ MODERATION_HTML = """
     <section class="panel">
         <h2>Pending Queue</h2>
         <table>
-            <thead><tr><th>ID</th><th>Server</th><th>User</th><th>Category</th><th>Media</th><th>Text</th><th>Created</th></tr></thead>
+            <thead><tr><th>ID</th><th>Server</th><th>User</th><th>Category</th><th>Media</th><th>Text</th><th>Created</th><th>Actions</th></tr></thead>
             <tbody>
                 {% for post in pending_posts %}
                     <tr>
@@ -6036,9 +6116,26 @@ MODERATION_HTML = """
                         </td>
                         <td>{{ post.message_text or "" }}</td>
                         <td>{{ post.created_at or post.submitted_at }}</td>
+                        <td>
+                            <form method="post" action="{{ url_for('set_submission_status', submission_id=post.id, key=admin_key, status='pending') }}">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="new_status" value="posted">
+                                <button type="submit">Post</button>
+                            </form>
+                            <form method="post" action="{{ url_for('delete_submission', submission_id=post.id, key=admin_key, status='pending') }}">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <select name="reason_preset">
+                                    {% for value, label in removal_reasons %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                                </select>
+                                <input name="reason" placeholder="Optional note">
+                                <button type="submit">Remove</button>
+                            </form>
+                        </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="7" class="muted">No pending submissions.</td></tr>
+                    <tr><td colspan="8" class="muted">No pending submissions.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -10818,7 +10915,7 @@ def resolve_quarantine_item(item_id, action, actor_id, actor_name):
     return True, details
 
 
-def remove_submission_from_dashboard(submission_id, actor_id, actor_name):
+def remove_submission_from_dashboard(submission_id, actor_id, actor_name, reason="Removed from dashboard"):
     with closing(connect_db()) as connection:
         row = connection.execute(
             "SELECT * FROM submissions WHERE id = ?",
@@ -12078,6 +12175,7 @@ def admin_sidebar_sections():
             "required_role": "moderator",
             "links": [
                 ("Review Queue", "admin_moderation", {}),
+                ("Removal Reasons", "admin_moderation", {}),
                 ("Users", "admin_users", {}),
                 ("Polls", "admin_polls", {}),
                 ("Audit", "admin_audit", {}),
@@ -12089,6 +12187,9 @@ def admin_sidebar_sections():
             "label": "Server Owner",
             "required_role": "owner",
             "links": [
+                ("Setup Checklist", "admin_setup_checklist", {}),
+                ("Categories", "admin_category_manager", {}),
+                ("Permissions", "admin_permission_health", {}),
                 ("Settings", "admin_settings", {}),
                 ("Server Health", "admin_server_health_cards", {}),
                 ("Media", "admin_media", {}),
@@ -12105,6 +12206,9 @@ def admin_sidebar_sections():
             "label": "Bot Owner",
             "required_role": "bot_owner",
             "links": [
+                ("Global Control", "admin_global_control", {}),
+                ("Maintenance Mode", "admin_maintenance_mode", {}),
+                ("Config History", "admin_config_history", {}),
                 ("Maintenance", "admin_maintenance", {}),
                 ("Optimization", "admin_optimization", {}),
                 ("Releases", "admin_releases", {}),
@@ -16800,6 +16904,401 @@ def admin_production_health():
     )
 
 
+@app.route("/admin/setup-checklist")
+def admin_setup_checklist():
+    login_response = require_admin_login("owner")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    options = guild_options(config_data)
+    selected = admin_selected_guild(options)
+    body = """
+    <form class="toolbar" method="get">
+        <input type="hidden" name="key" value="{{ admin_key }}">
+        <select name="guild_id">
+            {% for guild in guild_options %}<option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}
+        </select>
+        <button type="submit">Open</button>
+    </form>
+    <section class="panel">
+        <table>
+            <thead><tr><th>Server</th><th>Score</th><th>Required</th><th>Next Steps</th></tr></thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td><strong>{{ row.guild_name }}</strong><br><code>{{ row.id }}</code></td>
+                        <td>{{ row.health_score }}%</td>
+                        <td><span class="{{ 'ok' if row.complete_count == row.total_count else 'warn' }}">{{ row.complete_count }}/{{ row.total_count }}</span></td>
+                        <td>
+                            {% set missing = row.items | selectattr('ok', 'equalto', false) | list %}
+                            {% if missing %}
+                                {% for item in missing[:4] %}<div>{{ item.label }}: <code>{{ item.fix }}</code></div>{% endfor %}
+                            {% else %}
+                                <span class="ok">Ready</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4" class="muted">No server setup has been saved yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    """
+    return admin_tool_shell(
+        "Setup Checklist",
+        "A single readiness view for server owners.",
+        body,
+        guild_options=options,
+        rows=setup_checklist_rows(config_data, selected),
+        selected_guild_id=selected,
+    )
+
+
+@app.route("/admin/categories", methods=["GET", "POST"])
+def admin_category_manager():
+    login_response = require_admin_login("owner")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    options = guild_options(config_data)
+    allowed_ids = {option["id"] for option in options}
+    selected = admin_selected_guild(options)
+    if request.method == "POST":
+        require_csrf_token()
+        guild_id = request.form.get("guild_id", "").strip()
+        if guild_id not in allowed_ids:
+            abort(403)
+        action = request.form.get("action", "").strip()
+        guild_config = (config_data.get("guilds") or {}).get(guild_id)
+        if not guild_config:
+            abort(404)
+        categories = guild_config.setdefault("categories", {})
+        actor_id, actor_name = web_actor()
+        try:
+            if action == "save_category":
+                category = clean_category_name(request.form.get("category"))
+                channel_id = nullable_channel_id(request.form.get("channel_id"))
+                if not category or not channel_id:
+                    raise ValueError("Category and channel ID are required.")
+                categories[category] = channel_id
+                message = f"Category {category} saved."
+            elif action == "rename_category":
+                old_category = clean_category_name(request.form.get("old_category"))
+                new_category = clean_category_name(request.form.get("new_category"))
+                if not old_category or old_category not in categories:
+                    raise ValueError("Choose an existing category to rename.")
+                if not new_category:
+                    raise ValueError("New category name is required.")
+                categories[new_category] = categories.pop(old_category)
+                message = f"Category {old_category} renamed to {new_category}."
+            elif action == "delete_category":
+                category = clean_category_name(request.form.get("category"))
+                if not category:
+                    raise ValueError("Category is required.")
+                categories.pop(category, None)
+                message = f"Category {category} deleted."
+            else:
+                abort(400)
+        except ValueError as exc:
+            return redirect(url_for("admin_category_manager", key=ADMIN_KEY, guild_id=guild_id, notice=str(exc), error=1))
+        save_config(config_data)
+        with database() as connection:
+            add_admin_audit_log(connection, guild_id, f"dashboard_{action}", actor_id, actor_name, "guild", guild_id, message)
+        clear_runtime_caches()
+        return redirect(url_for("admin_category_manager", key=ADMIN_KEY, guild_id=guild_id, notice=message))
+    body = """
+    <form class="toolbar" method="get">
+        <input type="hidden" name="key" value="{{ admin_key }}">
+        <select name="guild_id">
+            {% for guild in guild_options %}<option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}
+        </select>
+        <button type="submit">Open</button>
+    </form>
+    {% for server in rows %}
+        {% if server.id == selected_guild_id %}
+        <section class="panel">
+            <h2>{{ server.name }}</h2>
+            <form class="toolbar" method="post">
+                <input type="hidden" name="key" value="{{ admin_key }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="guild_id" value="{{ server.id }}">
+                <input type="hidden" name="action" value="save_category">
+                <input name="category" placeholder="category">
+                <input name="channel_id" placeholder="Discord channel ID">
+                <button type="submit">Save Category</button>
+            </form>
+            <table>
+                <thead><tr><th>Category</th><th>Channel</th><th>Rename</th><th>Delete</th></tr></thead>
+                <tbody>
+                    {% for category, channel_id in server.categories %}
+                        <tr>
+                            <td><code>{{ category }}</code></td>
+                            <td><code>{{ channel_id }}</code></td>
+                            <td>
+                                <form class="toolbar" method="post">
+                                    <input type="hidden" name="key" value="{{ admin_key }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="guild_id" value="{{ server.id }}">
+                                    <input type="hidden" name="action" value="rename_category">
+                                    <input type="hidden" name="old_category" value="{{ category }}">
+                                    <input name="new_category" placeholder="new name">
+                                    <button class="secondary" type="submit">Rename</button>
+                                </form>
+                            </td>
+                            <td>
+                                <form method="post">
+                                    <input type="hidden" name="key" value="{{ admin_key }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="guild_id" value="{{ server.id }}">
+                                    <input type="hidden" name="action" value="delete_category">
+                                    <input type="hidden" name="category" value="{{ category }}">
+                                    <button class="danger" type="submit">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="4" class="muted">No categories set.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+        {% endif %}
+    {% endfor %}
+    """
+    return admin_tool_shell(
+        "Category Manager",
+        "Add, rename, and delete repost categories from one focused page.",
+        body,
+        guild_options=options,
+        rows=category_manager_rows(config_data, allowed_ids),
+        selected_guild_id=selected,
+    )
+
+
+@app.route("/admin/permission-health")
+def admin_permission_health():
+    login_response = require_admin_login("owner")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    options = guild_options(config_data)
+    selected = request.args.get("guild_id", "all").strip()
+    if selected == "all":
+        selected = ""
+    elif selected not in {option["id"] for option in options}:
+        selected = admin_selected_guild(options)
+    body = """
+    <form class="toolbar" method="get">
+        <input type="hidden" name="key" value="{{ admin_key }}">
+        <select name="guild_id">
+            <option value="all" {% if not selected_guild_id %}selected{% endif %}>All allowed servers</option>
+            {% for guild in guild_options %}<option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}
+        </select>
+        <button type="submit">Check</button>
+    </form>
+    <section class="panel">
+        <p class="muted">This page checks SDAC channel configuration. Live Discord permission checks still happen through the bot diagnostics.</p>
+        <table>
+            <thead><tr><th>Server</th><th>Item</th><th>State</th><th>Channel</th><th>Why It Matters</th></tr></thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td>{{ row.guild_name }}</td>
+                        <td>{{ row.label }}</td>
+                        <td><span class="{{ row.class }}">{{ row.state }}</span></td>
+                        <td><code>{{ row.channel_id or '-' }}</code></td>
+                        <td>{{ row.detail }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="muted">No configured servers are visible to this account.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    """
+    return admin_tool_shell(
+        "Permission Health",
+        "A quick channel-readiness view before Discord actions fail.",
+        body,
+        guild_options=options,
+        rows=permission_health_rows(config_data, {option["id"] for option in options}, selected),
+        selected_guild_id=selected,
+    )
+
+
+@app.route("/admin/global-control")
+def admin_global_control():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    allowed_ids = current_admin_allowed_guild_ids(config_data)
+    release_banner = release_banner_context()
+    body = """
+    <section class="panel">
+        <div class="grid">
+            <div class="card"><strong>{{ release.installed }}</strong><span>Running</span></div>
+            <div class="card"><strong>{{ release.experimental }}</strong><span>Experimental</span></div>
+            <div class="card"><strong>{{ release.official }}</strong><span>Official</span></div>
+        </div>
+    </section>
+    <section class="panel">
+        <table>
+            <thead><tr><th>Server</th><th>Submissions</th><th>Pending</th><th>Reports</th><th>Issues</th><th>Actions</th></tr></thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td><strong>{{ row.name }}</strong><br><code>{{ row.id }}</code></td>
+                        <td>{{ row.total }} total<br>{{ row.posted }} posted</td>
+                        <td>{{ row.pending }}</td>
+                        <td>{{ row.reports }}</td>
+                        <td>{% if row.issues %}{{ row.issues | join(', ') }}{% else %}<span class="ok">None</span>{% endif %}</td>
+                        <td><a href="{{ url_for('admin_staff_home', key=admin_key, guild_id=row.id) }}">Open</a></td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="6" class="muted">No servers visible.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    """
+    return admin_tool_shell(
+        "Global Control Room",
+        "Bot-owner view of all servers and the things most likely to need attention.",
+        body,
+        release=release_banner,
+        rows=global_control_rows(config_data, allowed_ids),
+    )
+
+
+@app.route("/admin/config-history")
+def admin_config_history():
+    login_response = require_admin_login("owner")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    options = guild_options(config_data)
+    selected = request.args.get("guild_id", "all").strip()
+    if selected == "all":
+        selected = ""
+    elif selected not in {option["id"] for option in options}:
+        selected = admin_selected_guild(options)
+    body = """
+    <form class="toolbar" method="get">
+        <input type="hidden" name="key" value="{{ admin_key }}">
+        <select name="guild_id">
+            <option value="all" {% if not selected_guild_id %}selected{% endif %}>All allowed servers</option>
+            {% for guild in guild_options %}<option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}
+        </select>
+        <button type="submit">Filter</button>
+    </form>
+    <section class="panel">
+        <table>
+            <thead><tr><th>When</th><th>Server</th><th>Action</th><th>Actor</th><th>Details</th></tr></thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td>{{ row.created_at }}</td>
+                        <td>{{ guild_names.get(row.guild_id, row.guild_id) }}</td>
+                        <td><code>{{ row.action }}</code></td>
+                        <td>{{ row.actor_username }}</td>
+                        <td>{{ row.details }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="muted">No config changes were found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    """
+    allowed_ids = {option["id"] for option in options}
+    return admin_tool_shell(
+        "Config History",
+        "Recent setup, category, maintenance, and owner-control changes.",
+        body,
+        guild_names=guild_name_map(config_data),
+        guild_options=options,
+        rows=config_history_rows(allowed_ids, selected),
+        selected_guild_id=selected,
+    )
+
+
+@app.route("/admin/maintenance-mode", methods=["GET", "POST"])
+def admin_maintenance_mode():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    options = guild_options(config_data)
+    allowed_ids = {option["id"] for option in options}
+    if request.method == "POST":
+        require_csrf_token()
+        guild_id = request.form.get("guild_id", "").strip()
+        if guild_id not in allowed_ids:
+            abort(403)
+        paused = request.form.get("paused") == "1"
+        reason = request.form.get("reason", "").strip()[:300]
+        guild_config = (config_data.get("guilds") or {}).get(guild_id)
+        if not guild_config:
+            abort(404)
+        guild_config["emergency_paused"] = paused
+        guild_config["emergency_reason"] = reason if paused else ""
+        save_config(config_data)
+        actor_id, actor_name = web_actor()
+        details = f"Maintenance mode {'enabled' if paused else 'disabled'}. {reason}".strip()
+        with database() as connection:
+            add_admin_audit_log(connection, guild_id, "maintenance_mode", actor_id, actor_name, "guild", guild_id, details)
+        clear_runtime_caches()
+        return redirect(url_for("admin_maintenance_mode", key=ADMIN_KEY, notice=details))
+    body = """
+    <section class="panel">
+        <table>
+            <thead><tr><th>Server</th><th>Status</th><th>Reason</th><th>Action</th></tr></thead>
+            <tbody>
+                {% for guild in guilds %}
+                    <tr>
+                        <td><strong>{{ guild.name }}</strong><br><code>{{ guild.id }}</code></td>
+                        <td><span class="{{ 'warn' if guild.paused else 'ok' }}">{{ 'Paused' if guild.paused else 'Open' }}</span></td>
+                        <td>{{ guild.reason or '-' }}</td>
+                        <td>
+                            <form class="toolbar" method="post">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="guild_id" value="{{ guild.id }}">
+                                <select name="paused">
+                                    <option value="0" {% if not guild.paused %}selected{% endif %}>Open submissions</option>
+                                    <option value="1" {% if guild.paused %}selected{% endif %}>Pause submissions</option>
+                                </select>
+                                <input name="reason" value="{{ guild.reason }}" placeholder="Reason shown to staff">
+                                <button type="submit">Save</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4" class="muted">No servers visible.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    """
+    guilds = []
+    for option in options:
+        guild_config = (config_data.get("guilds") or {}).get(option["id"], {})
+        guilds.append({
+            "id": option["id"],
+            "name": option["name"],
+            "paused": bool(guild_config.get("emergency_paused")),
+            "reason": guild_config.get("emergency_reason") or "",
+        })
+    return admin_tool_shell(
+        "Maintenance Mode",
+        "Pause or resume submissions without digging through full settings.",
+        body,
+        guilds=guilds,
+    )
+
+
 @app.route("/admin/moderation", methods=["GET", "POST"])
 def admin_moderation():
     login_response = require_admin_login()
@@ -17386,6 +17885,7 @@ def staff_home_context(mode_key, connection, config_data, selected_server_id, vi
             {"label": "Review Moderation Queue", "detail": "Pending submissions, public reports, and recent decisions.", "url": staff_home_link("admin_moderation", selected_server_id), "style": ""},
             {"label": "Open Public Submissions", "detail": "Review posted items in the selected server scope.", "url": staff_home_link("index", selected_server_id), "style": "secondary"},
             {"label": "Check Audit History", "detail": "Confirm who took an action and why.", "url": staff_home_link("admin_audit", selected_server_id), "style": "secondary"},
+            {"label": "One-Click Removal Reasons", "detail": "Use preset removal reasons from the queue or gallery so audit rows stay consistent.", "url": staff_home_link("admin_moderation", selected_server_id), "style": "secondary"},
             {"label": "Manage Polls", "detail": "Create, close, or review website-managed polls.", "url": staff_home_link("admin_polls", selected_server_id), "style": "secondary"},
         ]
     elif mode_key == "owner":
@@ -17401,7 +17901,10 @@ def staff_home_context(mode_key, connection, config_data, selected_server_id, vi
         ]
         status_items = staff_home_setup_status(config_data, selected_server_id, visible_guild_ids)
         actions = [
-            {"label": "Setup And Settings", "detail": "Channels, categories, features, limits, moderation, backups, and server import/export.", "url": staff_home_link("admin_settings", selected_server_id), "style": ""},
+            {"label": "Setup Checklist", "detail": "A focused ready/not-ready list for channels, categories, permissions, backups, and tests.", "url": staff_home_link("admin_setup_checklist", selected_server_id), "style": ""},
+            {"label": "Category Manager", "detail": "Add, rename, delete, and audit repost categories without digging through full settings.", "url": staff_home_link("admin_category_manager", selected_server_id), "style": "secondary"},
+            {"label": "Permission Health", "detail": "See which configured channels still need attention before Discord actions fail.", "url": staff_home_link("admin_permission_health", selected_server_id), "style": "secondary"},
+            {"label": "Setup And Settings", "detail": "Channels, features, limits, moderation, backups, and server import/export.", "url": staff_home_link("admin_settings", selected_server_id), "style": "secondary"},
             {"label": "Server Health Cards", "detail": "Quick per-server setup, storage, backup, game, library, and achievement status.", "url": staff_home_link("admin_server_health_cards", selected_server_id), "style": "secondary"},
             {"label": "Theme And Layout", "detail": "Brand colors, background image, sidebar width, density, and menu placement.", "url": staff_home_link("admin_theme", selected_server_id), "style": "secondary"},
             {"label": "Media And Storage", "detail": "Missing media, oversized files, quarantine, thumbnails, and lifecycle controls.", "url": staff_home_link("admin_media", selected_server_id), "style": "secondary"},
@@ -17444,7 +17947,10 @@ def staff_home_context(mode_key, connection, config_data, selected_server_id, vi
             },
         ]
         actions = [
-            {"label": "Maintenance", "detail": "Backups, restore tests, checksums, rollback queue, storage forecast, and health.", "url": staff_home_link("admin_maintenance", selected_server_id), "style": ""},
+            {"label": "Global Control Room", "detail": "All servers, broken configs, submission volume, reports, and maintenance state in one table.", "url": staff_home_link("admin_global_control", selected_server_id), "style": ""},
+            {"label": "Maintenance Mode", "detail": "Pause or resume submissions per server with an owner-facing reason.", "url": staff_home_link("admin_maintenance_mode", selected_server_id), "style": "secondary"},
+            {"label": "Config History", "detail": "Recent setup, category, maintenance, and owner-control changes.", "url": staff_home_link("admin_config_history", selected_server_id), "style": "secondary"},
+            {"label": "Maintenance", "detail": "Backups, restore tests, checksums, rollback queue, storage forecast, and health.", "url": staff_home_link("admin_maintenance", selected_server_id), "style": "secondary"},
             {"label": "Releases", "detail": "Installed, official, and experimental release status plus notification testing.", "url": staff_home_link("admin_releases", selected_server_id), "style": "secondary"},
             {"label": "Optimization", "detail": "Performance presets, cache metrics, database and media work queues.", "url": staff_home_link("admin_optimization", selected_server_id), "style": "secondary"},
             {"label": "Users And Access", "detail": "Global users, Bot Owner controls, per-server roles, bans, and lockouts.", "url": staff_home_link("admin_users", selected_server_id), "style": "secondary"},
@@ -17456,7 +17962,174 @@ def staff_home_context(mode_key, connection, config_data, selected_server_id, vi
         "cards": cards,
         "status_items": status_items,
         "actions": actions,
+        "release_banner": release_banner_context() if has_admin_role("bot_owner") else None,
     }
+
+def admin_tool_shell(title, subtitle, body_template, **context):
+    base_context = {
+        "admin_key": ADMIN_KEY,
+        "csrf_token": get_csrf_token(),
+        "error": request.args.get("error") == "1",
+        "notice": request.args.get("notice", ""),
+    }
+    base_context.update(context)
+    body = render_template_string(body_template, **base_context)
+    return render_template_string(
+        ADMIN_SIMPLE_TOOLS_HTML,
+        admin_key=ADMIN_KEY,
+        body=body,
+        error=base_context["error"],
+        notice=base_context["notice"],
+        subtitle=subtitle,
+        title=title,
+    )
+
+
+def admin_selected_guild(options):
+    valid_ids = {option["id"] for option in options}
+    requested = request.args.get("guild_id", "").strip()
+    if requested in valid_ids:
+        return requested
+    return options[0]["id"] if options else ""
+
+
+def category_manager_rows(config_data, allowed_ids):
+    rows = []
+    for guild_id, guild_config in sorted((config_data.get("guilds") or {}).items()):
+        if guild_id not in allowed_ids:
+            continue
+        categories = guild_config.get("categories") or {}
+        rows.append({
+            "id": guild_id,
+            "name": guild_config.get("guild_name") or f"Discord {guild_id}",
+            "categories": sorted(categories.items()),
+            "count": len(categories),
+        })
+    return rows
+
+
+def setup_checklist_rows(config_data, selected_guild_id=""):
+    rows = build_onboarding_rows(config_data)
+    if selected_guild_id:
+        rows = [row for row in rows if row["id"] == selected_guild_id]
+    return rows
+
+
+def permission_health_rows(config_data, allowed_ids, selected_guild_id=""):
+    rows = []
+    target_ids = {selected_guild_id} if selected_guild_id else set(allowed_ids)
+    for guild_id, guild_config in sorted((config_data.get("guilds") or {}).items()):
+        if guild_id not in target_ids:
+            continue
+        categories = guild_config.get("categories") or {}
+        channel_checks = [
+            ("Submit channel", guild_config.get("submit_channel"), "Needed for /submit routing."),
+            ("Approval channel", guild_config.get("approval_channel"), "Needed when approval mode is enabled."),
+            ("Weekly top channel", guild_config.get("daily_top_channel"), "Needed for scheduled top posts."),
+            ("Error channel", guild_config.get("error_channel"), "Needed for owner-facing error alerts."),
+        ]
+        for category, channel_id in sorted(categories.items()):
+            channel_checks.append((f"Category: {category}", channel_id, "Needed for Discord reposts."))
+        if not categories:
+            channel_checks.append(("Categories", "", "At least one category should point to a Discord channel."))
+        for label, channel_id, detail in channel_checks:
+            rows.append({
+                "guild_id": guild_id,
+                "guild_name": guild_config.get("guild_name") or f"Discord {guild_id}",
+                "label": label,
+                "channel_id": channel_id or "",
+                "state": "Configured" if channel_id else "Needs channel",
+                "class": "ok" if channel_id else "warn",
+                "detail": detail,
+            })
+    return rows
+
+
+def global_control_rows(config_data, allowed_ids):
+    rows = []
+    with closing(connect_db()) as connection:
+        for guild_id, guild_config in sorted((config_data.get("guilds") or {}).items()):
+            if guild_id not in allowed_ids:
+                continue
+            counts = connection.execute("""
+                SELECT
+                    SUM(CASE WHEN status = 'posted' THEN 1 ELSE 0 END) AS posted,
+                    SUM(CASE WHEN status IN ('pending', 'needs_review') THEN 1 ELSE 0 END) AS pending,
+                    COUNT(*) AS total
+                FROM submissions
+                WHERE guild_id = ?
+            """, (guild_id,)).fetchone()
+            open_reports = connection.execute("""
+                SELECT COUNT(*)
+                FROM submission_reports
+                WHERE guild_id = ? AND status = 'open'
+            """, (guild_id,)).fetchone()[0]
+            issues = []
+            if not guild_config.get("submit_channel"):
+                issues.append("submit channel")
+            if not (guild_config.get("categories") or {}):
+                issues.append("categories")
+            if guild_config.get("emergency_paused"):
+                issues.append("maintenance mode")
+            if guild_config.get("bot_access_disabled"):
+                issues.append("bot access disabled")
+            rows.append({
+                "id": guild_id,
+                "name": guild_config.get("guild_name") or f"Discord {guild_id}",
+                "posted": counts["posted"] or 0,
+                "pending": counts["pending"] or 0,
+                "total": counts["total"] or 0,
+                "reports": open_reports,
+                "issues": issues,
+            })
+    return rows
+
+
+def config_history_rows(allowed_ids, selected_guild_id=""):
+    scope_ids = {selected_guild_id} if selected_guild_id else set(allowed_ids)
+    scope_sql, scope_params = guild_id_filter("guild_id", scope_ids)
+    with closing(connect_db()) as connection:
+        return connection.execute(f"""
+            SELECT guild_id, action, actor_username, target_type, target_id,
+                   details, created_at
+            FROM admin_audit_log
+            WHERE {scope_sql}
+              AND (
+                    action LIKE 'dashboard_save%'
+                 OR action LIKE 'dashboard_delete%'
+                 OR action LIKE 'dashboard_rename%'
+                 OR action LIKE 'disable_bot_access%'
+                 OR action LIKE 'enable_bot_access%'
+                 OR action LIKE 'maintenance_mode%'
+              )
+            ORDER BY created_at DESC, id DESC
+            LIMIT 100
+        """, scope_params).fetchall()
+
+
+def release_banner_context():
+    status = release_status()
+    installed = status.get("installed_version") or os.getenv("SDAC_RELEASE") or "development"
+    experimental = status.get("experimental_version") or "unknown"
+    official = status.get("official_version") or "unknown"
+    return {
+        "installed": installed,
+        "experimental": experimental,
+        "official": official,
+        "detail": f"Running {installed}. Latest official {official}; latest experimental {experimental}.",
+    }
+
+
+def dashboard_remove_reason(form):
+    preset = form.get("reason_preset", "").strip()
+    custom = form.get("reason", "").strip()[:300]
+    label = dict(MODERATION_REMOVAL_REASONS).get(preset, "")
+    if preset == "custom":
+        return custom or "Custom removal"
+    if custom and label:
+        return f"{label}: {custom}"
+    return label or custom or "Removed from dashboard"
+
 
 def dashboard_submission_range(range_key):
     now = datetime.now(timezone.utc)

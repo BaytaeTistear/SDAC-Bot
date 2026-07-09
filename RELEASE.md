@@ -1,3 +1,26 @@
+# SDAC Bot Version 3.1.6 Experimental
+
+Date: 2026-07-09
+
+Update scope: Bot update
+
+Version 3.1.6 is an experimental admin simplification update.
+
+Included:
+
+- added focused admin pages for setup checklist, category management, permission health, global control, config history, and maintenance mode
+- added bot-owner release banner cards to Staff Home so running, official, and experimental versions are visible in one place
+- added preset removal reasons to moderation actions and dashboard removals so audit history is easier to scan
+- expanded Staff Home and sidebar links so moderators, server owners, and bot owners can reach the simplified workflows directly
+- mirrored the dashboard update into the server deployment copy
+
+Release channel:
+
+- `version-3.1.6` is this experimental bot update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.5 Experimental
 
 Date: 2026-07-09
