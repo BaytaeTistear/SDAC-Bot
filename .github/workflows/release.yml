@@ -213,6 +213,15 @@ jobs:
           if [[ ! -s "$NOTES_FILE" ]]; then
             echo "Automated SDAC Bot release." > "$NOTES_FILE"
           fi
+          NOTES_TITLE="$(grep -m1 '^# ' "$NOTES_FILE" | sed 's/^# //')"
+          NOTES_VERSION="$(printf '%s\n' "$NOTES_TITLE" | grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1 || true)"
+          if [[ "$TAG" == "latest-experimental" && -n "$NOTES_VERSION" ]]; then
+            TITLE="Latest Experimental ($NOTES_VERSION)"
+          elif [[ "$TAG" == "latest-official" && -n "$NOTES_VERSION" ]]; then
+            TITLE="Latest Official ($NOTES_VERSION)"
+          elif [[ -z "${INPUT_TITLE:-}" && -n "$NOTES_TITLE" ]]; then
+            TITLE="$NOTES_TITLE"
+          fi
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --title "$TITLE" --notes-file "$NOTES_FILE"

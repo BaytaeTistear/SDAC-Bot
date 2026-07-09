@@ -1,3 +1,24 @@
+# SDAC Bot Version 3.1.9 Experimental
+
+Date: 2026-07-09
+
+Update scope: Release pipeline update
+
+Version 3.1.9 is an experimental release alias title fix.
+
+Included:
+
+- kept moving alias release titles versioned so updater summaries can resolve `latest-experimental` to the current version
+- preserved latest-section-only release notes from the prior release pipeline fix
+- ensured future `latest-experimental` releases use titles like `Latest Experimental (3.1.9)` instead of only the alias name
+
+Release channel:
+
+- `version-3.1.9` is this experimental release pipeline update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.8 Experimental
 
 Date: 2026-07-09
