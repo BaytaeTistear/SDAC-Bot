@@ -1,3 +1,26 @@
+# SDAC Bot Version 3.1.7 Experimental
+
+Date: 2026-07-09
+
+Update scope: Bot update
+
+Version 3.1.7 is an experimental per-server dashboard access update.
+
+Included:
+
+- changed dashboard admin role checks to use the user's effective role for the selected server
+- limited admin/server-owner server dropdowns to servers where the user has the required role for that page
+- allowed one account to have different roles on different servers through the existing per-server access table
+- stopped blank dashboard-user server scope from granting access to every server for non-bot-owner users
+- kept Bot Owner access global while keeping admins and server owners scoped to their assigned servers
+
+Release channel:
+
+- `version-3.1.7` is this experimental bot update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.6 Experimental
 
 Date: 2026-07-09

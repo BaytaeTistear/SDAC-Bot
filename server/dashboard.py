@@ -394,6 +394,37 @@ ADMIN_ROLE_CHOICES = {
     if key in {"user", "trusted", "moderator", "admin", "owner", "bot_owner"}
 }
 
+ADMIN_ENDPOINT_GUILD_ROLE_REQUIREMENTS = {
+    "admin_moderation": "moderator",
+    "audit_log": "moderator",
+    "admin_users": "moderator",
+    "admin_polls": "moderator",
+    "admin_staff_home": "moderator",
+    "admin_overview": "moderator",
+    "index": "moderator",
+    "set_submission_status": "moderator",
+    "delete_submission": "moderator",
+    "admin_settings": "admin",
+    "admin_game_library": "admin",
+    "admin_seasons": "admin",
+    "admin_analytics": "admin",
+    "admin_monthly_report": "admin",
+    "admin_media_cleanup": "admin",
+    "admin_maintenance": "admin",
+    "admin_optimization": "admin",
+    "admin_jobs": "admin",
+    "admin_privacy": "admin",
+    "admin_onboarding": "admin",
+    "admin_setup_checklist": "owner",
+    "admin_category_manager": "owner",
+    "admin_permission_health": "owner",
+    "admin_config_history": "owner",
+    "admin_theme": "owner",
+    "admin_layout": "owner",
+    "admin_owner_portal": "owner",
+    "admin_server_health_cards": "moderator",
+}
+
 NOTIFICATION_EVENT_LABELS = {
     "system_errors": "System Errors",
     "backup_failed": "Backup Failed",
@@ -7675,24 +7706,38 @@ def guild_id_filter(column, guild_ids):
     return f"{column} IN ({placeholders})", guild_ids
 
 
-def admin_scope_filter(column, config_data=None, include_global=False):
-    if current_admin_role() == "bot_owner":
-        return "", []
+def admin_scope_filter(column, config_data=None, include_global=False, minimum_role="moderator"):
+    if is_bot_owner_username(current_admin_username()):
+        return "1 = 1", []
     filter_sql, parameters = guild_id_filter(
         column,
-        current_admin_allowed_guild_ids(config_data),
+        current_admin_allowed_guild_ids(config_data, minimum_role),
     )
     if include_global:
         filter_sql = f"({filter_sql} OR {column} IS NULL OR {column} = '')"
     return filter_sql, parameters
 
 
-def guild_options(config_data=None, public_only=False, cross_server_only=False):
+def current_endpoint_minimum_guild_role(default_role="moderator"):
+    if not has_request_context():
+        return normalize_role(default_role)
+    return normalize_role(
+        ADMIN_ENDPOINT_GUILD_ROLE_REQUIREMENTS.get(
+            request.endpoint,
+            default_role,
+        )
+    )
+
+
+def guild_options(config_data=None, public_only=False, cross_server_only=False, minimum_role=None):
     config_data = config_data or load_config()
     allowed_admin_ids = None
     allowed_account_ids = None
-    if has_request_context() and is_admin_logged_in() and current_admin_role() != "bot_owner":
-        allowed_admin_ids = current_admin_allowed_guild_ids(config_data)
+    if has_request_context() and is_admin_logged_in() and not is_bot_owner_username(current_admin_username()):
+        allowed_admin_ids = current_admin_allowed_guild_ids(
+            config_data,
+            minimum_role or current_endpoint_minimum_guild_role(),
+        )
     elif public_only and has_request_context() and is_account_logged_in():
         allowed_account_ids = current_account_allowed_guild_ids(config_data)
     options = []
@@ -7703,7 +7748,7 @@ def guild_options(config_data=None, public_only=False, cross_server_only=False):
         ).casefold(),
     ):
         if guild_config.get("bot_access_disabled") and (
-            not has_request_context() or current_admin_role() != "bot_owner"
+            not has_request_context() or not is_bot_owner_username(current_admin_username())
         ):
             continue
         if allowed_admin_ids is not None and str(guild_id) not in allowed_admin_ids:
@@ -11370,7 +11415,7 @@ def current_account_allowed_guild_ids(config_data=None):
     if is_bot_owner_username(current_account_username()):
         return all_ids
     if is_admin_logged_in():
-        return current_admin_allowed_guild_ids(config_data)
+        return current_admin_allowed_guild_ids(config_data, "user")
     access_ids = set(dashboard_user_server_access_map(current_account_username()))
     if access_ids:
         return all_ids & access_ids
@@ -11386,15 +11431,61 @@ def current_admin_username():
     return session.get("sdac_admin_username") or "web-admin"
 
 
-def current_admin_role():
+def current_admin_explicit_guild_id():
+    if not has_request_context():
+        return ""
+    requested = request.values.get("guild_id", "").strip()
+    if requested == "all":
+        return ""
+    return requested
+
+
+def current_admin_legacy_scoped_ids(config_data=None):
+    config_data = config_data or load_config()
+    all_ids = {str(guild_id) for guild_id in (config_data.get("guilds") or {})}
+    scoped_ids = set(parse_guild_scope(session.get("sdac_admin_guild_ids", [])))
+    if not scoped_ids:
+        user = dashboard_user(current_admin_username())
+        scoped_ids = set(parse_guild_scope(user["guild_ids_json"] if user else []))
+        session["sdac_admin_guild_ids"] = sorted(scoped_ids)
+    return all_ids & scoped_ids
+
+
+def current_admin_role_for_guild(guild_id, config_data=None):
+    guild_id = str(guild_id or "").strip()
     if is_bot_owner_username(current_admin_username()):
         return "bot_owner"
-    guild_id = current_requested_guild_id()
+    if not guild_id:
+        return current_admin_max_scoped_role(config_data)
+    role_map = dashboard_user_server_access_map(current_admin_username())
+    if guild_id in role_map:
+        return normalize_role(role_map[guild_id])
+    if guild_id in current_admin_legacy_scoped_ids(config_data):
+        return normalize_role(session.get("sdac_admin_role") or "user")
+    return "user"
+
+
+def current_admin_max_scoped_role(config_data=None):
+    if is_bot_owner_username(current_admin_username()):
+        return "bot_owner"
+    config_data = config_data or load_config()
+    all_ids = {str(guild_id) for guild_id in (config_data.get("guilds") or {})}
+    max_role = "user"
+    for guild_id, role in dashboard_user_server_access_map(current_admin_username()).items():
+        if guild_id in all_ids and ROLE_LEVELS[normalize_role(role)] > ROLE_LEVELS[max_role]:
+            max_role = normalize_role(role)
+    legacy_role = normalize_role(session.get("sdac_admin_role") or "user")
+    for guild_id in current_admin_legacy_scoped_ids(config_data):
+        if ROLE_LEVELS[legacy_role] > ROLE_LEVELS[max_role]:
+            max_role = legacy_role
+    return max_role
+
+
+def current_admin_role():
+    guild_id = current_admin_explicit_guild_id()
     if guild_id:
-        role_map = dashboard_user_server_access_map(current_admin_username())
-        if guild_id in role_map:
-            return role_map[guild_id]
-    return normalize_role(session.get("sdac_admin_role") or "moderator")
+        return current_admin_role_for_guild(guild_id)
+    return current_admin_max_scoped_role()
 
 
 def safe_next_url(value, fallback="/"):
@@ -11404,8 +11495,9 @@ def safe_next_url(value, fallback="/"):
     return fallback
 
 
-def has_admin_role(required_role):
-    return ROLE_LEVELS[current_admin_role()] >= ROLE_LEVELS[normalize_role(required_role)]
+def has_admin_role(required_role, guild_id=None):
+    role = current_admin_role_for_guild(guild_id) if guild_id else current_admin_role()
+    return ROLE_LEVELS[normalize_role(role)] >= ROLE_LEVELS[normalize_role(required_role)]
 
 
 def can_assign_dashboard_role(role):
@@ -11549,38 +11641,34 @@ def parse_guild_scope(raw_value):
     ]
 
 
-def current_admin_allowed_guild_ids(config_data=None):
+def current_admin_allowed_guild_ids(config_data=None, minimum_role="moderator"):
     config_data = config_data or load_config()
+    minimum_role = normalize_role(minimum_role)
     all_ids = {
         str(guild_id)
         for guild_id in (config_data.get("guilds") or {})
     }
     if is_bot_owner_username(current_admin_username()):
         return all_ids
-    if current_admin_role() == "bot_owner":
-        return all_ids
     access_map = dashboard_user_server_access_map(current_admin_username())
-    admin_access_ids = {
+    allowed_ids = {
         guild_id
         for guild_id, role in access_map.items()
-        if ROLE_LEVELS[normalize_role(role)] >= ROLE_LEVELS["moderator"]
+        if guild_id in all_ids
+        and ROLE_LEVELS[normalize_role(role)] >= ROLE_LEVELS[minimum_role]
     }
-    if admin_access_ids:
-        return all_ids & admin_access_ids
-    scoped_ids = set(parse_guild_scope(session.get("sdac_admin_guild_ids", [])))
-    if not scoped_ids:
-        user = dashboard_user(current_admin_username())
-        scoped_ids = set(parse_guild_scope(user["guild_ids_json"] if user else []))
-        session["sdac_admin_guild_ids"] = sorted(scoped_ids)
-    return all_ids & scoped_ids
+    legacy_role = normalize_role(session.get("sdac_admin_role") or "user")
+    if ROLE_LEVELS[legacy_role] >= ROLE_LEVELS[minimum_role]:
+        allowed_ids |= current_admin_legacy_scoped_ids(config_data)
+    return all_ids & allowed_ids
 
 
-def can_admin_access_guild(guild_id, config_data=None):
+def can_admin_access_guild(guild_id, config_data=None, minimum_role="moderator"):
     if not has_request_context():
         return True
-    if current_admin_role() == "bot_owner":
+    if is_bot_owner_username(current_admin_username()):
         return True
-    return str(guild_id) in current_admin_allowed_guild_ids(config_data)
+    return ROLE_LEVELS[current_admin_role_for_guild(guild_id, config_data)] >= ROLE_LEVELS[normalize_role(minimum_role)]
 
 
 def dashboard_user(username):
@@ -11686,6 +11774,24 @@ def upsert_user_server_access(connection, username, guild_ids, role="user", sour
         ))
         rows.append(guild_id)
     return rows
+
+
+def prune_user_server_access(connection, username, guild_ids):
+    username = normalize_account_username(username)
+    guild_ids = sorted({str(item).strip() for item in guild_ids if str(item).strip()})
+    if not guild_ids:
+        connection.execute(
+            "DELETE FROM dashboard_user_server_access WHERE username = ?",
+            (username,),
+        )
+        return
+    placeholders = ", ".join("?" for _ in guild_ids)
+    connection.execute(f"""
+        DELETE FROM dashboard_user_server_access
+        WHERE username = ?
+          AND guild_id NOT IN ({placeholders})
+    """, [username] + guild_ids)
+
 
 
 def set_user_server_role(connection, username, guild_id, role, source="manual"):
@@ -14890,6 +14996,14 @@ def admin_settings():
                 ))
             if not can_assign_dashboard_role(role):
                 abort(403)
+            if role != "bot_owner":
+                assignment_role = "owner" if role in {"admin", "owner"} else "admin"
+                allowed_assignment_ids = current_admin_allowed_guild_ids(
+                    config_data,
+                    assignment_role,
+                )
+                if any(guild_id not in allowed_assignment_ids for guild_id in guild_scope):
+                    abort(403)
             guild_scope_json = json.dumps(guild_scope, separators=(",", ":"))
             now = utc_now_iso()
             with database() as connection:
@@ -14964,13 +15078,15 @@ def admin_settings():
                         current_admin_username(),
                         now,
                     ))
+                    assigned_scope = sorted((config_data.get("guilds") or {}).keys()) if role == "bot_owner" else guild_scope
                     upsert_user_server_access(
                         connection,
                         username,
-                        guild_scope or (config_data.get("guilds") or {}).keys(),
+                        assigned_scope,
                         role=role,
                         source="manual",
                     )
+                    prune_user_server_access(connection, username, assigned_scope)
                     if role == "bot_owner":
                         connection.execute("""
                             INSERT INTO dashboard_bot_owners (
@@ -15078,13 +15194,15 @@ def admin_settings():
                             now,
                             username,
                         ))
+                    assigned_scope = sorted((config_data.get("guilds") or {}).keys()) if role == "bot_owner" else guild_scope
                     upsert_user_server_access(
                         connection,
                         username,
-                        guild_scope or (config_data.get("guilds") or {}).keys(),
+                        assigned_scope,
                         role=role,
                         source="manual",
                     )
+                    prune_user_server_access(connection, username, assigned_scope)
                     if role == "bot_owner":
                         connection.execute("""
                             INSERT INTO dashboard_bot_owners (
@@ -18208,7 +18326,8 @@ def admin_staff_home():
         requested_mode = admin_staff_home_mode()
     mode_key = requested_mode if has_admin_role(STAFF_HOME_MODES[requested_mode]["required_role"]) else admin_staff_home_mode()
     config_data = load_config()
-    options = guild_options(config_data)
+    mode_required_role = STAFF_HOME_MODES[mode_key]["required_role"]
+    options = guild_options(config_data, minimum_role=mode_required_role)
     guild_names = guild_name_map(config_data)
     visible_guild_ids = {option["id"] for option in options}
     selected_server_id = selected_guild_id(options)
@@ -18241,7 +18360,8 @@ def admin_overview():
     if login_response:
         return login_response
     config_data = load_config()
-    options = guild_options(config_data)
+    mode_required_role = STAFF_HOME_MODES[mode_key]["required_role"]
+    options = guild_options(config_data, minimum_role=mode_required_role)
     guild_names = guild_name_map(config_data)
     visible_guild_ids = {option["id"] for option in options}
     selected_server_id = selected_guild_id(options)
