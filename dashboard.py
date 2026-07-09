@@ -859,12 +859,34 @@ HTML = """
         }
         .download { overflow-wrap: anywhere; }
 
+        .remove-controls {
+            align-items: center;
+            display: grid;
+            gap: 8px;
+            grid-template-columns: auto minmax(150px, 190px) minmax(180px, 240px) auto;
+        }
+
+        .remove-controls span {
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .remove-controls select,
+        .remove-controls input {
+            font-size: 14px;
+            min-width: 0;
+            padding: 8px 10px;
+            width: 100%;
+        }
+
         .delete-button {
             background: var(--danger);
             border-color: var(--danger);
             color: white;
             font-size: 13px;
-            padding: 7px 10px;
+            padding: 8px 10px;
         }
 
         .notice {
@@ -892,15 +914,17 @@ HTML = """
 
         @media (max-width: 700px) {
             body { padding: 12px; }
-            .admin-nav, .filter form, .post-header {
+            .admin-nav, .filter form, .post-header, .remove-controls {
                 align-items: stretch;
                 flex-direction: column;
             }
+            .remove-controls { display: flex; }
             .admin-nav {
                 flex-wrap: wrap;
                 gap: 10px;
             }
             select, input, button { width: 100%; }
+            .remove-controls span { margin-bottom: -4px; }
             .media-grid { grid-template-columns: 1fr; }
         }
     </style>
@@ -1031,7 +1055,7 @@ HTML = """
                                 {% endif %}
                             </div>
                             {% if is_admin %}
-                                <form method="post"
+                                <form class="remove-controls" method="post"
                                       action="{{ url_for(
                                           'delete_submission',
                                           submission_id=post.id,
@@ -1044,10 +1068,11 @@ HTML = """
                                       ) }}"
                                       onsubmit="return confirm('Remove this submission from the website and Discord?');">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <span>Remove because</span>
                                     <select name="reason_preset" aria-label="Removal reason">
                                         {% for value, label in removal_reasons %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
                                     </select>
-                                    <input name="reason" placeholder="Optional note" aria-label="Removal note">
+                                    <input name="reason" placeholder="Audit note (optional)" aria-label="Removal audit note">
                                     <button class="delete-button" type="submit">Remove</button>
                                 </form>
                                 <form method="post"
@@ -6154,14 +6179,15 @@ MODERATION_HTML = """
                                 <input type="hidden" name="new_status" value="posted">
                                 <button type="submit">Post</button>
                             </form>
-                            <form method="post" action="{{ url_for('delete_submission', submission_id=post.id, key=admin_key, status='pending') }}">
+                            <form class="remove-controls" method="post" action="{{ url_for('delete_submission', submission_id=post.id, key=admin_key, status='pending') }}">
                                 <input type="hidden" name="key" value="{{ admin_key }}">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                <select name="reason_preset">
+                                <span>Remove because</span>
+                                <select name="reason_preset" aria-label="Removal reason">
                                     {% for value, label in removal_reasons %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
                                 </select>
-                                <input name="reason" placeholder="Optional note">
-                                <button type="submit">Remove</button>
+                                <input name="reason" placeholder="Audit note (optional)" aria-label="Removal audit note">
+                                <button class="danger" type="submit">Remove</button>
                             </form>
                         </td>
                     </tr>

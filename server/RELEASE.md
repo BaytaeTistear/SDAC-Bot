@@ -1,3 +1,26 @@
+# SDAC Bot Version 3.1.10 Experimental
+
+Date: 2026-07-09
+
+Update scope: Dashboard polish and documentation
+
+Version 3.1.10 is an experimental dashboard cleanup and video prep update.
+
+Included:
+
+- cleaned up dashboard removal controls so the reason dropdown is labeled and wide enough to read
+- renamed the free-text removal field to `Audit note (optional)` so moderators know where the note is saved
+- applied the same clearer removal controls to the moderation pending queue
+- added `MASTER_VIDEO_SCRIPT.md` as a recording guide for explaining the bot, dashboard, app, admin roles, update policy, and where to find each feature
+- mirrored the dashboard cleanup into the server deployment copy
+
+Release channel:
+
+- `version-3.1.10` is this experimental dashboard polish update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.9 Experimental
 
 Date: 2026-07-09
