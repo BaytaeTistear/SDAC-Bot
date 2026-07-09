@@ -582,6 +582,11 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 /account/login                  Dashboard account login
 /account                        Dashboard account profile
 /admin/login?key=ImTheBestAdmin Admin login
+/admin?key=ImTheBestAdmin       Role-aware Staff Home
+/admin/moderator?key=ImTheBestAdmin Moderator workbench
+/admin/server-owner?key=ImTheBestAdmin Server Owner workbench
+/admin/bot-owner?key=ImTheBestAdmin Bot Owner workbench
+/admin/overview?key=ImTheBestAdmin Metrics overview
 /admin/settings?key=ImTheBestAdmin
 /admin/game-library?key=ImTheBestAdmin
 /admin/seasons?key=ImTheBestAdmin

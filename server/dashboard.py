@@ -315,6 +315,27 @@ ROLE_LABELS = {
     "bot_owner": "Bot Owner",
 }
 
+STAFF_HOME_MODES = {
+    "moderator": {
+        "title": "Moderator Home",
+        "eyebrow": "Daily review",
+        "summary": "Review submissions, reports, quarantine items, and recent decisions without the server operations noise.",
+        "required_role": "moderator",
+    },
+    "owner": {
+        "title": "Server Owner Home",
+        "eyebrow": "Server setup",
+        "summary": "Configure one server's channels, categories, features, staff access, branding, backups, and health.",
+        "required_role": "owner",
+    },
+    "bot_owner": {
+        "title": "Bot Owner Home",
+        "eyebrow": "Global operations",
+        "summary": "Watch the whole SDAC install: services, releases, backups, database health, jobs, and cross-server controls.",
+        "required_role": "bot_owner",
+    },
+}
+
 LOCKOUT_SCOPE_LABELS = {
     "games": "Games only",
     "submissions": "Submissions only",
@@ -5009,6 +5030,107 @@ ADMIN_OVERVIEW_HTML = """
 """
 
 
+STAFF_HOME_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ mode.title }}</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #0f172a; color: #f8fafc; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1180px); }
+        .hero { border-bottom: 1px solid #30333b; margin-bottom: 18px; padding-bottom: 16px; }
+        .eyebrow { color: #38bdf8; font-size: 0.78rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+        h1 { margin: 6px 0 8px; }
+        h2 { margin: 0 0 12px; }
+        .muted { color: #94a3b8; }
+        .toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+        select, button, .button { border: 1px solid #30333b; border-radius: 7px; box-sizing: border-box; font-size: 15px; padding: 9px 10px; }
+        select { background: #111827; color: #f8fafc; min-width: 240px; }
+        button, .button { background: #4f46e5; color: #fff; cursor: pointer; display: inline-block; font-weight: 800; text-decoration: none; }
+        .button.secondary { background: #1f2937; }
+        .button.danger { background: #be123c; }
+        .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); margin: 14px 0; }
+        .panel { background: #111827; border: 1px solid #30333b; border-radius: 8px; margin: 16px 0; padding: 16px; }
+        .card { background: #0b1220; border: 1px solid #30333b; border-radius: 8px; min-height: 92px; padding: 14px; }
+        .card strong { display: block; font-size: 1.65rem; line-height: 1.1; }
+        .card span { color: #94a3b8; display: block; font-size: .78rem; font-weight: 800; margin-top: 6px; text-transform: uppercase; }
+        .status { border-left: 4px solid #38bdf8; }
+        .status.warn { border-left-color: #f59e0b; }
+        .status.danger { border-left-color: #fb7185; }
+        .action-list { display: grid; gap: 10px; }
+        .action { align-items: center; background: #0b1220; border: 1px solid #30333b; border-radius: 8px; display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) auto; padding: 12px; }
+        .action h3 { font-size: 1rem; margin: 0 0 4px; }
+        .action p { margin: 0; }
+        @media (max-width: 720px) {
+            body { padding: 16px; }
+            .action { grid-template-columns: 1fr; }
+            select, button, .button { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <section class="hero">
+        <div class="eyebrow">{{ mode.eyebrow }}</div>
+        <h1>{{ mode.title }}</h1>
+        <p class="muted">{{ mode.summary }}</p>
+        <form class="toolbar" method="get" action="{{ url_for(request.endpoint) }}">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <select name="guild_id" aria-label="Discord server">
+                <option value="all">All Allowed Servers</option>
+                {% for guild in guild_options %}
+                    <option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>{{ guild.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit">Open</button>
+            <a class="button secondary" href="{{ url_for('admin_overview', key=admin_key, guild_id=selected_guild_id or 'all') }}">Metrics</a>
+        </form>
+        <p class="muted">Viewing: {{ selected_guild_name }}</p>
+    </section>
+
+    <section class="panel">
+        <h2>At A Glance</h2>
+        <div class="grid">
+            {% for card in cards %}
+                <div class="card"><strong>{{ card.value }}</strong><span>{{ card.label }}</span></div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>What Needs Attention</h2>
+        <div class="grid">
+            {% for item in status_items %}
+                <div class="card status {{ item.severity }}">
+                    <strong>{{ item.state }}</strong>
+                    <span>{{ item.label }}</span>
+                    <p class="muted">{{ item.detail }}</p>
+                </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Quick Actions</h2>
+        <div class="action-list">
+            {% for action in actions %}
+                <div class="action">
+                    <div>
+                        <h3>{{ action.label }}</h3>
+                        <p class="muted">{{ action.detail }}</p>
+                    </div>
+                    <a class="button {{ action.style }}" href="{{ action.url }}">Open</a>
+                </div>
+            {% endfor %}
+        </div>
+    </section>
+</main>
+</body>
+</html>
+"""
 THEME_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -11942,7 +12064,7 @@ def admin_sidebar_sections():
             "label": "User",
             "required_role": "user",
             "links": [
-                ("Home", "admin_overview", {}),
+                ("Staff Home", "admin_staff_home", {}),
                 ("Submissions", "index", {}),
                 ("My Submissions", "my_submissions", {}),
                 ("Guessing", "guessing_leaderboard", {}),
@@ -11952,31 +12074,15 @@ def admin_sidebar_sections():
             ],
         },
         {
-            "label": "Cross Server",
+            "label": "Moderator",
             "required_role": "moderator",
             "links": [
-                ("All Submissions", "index", {"guild_id": "all"}),
-                ("All Guessing", "guessing_leaderboard", {"guild_id": "all"}),
-                ("Servers", "servers", {}),
-                ("Stats", "public_stats", {"guild_id": "all"}),
-            ],
-        },
-        {
-            "label": "Moderation",
-            "required_role": "moderator",
-            "links": [
+                ("Review Queue", "admin_moderation", {}),
                 ("Users", "admin_users", {}),
-                ("Moderation", "admin_moderation", {}),
-                ("Approvals", "admin_approvals", {}),
                 ("Polls", "admin_polls", {}),
                 ("Audit", "admin_audit", {}),
-                ("Game Library", "admin_game_library", {}),
                 ("Anime Activities", "admin_anime_activities", {}),
-                ("Seasons", "admin_seasons", {}),
-                ("Media", "admin_media", {}),
-                ("Jobs", "admin_jobs", {}),
-                ("Analytics", "admin_analytics", {}),
-                ("Monthly Report", "admin_monthly_report", {}),
+                ("Metrics", "admin_overview", {}),
             ],
         },
         {
@@ -11984,26 +12090,34 @@ def admin_sidebar_sections():
             "required_role": "owner",
             "links": [
                 ("Settings", "admin_settings", {}),
+                ("Server Health", "admin_server_health_cards", {}),
+                ("Media", "admin_media", {}),
+                ("Game Library", "admin_game_library", {}),
+                ("Seasons", "admin_seasons", {}),
                 ("Theme", "admin_theme", {}),
                 ("Layout", "admin_layout", {}),
-                ("Optimization", "admin_optimization", {}),
-                ("Maintenance", "admin_maintenance", {}),
-                ("Server Health", "admin_server_health_cards", {}),
-                ("Production", "admin_production_health", {}),
-                ("Install Doctor", "admin_install_doctor", {}),
-                ("Releases", "admin_releases", {}),
+                ("Onboarding", "admin_onboarding", {}),
                 ("Privacy", "admin_privacy", {}),
                 ("Owner Portal", "admin_owner_portal", {}),
-                ("Onboarding", "admin_onboarding", {}),
             ],
         },
         {
             "label": "Bot Owner",
             "required_role": "bot_owner",
             "links": [
+                ("Maintenance", "admin_maintenance", {}),
+                ("Optimization", "admin_optimization", {}),
+                ("Releases", "admin_releases", {}),
+                ("Production", "admin_production_health", {}),
+                ("Install Doctor", "admin_install_doctor", {}),
+                ("Approvals", "admin_approvals", {}),
+                ("Jobs", "admin_jobs", {}),
+                ("Analytics", "admin_analytics", {}),
+                ("Monthly Report", "admin_monthly_report", {}),
                 ("Server Switcher", "admin_server_switcher", {}),
                 ("Preview As", "admin_preview_as", {}),
-                ("All Servers", "index", {"guild_id": "all"}),
+                ("All Submissions", "index", {"guild_id": "all"}),
+                ("All Guessing", "guessing_leaderboard", {"guild_id": "all"}),
             ],
         },
     ]
@@ -12031,7 +12145,6 @@ def admin_sidebar_sections():
                 "links": rendered_links,
             })
     return rendered_sections
-
 
 
 def public_sidebar_sections():
@@ -17142,6 +17255,209 @@ def admin_seasons():
     )
 
 
+def admin_staff_home_mode():
+    if has_admin_role("bot_owner"):
+        return "bot_owner"
+    if has_admin_role("owner"):
+        return "owner"
+    return "moderator"
+
+
+def staff_home_link(endpoint, selected_server_id=None, **values):
+    values.setdefault("key", ADMIN_KEY)
+    if selected_server_id:
+        values.setdefault("guild_id", selected_server_id)
+    return url_for(endpoint, **values)
+
+
+def count_scoped_rows(connection, table_name, selected_server_id, visible_guild_ids, extra_sql="", extra_params=None):
+    if selected_server_id:
+        scope_sql = "guild_id = ?"
+        scope_params = [selected_server_id]
+    else:
+        scope_sql, scope_params = guild_id_filter("guild_id", visible_guild_ids)
+    params = list(scope_params)
+    if extra_params:
+        params.extend(extra_params)
+    return connection.execute(
+        f"SELECT COUNT(*) FROM {table_name} WHERE {scope_sql}{extra_sql}",
+        params,
+    ).fetchone()[0]
+
+
+def staff_home_setup_status(config_data, selected_server_id, visible_guild_ids):
+    guild_configs = config_data.get("guilds") or {}
+    if selected_server_id:
+        configs = [guild_configs.get(str(selected_server_id), {})]
+    else:
+        configs = [guild_configs.get(str(guild_id), {}) for guild_id in visible_guild_ids]
+    configs = [item for item in configs if item]
+    if not configs:
+        return [
+            {
+                "label": "Server Selection",
+                "state": "Choose",
+                "detail": "Pick a server from the selector to review setup and owner tools.",
+                "severity": "warn",
+            }
+        ]
+    missing_submit = sum(1 for item in configs if not item.get("submit_channel"))
+    missing_categories = sum(1 for item in configs if not (item.get("categories") or {}))
+    approval_without_channel = sum(
+        1
+        for item in configs
+        if item.get("approval_enabled") and not item.get("approval_channel")
+    )
+    backup_unconfigured = sum(
+        1
+        for item in configs
+        if not ((item.get("external_backup") or {}).get("enabled") and (item.get("external_backup") or {}).get("remote"))
+    )
+    return [
+        {
+            "label": "Submit Channel",
+            "state": "Ready" if not missing_submit else str(missing_submit),
+            "detail": "Every selected server has a submit channel." if not missing_submit else "Servers still need a submit channel.",
+            "severity": "" if not missing_submit else "warn",
+        },
+        {
+            "label": "Categories",
+            "state": "Ready" if not missing_categories else str(missing_categories),
+            "detail": "Categories are configured." if not missing_categories else "Servers still need at least one category.",
+            "severity": "" if not missing_categories else "warn",
+        },
+        {
+            "label": "Approval Channel",
+            "state": "Ready" if not approval_without_channel else str(approval_without_channel),
+            "detail": "Approval queues have channels where enabled." if not approval_without_channel else "Approval is enabled without a review channel.",
+            "severity": "" if not approval_without_channel else "danger",
+        },
+        {
+            "label": "Server Backups",
+            "state": "Ready" if not backup_unconfigured else str(backup_unconfigured),
+            "detail": "External backup targets are configured." if not backup_unconfigured else "Some servers do not have an external backup target.",
+            "severity": "" if not backup_unconfigured else "warn",
+        },
+    ]
+
+
+def staff_home_context(mode_key, connection, config_data, selected_server_id, visible_guild_ids):
+    summary = admin_dashboard_summary(connection, selected_server_id, visible_guild_ids, request.args.get("metric_range", "all"))
+    mode = STAFF_HOME_MODES[mode_key]
+    quarantine_count = count_scoped_rows(
+        connection,
+        "media_quarantine",
+        selected_server_id,
+        visible_guild_ids,
+        " AND status = ?",
+        ["quarantined"],
+    )
+    job_pending = connection.execute(
+        "SELECT COUNT(*) FROM background_jobs WHERE status IN ('queued', 'running')"
+    ).fetchone()[0]
+    if mode_key == "moderator":
+        cards = [
+            {"label": "Pending Review", "value": summary["pending"]},
+            {"label": "Open Reports", "value": summary["open_reports"]},
+            {"label": "Quarantine", "value": quarantine_count},
+            {"label": "Active Lockouts", "value": summary["lockouts"]},
+        ]
+        status_items = [
+            {
+                "label": "Submission Queue",
+                "state": "Clear" if not summary["pending"] else str(summary["pending"]),
+                "detail": "No submissions need review." if not summary["pending"] else "Submissions are waiting for a moderator decision.",
+                "severity": "" if not summary["pending"] else "warn",
+            },
+            {
+                "label": "Reports",
+                "state": "Clear" if not summary["open_reports"] else str(summary["open_reports"]),
+                "detail": "No public reports are open." if not summary["open_reports"] else "Public reports need review.",
+                "severity": "" if not summary["open_reports"] else "warn",
+            },
+            {
+                "label": "Quarantine",
+                "state": "Clear" if not quarantine_count else str(quarantine_count),
+                "detail": "No quarantined media is waiting." if not quarantine_count else "Quarantined media needs a decision.",
+                "severity": "" if not quarantine_count else "danger",
+            },
+        ]
+        actions = [
+            {"label": "Review Moderation Queue", "detail": "Pending submissions, public reports, and recent decisions.", "url": staff_home_link("admin_moderation", selected_server_id), "style": ""},
+            {"label": "Open Public Submissions", "detail": "Review posted items in the selected server scope.", "url": staff_home_link("index", selected_server_id), "style": "secondary"},
+            {"label": "Check Audit History", "detail": "Confirm who took an action and why.", "url": staff_home_link("admin_audit", selected_server_id), "style": "secondary"},
+            {"label": "Manage Polls", "detail": "Create, close, or review website-managed polls.", "url": staff_home_link("admin_polls", selected_server_id), "style": "secondary"},
+        ]
+    elif mode_key == "owner":
+        server_count = len(visible_guild_ids)
+        category_count = 0
+        for guild_id in visible_guild_ids:
+            category_count += len((config_data.get("guilds") or {}).get(str(guild_id), {}).get("categories") or {})
+        cards = [
+            {"label": "Allowed Servers", "value": server_count},
+            {"label": "Configured Categories", "value": category_count},
+            {"label": "Pending Review", "value": summary["pending"]},
+            {"label": "Media Storage", "value": summary["media_size"]},
+        ]
+        status_items = staff_home_setup_status(config_data, selected_server_id, visible_guild_ids)
+        actions = [
+            {"label": "Setup And Settings", "detail": "Channels, categories, features, limits, moderation, backups, and server import/export.", "url": staff_home_link("admin_settings", selected_server_id), "style": ""},
+            {"label": "Server Health Cards", "detail": "Quick per-server setup, storage, backup, game, library, and achievement status.", "url": staff_home_link("admin_server_health_cards", selected_server_id), "style": "secondary"},
+            {"label": "Theme And Layout", "detail": "Brand colors, background image, sidebar width, density, and menu placement.", "url": staff_home_link("admin_theme", selected_server_id), "style": "secondary"},
+            {"label": "Media And Storage", "detail": "Missing media, oversized files, quarantine, thumbnails, and lifecycle controls.", "url": staff_home_link("admin_media", selected_server_id), "style": "secondary"},
+            {"label": "Onboarding Checklist", "detail": "Setup score, command hints, templates, and saved setup-test reports.", "url": staff_home_link("admin_onboarding", selected_server_id), "style": "secondary"},
+        ]
+    else:
+        backups = recent_database_backups()
+        release = release_status()
+        production = production_health_report(config_data)
+        cards = [
+            {"label": "Allowed Servers", "value": len(visible_guild_ids)},
+            {"label": "Database", "value": summary["db_size"]},
+            {"label": "Queued Jobs", "value": job_pending},
+            {"label": "Health Score", "value": str(production.get("score", 0))},
+        ]
+        status_items = [
+            {
+                "label": "Bot Heartbeat",
+                "state": "Seen" if read_bot_status().get("event") else "Missing",
+                "detail": summary["bot_heartbeat"],
+                "severity": "" if read_bot_status().get("event") else "warn",
+            },
+            {
+                "label": "Latest Backup",
+                "state": "Ready" if backups else "Missing",
+                "detail": backups[0]["modified"] if backups else "No local database backup was found.",
+                "severity": "" if backups else "danger",
+            },
+            {
+                "label": "Release Channel",
+                "state": release.get("installed_version") or "Unknown",
+                "detail": "Official: " + str(release.get("official_version") or "unknown") + "; Experimental: " + str(release.get("experimental_version") or "unknown"),
+                "severity": "",
+            },
+            {
+                "label": "Background Jobs",
+                "state": str(job_pending),
+                "detail": "Queued or running maintenance work.",
+                "severity": "warn" if job_pending else "",
+            },
+        ]
+        actions = [
+            {"label": "Maintenance", "detail": "Backups, restore tests, checksums, rollback queue, storage forecast, and health.", "url": staff_home_link("admin_maintenance", selected_server_id), "style": ""},
+            {"label": "Releases", "detail": "Installed, official, and experimental release status plus notification testing.", "url": staff_home_link("admin_releases", selected_server_id), "style": "secondary"},
+            {"label": "Optimization", "detail": "Performance presets, cache metrics, database and media work queues.", "url": staff_home_link("admin_optimization", selected_server_id), "style": "secondary"},
+            {"label": "Users And Access", "detail": "Global users, Bot Owner controls, per-server roles, bans, and lockouts.", "url": staff_home_link("admin_users", selected_server_id), "style": "secondary"},
+            {"label": "Install Doctor", "detail": "Server install checks, service state, permissions, and production hints.", "url": staff_home_link("admin_install_doctor", selected_server_id), "style": "secondary"},
+            {"label": "Server Switcher", "detail": "Jump between server scopes and cross-server views.", "url": staff_home_link("admin_server_switcher", selected_server_id), "style": "secondary"},
+        ]
+    return {
+        "mode": mode,
+        "cards": cards,
+        "status_items": status_items,
+        "actions": actions,
+    }
+
 def dashboard_submission_range(range_key):
     now = datetime.now(timezone.utc)
     range_key = str(range_key or "all").strip().casefold()
@@ -17202,6 +17518,51 @@ def admin_dashboard_summary(connection, selected_server_id, visible_guild_ids, r
 
 
 @app.route("/admin")
+@app.route("/admin/moderator")
+@app.route("/admin/server-owner")
+@app.route("/admin/bot-owner")
+def admin_staff_home():
+    login_response = require_admin_login("moderator")
+    if login_response:
+        return login_response
+    if request.path.endswith("/bot-owner"):
+        requested_mode = "bot_owner"
+    elif request.path.endswith("/server-owner"):
+        requested_mode = "owner"
+    elif request.path.endswith("/moderator"):
+        requested_mode = "moderator"
+    else:
+        requested_mode = admin_staff_home_mode()
+    mode_key = requested_mode if has_admin_role(STAFF_HOME_MODES[requested_mode]["required_role"]) else admin_staff_home_mode()
+    config_data = load_config()
+    options = guild_options(config_data)
+    guild_names = guild_name_map(config_data)
+    visible_guild_ids = {option["id"] for option in options}
+    selected_server_id = selected_guild_id(options)
+    selected_server_name = (
+        guild_names.get(selected_server_id, "Selected Server")
+        if selected_server_id
+        else "All Allowed Servers"
+    )
+    with closing(connect_db()) as connection:
+        context = staff_home_context(
+            mode_key,
+            connection,
+            config_data,
+            selected_server_id,
+            visible_guild_ids,
+        )
+    return render_template_string(
+        STAFF_HOME_HTML,
+        admin_key=ADMIN_KEY,
+        guild_options=options,
+        selected_guild_id=selected_server_id,
+        selected_guild_name=selected_server_name,
+        **context,
+    )
+
+
+@app.route("/admin/overview")
 def admin_overview():
     login_response = require_admin_login("moderator")
     if login_response:
@@ -18415,7 +18776,7 @@ def api_app_bootstrap():
             "guessing": url_for("guessing_leaderboard"),
             "servers": url_for("servers"),
             "stats": url_for("public_stats"),
-            "admin": url_for("admin_overview") if admin_logged_in else url_for("admin_login"),
+            "admin": url_for("admin_staff_home") if admin_logged_in else url_for("admin_login"),
             "admin_releases": url_for("admin_releases") if admin_logged_in else url_for("admin_login"),
             "admin_theme": url_for("admin_theme") if admin_logged_in else url_for("admin_login"),
             "admin_layout": url_for("admin_layout") if admin_logged_in else url_for("admin_login"),
@@ -18904,7 +19265,7 @@ def download_backup(name):
 @app.route("/app")
 def app_home():
     if is_admin_logged_in():
-        return redirect(url_for("admin_overview", key=ADMIN_KEY))
+        return redirect(url_for("admin_staff_home", key=ADMIN_KEY))
     if is_account_logged_in():
         return redirect(url_for("account_home"))
     return redirect(url_for("index"))

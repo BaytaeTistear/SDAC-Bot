@@ -1,3 +1,26 @@
+# SDAC Bot Version 3.1.5 Experimental
+
+Date: 2026-07-09
+
+Update scope: Bot update
+
+Version 3.1.5 is an experimental staff backend simplification update.
+
+Included:
+
+- added a role-aware `/admin` Staff Home that sends moderators, server owners, and bot owners to focused workbenches
+- added moderator, server owner, and bot owner dashboard modes with role-specific status cards and quick actions
+- moved the older admin metrics view to `/admin/overview`
+- simplified the admin sidebar into User, Moderator, Server Owner, and Bot Owner sections so routine moderation is separated from server setup and global operations
+- kept existing deep admin pages intact for compatibility while making the first backend screen easier to use
+
+Release channel:
+
+- `version-3.1.5` is this experimental bot update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.4 Experimental
 
 Date: 2026-07-07
