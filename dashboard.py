@@ -12702,11 +12702,16 @@ SIDEBAR_STYLE = """
     --sdac-grid-min: 190px;
     --sdac-layout-gap: 14px;
     --sdac-bg-position: center;
-    --sdac-content-left: 14px;
-    --sdac-open-content-left: min(calc(var(--sdac-sidebar-width) + 12px), calc(100vw - 86px));
-    --sdac-sidebar-edge-left: min(calc(var(--sdac-sidebar-width) + 12px), calc(100vw - 86px));
+    --sdac-sidebar-gap: 20px;
+    --sdac-sidebar-toggle-left: min(calc(var(--sdac-sidebar-width) + 12px), calc(100vw - 86px));
 }
-body.sdac-theme { background-color: var(--sdac-bg) !important; color: var(--sdac-text) !important; }
+html { min-height: 100%; }
+body.sdac-theme {
+    background-color: var(--sdac-bg) !important;
+    color: var(--sdac-text) !important;
+    min-height: 100dvh;
+    overflow-x: hidden;
+}
 body.sdac-theme::before {
     content: "";
     position: fixed;
@@ -12718,9 +12723,19 @@ body.sdac-theme::before {
     pointer-events: none;
     z-index: -1;
 }
-body.sdac-has-sidebar { padding-left: calc(var(--sdac-sidebar-width) + 20px) !important; transition: padding-left .18s ease; }
+body.sdac-has-sidebar {
+    box-sizing: border-box;
+    padding-left: calc(var(--sdac-sidebar-width) + var(--sdac-sidebar-gap)) !important;
+    transition: padding-left .18s ease;
+}
 body.sdac-has-sidebar.sdac-sidebar-collapsed { padding-left: 0 !important; }
-body.sdac-has-sidebar main { max-width: var(--sdac-content-width) !important; width: min(100%, var(--sdac-content-width)) !important; }
+body.sdac-has-sidebar main {
+    box-sizing: border-box !important;
+    margin-left: 0 !important;
+    margin-right: auto !important;
+    max-width: var(--sdac-content-width) !important;
+    width: min(100%, var(--sdac-content-width)) !important;
+}
 body.sdac-has-sidebar h1, body.sdac-has-sidebar h2 { text-align: left !important; }
 body.sdac-has-sidebar a { color: var(--sdac-secondary) !important; }
 body.sdac-has-sidebar .panel, body.sdac-has-sidebar .post, body.sdac-has-sidebar .audit-row,
@@ -12733,69 +12748,83 @@ body.sdac-has-sidebar .section, body.sdac-has-sidebar table, body.sdac-has-sideb
 }
 .sdac-sidebar-toggle {
     appearance: none !important;
-    position: fixed !important;
-    top: 14px !important;
-    left: var(--sdac-sidebar-edge-left) !important;
-    z-index: 1002 !important;
+    align-items: center !important;
+    background: linear-gradient(90deg, var(--sdac-primary), var(--sdac-secondary)) !important;
     border: 1px solid var(--sdac-border) !important;
     border-radius: 8px !important;
-    background: var(--sdac-primary) !important;
     color: #fff !important;
     cursor: pointer !important;
     display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
     font-weight: 850 !important;
+    justify-content: center !important;
+    left: var(--sdac-sidebar-toggle-left) !important;
     line-height: 1 !important;
     margin: 0 !important;
     min-height: 36px !important;
     padding: 8px 12px !important;
+    position: fixed !important;
     text-align: center !important;
-    width: auto !important;
-    max-width: calc(100vw - 24px) !important;
+    top: 14px !important;
     transition: left .18s ease, transform .18s ease;
+    width: auto !important;
+    z-index: 1002 !important;
 }
-body.sdac-menu-page-left .sdac-sidebar-toggle { left: 14px !important; }
-body.sdac-menu-sidebar-edge .sdac-sidebar-toggle { left: var(--sdac-sidebar-edge-left) !important; }
-body.sdac-menu-viewport-left .sdac-sidebar-toggle { left: 14px !important; }
+body.sdac-menu-page-left .sdac-sidebar-toggle,
+body.sdac-menu-viewport-left .sdac-sidebar-toggle,
+body.sdac-sidebar-collapsed .sdac-sidebar-toggle { left: 14px !important; }
 .sdac-sidebar {
-    position: fixed;
-    inset: 0 auto 0 0;
-    box-sizing: border-box;
-    width: var(--sdac-sidebar-width);
-    max-width: calc(100vw - 24px);
-    overflow-x: hidden;
-    overflow-y: auto;
     background: linear-gradient(180deg, var(--sdac-sidebar-bg), color-mix(in srgb, var(--sdac-sidebar-bg) 88%, #020617));
-    color: var(--sdac-text);
-    padding: 22px 16px;
     box-shadow: 12px 0 34px rgba(2, 6, 23, 0.34);
+    box-sizing: border-box;
+    color: var(--sdac-text);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    height: 100dvh;
+    inset: 0 auto 0 0;
+    max-width: calc(100vw - 24px);
+    overflow: hidden;
+    padding: 22px 16px 14px;
+    position: fixed;
     transform: translateX(0);
     transition: transform .18s ease;
+    width: var(--sdac-sidebar-width);
     z-index: 1001;
 }
 body.sdac-sidebar-collapsed .sdac-sidebar { transform: translateX(-105%); }
-body.sdac-sidebar-collapsed .sdac-sidebar-toggle { left: 14px !important; }
-body.sdac-sidebar-collapsed.sdac-menu-sidebar-edge .sdac-sidebar-toggle,
-body.sdac-sidebar-collapsed.sdac-menu-viewport-left .sdac-sidebar-toggle { left: 14px !important; }
-.sdac-sidebar nav { display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; gap: 0 !important; justify-content: flex-start !important; margin: 0 !important; text-align: left !important; }
-.sdac-sidebar-brand { font-size: 1.25rem; font-weight: 900; margin-bottom: 10px; }
-.sdac-sidebar-user { color: var(--sdac-muted); font-size: 0.9rem; line-height: 1.35; margin-bottom: 18px; }
+.sdac-sidebar nav {
+    display: flex !important;
+    flex: 1 1 auto;
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    gap: 0 !important;
+    justify-content: flex-start !important;
+    margin: 0 !important;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-right: 4px;
+    text-align: left !important;
+}
+.sdac-sidebar nav::-webkit-scrollbar { width: 8px; }
+.sdac-sidebar nav::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, .35); border-radius: 999px; }
+.sdac-sidebar-brand { flex: 0 0 auto; font-size: 1.25rem; font-weight: 900; margin-bottom: 10px; }
+.sdac-sidebar-user { color: var(--sdac-muted); flex: 0 0 auto; font-size: 0.9rem; line-height: 1.35; margin-bottom: 18px; }
 .sdac-sidebar-user span { color: var(--sdac-secondary); }
-.sdac-sidebar-warning { border: 1px solid #f59e0b; border-radius: 8px; color: #fde68a; font-size: .82rem; line-height: 1.35; margin: 0 0 14px; padding: 9px 10px; }
-.sdac-server-switcher { border: 1px solid var(--sdac-border); border-radius: 8px; margin-bottom: 14px; padding: 10px; }
+.sdac-sidebar-warning { border: 1px solid #f59e0b; border-radius: 8px; color: #fde68a; flex: 0 0 auto; font-size: .82rem; line-height: 1.35; margin: 0 0 14px; padding: 9px 10px; }
+.sdac-server-switcher { border: 1px solid var(--sdac-border); border-radius: 8px; flex: 0 0 auto; margin-bottom: 14px; padding: 10px; }
 .sdac-server-switcher label { color: var(--sdac-muted); display: block; font-size: .72rem; font-weight: 800; margin-bottom: 6px; text-transform: uppercase; }
-.sdac-server-switcher select, .sdac-server-switcher button { width: 100%; margin-top: 6px; }
-.sdac-sidebar-section { border: 1px solid var(--sdac-border); border-radius: 8px; margin: 8px 0; overflow: hidden; }
-.sdac-sidebar-section summary { color: var(--sdac-text); cursor: pointer; font-size: 0.78rem; font-weight: 850; letter-spacing: 0.08em; list-style: none; padding: 10px 11px; text-transform: uppercase; }
+.sdac-server-switcher select, .sdac-server-switcher button { box-sizing: border-box; width: 100%; margin-top: 6px; }
+.sdac-sidebar-section { border: 1px solid var(--sdac-border); border-radius: 8px; flex: 0 0 auto; margin: 8px 0; overflow: hidden; }
+.sdac-sidebar-section summary { color: var(--sdac-text); cursor: pointer; font-size: 0.78rem; font-weight: 850; letter-spacing: 0; list-style: none; padding: 10px 11px; text-transform: uppercase; }
 .sdac-sidebar-section summary::-webkit-details-marker { display: none; }
 .sdac-sidebar-section summary::after { content: "+"; float: right; font-size: 1rem; line-height: 0.85; }
 .sdac-sidebar-section[open] summary::after { content: "-"; }
 .sdac-sidebar-section[open] summary { background: color-mix(in srgb, var(--sdac-primary) 20%, transparent); }
 .sdac-sidebar-section-links { padding: 4px 6px 8px; }
-.sdac-sidebar-link { display: block; color: var(--sdac-text) !important; text-decoration: none; padding: 9px 11px; border-radius: 7px; margin: 2px 0; font-weight: 650; }
+.sdac-sidebar-link { border-radius: 7px; color: var(--sdac-text) !important; display: block; font-weight: 650; margin: 2px 0; padding: 9px 11px; text-decoration: none; }
 .sdac-sidebar-link:hover, .sdac-sidebar-link.active { color: #fff !important; background: linear-gradient(90deg, var(--sdac-primary), var(--sdac-secondary)); }
-.sdac-sidebar-footer { border-top: 1px solid var(--sdac-border); margin-top: 18px; padding-top: 14px; }
+.sdac-sidebar-footer { border-top: 1px solid var(--sdac-border); flex: 0 0 auto; margin-top: 12px; max-height: 28dvh; overflow-y: auto; padding-top: 12px; }
 body.sdac-has-sidebar > nav, body.sdac-has-sidebar main > nav:not(.pagination), body.sdac-has-sidebar .admin-nav { display: none !important; }
 .sdac-dashboard-grid { display: grid; gap: var(--sdac-layout-gap); grid-template-columns: repeat(auto-fit, minmax(var(--sdac-grid-min), 1fr)); margin: 20px 0; }
 .sdac-dashboard-card { border: 1px solid var(--sdac-border); border-radius: var(--sdac-card-radius); padding: var(--sdac-panel-padding); }
@@ -12807,13 +12836,12 @@ body.sdac-has-sidebar > nav, body.sdac-has-sidebar main > nav:not(.pagination), 
 .sdac-range-tabs a.active { background: var(--sdac-primary); color: #fff !important; }
 @media (max-width: 900px) {
     body.sdac-has-sidebar { padding-left: 0 !important; }
-    .sdac-sidebar-toggle { left: 12px !important; top: 12px; }
+    body.sdac-has-sidebar main { padding-top: 46px !important; }
+    .sdac-sidebar-toggle { left: 12px !important; top: 12px !important; }
     .sdac-sidebar { border-radius: 0 14px 14px 0; box-shadow: 18px 0 40px rgba(2, 6, 23, 0.48); transform: translateX(-105%); }
     body.sdac-sidebar-open .sdac-sidebar { transform: translateX(0); }
     body.sdac-sidebar-open .sdac-sidebar-toggle { left: min(calc(var(--sdac-sidebar-width) + 12px), calc(100vw - 86px)) !important; }
-    body.sdac-sidebar-open.sdac-menu-sidebar-edge .sdac-sidebar-toggle { left: var(--sdac-sidebar-edge-left) !important; }
     body.sdac-sidebar-open.sdac-menu-viewport-left .sdac-sidebar-toggle { left: 12px !important; }
-    body.sdac-has-sidebar main { padding-top: 46px !important; }
 }
 </style>
 """

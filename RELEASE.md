@@ -1,3 +1,27 @@
+# SDAC Bot Version 3.1.12 Experimental
+
+Date: 2026-07-09
+
+Update scope: Sidebar layout stabilization
+
+Version 3.1.12 is an experimental dashboard shell update for the admin sidebar.
+
+Included:
+
+- fixed the shared sidebar layout so admin pages start beside the sidebar instead of drifting across the page
+- changed the sidebar into a stable full-height app panel
+- limited scrolling to the sidebar navigation and footer areas instead of the entire sidebar jumping around
+- kept the mobile sidebar drawer behavior separate from the desktop collapsed sidebar behavior
+- removed sidebar heading letter spacing so labels stay readable in the narrow panel
+- mirrored the sidebar fix into the server deployment copy
+
+Release channel:
+
+- `version-3.1.12` is this experimental sidebar layout fix update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.11 Experimental
 
 Date: 2026-07-09
@@ -22,7 +46,8 @@ Release channel:
 - `latest-experimental` points to this build after publishing
 - `latest-official` remains on Version 3.1.0 until this build is promoted
 
----# SDAC Bot Version 3.1.10 Experimental
+---
+# SDAC Bot Version 3.1.10 Experimental
 
 Date: 2026-07-09
 
