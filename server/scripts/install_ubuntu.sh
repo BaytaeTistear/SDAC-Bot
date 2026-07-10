@@ -226,7 +226,7 @@ if [[ "$INSTALL_BACKUP_PREREQS" == "1" && -f "$APP_DIR/scripts/install_backup_pr
     bash "$APP_DIR/scripts/install_backup_prereqs.sh"
 fi
 
-"$APP_DIR/venv/bin/python" -m py_compile "$APP_DIR/bot.py" "$APP_DIR/dashboard.py"
+"$APP_DIR/venv/bin/python" -m py_compile "$APP_DIR/bot.py" "$APP_DIR/dashboard.py" "$APP_DIR/dashboard_shell_assets.py" "$APP_DIR/dashboard_sidebar.py"
 "$APP_DIR/venv/bin/python" -m py_compile "$APP_DIR/config.py" "$APP_DIR/database_backend.py" "$APP_DIR/database_migrations.py" "$APP_DIR/observability.py"
 
 if [[ -f "$APP_DIR/scripts/reset_admin_login.py" ]]; then

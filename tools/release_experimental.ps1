@@ -34,7 +34,7 @@ Update with:
 "@
 
 Run-Step "Compile dashboard and bot" {
-    py -3.12 -m py_compile dashboard.py server\dashboard.py bot.py scripts\pre_release_smoke.py
+    py -3.12 -m py_compile dashboard.py dashboard_shell_assets.py dashboard_sidebar.py server\dashboard.py server\dashboard_shell_assets.py server\dashboard_sidebar.py bot.py scripts\pre_release_smoke.py
 }
 
 Run-Step "Run release smoke tests" {
@@ -50,7 +50,7 @@ if (-not $SkipCommit) {
         $CommitMessage = "Release experimental $Version"
     }
     Run-Step "Commit changes" {
-        git add RELEASE.md README.md bot.py dashboard.py server/RELEASE.md server/README.md server/bot.py server/dashboard.py dist/SDAC-Bot-Linux-Installer.sh dist/SDAC-Bot-Ubuntu-Update.sh dist/SDAC-Bot-Windows-Installer.exe dist/SDAC-Bot-Windows-Update.ps1 dist/sdac-update
+        git add RELEASE.md README.md bot.py dashboard.py dashboard_shell_assets.py dashboard_sidebar.py server/RELEASE.md server/README.md server/bot.py server/dashboard.py server/dashboard_shell_assets.py server/dashboard_sidebar.py dist/SDAC-Bot-Linux-Installer.sh dist/SDAC-Bot-Ubuntu-Update.sh dist/SDAC-Bot-Windows-Installer.exe dist/SDAC-Bot-Windows-Update.ps1 dist/sdac-update
         git commit -m $CommitMessage
     }
 }

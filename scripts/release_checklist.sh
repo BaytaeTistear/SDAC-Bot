@@ -29,6 +29,8 @@ check() {
 check "Python compile" "$PYTHON" -m py_compile \
     bot.py \
     dashboard.py \
+    dashboard_shell_assets.py \
+    dashboard_sidebar.py \
     config.py \
     database_backend.py \
     database_migrations.py \

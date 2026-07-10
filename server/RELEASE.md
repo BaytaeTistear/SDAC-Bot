@@ -1,3 +1,28 @@
+# SDAC Bot Version 3.1.16 Experimental
+
+Date: 2026-07-10
+
+Update scope: Dashboard sidebar extraction
+
+Version 3.1.16 is an experimental refactor slice for the progressive backend cleanup.
+
+Included:
+
+- moved reusable dashboard sidebar definitions and rendering into `dashboard_sidebar.py`
+- kept compatibility wrappers in `dashboard.py` so existing routes and templates keep the same function names
+- mirrored the sidebar helper module into the server deployment copy
+- updated release, install, and update packaging so dashboard helper modules deploy with `dashboard.py`
+- kept the admin/public sidebar behavior unchanged while reducing the main dashboard file size
+- fixed the likely cause of post-update local dashboard health failures after dashboard helper extraction
+- verified the dashboard page sweep, access tests, and pre-release smoke checks locally with `.venv-win`
+
+Release channel:
+
+- `version-3.1.16` is this experimental dashboard sidebar extraction update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.15 Experimental
 
 Date: 2026-07-10

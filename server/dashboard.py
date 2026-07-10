@@ -42,6 +42,15 @@ from config import TOKEN
 from database_backend import connect_database, using_postgres
 from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
 from dashboard_shell_assets import PWA_HEAD_HTML, PWA_INSTALL_HTML, SIDEBAR_STYLE
+from dashboard_sidebar import (
+    admin_sidebar_html as build_admin_sidebar_html,
+    admin_sidebar_links as build_admin_sidebar_links,
+    admin_sidebar_sections as build_admin_sidebar_sections,
+    public_sidebar_sections as build_public_sidebar_sections,
+    should_render_admin_sidebar as build_should_render_admin_sidebar,
+    should_render_public_sidebar as build_should_render_public_sidebar,
+    sidebar_sections as build_sidebar_sections,
+)
 from observability import init_sentry
 
 
@@ -12304,314 +12313,45 @@ def admin_url(endpoint, **values):
 
 
 def admin_sidebar_sections():
-    sections = [
-        {
-            "label": "User",
-            "required_role": "user",
-            "links": [
-                ("Staff Home", "admin_staff_home", {}),
-                ("Submissions", "index", {}),
-                ("My Submissions", "my_submissions", {}),
-                ("Guessing", "guessing_leaderboard", {}),
-                ("Servers", "servers", {}),
-                ("Stats", "public_stats", {}),
-                ("Achievements", "achievements", {}),
-            ],
-        },
-        {
-            "label": "Moderator",
-            "required_role": "moderator",
-            "links": [
-                ("Review Queue", "admin_moderation", {}),
-                ("Removal Reasons", "admin_moderation", {}),
-                ("Users", "admin_users", {}),
-                ("Polls", "admin_polls", {}),
-                ("Audit", "admin_audit", {}),
-                ("Anime Activities", "admin_anime_activities", {}),
-                ("Metrics", "admin_overview", {}),
-            ],
-        },
-        {
-            "label": "Server Owner",
-            "required_role": "owner",
-            "links": [
-                ("Setup Checklist", "admin_setup_checklist", {}),
-                ("Categories", "admin_category_manager", {}),
-                ("Permissions", "admin_permission_health", {}),
-                ("Settings", "admin_settings", {}),
-                ("Server Health", "admin_server_health_cards", {}),
-                ("Media", "admin_media", {}),
-                ("Game Library", "admin_game_library", {}),
-                ("Seasons", "admin_seasons", {}),
-                ("Theme", "admin_theme", {}),
-                ("Layout", "admin_layout", {}),
-                ("Onboarding", "admin_onboarding", {}),
-                ("Privacy", "admin_privacy", {}),
-                ("Owner Portal", "admin_owner_portal", {}),
-            ],
-        },
-        {
-            "label": "Bot Owner",
-            "required_role": "bot_owner",
-            "links": [
-                ("Global Control", "admin_global_control", {}),
-                ("Maintenance Mode", "admin_maintenance_mode", {}),
-                ("Config History", "admin_config_history", {}),
-                ("Maintenance", "admin_maintenance", {}),
-                ("Optimization", "admin_optimization", {}),
-                ("Releases", "admin_releases", {}),
-                ("Production", "admin_production_health", {}),
-                ("Install Doctor", "admin_install_doctor", {}),
-                ("Approvals", "admin_approvals", {}),
-                ("Jobs", "admin_jobs", {}),
-                ("Analytics", "admin_analytics", {}),
-                ("Monthly Report", "admin_monthly_report", {}),
-                ("Server Switcher", "admin_server_switcher", {}),
-                ("Preview As", "admin_preview_as", {}),
-                ("All Submissions", "index", {"guild_id": "all"}),
-                ("All Guessing", "guessing_leaderboard", {"guild_id": "all"}),
-            ],
-        },
-    ]
-    rendered_sections = []
-    for section in sections:
-        if not has_admin_role(section["required_role"]):
-            continue
-        rendered_links = []
-        section_active = False
-        for label, endpoint, values in section["links"]:
-            try:
-                active = request.endpoint == endpoint
-                section_active = section_active or active
-                rendered_links.append({
-                    "label": label,
-                    "url": admin_url(endpoint, **values),
-                    "active": active,
-                })
-            except Exception:
-                continue
-        if rendered_links:
-            rendered_sections.append({
-                "label": section["label"],
-                "active": section_active,
-                "links": rendered_links,
-            })
-    return rendered_sections
+    return build_admin_sidebar_sections(has_admin_role, admin_url)
 
 
 def public_sidebar_sections():
-    links = [
-        ("Home", "index", {}),
-        ("Submissions", "index", {}),
-        ("My Submissions", "my_submissions", {}),
-        ("Servers", "servers", {}),
-        ("Stats", "public_stats", {}),
-        ("Guessing", "guessing_leaderboard", {}),
-        ("Achievements", "achievements", {}),
-        ("About", "about", {}),
-        ("Setup Guide", "setup_guide", {}),
-    ]
-    rendered_links = []
-    section_active = False
-    for label, endpoint, values in links:
-        try:
-            active = request.endpoint == endpoint
-            section_active = section_active or active
-            rendered_links.append({
-                "label": label,
-                "url": url_for(endpoint, **values),
-                "active": active,
-            })
-        except Exception:
-            continue
-    cross_links = []
-    cross_active = False
-    for label, endpoint, values in [
-        ("All Submissions", "index", {"guild_id": "all"}),
-        ("All Guessing", "guessing_leaderboard", {"guild_id": "all"}),
-        ("Servers", "servers", {}),
-        ("Stats", "public_stats", {"guild_id": "all"}),
-    ]:
-        try:
-            active = request.endpoint == endpoint and request.args.get("guild_id", "all") == "all"
-            cross_active = cross_active or active
-            cross_links.append({
-                "label": label,
-                "url": url_for(endpoint, **values),
-                "active": active,
-            })
-        except Exception:
-            continue
-    sections = [{
-        "label": "User",
-        "active": section_active,
-        "links": rendered_links,
-    }]
-    if cross_links:
-        sections.append({
-            "label": "Cross Server",
-            "active": cross_active,
-            "links": cross_links,
-        })
-    return sections
+    return build_public_sidebar_sections()
 
 
 def sidebar_sections():
-    if is_admin_logged_in():
-        return admin_sidebar_sections()
-    return public_sidebar_sections()
+    return build_sidebar_sections(is_admin_logged_in, has_admin_role, admin_url)
 
 
 def should_render_public_sidebar():
-    public_endpoints = {
-        "index",
-        "about",
-        "setup_guide",
-        "servers",
-        "server_profile",
-        "public_stats",
-        "guessing_leaderboard",
-        "achievements",
-        "account_login",
-        "account_register",
-        "account_home",
-        "account_access_debug",
-        "my_submissions",
-        "user_profile",
-        "report_submission",
-    }
-    return request.endpoint in public_endpoints
+    return build_should_render_public_sidebar()
 
 
 def admin_sidebar_links():
-    return [
-        link
-        for section in admin_sidebar_sections()
-        for link in section["links"]
-    ]
+    return build_admin_sidebar_links(has_admin_role, admin_url)
 
 
 def should_render_admin_sidebar():
-    if request.endpoint in {
-        "admin_login",
-        "admin_logout",
-        "admin_oauth_start",
-        "admin_oauth_callback",
-        "account_oauth_start",
-        "account_oauth_callback",
-    }:
-        return False
-    if not is_admin_logged_in():
-        return should_render_public_sidebar()
-    if request.path == "/admin" or request.path.startswith("/admin/"):
-        return True
-    if request.endpoint in {
-        "index",
-        "audit_log",
-        "my_submissions",
-        "user_profile",
-    } and request.args.get("key") == ADMIN_KEY:
-        return True
-    return should_render_public_sidebar()
+    return build_should_render_admin_sidebar(is_admin_logged_in, ADMIN_KEY)
 
 
 def admin_sidebar_html():
-    groups = []
-    for section in sidebar_sections():
-        links = []
-        for link in section["links"]:
-            active_class = " active" if link["active"] else ""
-            links.append(
-                f'<a class="sdac-sidebar-link{active_class}" '
-                f'href="{html.escape(link["url"], quote=True)}">'
-                f'{html.escape(link["label"])}</a>'
-            )
-        open_attr = " open" if section["active"] else ""
-        groups.append(
-            f'<details class="sdac-sidebar-section"{open_attr}>'
-            f'<summary>{html.escape(section["label"])}</summary>'
-            f'<div class="sdac-sidebar-section-links">{"".join(links)}</div>'
-            f'</details>'
-        )
-    account_url = (
-        url_for("account_home", key=ADMIN_KEY)
-        if is_account_logged_in()
-        else url_for("account_login", next=request.full_path)
+    return build_admin_sidebar_html(
+        admin_key=ADMIN_KEY,
+        role_labels=ROLE_LABELS,
+        has_admin_role=has_admin_role,
+        is_admin_logged_in=is_admin_logged_in,
+        is_account_logged_in=is_account_logged_in,
+        current_admin_role=current_admin_role,
+        current_admin_username=current_admin_username,
+        is_bot_owner_username=is_bot_owner_username,
+        current_account_username=current_account_username,
+        normalize_role=normalize_role,
+        load_config=load_config,
+        sidebar_server_options=sidebar_server_options,
+        admin_url=admin_url,
     )
-    account_label = "My Account" if is_account_logged_in() else "Account Login"
-    if is_admin_logged_in():
-        role = ROLE_LABELS.get(current_admin_role(), current_admin_role().title())
-        username = current_admin_username()
-        brand = "SDAC Admin"
-    elif is_account_logged_in():
-        account_role = "bot_owner" if is_bot_owner_username(current_account_username()) else normalize_role(session.get("sdac_account_role"))
-        role = ROLE_LABELS.get(account_role, "User")
-        username = current_account_username()
-        brand = "SDAC"
-    else:
-        role = "Public"
-        username = "Guest"
-        brand = "SDAC"
-    switcher = ""
-    access_warning = ""
-    if is_account_logged_in() or is_admin_logged_in():
-        config_data = load_config()
-        option_rows = sidebar_server_options(config_data)
-        options = ['<option value="all">All Allowed Servers</option>']
-        if not option_rows:
-            access_warning = '<div class="sdac-sidebar-warning">No linked servers. Refresh Discord servers or ask a Bot Owner to assign access.</div>'
-        current_guild = request.args.get("guild_id") or session.get("sdac_guild_id", "all") or "all"
-        for guild in option_rows:
-            selected = " selected" if current_guild == str(guild["id"]) else ""
-            options.append(f'<option value="{html.escape(str(guild["id"]), quote=True)}"{selected}>{html.escape(guild["name"])}</option>')
-        hidden_key = '<input type="hidden" name="key" value="' + html.escape(ADMIN_KEY, quote=True) + '">' if is_admin_logged_in() else ''
-        switcher = (
-            '<form class="sdac-server-switcher" method="get" action="' + html.escape(url_for("index"), quote=True) + '">'
-            + hidden_key +
-            '<label>Server</label><select name="guild_id" onchange="this.form.submit()">' + ''.join(options) + '</select>'
-            '<button type="submit">Open</button></form>'
-        )
-    return f"""
-<button class="sdac-sidebar-toggle" type="button" aria-controls="sdac-sidebar" aria-expanded="true" onclick="sdacToggleSidebar()">Menu</button>
-<aside class="sdac-sidebar" id="sdac-sidebar">
-    <div class="sdac-sidebar-brand">{html.escape(brand)}</div>
-    <div class="sdac-sidebar-user">{html.escape(username)}<br><span>{html.escape(role)}</span></div>
-    {switcher}
-    {access_warning}
-    <nav>{"".join(groups)}</nav>
-    <div class="sdac-sidebar-footer">
-        <a class="sdac-sidebar-link" href="{html.escape(account_url, quote=True)}">{html.escape(account_label)}</a>
-        {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_access_debug", next=request.full_path), quote=True) + '">Access Debug</a>') if is_account_logged_in() else ''}
-        {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_refresh_discord", next=request.full_path), quote=True) + '">Refresh Discord Servers</a>') if is_account_logged_in() else ''}
-        {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_server", next=request.full_path), quote=True) + '">Change Server</a>') if is_account_logged_in() else ''}
-        {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_oauth_start", next=request.full_path), quote=True) + '">Login with Discord</a>') if not is_account_logged_in() else ''}
-        {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_register"), quote=True) + '">Create Account</a>') if not is_account_logged_in() else ''}
-        {('<a class="sdac-sidebar-link" href="' + html.escape(admin_url("admin_logout"), quote=True) + '">Logout</a>') if is_admin_logged_in() else ''}
-        {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_logout"), quote=True) + '">Logout</a>') if is_account_logged_in() and not is_admin_logged_in() else ''}
-    </div>
-</aside>
-<script>
-(function () {{
-    var key = "sdacSidebarCollapsed";
-    var collapsed = false;
-    try {{ collapsed = localStorage.getItem(key) === "1"; }} catch (error) {{ collapsed = false; }}
-    if (collapsed) {{ document.body.classList.add("sdac-sidebar-collapsed"); }}
-    window.sdacToggleSidebar = function () {{
-        var isMobile = window.matchMedia("(max-width: 900px)").matches;
-        if (isMobile) {{
-            document.body.classList.toggle("sdac-sidebar-open");
-            return;
-        }}
-        document.body.classList.toggle("sdac-sidebar-collapsed");
-        try {{
-            localStorage.setItem(key, document.body.classList.contains("sdac-sidebar-collapsed") ? "1" : "0");
-        }} catch (error) {{}}
-    }};
-}}());
-</script>
-"""
-
-
 
 @app.after_request
 def inject_admin_sidebar(response):

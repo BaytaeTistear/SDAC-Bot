@@ -53,6 +53,8 @@ echo "Creating deploy snapshot: $DEPLOY_BACKUP_DIR"
 for file in \
     bot.py \
     dashboard.py \
+    dashboard_shell_assets.py \
+    dashboard_sidebar.py \
     config.py \
     database_migrations.py \
     observability.py \
@@ -107,6 +109,8 @@ fi
 "$PYTHON" -m py_compile \
     "$APP_DIR/bot.py" \
     "$APP_DIR/dashboard.py" \
+    "$APP_DIR/dashboard_shell_assets.py" \
+    "$APP_DIR/dashboard_sidebar.py" \
     "$APP_DIR/config.py" \
     "$APP_DIR/database_migrations.py" \
     "$APP_DIR/observability.py"
