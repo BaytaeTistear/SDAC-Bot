@@ -1,3 +1,26 @@
+# SDAC Bot Version 3.1.15 Experimental
+
+Date: 2026-07-10
+
+Update scope: Dashboard shell asset extraction
+
+Version 3.1.15 is an experimental refactor slice for the progressive backend cleanup.
+
+Included:
+
+- moved static PWA and sidebar shell assets out of `dashboard.py`
+- added `dashboard_shell_assets.py` as the shared source for injected dashboard shell HTML/CSS/JS
+- kept route/auth/sidebar behavior unchanged while reducing the main dashboard file size
+- mirrored the extracted shell asset module into the server deployment copy
+- verified the dashboard page sweep, access tests, and pre-release smoke checks locally with `.venv-win`
+
+Release channel:
+
+- `version-3.1.15` is this experimental dashboard shell extraction update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.14 Experimental
 
 Date: 2026-07-10
