@@ -1,3 +1,26 @@
+# SDAC Bot Version 3.1.14 Experimental
+
+Date: 2026-07-10
+
+Update scope: Refactor guardrail foundation
+
+Version 3.1.14 is an experimental cleanup-foundation update for the progressive backend rebuild.
+
+Included:
+
+- added a reusable dashboard page sweep test for admin and public routes
+- verifies shared sidebar injection on dashboard pages that should use it
+- treats `/admin/health` as the JSON health API instead of a sidebar page
+- uses temporary database, config, media, backup, and status paths so local verification does not mutate live config
+- confirmed the new sweep, dashboard access tests, and pre-release smoke checks pass locally with `.venv-win`
+
+Release channel:
+
+- `version-3.1.14` is this experimental refactor guardrail update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.13 Experimental
 
 Date: 2026-07-09
@@ -20,7 +43,8 @@ Release channel:
 - `latest-experimental` points to this build after publishing
 - `latest-official` remains on Version 3.1.0 until this build is promoted
 
----# SDAC Bot Version 3.1.12 Experimental
+---
+# SDAC Bot Version 3.1.12 Experimental
 
 Date: 2026-07-09
 
