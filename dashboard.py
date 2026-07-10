@@ -18071,7 +18071,7 @@ def staff_home_context(mode_key, connection, config_data, selected_server_id, vi
         actions = [
             {"label": "Review Moderation Queue", "detail": "Pending submissions, public reports, and recent decisions.", "url": staff_home_link("admin_moderation", selected_server_id), "style": ""},
             {"label": "Open Public Submissions", "detail": "Review posted items in the selected server scope.", "url": staff_home_link("index", selected_server_id), "style": "secondary"},
-            {"label": "Check Audit History", "detail": "Confirm who took an action and why.", "url": staff_home_link("admin_audit", selected_server_id), "style": "secondary"},
+            {"label": "Check Audit History", "detail": "Confirm who took an action and why.", "url": staff_home_link("audit_log", selected_server_id), "style": "secondary"},
             {"label": "One-Click Removal Reasons", "detail": "Use preset removal reasons from the queue or gallery so audit rows stay consistent.", "url": staff_home_link("admin_moderation", selected_server_id), "style": "secondary"},
             {"label": "Manage Polls", "detail": "Create, close, or review website-managed polls.", "url": staff_home_link("admin_polls", selected_server_id), "style": "secondary"},
         ]
@@ -18094,7 +18094,7 @@ def staff_home_context(mode_key, connection, config_data, selected_server_id, vi
             {"label": "Setup And Settings", "detail": "Channels, features, limits, moderation, backups, and server import/export.", "url": staff_home_link("admin_settings", selected_server_id), "style": "secondary"},
             {"label": "Server Health Cards", "detail": "Quick per-server setup, storage, backup, game, library, and achievement status.", "url": staff_home_link("admin_server_health_cards", selected_server_id), "style": "secondary"},
             {"label": "Theme And Layout", "detail": "Brand colors, background image, sidebar width, density, and menu placement.", "url": staff_home_link("admin_theme", selected_server_id), "style": "secondary"},
-            {"label": "Media And Storage", "detail": "Missing media, oversized files, quarantine, thumbnails, and lifecycle controls.", "url": staff_home_link("admin_media", selected_server_id), "style": "secondary"},
+            {"label": "Media And Storage", "detail": "Missing media, oversized files, quarantine, thumbnails, and lifecycle controls.", "url": staff_home_link("admin_media_cleanup", selected_server_id), "style": "secondary"},
             {"label": "Onboarding Checklist", "detail": "Setup score, command hints, templates, and saved setup-test reports.", "url": staff_home_link("admin_onboarding", selected_server_id), "style": "secondary"},
         ]
     else:

@@ -13,3 +13,4 @@ apps/sdac-official-app/dist/
 apps/sdac-official-app/icons/
 apps/sdac-official-app/public/manifest.webmanifest
 apps/sdac-official-app/android/keystore.properties
+.venv-win/

@@ -1,4 +1,26 @@
-# SDAC Bot Version 3.1.12 Experimental
+# SDAC Bot Version 3.1.13 Experimental
+
+Date: 2026-07-09
+
+Update scope: Staff Home link verification
+
+Version 3.1.13 is an experimental dashboard verification fix after enabling the local Windows test environment.
+
+Included:
+
+- fixed the Moderator Home audit action so it opens the real audit page
+- fixed the Server Owner Home media action so it opens the media cleanup page
+- verified the admin dashboard page sweep locally with the Windows virtual environment
+- ignored the local `.venv-win/` folder so the Windows test environment stays out of releases
+- mirrored the dashboard link fixes into the server deployment copy
+
+Release channel:
+
+- `version-3.1.13` is this experimental Staff Home link verification update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---# SDAC Bot Version 3.1.12 Experimental
 
 Date: 2026-07-09
 
