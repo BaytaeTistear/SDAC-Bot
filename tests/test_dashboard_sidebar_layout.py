@@ -38,6 +38,19 @@ class DashboardSidebarLayoutTests(unittest.TestCase):
         self.assertIn('name="notice"', body)
         self.assertNotIn('sdacSidebarCollapsed";\n    var collapsed', body)
 
+    def test_collapsed_sidebar_keeps_menu_gutter(self):
+        response = self.client.get(f"/admin/bot-owner?key={dashboard.ADMIN_KEY}")
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("--sdac-collapsed-sidebar-gutter: 112px", body)
+        self.assertIn(
+            "body.sdac-has-sidebar.sdac-sidebar-collapsed { padding-left: var(--sdac-collapsed-sidebar-gutter) !important; }",
+            body,
+        )
+        self.assertIn(
+            "body.sdac-has-sidebar.sdac-sidebar-collapsed { padding-left: 0 !important; }",
+            body,
+        )
 
 if __name__ == "__main__":
     unittest.main()

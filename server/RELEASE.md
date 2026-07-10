@@ -1,3 +1,25 @@
+# SDAC Bot Version 3.1.22 Experimental
+
+Date: 2026-07-10
+
+Update scope: Staff Home collapsed-sidebar layout repair
+
+Version 3.1.22 is an experimental dashboard layout patch.
+
+Included:
+
+- fixed Staff Home collapsed-sidebar layout so page content no longer starts underneath the fixed Menu button
+- added a compact desktop collapsed-sidebar gutter for safe page alignment
+- kept mobile collapsed-sidebar behavior full-width with no left padding
+- added regression coverage for the collapsed-sidebar gutter CSS on rendered admin pages
+
+Release channel:
+
+- `version-3.1.22` is this experimental Staff Home layout patch
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.21 Experimental
 
 Date: 2026-07-10
