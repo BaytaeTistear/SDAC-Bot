@@ -260,6 +260,7 @@ DOCTOR
     {
         write_assignment SDAC_GITHUB_REPO "$REPO"
         write_assignment SDAC_RELEASE_TAG "$RELEASE_TAG"
+        write_assignment SDAC_RELEASE "$RESOLVED_VERSION"
         write_assignment SDAC_APP_DIR "$APP_DIR"
         write_assignment SDAC_APP_USER "$APP_USER"
         write_assignment SDAC_ENV_FILE "$ENV_FILE"

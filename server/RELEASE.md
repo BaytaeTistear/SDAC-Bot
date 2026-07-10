@@ -1,3 +1,28 @@
+# SDAC Bot Version 3.1.18 Experimental
+
+Date: 2026-07-10
+
+Update scope: Dashboard page fixes and release banner repair
+
+Version 3.1.18 is an experimental dashboard fix update.
+
+Included:
+
+- fixed the Release Banner so it reads the version fields that `release_status()` actually provides
+- resolved floating GitHub release names like `Latest Experimental (3.1.18)` into display versions instead of showing `latest-experimental`
+- added local release-note fallback for installed version detection when the environment does not set `SDAC_RELEASE`
+- updated `sdac-update` to write the resolved `SDAC_RELEASE` value for future dashboard status checks
+- fixed broken sidebar links for Audit and Media pages
+- stopped stale browser sidebar-collapse state from hiding the desktop sidebar across pages
+- added regression tests for release banner status and sidebar route targets
+
+Release channel:
+
+- `version-3.1.18` is this experimental dashboard page and banner fix
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.17 Experimental
 
 Date: 2026-07-10

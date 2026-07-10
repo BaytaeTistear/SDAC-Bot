@@ -12072,6 +12072,15 @@ def latest_release_note_entry(path=None):
     return parts[0].strip()
 
 
+def extract_release_version(text):
+    match = re.search(r"([0-9]+(?:\.[0-9]+){1,2})", str(text or ""))
+    return match.group(1) if match else ""
+
+
+def latest_release_note_version(path=None):
+    return extract_release_version(latest_release_note_entry(path))
+
+
 def fetch_recent_releases(limit=8):
     token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
     headers = {
@@ -12435,9 +12444,12 @@ def fetch_github_release(tag):
     )
     with urlopen(api_request, timeout=8) as response:
         payload = json.loads(response.read().decode("utf-8"))
+    release_tag = payload.get("tag_name") or tag
+    release_name = payload.get("name") or ""
     return {
-        "tag": payload.get("tag_name") or tag,
-        "name": payload.get("name") or "",
+        "tag": release_tag,
+        "name": release_name,
+        "version": extract_release_version(f"{release_name} {release_tag}"),
         "published_at": payload.get("published_at") or "",
     }
 
@@ -12466,6 +12478,21 @@ def release_status():
         status["experimental"] = fetch_github_release("latest-experimental")
     except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as error:
         status["error"] = str(error)
+
+    installed = (
+        os.getenv("SDAC_RELEASE")
+        or update_config.get("SDAC_RELEASE")
+        or latest_release_note_version()
+        or "development"
+    )
+    if status["official"].get("tag") == "unknown" and status["configured_tag"] == "latest-official" and installed != "development":
+        status["official"] = {"tag": "latest-official", "name": f"Latest Official ({installed})", "version": installed, "published_at": ""}
+    if status["experimental"].get("tag") == "unknown" and status["configured_tag"] == "latest-experimental" and installed != "development":
+        status["experimental"] = {"tag": "latest-experimental", "name": f"Latest Experimental ({installed})", "version": installed, "published_at": ""}
+
+    status["installed_version"] = installed
+    status["official_version"] = status["official"].get("version") or status["official"].get("tag") or "unknown"
+    status["experimental_version"] = status["experimental"].get("version") or status["experimental"].get("tag") or "unknown"
 
     RELEASE_CACHE["status"] = status
     RELEASE_CACHE["expires_at"] = time.time() + 3600
