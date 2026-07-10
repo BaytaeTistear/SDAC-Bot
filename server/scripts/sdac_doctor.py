@@ -1,15 +1,25 @@
 import json
 import os
+import importlib.util
 import shutil
 import sqlite3
 import subprocess
 import sys
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
 
 
 BASE_DIR = Path(os.getenv("SDAC_BASE_DIR", Path(__file__).resolve().parents[1]))
 CONFIG_FILE = Path(os.getenv("SDAC_CONFIG_FILE", BASE_DIR / "config.json"))
 DB_FILE = Path(os.getenv("SDAC_DB_FILE", BASE_DIR / "sdac.db"))
+DASHBOARD_BIND = os.getenv("SDAC_DASHBOARD_BIND", "127.0.0.1:5000")
+DASHBOARD_HELPER_FILES = [
+    "dashboard_account_templates.py",
+    "dashboard_admin_roles.py",
+    "dashboard_shell_assets.py",
+    "dashboard_sidebar.py",
+]
 
 
 def status(label, ok, detail):
@@ -82,6 +92,61 @@ def check_update_command():
     status("Updater", Path(update_path).exists() or shutil.which("sdac-update"), update_path)
 
 
+def check_dashboard_files():
+    missing = [name for name in DASHBOARD_HELPER_FILES if not (BASE_DIR / name).is_file()]
+    if missing:
+        status("Dashboard files", False, "missing " + ", ".join(missing))
+        return
+    status("Dashboard files", True, f"{len(DASHBOARD_HELPER_FILES)} helper file(s) present")
+
+
+def check_dashboard_import():
+    dashboard_path = BASE_DIR / "dashboard.py"
+    if not dashboard_path.is_file():
+        status("Dashboard import", False, f"missing {dashboard_path}")
+        return
+    try:
+        spec = importlib.util.spec_from_file_location("sdac_doctor_dashboard", dashboard_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except ModuleNotFoundError as error:
+        status("Dashboard import", False, f"missing Python module: {error.name}")
+    except Exception as error:
+        detail = str(error).splitlines()[0] if str(error) else error.__class__.__name__
+        status("Dashboard import", False, detail)
+    else:
+        status("Dashboard import", True, "dashboard.py imports successfully")
+
+
+def check_dashboard_health():
+    url = f"http://{DASHBOARD_BIND}/health"
+    try:
+        with urlopen(url, timeout=5) as response:
+            body = response.read(300).decode("utf-8", errors="replace").strip()
+            ok = 200 <= response.status < 300
+            detail = f"{response.status} {body}" if body else str(response.status)
+    except HTTPError as error:
+        status("Dashboard health", False, f"{url} returned {error.code}")
+        return
+    except (OSError, URLError) as error:
+        status("Dashboard health", False, f"{url} unavailable: {error}")
+        return
+    status("Dashboard health", ok, detail)
+
+
+def check_dashboard_service():
+    result = run(["systemctl", "is-active", "sdac-dashboard"], timeout=4)
+    if isinstance(result, Exception):
+        status("Dashboard service", False, str(result))
+        return
+    detail = (result.stdout or result.stderr or "").strip() or f"exit {result.returncode}"
+    status("Dashboard service", result.returncode == 0, detail)
+    logs = run(["journalctl", "-u", "sdac-dashboard", "-n", "20", "--no-pager"], timeout=8)
+    if not isinstance(logs, Exception) and logs.stdout:
+        print("\nLast sdac-dashboard logs:")
+        print(logs.stdout.strip())
+
+
 def check_service():
     result = run(["systemctl", "is-active", "sdac-bot"], timeout=4)
     if isinstance(result, Exception):
@@ -103,6 +168,10 @@ def main():
     check_environment()
     check_disk()
     check_update_command()
+    check_dashboard_files()
+    check_dashboard_import()
+    check_dashboard_service()
+    check_dashboard_health()
     check_service()
 
 

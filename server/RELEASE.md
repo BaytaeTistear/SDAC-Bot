@@ -1,3 +1,27 @@
+# SDAC Bot Version 3.1.17 Experimental
+
+Date: 2026-07-10
+
+Update scope: Dashboard helper extraction and packaging diagnostics
+
+Version 3.1.17 is an experimental cleanup and safety update for the progressive backend rebuild.
+
+Included:
+
+- moved shared dashboard role constants and role normalization into `dashboard_admin_roles.py`
+- moved login/register dashboard templates into `dashboard_account_templates.py`
+- added packaging coverage so dashboard helper imports must be included in release, install, and update assets
+- expanded `sdac-doctor` with dashboard helper file, import, service, and local `/health` diagnostics
+- updated release, install, update, and manual experimental-release packaging for the new helper modules
+- kept existing dashboard route behavior unchanged while reducing `dashboard.py`
+
+Release channel:
+
+- `version-3.1.17` is this experimental dashboard helper and diagnostics update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.16 Experimental
 
 Date: 2026-07-10

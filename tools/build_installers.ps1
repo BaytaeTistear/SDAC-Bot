@@ -27,6 +27,8 @@ function Copy-PayloadFiles {
         "POSTGRESQL.md",
         "bot.py",
         "dashboard.py",
+        "dashboard_account_templates.py",
+        "dashboard_admin_roles.py",
         "dashboard_shell_assets.py",
         "dashboard_sidebar.py",
         "config.py",
@@ -248,6 +250,8 @@ if [[ -f "`$APP_DIR/bot.py" || -f "`$APP_DIR/dashboard.py" ]]; then
     for file in \
         bot.py \
         dashboard.py \
+        dashboard_account_templates.py \
+        dashboard_admin_roles.py \
         dashboard_shell_assets.py \
         dashboard_sidebar.py \
         config.py \
@@ -319,7 +323,7 @@ mkdir -p "`$APP_DIR/media" "`$APP_DIR/backups"
 
 if [[ "`$SKIP_SERVICES" == "1" ]]; then
     say "Compiling Python files without installing services"
-    python3 -m py_compile "`$APP_DIR/bot.py" "`$APP_DIR/dashboard.py" "`$APP_DIR/dashboard_shell_assets.py" "`$APP_DIR/dashboard_sidebar.py" "`$APP_DIR/config.py" "`$APP_DIR/database_backend.py"
+    python3 -m py_compile "`$APP_DIR/bot.py" "`$APP_DIR/dashboard.py" "`$APP_DIR/dashboard_account_templates.py" "`$APP_DIR/dashboard_admin_roles.py" "`$APP_DIR/dashboard_shell_assets.py" "`$APP_DIR/dashboard_sidebar.py" "`$APP_DIR/config.py" "`$APP_DIR/database_backend.py"
     python3 -m py_compile "`$APP_DIR/database_migrations.py" "`$APP_DIR/observability.py" "`$APP_DIR/scripts/migrate_database.py" "`$APP_DIR/scripts/export_sqlite_to_postgres.py"
     echo "SDAC files extracted to `$APP_DIR"
     exit 0
@@ -516,7 +520,7 @@ $chunkLiteral
 
         string[] files = new string[]
         {
-            "bot.py", "dashboard.py", "dashboard_shell_assets.py", "dashboard_sidebar.py", "config.py", "requirements.txt",
+            "bot.py", "dashboard.py", "dashboard_account_templates.py", "dashboard_admin_roles.py", "dashboard_shell_assets.py", "dashboard_sidebar.py", "config.py", "requirements.txt",
             "database_migrations.py", "observability.py",
             "README.md", "HOSTING.md", "DEPLOY.md", "PRODUCTION_NEXT.md",
             "MONITORING.md", "POSTGRESQL.md", "DISCORD_PERMISSIONS.md", ".env"
@@ -721,7 +725,7 @@ if not exist ""venv\Scripts\python.exe"" (
 )
 ""%~dp0venv\Scripts\python.exe"" -m pip install --upgrade pip
 ""%~dp0venv\Scripts\python.exe"" -m pip install -r requirements.txt
-""%~dp0venv\Scripts\python.exe"" -m py_compile bot.py dashboard.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py scripts\migrate_database.py scripts\export_sqlite_to_postgres.py
+""%~dp0venv\Scripts\python.exe"" -m py_compile bot.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py scripts\migrate_database.py scripts\export_sqlite_to_postgres.py
 pause
 ", new UTF8Encoding(false));
 
@@ -752,7 +756,7 @@ pause
         Run(pythonCommand, "-m venv \"" + Path.Combine(appDir, "venv") + "\"", appDir, true);
         Run(venvPython, "-m pip install --upgrade pip", appDir, false);
         Run(venvPython, "-m pip install \"discord.py>=2.3.2\" \"Flask>=3.0.0\" \"sentry-sdk>=2.0.0\"", appDir, false);
-        Run(venvPython, "-m py_compile bot.py dashboard.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py observability.py scripts\\migrate_database.py scripts\\export_sqlite_to_postgres.py", appDir, false);
+        Run(venvPython, "-m py_compile bot.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py observability.py scripts\\migrate_database.py scripts\\export_sqlite_to_postgres.py", appDir, false);
         if (!String.IsNullOrWhiteSpace(InitialAdminUsername) && !String.IsNullOrWhiteSpace(InitialAdminPassword))
         {
             string script = Path.Combine(appDir, "scripts", "reset_admin_login.py");
