@@ -52,6 +52,7 @@ function Copy-PayloadFiles {
         "scripts\support_bundle.sh",
         "scripts\check_production.sh",
         "scripts\release_checklist.sh",
+        "scripts\release_readiness.py",
         "scripts\pre_release_smoke.py",
         "scripts\sdac_doctor.py",
         "scripts\sdac-doctor",
@@ -324,7 +325,7 @@ mkdir -p "`$APP_DIR/media" "`$APP_DIR/backups"
 if [[ "`$SKIP_SERVICES" == "1" ]]; then
     say "Compiling Python files without installing services"
     python3 -m py_compile "`$APP_DIR/bot.py" "`$APP_DIR/dashboard.py" "`$APP_DIR/dashboard_account_templates.py" "`$APP_DIR/dashboard_admin_roles.py" "`$APP_DIR/dashboard_shell_assets.py" "`$APP_DIR/dashboard_sidebar.py" "`$APP_DIR/config.py" "`$APP_DIR/database_backend.py"
-    python3 -m py_compile "`$APP_DIR/database_migrations.py" "`$APP_DIR/observability.py" "`$APP_DIR/scripts/migrate_database.py" "`$APP_DIR/scripts/export_sqlite_to_postgres.py"
+    python3 -m py_compile "`$APP_DIR/database_migrations.py" "`$APP_DIR/observability.py" "`$APP_DIR/scripts/migrate_database.py" "`$APP_DIR/scripts/export_sqlite_to_postgres.py" "`$APP_DIR/scripts/release_readiness.py"
     echo "SDAC files extracted to `$APP_DIR"
     exit 0
 fi

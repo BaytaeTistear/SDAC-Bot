@@ -23,6 +23,14 @@ run_capture "disk" df -h "$APP_DIR"
 run_capture "files" find "$APP_DIR" -maxdepth 2 -type f
 run_capture "git" git -C "$APP_DIR" status --short
 
+if [[ -x "$APP_DIR/venv/bin/python" && -f "$APP_DIR/scripts/sdac_doctor.py" ]]; then
+    run_capture "sdac-doctor" "$APP_DIR/venv/bin/python" "$APP_DIR/scripts/sdac_doctor.py"
+fi
+
+if [[ -x "$APP_DIR/venv/bin/python" && -f "$APP_DIR/scripts/release_readiness.py" ]]; then
+    run_capture "release-readiness" "$APP_DIR/venv/bin/python" "$APP_DIR/scripts/release_readiness.py" --skip-tests
+fi
+
 if command -v systemctl >/dev/null 2>&1; then
     run_capture "sdac-bot-service" systemctl status sdac-bot --no-pager
     run_capture "sdac-dashboard-service" systemctl status sdac-dashboard --no-pager

@@ -1,3 +1,28 @@
+# SDAC Bot Version 3.1.20 Experimental
+
+Date: 2026-07-10
+
+Update scope: Backend release-readiness polish
+
+Version 3.1.20 is an experimental preparation update for an upcoming full release.
+
+Included:
+
+- added `scripts/release_readiness.py`, a backend release gate for core Python compile checks, server mirror drift, dashboard helper packaging, release metadata, support tools, and focused backend/dashboard tests
+- wired backend readiness into the GitHub release workflow before release smoke tests
+- wired backend readiness into the manual experimental release helper
+- added backend readiness to the release checklist so full-release preparation has one repeatable command path
+- included backend readiness output in support bundles alongside `sdac-doctor`
+- packaged the readiness checker with the Linux installer and server mirror
+- added regression tests to make sure the readiness checker runs and ships with release tooling
+
+Release channel:
+
+- `version-3.1.20` is this experimental backend release-readiness polish update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.19 Experimental
 
 Date: 2026-07-10

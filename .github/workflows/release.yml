@@ -44,7 +44,10 @@ jobs:
             database_migrations.py \
             observability.py \
             scripts/migrate_database.py \
-            scripts/export_sqlite_to_postgres.py
+            scripts/export_sqlite_to_postgres.py \
+            scripts/release_readiness.py
+      - name: Backend release readiness
+        run: python scripts/release_readiness.py
       - name: Runtime smoke tests
         run: |
           python - <<'PY'

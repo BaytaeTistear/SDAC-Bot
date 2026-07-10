@@ -37,7 +37,12 @@ check "Python compile" "$PYTHON" -m py_compile \
     database_backend.py \
     database_migrations.py \
     observability.py \
-    scripts/reset_admin_login.py
+    scripts/reset_admin_login.py \
+    scripts/release_readiness.py
+
+if [[ -f scripts/release_readiness.py ]]; then
+    check "Backend readiness" "$PYTHON" scripts/release_readiness.py --skip-tests
+fi
 
 if command -v git >/dev/null 2>&1 && [[ -d .git ]]; then
     check "Git status" git status --short
