@@ -12146,6 +12146,30 @@ def should_render_admin_sidebar():
     return build_should_render_admin_sidebar(is_admin_logged_in, ADMIN_KEY)
 
 
+def add_body_classes(page_html, *classes):
+    class_names = [str(item).strip() for item in classes if str(item).strip()]
+    if not class_names:
+        return page_html
+
+    def replace_body(match):
+        attrs = match.group(1) or ""
+        class_match = re.search(r'class=(["\'])(.*?)\1', attrs, flags=re.IGNORECASE | re.DOTALL)
+        if class_match:
+            quote = class_match.group(1)
+            existing = class_match.group(2).split()
+            merged = existing[:]
+            for class_name in class_names:
+                if class_name not in merged:
+                    merged.append(class_name)
+            replacement = f"class={quote}{' '.join(merged)}{quote}"
+            attrs = attrs[:class_match.start()] + replacement + attrs[class_match.end():]
+        else:
+            attrs = attrs + f' class="{" ".join(class_names)}"'
+        return f"<body{attrs}>"
+
+    return re.sub(r"<body([^>]*)>", replace_body, page_html, count=1, flags=re.IGNORECASE)
+
+
 def admin_sidebar_html():
     return build_admin_sidebar_html(
         admin_key=ADMIN_KEY,
@@ -12179,13 +12203,13 @@ def inject_admin_sidebar(response):
         page_html = page_html.replace("</head>", PWA_HEAD_HTML.replace("<link", "<link id=\"sdac-pwa-head\"", 1) + "\n</head>", 1)
     if "sdac-theme-vars" not in page_html:
         page_html = page_html.replace("</head>", dashboard_theme_css() + "\n</head>", 1)
-    page_html = re.sub(r"<body([^>]*)>", r'<body\1 class="sdac-theme">', page_html, count=1)
+    page_html = add_body_classes(page_html, "sdac-theme")
     if should_render_admin_sidebar() and 'class="sdac-sidebar"' not in page_html:
         if "sdac-sidebar-style" not in page_html:
             page_html = page_html.replace("</head>", SIDEBAR_STYLE + "\n</head>", 1)
         menu_alignment = dashboard_layout().get("menu_button_alignment", "sidebar_edge")
         menu_class = f"sdac-menu-{menu_alignment.replace('_', '-')}"
-        page_html = page_html.replace('class="sdac-theme"', f'class="sdac-theme sdac-has-sidebar {menu_class}"', 1)
+        page_html = add_body_classes(page_html, "sdac-has-sidebar", menu_class)
         page_html = re.sub(
             r'(<body[^>]*>)',
             r'\1' + admin_sidebar_html(),

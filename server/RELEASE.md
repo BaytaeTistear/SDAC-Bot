@@ -1,3 +1,28 @@
+# SDAC Bot Version 3.1.19 Experimental
+
+Date: 2026-07-10
+
+Update scope: Sidebar, menu button, and server selector repair
+
+Version 3.1.19 is an experimental dashboard layout fix update.
+
+Included:
+
+- fixed body class injection so sidebar layout classes are merged instead of creating duplicate `class` attributes
+- moved the Menu button into the sidebar gutter so it no longer sits over page titles
+- added top sidebar spacing so the Menu button does not cover the SDAC Admin brand area
+- stopped the sidebar from reusing stale collapsed browser state on page load
+- fixed the sidebar server selector so it submits back to the current page instead of always opening the public gallery
+- preserved existing query values such as notices while changing server scope
+- added regression tests for sidebar layout classes, Menu button rendering, and server selector form behavior
+
+Release channel:
+
+- `version-3.1.19` is this experimental sidebar and server selector fix
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.18 Experimental
 
 Date: 2026-07-10

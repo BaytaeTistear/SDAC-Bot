@@ -291,10 +291,18 @@ def admin_sidebar_html(
         for guild in option_rows:
             selected = " selected" if current_guild == str(guild["id"]) else ""
             options.append(f'<option value="{html.escape(str(guild["id"]), quote=True)}"{selected}>{html.escape(guild["name"])}</option>')
-        hidden_key = '<input type="hidden" name="key" value="' + html.escape(admin_key, quote=True) + '">' if is_admin_logged_in() else ''
+        hidden_fields = []
+        for key, value in request.args.items():
+            if key in {"guild_id", "key"}:
+                continue
+            hidden_fields.append(
+                '<input type="hidden" name="' + html.escape(key, quote=True) + '" value="' + html.escape(value, quote=True) + '">'
+            )
+        if is_admin_logged_in():
+            hidden_fields.append('<input type="hidden" name="key" value="' + html.escape(admin_key, quote=True) + '">')
         switcher = (
-            '<form class="sdac-server-switcher" method="get" action="' + html.escape(url_for("index"), quote=True) + '">'
-            + hidden_key +
+            '<form class="sdac-server-switcher" method="get" action="' + html.escape(request.path or url_for("index"), quote=True) + '">'
+            + ''.join(hidden_fields) +
             '<label>Server</label><select name="guild_id" onchange="this.form.submit()">' + ''.join(options) + '</select>'
             '<button type="submit">Open</button></form>'
         )
@@ -319,10 +327,7 @@ def admin_sidebar_html(
 </aside>
 <script>
 (function () {{
-    var key = "sdacSidebarCollapsed";
-    var collapsed = false;
-    try {{ collapsed = localStorage.getItem(key) === "1"; }} catch (error) {{ collapsed = false; }}
-    if (collapsed) {{ document.body.classList.add("sdac-sidebar-collapsed"); }}
+    try {{ localStorage.removeItem("sdacSidebarCollapsed"); }} catch (error) {{}}
     window.sdacToggleSidebar = function () {{
         var isMobile = window.matchMedia("(max-width: 900px)").matches;
         if (isMobile) {{
@@ -330,9 +335,6 @@ def admin_sidebar_html(
             return;
         }}
         document.body.classList.toggle("sdac-sidebar-collapsed");
-        try {{
-            localStorage.setItem(key, document.body.classList.contains("sdac-sidebar-collapsed") ? "1" : "0");
-        }} catch (error) {{}}
     }};
 }}());
 </script>
