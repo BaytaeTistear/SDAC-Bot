@@ -87,6 +87,8 @@ for route in routes:
         body = response.get_data(as_text=True)
         if "sdac-sidebar" not in body or "sdac-sidebar-style" not in body:
             failures.append(f"{route}: missing shared sidebar")
+        if ".sdac-sidebar .sdac-server-switcher select, .sdac-sidebar .sdac-server-switcher button" not in body or "grid-template-columns: minmax(0, 1fr)" not in body:
+            failures.append(f"{route}: missing hardened server selector css")
 
 if failures:
     print("FAILURES:", failures)

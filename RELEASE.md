@@ -1,3 +1,25 @@
+# SDAC Bot Version 3.1.23 Experimental
+
+Date: 2026-07-10
+
+Update scope: Sidebar server selector containment
+
+Version 3.1.23 is an experimental dashboard layout patch.
+
+Included:
+
+- hardened the shared sidebar server selector so it stays inside the sidebar on every admin page
+- isolated the sidebar switcher as a one-column grid so page-level form styles cannot stretch it
+- added width, inline-size, and overflow guards for long server names inside the selector
+- added regression checks to the admin page sweep for the hardened selector CSS
+
+Release channel:
+
+- `version-3.1.23` is this experimental server selector layout patch
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.22 Experimental
 
 Date: 2026-07-10
