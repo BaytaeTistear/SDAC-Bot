@@ -1,3 +1,29 @@
+# SDAC Bot Version 3.1.21 Experimental
+
+Date: 2026-07-10
+
+Update scope: Public bot invite and launch-readiness pages
+
+Version 3.1.21 is an experimental public-availability preparation update.
+
+Included:
+
+- added a public `/invite` page with Discord install link, required scopes, recommended permissions, and after-install setup steps
+- expanded bot invite URL generation with configurable client ID, permissions, scopes, public URL, support URL, privacy URL, terms URL, GitHub URL, bot name, and tagline
+- added public `/privacy` and `/terms` placeholder pages that can redirect to final hosted policies with `SDAC_PRIVACY_URL` and `SDAC_TERMS_URL`
+- added invite, setup guide, privacy, terms, support, and GitHub metadata to the app bootstrap API
+- linked the invite page from public navigation and sidebar
+- added public-release environment placeholders to installer templates
+- added tests for invite URL generation, public invite rendering, public page sweep, and app bootstrap metadata
+- included the public invite test suite in the backend release-readiness gate
+
+Release channel:
+
+- `version-3.1.21` is this experimental public bot launch-readiness update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.20 Experimental
 
 Date: 2026-07-10

@@ -84,6 +84,7 @@ PUBLIC_LINKS = [
     ("Guessing", "guessing_leaderboard", {}),
     ("Achievements", "achievements", {}),
     ("About", "about", {}),
+    ("Invite Bot", "bot_invite", {}),
     ("Setup Guide", "setup_guide", {}),
 ]
 
@@ -97,6 +98,9 @@ CROSS_SERVER_LINKS = [
 PUBLIC_SIDEBAR_ENDPOINTS = {
     "index",
     "about",
+    "bot_invite",
+    "public_privacy_policy",
+    "public_terms",
     "setup_guide",
     "servers",
     "server_profile",

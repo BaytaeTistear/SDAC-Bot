@@ -88,6 +88,7 @@ FOCUSED_TESTS = [
     "tests.test_dashboard_release_status",
     "tests.test_dashboard_sidebar_layout",
     "tests.test_dashboard_sidebar_routes",
+    "tests.test_public_bot_invite",
 ]
 
 

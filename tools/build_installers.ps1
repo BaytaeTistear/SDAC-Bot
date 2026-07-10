@@ -693,6 +693,11 @@ $chunkLiteral
         env.AppendLine("PYTHONUNBUFFERED=1");
         env.AppendLine("SDAC_PUBLIC_URL=" + QuoteEnv(publicUrl));
         env.AppendLine("SDAC_RELEASE=");
+        env.AppendLine("SDAC_PUBLIC_BOT_NAME=SDAC Bot");
+        env.AppendLine("SDAC_PUBLIC_TAGLINE=Screenshot, media, and guessing-game management for Discord communities.");
+        env.AppendLine("SDAC_SUPPORT_URL=");
+        env.AppendLine("SDAC_PRIVACY_URL=");
+        env.AppendLine("SDAC_TERMS_URL=");
         env.AppendLine("SDAC_SERVER_NAME=" + QuoteEnv(serverName));
         File.WriteAllText(envPath, env.ToString(), new UTF8Encoding(false));
     }

@@ -19,7 +19,7 @@ import time
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote_plus
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -957,6 +957,7 @@ HTML = """
         <a href="{{ url_for('my_submissions', key=admin_key if is_admin else None) }}">My submissions</a>
         <a href="{{ url_for('about') }}">About</a>
         <a href="{{ url_for('servers') }}">Servers</a>
+        <a href="{{ url_for('bot_invite') }}">Invite bot</a>
         <a href="{{ url_for('setup_guide') }}">Setup guide</a>
         <a href="{{ url_for('guessing_leaderboard', key=admin_key if is_admin else None) }}">Guessing leaderboard</a>
         <a href="{{ url_for('achievements', key=admin_key if is_admin else None) }}">Achievements</a>
@@ -5792,6 +5793,7 @@ PUBLIC_STATS_HTML = """
     <nav>
         <a href="{{ url_for('index') }}">Submissions</a>
         <a href="{{ url_for('servers') }}">Servers</a>
+        <a href="{{ url_for('bot_invite') }}">Invite bot</a>
         <a href="{{ url_for('guessing_leaderboard') }}">Guessing leaderboard</a>
         <a href="{{ url_for('achievements') }}">Achievements</a>
     </nav>
@@ -6243,6 +6245,7 @@ ABOUT_HTML = """
         <a href="{{ url_for('index') }}">Submissions</a>
         <a href="{{ url_for('servers') }}">Servers</a>
         <a href="{{ url_for('public_stats') }}">Stats</a>
+        <a href="{{ url_for('bot_invite') }}">Invite bot</a>
         <a href="{{ url_for('setup_guide') }}">Setup guide</a>
     </nav>
 
@@ -6304,6 +6307,121 @@ ABOUT_HTML = """
 """
 
 
+BOT_INVITE_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Invite {{ app_info.name }}</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 940px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+        .button { background: linear-gradient(90deg, #4f46e5, #06b6d4); border-radius: 8px; color: #fff; display: inline-block; font-weight: 800; padding: 12px 16px; text-decoration: none; }
+        code { color: #cdd7ff; overflow-wrap: anywhere; }
+        .muted { color: #a8adb8; }
+        li { margin: 8px 0; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Invite {{ app_info.name }}</h1>
+    <nav>
+        <a href="{{ url_for('index') }}">Gallery</a>
+        <a href="{{ url_for('about') }}">About</a>
+        <a href="{{ url_for('bot_invite') }}">Invite bot</a>
+        <a href="{{ url_for('setup_guide') }}">Setup guide</a>
+        <a href="{{ app_info.github_url }}" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+
+    <section class="panel">
+        <h2>Install SDAC In Discord</h2>
+        <p>{{ app_info.tagline }}</p>
+        {% if app_info.invite_url %}
+            <p><a class="button" href="{{ app_info.invite_url }}" target="_blank" rel="noopener">Invite SDAC Bot</a></p>
+            <p class="muted"><code>{{ app_info.invite_url }}</code></p>
+        {% else %}
+            <p class="muted">The public invite link is not configured yet. Set <code>SDAC_BOT_CLIENT_ID</code> or <code>DISCORD_CLIENT_ID</code> on the host.</p>
+        {% endif %}
+    </section>
+
+    <section class="grid">
+        <div class="panel">
+            <h2>Default Scopes</h2>
+            <ul>
+                <li><code>bot</code> lets SDAC join the server.</li>
+                <li><code>applications.commands</code> installs slash commands like <code>/submit</code> and <code>/setup</code>.</li>
+            </ul>
+        </div>
+        <div class="panel">
+            <h2>Recommended Permissions</h2>
+            <ul>
+                <li>Send Messages, Embed Links, Attach Files, Read Message History.</li>
+                <li>Manage Messages for moderation cleanup workflows.</li>
+                <li>Channel-specific access to submit, approval, repost, game, and error channels.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>After Install</h2>
+        <ol>
+            <li>Run <code>/setup</code> in the server.</li>
+            <li>Create or choose submit, approval, repost, game, and error channels.</li>
+            <li>Run <code>/repairpermissions</code> if the bot cannot see or post in a channel.</li>
+            <li>Run <code>/setuptest</code> or <code>/diagnose</code> before opening submissions to users.</li>
+            <li>Open the dashboard setup checklist for a server-owner readiness view.</li>
+        </ol>
+    </section>
+
+    <section class="panel">
+        <h2>Public Links</h2>
+        <ul>
+            {% if app_info.support_url %}<li><a href="{{ app_info.support_url }}" target="_blank" rel="noopener">Support server</a></li>{% endif %}
+            {% if app_info.privacy_url %}<li><a href="{{ app_info.privacy_url }}" target="_blank" rel="noopener">Privacy policy</a></li>{% endif %}
+            {% if app_info.terms_url %}<li><a href="{{ app_info.terms_url }}" target="_blank" rel="noopener">Terms of service</a></li>{% endif %}
+            <li><a href="{{ app_info.github_url }}" target="_blank" rel="noopener">Source and releases</a></li>
+        </ul>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+PUBLIC_POLICY_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 860px); }
+        a { color: #7c9cff; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .muted { color: #a8adb8; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>{{ title }}</h1>
+    <section class="panel">
+        <p>{{ body }}</p>
+        <p class="muted">Set <code>{{ env_var }}</code> to point this page to your final hosted policy before a public full release.</p>
+        <p><a href="{{ url_for('bot_invite') }}">Back to invite page</a></p>
+    </section>
+</main>
+</body>
+</html>
+"""
 SETUP_GUIDE_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -6330,6 +6448,7 @@ SETUP_GUIDE_HTML = """
     <nav>
         <a href="{{ url_for('index') }}">Gallery</a>
         <a href="{{ url_for('servers') }}">Servers</a>
+        <a href="{{ url_for('bot_invite') }}">Invite bot</a>
         <a href="{{ url_for('guessing_leaderboard') }}">Guessing leaderboard</a>
     </nav>
     <section class="panel">
@@ -7671,21 +7790,53 @@ def sidebar_server_options(config_data=None):
     return options
 
 
-def bot_invite_url():
-    client_id = (
+def public_app_metadata():
+    public_url = (os.getenv("SDAC_PUBLIC_URL") or "").strip().rstrip("/")
+    domain = (os.getenv("SDAC_DOMAIN") or "").strip().strip("/")
+    if not public_url and domain:
+        public_url = f"https://{domain}"
+    invite_url = bot_invite_url(public_url=public_url)
+    return {
+        "name": os.getenv("SDAC_PUBLIC_BOT_NAME", "SDAC Bot").strip() or "SDAC Bot",
+        "tagline": os.getenv("SDAC_PUBLIC_TAGLINE", "Screenshot, media, and guessing-game management for Discord communities.").strip(),
+        "client_id": bot_client_id(),
+        "invite_url": invite_url,
+        "public_url": public_url,
+        "support_url": os.getenv("SDAC_SUPPORT_URL", "").strip(),
+        "privacy_url": os.getenv("SDAC_PRIVACY_URL", "").strip() or (f"{public_url}/privacy" if public_url else ""),
+        "terms_url": os.getenv("SDAC_TERMS_URL", "").strip() or (f"{public_url}/terms" if public_url else ""),
+        "github_url": os.getenv("SDAC_GITHUB_URL", "https://github.com/BaytaeTistear/SDAC-Bot").strip(),
+        "permissions": os.getenv("SDAC_BOT_PERMISSIONS", "274878221376").strip(),
+    }
+
+
+def bot_client_id():
+    return (
         os.getenv("SDAC_BOT_CLIENT_ID")
         or os.getenv("DISCORD_CLIENT_ID")
+        or DISCORD_OAUTH_CLIENT_ID
         or ""
     ).strip()
+
+
+def bot_invite_url(public_url=None):
+    client_id = bot_client_id()
     if not client_id:
         return ""
-    permissions = os.getenv("SDAC_BOT_PERMISSIONS", "274878221376")
-    return (
-        "https://discord.com/api/oauth2/authorize"
-        f"?client_id={client_id}"
-        f"&permissions={permissions}"
-        "&scope=bot%20applications.commands"
-    )
+    permissions = os.getenv("SDAC_BOT_PERMISSIONS", "274878221376").strip() or "274878221376"
+    scopes = os.getenv("SDAC_BOT_SCOPES", "bot applications.commands").strip() or "bot applications.commands"
+    params = {
+        "client_id": client_id,
+        "permissions": permissions,
+        "scope": scopes,
+    }
+    redirect_uri = os.getenv("SDAC_BOT_INVITE_REDIRECT_URI", "").strip()
+    if redirect_uri:
+        params["redirect_uri"] = redirect_uri
+        params["response_type"] = "code"
+    elif public_url:
+        params["integration_type"] = os.getenv("SDAC_BOT_INTEGRATION_TYPE", "0").strip() or "0"
+    return "https://discord.com/oauth2/authorize?" + urlencode(params, quote_via=quote_plus)
 
 
 def onboarding_item(ok, label, fix, optional=False):
@@ -18099,17 +18250,55 @@ def index():
 
 @app.route("/about")
 def about():
+    app_info = public_app_metadata()
     return render_template_string(
         ABOUT_HTML,
-        invite_url=bot_invite_url(),
+        invite_url=app_info["invite_url"],
+        app_info=app_info,
+    )
+
+
+@app.route("/invite")
+def bot_invite():
+    return render_template_string(
+        BOT_INVITE_HTML,
+        app_info=public_app_metadata(),
+    )
+
+
+@app.route("/privacy")
+def public_privacy_policy():
+    app_info = public_app_metadata()
+    if app_info["privacy_url"] and not app_info["privacy_url"].rstrip("/").endswith("/privacy"):
+        return redirect(app_info["privacy_url"])
+    return render_template_string(
+        PUBLIC_POLICY_HTML,
+        title="SDAC Privacy Policy",
+        env_var="SDAC_PRIVACY_URL",
+        body="SDAC stores Discord IDs, usernames, submitted media metadata, moderation actions, setup state, and game scores needed to run the bot and dashboard. Server owners should publish their final privacy policy before opening the bot broadly.",
+    )
+
+
+@app.route("/terms")
+def public_terms():
+    app_info = public_app_metadata()
+    if app_info["terms_url"] and not app_info["terms_url"].rstrip("/").endswith("/terms"):
+        return redirect(app_info["terms_url"])
+    return render_template_string(
+        PUBLIC_POLICY_HTML,
+        title="SDAC Terms of Service",
+        env_var="SDAC_TERMS_URL",
+        body="Use SDAC only in Discord servers where you have permission to install and configure bots. Server owners are responsible for moderation, channel permissions, submitted media rules, and public-facing community policy before a broad public release.",
     )
 
 
 @app.route("/setup-guide")
 def setup_guide():
+    app_info = public_app_metadata()
     return render_template_string(
         SETUP_GUIDE_HTML,
-        invite_url=bot_invite_url(),
+        invite_url=app_info["invite_url"],
+        app_info=app_info,
     )
 
 
@@ -18961,13 +19150,21 @@ def api_app_bootstrap():
         server_rows = sidebar_server_options(config_data)
     else:
         server_rows = guild_options(config_data, public_only=True)
+    app_info = public_app_metadata()
     payload = {
         "app": {
             "name": "SDAC",
             "display_name": "SDAC Bot and App",
+            "public_name": app_info["name"],
+            "tagline": app_info["tagline"],
             "entry_url": url_for("app_home"),
             "manifest_url": url_for("pwa_manifest"),
             "icon_url": url_for("pwa_icon"),
+            "invite_url": app_info["invite_url"],
+            "support_url": app_info["support_url"],
+            "privacy_url": app_info["privacy_url"],
+            "terms_url": app_info["terms_url"],
+            "github_url": app_info["github_url"],
         },
         "auth": {
             "account_logged_in": account_logged_in,
@@ -18995,6 +19192,10 @@ def api_app_bootstrap():
             "guessing": url_for("guessing_leaderboard"),
             "servers": url_for("servers"),
             "stats": url_for("public_stats"),
+            "invite": url_for("bot_invite"),
+            "setup_guide": url_for("setup_guide"),
+            "privacy": url_for("public_privacy_policy"),
+            "terms": url_for("public_terms"),
             "admin": url_for("admin_staff_home") if admin_logged_in else url_for("admin_login"),
             "admin_releases": url_for("admin_releases") if admin_logged_in else url_for("admin_login"),
             "admin_theme": url_for("admin_theme") if admin_logged_in else url_for("admin_login"),

@@ -56,6 +56,9 @@ routes = [
     "/guessing",
     "/achievements",
     "/about",
+    "/invite",
+    "/privacy",
+    "/terms",
     "/setup-guide",
 ]
 api_routes = {"/admin/health"}
