@@ -1,4 +1,26 @@
-# SDAC Bot Version 4.0.1 Experimental
+# SDAC Bot Version 4.0.2 Experimental
+
+Date: 2026-07-11
+
+Update scope: Companion app dependency security cleanup
+
+Version 4.0.2 is an experimental security maintenance build for the official companion app scaffold.
+
+Included:
+
+- upgraded the companion app to Capacitor 8 and Vite 8 patched tooling
+- removed the vulnerable dev-only `@capacitor/assets` helper and its stale asset generation script
+- regenerated the companion app npm lockfile with patched transitive packages
+- verified the companion app with a clean `npm audit` and production build
+- updated companion app build docs so they no longer reference the removed asset generation command
+
+Release channel:
+
+- `version-4.0.2` is this experimental dependency security cleanup
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 4.0.0 until this build is promoted
+
+---# SDAC Bot Version 4.0.1 Experimental
 
 Date: 2026-07-11
 

@@ -49,7 +49,6 @@ npm run build
 $env:SDAC_APP_DASHBOARD_URL="https://freethefishies.us.to"
 $env:SDAC_APP_NAME="SDACCompanion"
 npm run cap:add:android
-npm run assets:generate
 npm run cap:sync
 npm run cap:open:android
 ```
@@ -168,7 +167,6 @@ npm run build
 export SDAC_APP_DASHBOARD_URL="https://freethefishies.us.to"
 export SDAC_APP_NAME="SDACCompanion"
 npm run cap:add:ios
-npm run assets:generate
 npm run cap:sync
 npm run cap:open:ios
 ```

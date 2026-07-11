@@ -14,20 +14,18 @@
     "cap:open:android": "cap open android",
     "cap:open:ios": "cap open ios",
     "android:sync": "cap sync android",
-    "android:open": "cap open android",
-    "assets:generate": "capacitor-assets generate --assetPath assets"
+    "android:open": "cap open android"
   },
   "dependencies": {
-    "@capacitor/android": "^6.1.2",
-    "@capacitor/app": "^6.0.1",
-    "@capacitor/browser": "^6.0.2",
-    "@capacitor/core": "^6.1.2",
-    "@capacitor/ios": "^6.1.2"
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/browser": "^8.0.3",
+    "@capacitor/core": "^8.4.1",
+    "@capacitor/ios": "^8.4.1"
   },
   "devDependencies": {
-    "@capacitor/assets": "^3.0.5",
-    "@capacitor/cli": "^6.1.2",
-    "typescript": "^5.5.4",
-    "vite": "^5.4.0"
+    "@capacitor/cli": "^8.4.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.4"
   }
 }
