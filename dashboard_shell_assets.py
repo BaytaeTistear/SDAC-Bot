@@ -121,7 +121,7 @@ body.sdac-has-sidebar {
 body.sdac-has-sidebar.sdac-sidebar-collapsed { padding-left: var(--sdac-collapsed-sidebar-gutter) !important; }
 body.sdac-has-sidebar main {
     box-sizing: border-box !important;
-    margin-left: 0 !important;
+    margin-left: auto !important;
     margin-right: auto !important;
     max-width: var(--sdac-content-width) !important;
     width: min(100%, var(--sdac-content-width)) !important;
@@ -214,6 +214,8 @@ body.sdac-sidebar-collapsed .sdac-sidebar { transform: translateX(-105%); }
 .sdac-sidebar-section-links { padding: 4px 6px 8px; }
 .sdac-sidebar-link { border-radius: 7px; color: var(--sdac-text) !important; display: block; font-weight: 650; margin: 2px 0; padding: 9px 11px; text-decoration: none; }
 .sdac-sidebar-link:hover, .sdac-sidebar-link.active { color: #fff !important; background: linear-gradient(90deg, var(--sdac-primary), var(--sdac-secondary)); }
+.sdac-sidebar-invite { align-items: center; background: linear-gradient(90deg, var(--sdac-primary), var(--sdac-secondary)); border-radius: 8px; color: #fff !important; display: inline-flex; font-weight: 850; justify-content: center; margin: 0 0 12px; min-height: 38px; padding: 9px 12px; text-decoration: none; width: 100%; }
+.sdac-sidebar-invite:hover { color: #fff !important; filter: brightness(1.08); }
 .sdac-sidebar-footer { border-top: 1px solid var(--sdac-border); flex: 0 0 auto; margin-top: 12px; max-height: 28dvh; overflow-y: auto; padding-top: 12px; }
 body.sdac-has-sidebar > nav, body.sdac-has-sidebar main > nav:not(.pagination), body.sdac-has-sidebar .admin-nav { display: none !important; }
 .sdac-dashboard-grid { display: grid; gap: var(--sdac-layout-gap); grid-template-columns: repeat(auto-fit, minmax(var(--sdac-grid-min), 1fr)); margin: 20px 0; }

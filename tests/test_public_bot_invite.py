@@ -36,6 +36,21 @@ class PublicBotInviteTests(unittest.TestCase):
         self.assertIn("discord.com/oauth2/authorize", body)
         self.assertIn("applications.commands", body)
 
+    def test_sidebar_exposes_invite_bot_action(self):
+        with self.client.session_transaction() as session:
+            session["sdac_account_username"] = "baytae"
+            session["sdac_account_role"] = "bot_owner"
+            session["sdac_admin"] = True
+            session["sdac_admin_username"] = "baytae"
+            session["sdac_admin_role"] = "bot_owner"
+            session["sdac_admin_auth"] = "test"
+            session["sdac_admin_guild_ids"] = []
+        response = self.client.get(f"/?key={dashboard.ADMIN_KEY}")
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('class="sdac-sidebar-invite"', body)
+        self.assertIn('href="/invite"', body)
+
     def test_app_bootstrap_exposes_public_links(self):
         with mock.patch.dict(os.environ, {"SDAC_BOT_CLIENT_ID": "1234567890", "SDAC_SUPPORT_URL": "https://discord.gg/example"}, clear=False):
             response = self.client.get("/api/app/bootstrap")

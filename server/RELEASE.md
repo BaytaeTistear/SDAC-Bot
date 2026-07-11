@@ -1,3 +1,27 @@
+# SDAC Bot Version 3.1.24 Experimental
+
+Date: 2026-07-10
+
+Update scope: Invite action, centered dashboard content, and command cleanup
+
+Version 3.1.24 is an experimental dashboard polish and bot command cleanup update.
+
+Included:
+
+- added a visible Invite Bot action to the shared sidebar footer so bot installation is easy to find
+- restored centered dashboard content within the available page area beside the sidebar
+- kept the sidebar server selector containment from 3.1.23 intact
+- moved experimental anime slash commands behind `SDAC_ENABLE_ANIME_COMMANDS` so they do not register by default
+- removed the experimental anime section from the default `/commands` help menu
+- added regression coverage for the Invite Bot action, centered layout CSS, and default command registry cleanup
+
+Release channel:
+
+- `version-3.1.24` is this experimental dashboard polish and command cleanup patch
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.23 Experimental
 
 Date: 2026-07-10

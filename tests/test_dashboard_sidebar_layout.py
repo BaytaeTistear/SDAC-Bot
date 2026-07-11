@@ -51,6 +51,15 @@ class DashboardSidebarLayoutTests(unittest.TestCase):
             "body.sdac-has-sidebar.sdac-sidebar-collapsed { padding-left: 0 !important; }",
             body,
         )
+    def test_sidebar_centers_page_content_and_has_invite_action(self):
+        response = self.client.get(f"/admin/bot-owner?key={dashboard.ADMIN_KEY}")
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("margin-left: auto !important", body)
+        self.assertIn("margin-right: auto !important", body)
+        self.assertIn('class="sdac-sidebar-invite"', body)
+        self.assertIn(">Invite Bot</a>", body)
+
     def test_server_selector_css_is_hardened(self):
         response = self.client.get(f"/admin/bot-owner?key={dashboard.ADMIN_KEY}")
         self.assertEqual(response.status_code, 200)

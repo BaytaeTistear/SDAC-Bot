@@ -319,6 +319,7 @@ def admin_sidebar_html(
     {access_warning}
     <nav>{"".join(groups)}</nav>
     <div class="sdac-sidebar-footer">
+        <a class="sdac-sidebar-invite" href="{html.escape(url_for("bot_invite"), quote=True)}">Invite Bot</a>
         <a class="sdac-sidebar-link" href="{html.escape(account_url, quote=True)}">{html.escape(account_label)}</a>
         {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_access_debug", next=request.full_path), quote=True) + '">Access Debug</a>') if is_account_logged_in() else ''}
         {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_refresh_discord", next=request.full_path), quote=True) + '">Refresh Discord Servers</a>') if is_account_logged_in() else ''}

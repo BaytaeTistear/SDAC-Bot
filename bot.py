@@ -44,6 +44,7 @@ BOT_INSTANCE_ID = (
 BACKUP_KEEP_COUNT = 30
 SCHEMA_VERSION = DATABASE_SCHEMA_VERSION
 OWNER_OVERRIDE_USERNAME = "baytae"
+ENABLE_ANIME_COMMANDS = os.getenv("SDAC_ENABLE_ANIME_COMMANDS", "").strip().casefold() in {"1", "true", "yes", "on"}
 
 ALLOWED_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp",
@@ -463,10 +464,6 @@ NOTIFICATION_EVENT_CHOICES = [
 
 USER_COMMAND_HELP = [
     ("/commands", "Show the public SDAC command list."),
-    ("/animeactivities", "Show experimental anime activity ideas."),
-    ("/animeprofile", "Save your experimental anime favorites/watching profile."),
-    ("/animeprofileview", "View an experimental anime profile."),
-    ("/animeleaderboard", "Show the experimental anime community leaderboard."),
     ("/submit", "Start a guided media submission."),
     ("/categories", "Show configured categories and basic server setup."),
     ("/guess guess", "Guess the active game answer in the current channel."),
@@ -479,16 +476,24 @@ USER_COMMAND_GROUPS = {
         ("/submit", "Start a guided media submission."),
         ("/categories", "Show configured categories and basic server setup."),
     ],
-    "Anime Activities": [
-    ("/animeactivities", "Show experimental anime game and community activity ideas."),
-    ("/animeevent activity #channel details", "Post an experimental anime activity prompt."),
-    ("/animechallenge mode prompt answer hint", "Create an experimental anime guessing library item."),
-    ],
     "Guessing Games": [
         ("/guess guess", "Guess the active game answer in the current channel."),
         ("/hint", "Show this channel's revealed game hint."),
     ],
 }
+
+if ENABLE_ANIME_COMMANDS:
+    USER_COMMAND_HELP[1:1] = [
+        ("/animeactivities", "Show experimental anime activity ideas."),
+        ("/animeprofile", "Save your experimental anime favorites/watching profile."),
+        ("/animeprofileview", "View an experimental anime profile."),
+        ("/animeleaderboard", "Show the experimental anime community leaderboard."),
+    ]
+    USER_COMMAND_GROUPS["Anime Activities"] = [
+        ("/animeactivities", "Show experimental anime game and community activity ideas."),
+        ("/animeevent activity #channel details", "Post an experimental anime activity prompt."),
+        ("/animechallenge mode prompt answer hint", "Create an experimental anime guessing library item."),
+    ]
 
 ADMIN_COMMAND_HELP = [
     ("/admincommands", "Show this admin command list."),
@@ -4521,14 +4526,21 @@ intents.guilds = True
 
 bot = commands.Bot(command_prefix="!sdac ", intents=intents)
 tree = bot.tree
+
+
+def optional_tree_command(enabled, *args, **kwargs):
+    if enabled:
+        return tree.command(*args, **kwargs)
+
+    def decorator(func):
+        return func
+
+    return decorator
 user_cooldowns = {}
 category_cooldowns = {}
 command_cooldowns = {}
 LOW_COST_COMMAND_COOLDOWNS = {
     "admincommands": 5,
-    "animeactivities": 10,
-    "animeleaderboard": 15,
-    "animeprofile": 5,
     "backupstatus": 30,
     "categories": 10,
     "commands": 5,
@@ -4540,6 +4552,12 @@ LOW_COST_COMMAND_COOLDOWNS = {
     "serverbackupstatus": 30,
     "setupstatus": 20,
 }
+if ENABLE_ANIME_COMMANDS:
+    LOW_COST_COMMAND_COOLDOWNS.update({
+        "animeactivities": 10,
+        "animeleaderboard": 15,
+        "animeprofile": 5,
+    })
 active_submission_sessions = set()
 slash_commands_synced = False
 persistent_views_registered = False
@@ -6136,7 +6154,7 @@ async def commands_list(interaction):
     )
 
 
-@tree.command(name="animeactivities", description="Show experimental anime activity ideas")
+@optional_tree_command(ENABLE_ANIME_COMMANDS, name="animeactivities", description="Show experimental anime activity ideas")
 @app_commands.guild_only()
 async def animeactivities(interaction):
     lines = [f"**Anime Activities ({anime_activity_catalog_count()} ideas)**"]
@@ -6165,7 +6183,7 @@ async def animeactivities(interaction):
         await interaction.followup.send(chunk, ephemeral=True)
 
 
-@tree.command(name="animeevent", description="Post an experimental anime activity prompt")
+@optional_tree_command(ENABLE_ANIME_COMMANDS, name="animeevent", description="Post an experimental anime activity prompt")
 @app_commands.guild_only()
 @app_commands.describe(
     activity="Activity key from /animeactivities, such as screenshot-guess or watch-party",
@@ -6216,7 +6234,7 @@ async def animeevent(
     )
 
 
-@tree.command(name="animeprofile", description="Save your experimental anime favorites and watching status")
+@optional_tree_command(ENABLE_ANIME_COMMANDS, name="animeprofile", description="Save your experimental anime favorites and watching status")
 @app_commands.guild_only()
 @app_commands.describe(
     favorites="Favorite anime, characters, genres, or studios",
@@ -6253,7 +6271,7 @@ async def animeprofile(
     )
 
 
-@tree.command(name="animeprofileview", description="View an experimental anime profile")
+@optional_tree_command(ENABLE_ANIME_COMMANDS, name="animeprofileview", description="View an experimental anime profile")
 @app_commands.guild_only()
 @app_commands.describe(member="Member to view. Defaults to you.")
 async def animeprofileview(
@@ -6283,7 +6301,7 @@ async def animeprofileview(
     await interaction.response.send_message("\n".join(lines)[:1900])
 
 
-@tree.command(name="animeleaderboard", description="Show the experimental anime community leaderboard")
+@optional_tree_command(ENABLE_ANIME_COMMANDS, name="animeleaderboard", description="Show the experimental anime community leaderboard")
 @app_commands.guild_only()
 @app_commands.describe(month="Optional month in YYYY-MM format. Defaults to current month.")
 async def animeleaderboard(interaction, month: Optional[str] = ""):
@@ -6335,7 +6353,7 @@ async def animeleaderboard(interaction, month: Optional[str] = ""):
     await interaction.response.send_message("\n".join(lines)[:1900])
 
 
-@tree.command(name="animechallenge", description="Create an experimental anime Game Library challenge")
+@optional_tree_command(ENABLE_ANIME_COMMANDS, name="animechallenge", description="Create an experimental anime Game Library challenge")
 @app_commands.guild_only()
 @app_commands.describe(
     mode="Activity key or mode, such as quote-guess, studio-guess, who-said-it, or hint-ladder",
