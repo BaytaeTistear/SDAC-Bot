@@ -1,3 +1,38 @@
+# SDAC Bot Version 4.0.0 Full Release
+
+Date: 2026-07-11
+
+Update scope: Full backend, dashboard, bot, installer, and release-readiness promotion
+
+Version 4.0.0 is a full SDAC release that promotes the current 3.1.x experimental backend polish into a stable full-release line.
+
+Included:
+
+- consolidated the backend simplification work for moderators, server owners, and bot owners
+- retained scoped multi-server dashboard access so users only see servers they belong to while supporting different roles per server
+- includes the polished shared sidebar, centered dashboard layout, visible Invite Bot action, and hardened server selector
+- includes logged-in dashboard voting for posted submissions with vote/unvote support
+- includes the updated guessing-game scoring rule where points are only blocked after all generated hints are revealed
+- includes release banner/version synchronization fixes for latest experimental and official channels
+- keeps experimental anime slash commands opt-in with `SDAC_ENABLE_ANIME_COMMANDS` so the default bot command list stays focused
+- includes release-readiness tooling, page sweep coverage, bot startup coverage, public invite coverage, and server mirror validation
+
+Validation completed before publishing:
+
+- full local unit test discovery passed
+- core Python compile check passed
+- backend release-readiness gate passed
+- pre-release smoke test passed
+- PostgreSQL export helper help check passed
+- Git whitespace check passed
+
+Release channel:
+
+- `version-4.0.0` is this full release
+- `latest-official` points to this build after publishing
+- `latest-experimental` remains available for future experimental builds
+
+---
 # SDAC Bot Version 3.1.25 Experimental
 
 Date: 2026-07-11
