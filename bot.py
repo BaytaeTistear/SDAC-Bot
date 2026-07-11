@@ -2174,6 +2174,24 @@ def append_hint_text(existing_text, hint):
     return existing_text + "\n" + hint
 
 
+def game_hint_counts(game):
+    try:
+        hints = json.loads(game["hints_json"] or "[]")
+    except (KeyError, TypeError, ValueError):
+        hints = []
+    hints = [str(hint).strip() for hint in hints if str(hint).strip()]
+    try:
+        hint_level = int(game["hint_level"] or 0)
+    except (KeyError, TypeError, ValueError):
+        hint_level = 0
+    return max(0, min(hint_level, len(hints))), len(hints)
+
+
+def guess_points_allowed(game):
+    revealed_count, total_count = game_hint_counts(game)
+    return not (total_count > 0 and revealed_count >= total_count)
+
+
 def reveal_next_hint_for_game(connection, game):
     try:
         hints = json.loads(game["hints_json"] or "[]")
@@ -10146,7 +10164,7 @@ async def sethint(interaction, hint: str):
     )
     await interaction.channel.send(
         f"**Guessing Game Hint**\n{hint}\n\n"
-        "Correct guesses after a hint do not add leaderboard points."
+        "Correct guesses still earn points until all generated hints are revealed."
     )
 
 
@@ -10200,7 +10218,7 @@ async def revealhint(interaction):
     await interaction.response.send_message("Generated hint revealed.", ephemeral=True)
     await interaction.channel.send(
         f"**Guessing Game Hint**\n{hint_text}\n\n"
-        "Correct guesses after a hint do not add leaderboard points."
+        "Correct guesses still earn points until all generated hints are revealed."
     )
 
 
@@ -10383,7 +10401,7 @@ async def guess(interaction, guess: str):
             return
 
         month = current_month_key(guild_config)
-        points_awarded = 0 if game["hint_revealed_at"] else 1
+        points_awarded = 1 if guess_points_allowed(game) else 0
         existing_correct = connection.execute("""
             SELECT 1
             FROM guess_correct_guesses
@@ -10463,7 +10481,7 @@ async def guess(interaction, guess: str):
         response_text = f"Correct. You gained {points_awarded} point for `{month}`."
     else:
         response_text = (
-            "Correct. This game already has a hint revealed, so no "
+            "Correct. All generated hints were already revealed, so no "
             "leaderboard point was added."
         )
     if achievement_labels:
@@ -11137,7 +11155,7 @@ async def post_due_guess_hints():
         if channel is not None:
             await channel.send(
                 f"**Guessing Game Hint**\n{hint_text}\n\n"
-                "Correct guesses after a hint do not add leaderboard points."
+                "Correct guesses still earn points until all generated hints are revealed."
             )
 
 

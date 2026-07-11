@@ -29,6 +29,25 @@ class BotStartupTests(unittest.TestCase):
         self.assertNotIn("Anime Activities", bot.USER_COMMAND_GROUPS)
         self.assertNotIn("animeactivities", bot.LOW_COST_COMMAND_COOLDOWNS)
 
+    def test_guess_points_are_blocked_only_after_all_generated_hints(self):
+        import bot
+
+        self.assertTrue(bot.guess_points_allowed({
+            "hints_json": '["First letter: A", "Word count: 2"]',
+            "hint_level": 0,
+            "hint_revealed_at": "",
+        }))
+        self.assertTrue(bot.guess_points_allowed({
+            "hints_json": '["First letter: A", "Word count: 2"]',
+            "hint_level": 1,
+            "hint_revealed_at": "2026-07-10T00:00:00+00:00",
+        }))
+        self.assertFalse(bot.guess_points_allowed({
+            "hints_json": '["First letter: A", "Word count: 2"]',
+            "hint_level": 2,
+            "hint_revealed_at": "2026-07-10T00:00:00+00:00",
+        }))
+
 
 if __name__ == "__main__":
     unittest.main()

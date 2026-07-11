@@ -1,3 +1,28 @@
+# SDAC Bot Version 3.1.25 Experimental
+
+Date: 2026-07-11
+
+Update scope: Dashboard voting and hint scoring adjustment
+
+Version 3.1.25 is an experimental user interaction and guessing-game scoring patch.
+
+Included:
+
+- added logged-in dashboard voting for posted submissions
+- made dashboard voting toggleable so users can remove their own vote
+- scoped dashboard votes to servers the logged-in account can access
+- disabled public gallery caching for logged-in users so vote buttons and vote state render correctly
+- changed guessing-game scoring so hints only block points after all generated hints have been revealed
+- updated hint messaging to explain that points remain available until generated hints are exhausted
+- added regression coverage for dashboard vote/unvote and the revised hint scoring rule
+
+Release channel:
+
+- `version-3.1.25` is this experimental dashboard voting and hint scoring patch
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 3.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 3.1.24 Experimental
 
 Date: 2026-07-10

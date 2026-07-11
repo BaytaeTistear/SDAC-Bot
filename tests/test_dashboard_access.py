@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 
 class DashboardAccessTests(unittest.TestCase):
@@ -82,6 +83,64 @@ class DashboardAccessTests(unittest.TestCase):
             rows = self.dashboard.sidebar_server_options(self.config)
 
         self.assertEqual([row["id"] for row in rows], ["111", "222"])
+
+    def test_logged_in_account_can_vote_and_unvote_submission(self):
+        with self.dashboard.database() as connection:
+            connection.execute("DELETE FROM submissions")
+            cursor = connection.execute(
+                """
+                INSERT INTO submissions (
+                    guild_id, original_message_id, repost_message_id, repost_channel_id,
+                    user_id, username, category, message_text, file_paths, media_paths,
+                    media_names, media_types, media_sizes, media_metadata_json,
+                    stars, voters, status, submitted_at, created_at
+                )
+                VALUES (
+                    '111', 'o1', 'r1', 'c1', 'owner-id', 'Owner', 'screenshots',
+                    'A post', '', '', '', '', '', '[]', 0, '', 'posted', '2026-07-10T00:00:00+00:00', '2026-07-10T00:00:00+00:00'
+                )
+                """
+            )
+            submission_id = cursor.lastrowid
+
+        with self.dashboard.app.test_client() as client:
+            with client.session_transaction() as session:
+                session["sdac_account_username"] = "scoped-user"
+                session["sdac_account_role"] = "user"
+                session["sdac_account_guild_ids"] = ["111"]
+                session["sdac_discord_user_id"] = "123456789012345678"
+                session["csrf_token"] = "vote-token"
+            with mock.patch.object(self.dashboard, "load_config", return_value=self.config):
+                response = client.post(
+                    f"/submission/{submission_id}/vote?guild_id=111",
+                    data={"csrf_token": "vote-token"},
+                    follow_redirects=False,
+                )
+            self.assertEqual(response.status_code, 302)
+
+            with self.dashboard.database() as connection:
+                row = connection.execute(
+                    "SELECT stars, voters FROM submissions WHERE id = ?",
+                    (submission_id,),
+                ).fetchone()
+            self.assertEqual(row["stars"], 1)
+            self.assertIn("123456789012345678", row["voters"])
+
+            with mock.patch.object(self.dashboard, "load_config", return_value=self.config):
+                response = client.post(
+                    f"/submission/{submission_id}/vote?guild_id=111",
+                    data={"csrf_token": "vote-token"},
+                    follow_redirects=False,
+                )
+            self.assertEqual(response.status_code, 302)
+
+            with self.dashboard.database() as connection:
+                row = connection.execute(
+                    "SELECT stars, voters FROM submissions WHERE id = ?",
+                    (submission_id,),
+                ).fetchone()
+            self.assertEqual(row["stars"], 0)
+            self.assertNotIn("123456789012345678", row["voters"] or "")
 
 
 if __name__ == "__main__":

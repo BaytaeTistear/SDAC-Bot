@@ -819,6 +819,19 @@ HTML = """
             font-weight: bold;
         }
 
+        .vote-controls {
+            align-items: center;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .vote-button.voted {
+            background: #ffd75e;
+            color: #111827;
+        }
+
         .status {
             border: 1px solid var(--border);
             border-radius: 999px;
@@ -1065,6 +1078,27 @@ HTML = """
                                     {% if post.spam_score %}
                                         <span class="status status-pending" title="{{ post.spam_reasons|join('; ') }}">score {{ post.spam_score }}</span>
                                     {% endif %}
+                                {% endif %}
+                            </div>
+                            <div class="vote-controls">
+                                {% if account_logged_in and not selected_month and post.status == "posted" %}
+                                    <form method="post" action="{{ url_for(
+                                        'vote_submission',
+                                        submission_id=post.id,
+                                        category=selected_category,
+                                        guild_id=selected_guild_id or 'all',
+                                        q=search_query,
+                                        sort=selected_sort,
+                                        status=selected_status,
+                                        page=page
+                                    ) }}">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <button class="vote-button {{ 'voted' if post.current_user_voted else '' }}" type="submit">
+                                            {{ 'Remove Vote' if post.current_user_voted else 'Vote' }}
+                                        </button>
+                                    </form>
+                                {% elif not account_logged_in and post.status == "posted" %}
+                                    <a href="{{ url_for('account_login', next=request.full_path) }}">Log in to vote</a>
                                 {% endif %}
                             </div>
                             {% if is_admin %}
@@ -9912,6 +9946,26 @@ def restore_guild_media_from_remote(config_data, guild_id):
     return True, f"Restored media for guild {guild_id} from {remote}/media."
 
 
+def get_voters(raw_value):
+    if not raw_value:
+        return set()
+    return {value for value in str(raw_value).split(",") if value}
+
+
+def save_voters(voters):
+    return ",".join(sorted(voters))
+
+
+def current_dashboard_voter_id():
+    if not is_account_logged_in():
+        return ""
+    discord_id = str(session.get("sdac_discord_user_id") or "").strip()
+    if discord_id:
+        return discord_id
+    username = current_account_username().strip().casefold()
+    return f"account:{username}" if username else ""
+
+
 def prepare_post(row):
     post = dict(row)
     try:
@@ -18009,7 +18063,7 @@ def index():
         selected_sort = "newest"
 
     public_cache_key = None
-    if not is_admin and not notice and not error and request.method == "GET":
+    if not is_admin and not is_account_logged_in() and not notice and not error and request.method == "GET":
         public_cache_key = cache_key(
             "index",
             selected_server_id or "all",
@@ -18193,9 +18247,12 @@ def index():
                 parameters + [PAGE_SIZE, (page - 1) * PAGE_SIZE],
             ).fetchall()
 
+    voter_id = current_dashboard_voter_id()
     grouped_posts = {}
     for row in rows:
         post = prepare_post(row)
+        voters = get_voters(post.get("voters"))
+        post["current_user_voted"] = bool(voter_id and voter_id in voters)
         post["guild_name"] = guild_names.get(
             post.get("guild_id"),
             f"Discord {post.get('guild_id')}" if post.get("guild_id") else "",
@@ -18227,7 +18284,7 @@ def index():
         categories=categories,
         error=error,
         grouped_posts=grouped_posts,
-        csrf_token=get_csrf_token() if is_admin else "",
+        csrf_token=get_csrf_token() if (is_admin or is_account_logged_in()) else "",
         guild_options=server_options,
         is_admin=is_admin,
         months=months,
@@ -18246,6 +18303,74 @@ def index():
     if public_cache_key:
         return store_public_page(public_cache_key, rendered)
     return rendered
+
+
+@app.post("/submission/<int:submission_id>/vote")
+def vote_submission(submission_id):
+    if not is_account_logged_in():
+        return redirect(url_for("account_login", next=request.referrer or url_for("index")))
+    require_csrf_token()
+
+    voter_id = current_dashboard_voter_id()
+    if not voter_id:
+        return redirect(url_for(
+            "account_home",
+            notice="Link Discord or finish your account before voting.",
+            error=1,
+        ))
+
+    config_data = load_config()
+    allowed_guild_ids = current_account_allowed_guild_ids(config_data)
+    redirect_values = {
+        "category": request.args.get("category", "").strip(),
+        "guild_id": request.args.get("guild_id", "all").strip() or "all",
+        "q": request.args.get("q", "").strip(),
+        "sort": request.args.get("sort", "newest").strip() or "newest",
+        "status": request.args.get("status", "").strip(),
+        "page": positive_page(request.args.get("page")),
+    }
+    if is_admin_logged_in():
+        redirect_values["key"] = ADMIN_KEY
+
+    with database() as connection:
+        row = connection.execute(
+            "SELECT id, guild_id, status, voters FROM submissions WHERE id = ?",
+            (submission_id,),
+        ).fetchone()
+        if not row or row["status"] != "posted":
+            return redirect(url_for(
+                "index",
+                notice="Only posted submissions can be voted on.",
+                error=1,
+                **redirect_values,
+            ))
+        if str(row["guild_id"] or "") not in allowed_guild_ids:
+            abort(403)
+
+        voters = get_voters(row["voters"])
+        if voter_id in voters:
+            voters.remove(voter_id)
+            delta = -1
+            notice = "Vote removed."
+        else:
+            voters.add(voter_id)
+            delta = 1
+            notice = "Vote added."
+        connection.execute(
+            """
+            UPDATE submissions
+            SET stars = CASE
+                    WHEN COALESCE(stars, 0) + ? < 0 THEN 0
+                    ELSE COALESCE(stars, 0) + ?
+                END,
+                voters = ?
+            WHERE id = ?
+            """,
+            (delta, delta, save_voters(voters), row["id"]),
+        )
+
+    clear_runtime_caches()
+    return redirect(url_for("index", notice=notice, **redirect_values))
 
 
 @app.route("/about")
