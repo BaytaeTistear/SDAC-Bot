@@ -1,3 +1,27 @@
+# SDAC Bot Version 4.0.1 Experimental
+
+Date: 2026-07-11
+
+Update scope: Fluid dashboard shell and dedicated removal reasons page
+
+Version 4.0.1 is an experimental responsive layout and moderation navigation patch.
+
+Included:
+
+- converted the shared dashboard shell sizing from fixed layout pixels to fluid clamp/rem/percentage-based CSS variables
+- made sidebar width, content width, collapsed gutter, layout gaps, panel padding, and grid minimums scale across viewport sizes
+- added shared overflow guards for dashboard tables, forms, inputs, selects, textareas, and buttons
+- added a dedicated `/admin/removal-reasons` page for preset removal reasons
+- updated the sidebar and Staff Home "Removal Reasons" links so they no longer hard-link to Review Queue
+- added the removal reasons route to the all-page dashboard sweep
+
+Release channel:
+
+- `version-4.0.1` is this experimental responsive layout and moderation navigation patch
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 4.0.0 until this build is promoted
+
+---
 # SDAC Bot Version 4.0.0 Full Release
 
 Date: 2026-07-11

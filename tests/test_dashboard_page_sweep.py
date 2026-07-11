@@ -23,6 +23,7 @@ routes = [
     "/admin/config-history",
     "/admin/maintenance-mode",
     "/admin/moderation",
+    "/admin/removal-reasons",
     "/admin/onboarding",
     "/admin/theme",
     "/admin/layout",

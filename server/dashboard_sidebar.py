@@ -24,7 +24,7 @@ ADMIN_SECTIONS = [
         "required_role": "moderator",
         "links": [
             ("Review Queue", "admin_moderation", {}),
-            ("Removal Reasons", "admin_moderation", {}),
+            ("Removal Reasons", "admin_removal_reasons", {}),
             ("Users", "admin_users", {}),
             ("Polls", "admin_polls", {}),
             ("Audit", "audit_log", {}),

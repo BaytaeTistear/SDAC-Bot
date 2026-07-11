@@ -408,6 +408,7 @@ ADMIN_ROLE_CHOICES = {
 
 ADMIN_ENDPOINT_GUILD_ROLE_REQUIREMENTS = {
     "admin_moderation": "moderator",
+    "admin_removal_reasons": "moderator",
     "audit_log": "moderator",
     "admin_users": "moderator",
     "admin_polls": "moderator",
@@ -1235,7 +1236,7 @@ ACCOUNT_HOME_HTML = """
     <title>SDAC Account</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 60px auto; padding: 24px; width: min(100%, 560px); }
         a { color: #7c9cff; }
         table { border-collapse: collapse; width: 100%; }
@@ -1280,7 +1281,7 @@ ACCOUNT_SERVER_HTML = """
     <title>Choose SDAC Server</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 60px auto; padding: 24px; width: min(100%, 520px); }
         h1 { text-align: center; }
         a { color: #7c9cff; }
@@ -1327,7 +1328,7 @@ REPORT_HTML = """
     <title>Report Submission</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 40px auto; padding: 24px; width: min(100%, 640px); }
         a { color: #7c9cff; }
         label { display: block; font-weight: bold; margin: 16px 0 6px; }
@@ -1373,12 +1374,12 @@ USER_PROFILE_HTML = """
     <title>{{ profile.username }} - SDAC Profile</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 900px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; }
         .muted { color: #a8adb8; }
@@ -1445,7 +1446,7 @@ MY_SUBMISSIONS_HTML = """
     <title>My SDAC Submissions</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 900px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
@@ -1455,7 +1456,7 @@ MY_SUBMISSIONS_HTML = """
         .filter-panel form { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin: 12px 0 10px; }
         input, select, button { border: 1px solid #30333b; border-radius: 7px; font-size: 16px; padding: 10px 12px; }
         button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; }
         .muted { color: #a8adb8; }
@@ -2449,12 +2450,12 @@ ANIME_ACTIVITIES_HTML = """
     <title>SDAC Anime Activities</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1100px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
         .card { background: #111318; border: 1px solid #30333b; border-radius: 8px; padding: 14px; }
         .card h3 { margin: 0 0 8px; }
@@ -2518,11 +2519,11 @@ USERS_HTML = """
     <title>SDAC Admin Users</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1120px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
         input, select, button, textarea { border: 1px solid #30333b; border-radius: 7px; font-size: 15px; padding: 9px 10px; }
@@ -3416,12 +3417,12 @@ MAINTENANCE_HTML = """
     <title>SDAC Maintenance</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1000px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
         button { background: #7c9cff; border: 0; border-radius: 7px; color: #0b1020; cursor: pointer; font-weight: bold; padding: 9px 10px; }
@@ -3661,13 +3662,13 @@ OPTIMIZATION_HTML = """
     <title>SDAC Optimization</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1160px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
         .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         .metric { background: #111827; border: 1px solid #30333b; border-radius: 10px; padding: 14px; }
         .metric strong { display: block; font-size: 1.7rem; }
         table { border-collapse: collapse; width: 100%; }
@@ -3881,12 +3882,12 @@ MEDIA_CLEANUP_HTML = """
     <title>SDAC Media Cleanup</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1100px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; word-break: break-word; }
         button { background: #e45d68; border: 0; border-radius: 7px; color: white; cursor: pointer; font-weight: bold; padding: 9px 10px; }
@@ -4054,12 +4055,12 @@ JOBS_HTML = """
     <title>SDAC Jobs</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1100px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; word-break: break-word; }
         .queued { color: #ffd75e; }
@@ -4145,12 +4146,12 @@ PRIVACY_HTML = """
     <title>SDAC Privacy Tools</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1000px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
         input, select, button, textarea { border: 1px solid #30333b; border-radius: 7px; font-size: 15px; padding: 9px 10px; }
@@ -4265,12 +4266,12 @@ ANALYTICS_HTML = """
     <title>SDAC Analytics</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1100px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; }
@@ -4362,12 +4363,12 @@ MONTHLY_REPORT_HTML = """
     <title>SDAC Monthly Report</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1100px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
         nav, form { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
@@ -4456,7 +4457,7 @@ POLLS_HTML = """
     <title>SDAC Polls</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1100px); }
         .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 8px; margin: 16px 0; padding: 16px; }
         table { border-collapse: collapse; width: 100%; }
@@ -4557,12 +4558,12 @@ RELEASES_HTML = """
     <title>SDAC Release Channel</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1000px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
         .ok { color: #63c174; font-weight: bold; }
@@ -4689,12 +4690,12 @@ CONFIG_DIFF_HTML = """
     <title>Preview Server Config Import</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1100px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         .notice { background: #223057; border: 1px solid #4d6ee8; border-radius: 10px; padding: 12px; }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
@@ -4763,12 +4764,12 @@ INSTALL_DOCTOR_HTML = """
     <title>SDAC Install Doctor</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1000px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
         .ok { color: #63c174; font-weight: bold; }
@@ -4817,12 +4818,12 @@ APPROVALS_HTML = """
     <title>SDAC Admin Approvals</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1100px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
         nav, form.filters { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
         button, select { border: 1px solid #30333b; border-radius: 7px; padding: 8px 10px; }
@@ -5605,11 +5606,11 @@ OWNER_PORTAL_HTML = """
     <title>SDAC Owner Portal</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1100px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
         .server { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
@@ -5701,11 +5702,11 @@ SERVER_HEALTH_CARDS_HTML = """
     <title>SDAC Server Health Cards</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1200px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
         .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
         .card { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; padding: 16px; }
         .metric { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -5808,13 +5809,13 @@ PUBLIC_STATS_HTML = """
     <title>SDAC Public Stats</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1000px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
         .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; }
         .muted { color: #a8adb8; }
@@ -5881,12 +5882,12 @@ PRODUCTION_HEALTH_HTML = """
     <title>SDAC Production Health</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1000px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
         .ok { color: #63c174; font-weight: bold; }
@@ -5942,12 +5943,12 @@ MODERATION_HTML = """
     <title>SDAC Moderation</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1100px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
         input, button { border: 1px solid #30333b; border-radius: 7px; padding: 8px 10px; }
@@ -6088,6 +6089,61 @@ MODERATION_HTML = """
                 {% endfor %}
             </tbody>
         </table>
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+REMOVAL_REASONS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Removal Reasons</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
+        main { margin: 0 auto; width: min(100%, 61rem); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
+        .reason-grid { display: grid; gap: clamp(0.6rem, 1.5vw, 0.75rem); grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
+        .reason-card { border: 1px solid #30333b; border-radius: 0.65rem; padding: clamp(0.75rem, 1.7vw, 0.9rem); }
+        code { color: #cdd7ff; }
+        .muted { color: #a8adb8; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Removal Reasons</h1>
+    <nav>
+        <a href="{{ url_for('admin_moderation', key=admin_key) }}">Review Queue</a>
+        <a href="{{ url_for('index', key=admin_key, status='posted') }}">Submissions</a>
+        <a href="{{ url_for('audit_log', key=admin_key) }}">Audit log</a>
+    </nav>
+
+    <section class="panel">
+        <h2>Preset Reasons</h2>
+        <p class="muted">These presets appear in removal forms on the gallery and review queue. They keep moderation history and audit rows consistent.</p>
+        <div class="reason-grid">
+            {% for value, label in removal_reasons %}
+                <div class="reason-card">
+                    <strong>{{ label }}</strong><br>
+                    <code>{{ value }}</code>
+                </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Where To Use Them</h2>
+        <p>Use <a href="{{ url_for('admin_moderation', key=admin_key) }}">Review Queue</a> for pending or needs-review submissions.</p>
+        <p>Use <a href="{{ url_for('index', key=admin_key, status='posted') }}">Submissions</a> to remove already-posted gallery items.</p>
+        <p class="muted">Choose <code>custom</code> when the preset does not fit, then add an audit note.</p>
     </section>
 </main>
 </body>
@@ -6260,12 +6316,12 @@ ABOUT_HTML = """
     <title>About SDAC Bot</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 900px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
         code { color: #cdd7ff; }
         .muted { color: #a8adb8; }
@@ -6350,12 +6406,12 @@ BOT_INVITE_HTML = """
     <title>Invite {{ app_info.name }}</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 940px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
         .button { background: linear-gradient(90deg, #4f46e5, #06b6d4); border-radius: 8px; color: #fff; display: inline-block; font-weight: 800; padding: 12px 16px; text-decoration: none; }
         code { color: #cdd7ff; overflow-wrap: anywhere; }
@@ -6437,10 +6493,10 @@ PUBLIC_POLICY_HTML = """
     <title>{{ title }}</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 860px); }
         a { color: #7c9cff; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         .muted { color: #a8adb8; }
     </style>
 </head>
@@ -6465,12 +6521,12 @@ SETUP_GUIDE_HTML = """
     <title>SDAC Setup Guide</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 900px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         li { margin: 8px 0; }
         code { color: #cdd7ff; }
         .muted { color: #a8adb8; }
@@ -6534,12 +6590,12 @@ SEASONS_HTML = """
     <title>SDAC Game Seasons</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1100px); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
-        nav { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 24px; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
         input, select, button { border: 1px solid #30333b; border-radius: 7px; font-size: 15px; padding: 9px 10px; }
@@ -14512,10 +14568,10 @@ def admin_preview_as():
     <title>Preview Access</title>
     <style>
         :root { color-scheme: dark; }
-        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { margin: 0 auto; width: min(100%, 1000px); }
         h1, h2 { text-align: center; }
-        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
         input, select, button { border: 1px solid #30333b; border-radius: 7px; font-size: 15px; padding: 9px 10px; }
@@ -17191,6 +17247,18 @@ def admin_moderation():
         notice=notice,
         pending_posts=pending_posts,
         reports=reports,
+    )
+
+
+@app.route("/admin/removal-reasons")
+def admin_removal_reasons():
+    login_response = require_admin_login("moderator")
+    if login_response:
+        return login_response
+    return render_template_string(
+        REMOVAL_REASONS_HTML,
+        admin_key=ADMIN_KEY,
+        removal_reasons=MODERATION_REMOVAL_REASONS,
     )
 
 

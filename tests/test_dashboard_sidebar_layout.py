@@ -42,7 +42,9 @@ class DashboardSidebarLayoutTests(unittest.TestCase):
         response = self.client.get(f"/admin/bot-owner?key={dashboard.ADMIN_KEY}")
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
-        self.assertIn("--sdac-collapsed-sidebar-gutter: 112px", body)
+        self.assertIn("--sdac-sidebar-width: clamp(13.75rem, 17vw, 17.5rem)", body)
+        self.assertIn("--sdac-content-width: min(96%, 76rem)", body)
+        self.assertIn("--sdac-collapsed-sidebar-gutter: clamp(4.5rem, 7vw, 7rem)", body)
         self.assertIn(
             "body.sdac-has-sidebar.sdac-sidebar-collapsed { padding-left: var(--sdac-collapsed-sidebar-gutter) !important; }",
             body,
@@ -51,6 +53,7 @@ class DashboardSidebarLayoutTests(unittest.TestCase):
             "body.sdac-has-sidebar.sdac-sidebar-collapsed { padding-left: 0 !important; }",
             body,
         )
+        self.assertIn("body.sdac-has-sidebar table { display: block; max-width: 100%; overflow-x: auto; width: 100%; }", body)
     def test_sidebar_centers_page_content_and_has_invite_action(self):
         response = self.client.get(f"/admin/bot-owner?key={dashboard.ADMIN_KEY}")
         self.assertEqual(response.status_code, 200)
