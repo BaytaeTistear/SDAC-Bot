@@ -1,3 +1,25 @@
+# SDAC Bot Version 4.1.1 Experimental
+
+Date: 2026-07-12
+
+Update scope: Dashboard moderation button layout fix
+
+Version 4.1.1 is an experimental dashboard polish update that fixes clipped moderation controls on submission cards.
+
+Included:
+
+- changed submission card headers to wrap controls instead of forcing every action into one row
+- made vote, remove, review, and quarantine actions keep stable button sizes without clipping
+- made the removal reason form resize cleanly at desktop, tablet, and mobile widths
+- mirrored the dashboard layout fix into the server package copy
+
+Release channel:
+
+- `version-4.1.1` is this experimental dashboard button layout fix
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 4.1.0 until this build is promoted
+
+---
 # SDAC Bot Version 4.1.0 Official
 
 Date: 2026-07-12

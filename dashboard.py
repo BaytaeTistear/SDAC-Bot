@@ -889,15 +889,24 @@ HTML = """
         }
 
         .post-header {
-            align-items: center;
+            align-items: flex-start;
             display: flex;
-            gap: 12px;
-            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px 12px;
+            justify-content: flex-start;
+        }
+
+        .post-header > form,
+        .post-header .vote-controls {
+            flex: 0 1 auto;
+            min-width: 0;
         }
 
         .meta {
             color: var(--muted);
+            flex: 1 1 320px;
             font-size: 14px;
+            min-width: min(100%, 260px);
         }
 
         .stars {
@@ -908,9 +917,20 @@ HTML = """
         .vote-controls {
             align-items: center;
             display: flex;
+            flex: 0 0 auto;
             flex-wrap: wrap;
             gap: 8px;
-            justify-content: flex-end;
+            justify-content: flex-start;
+        }
+
+        .vote-controls form,
+        .post-header form:not(.remove-controls) {
+            display: flex;
+        }
+
+        .post-header button {
+            min-height: 40px;
+            white-space: nowrap;
         }
 
         .vote-button.voted {
@@ -973,8 +993,10 @@ HTML = """
         .remove-controls {
             align-items: center;
             display: grid;
+            flex: 1 1 520px;
             gap: 8px;
-            grid-template-columns: auto minmax(150px, 190px) minmax(180px, 240px) auto;
+            grid-template-columns: max-content minmax(160px, 1fr) minmax(180px, 1.2fr) max-content;
+            min-width: min(100%, 360px);
         }
 
         .remove-controls span {
@@ -1023,13 +1045,25 @@ HTML = """
             color: var(--muted);
         }
 
+        @media (max-width: 900px) {
+            .remove-controls {
+                flex-basis: 100%;
+                grid-template-columns: 1fr 1fr;
+            }
+            .remove-controls span { grid-column: 1 / -1; }
+        }
+
         @media (max-width: 700px) {
             body { padding: 12px; }
             .admin-nav, .filter form, .post-header, .remove-controls {
                 align-items: stretch;
                 flex-direction: column;
             }
-            .remove-controls { display: flex; }
+            .remove-controls {
+                display: flex;
+                flex-basis: auto;
+                min-width: 0;
+            }
             .admin-nav {
                 flex-wrap: wrap;
                 gap: 10px;
