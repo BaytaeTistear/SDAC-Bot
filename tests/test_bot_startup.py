@@ -37,6 +37,17 @@ class BotStartupTests(unittest.TestCase):
         self.assertTrue(bot.PROJECT_WIKI_URL.endswith("/wiki"))
         with self.assertRaises(ValueError):
             bot.validate_command_alias("submit")
+
+    def test_command_visibility_audit_reports_simplified_surface(self):
+        import bot
+
+        lines = bot.command_visibility_audit_lines()
+        joined = "\n".join(lines)
+        self.assertIn("/sdac", joined)
+        self.assertIn("/submit", joined)
+        self.assertIn("Advanced commands are behind `/sdac`", joined)
+        self.assertNotIn("Extra global commands visible", joined)
+
     def test_mal_profile_summary_uses_public_list_data(self):
         import bot
 

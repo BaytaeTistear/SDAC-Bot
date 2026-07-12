@@ -817,6 +817,7 @@ SDAC_SUBMENUS = {
         "options": [
             ("setup_wizard", "Open Setup Wizard", "Use selectors and buttons for server setup."),
             ("setup_command_alias", "Command Name", "Choose this server's optional /command launcher."),
+            ("setup_sync_commands", "Sync Commands", "Refresh this server's Discord slash commands."),
             ("setup_status", "Setup Status", "Review current setup progress."),
             ("setup_test", "Run Setup Test", "Check channels, permissions, and required settings."),
             ("diagnostics", "Diagnostics", "Run runtime diagnostics."),
@@ -855,6 +856,7 @@ SDAC_SUBMENU_DETAILS = {
     "anime_view": "**View Anime Profile**\nRun `/animeprofileview @member` to view a saved anime profile.",
     "anime_activities": "**Anime Activities**\nRun `/animeactivities` to see available activity keys and anime game/community ideas.",
     "setup_command_alias": "**Command Name**\nAdmins can set a server-specific launcher like `/pepo`. `/sdac` always remains available as the fallback.",
+    "setup_sync_commands": "**Sync Commands**\nRefresh this server's Discord command list without restarting the bot. This also clears copied guild duplicates.",
     "backup_guide": "**Backup Provider Guide**\nRun `/backupguide provider` for provider-specific setup steps.",
     "backup_setup": "**Save Backup Target**\nRun `/backupsetup provider remote` to save the backup destination.",
     "backup_now": "**Test Backup**\nRun `/backupnow upload:true` to create and upload a backup now.",
@@ -1006,6 +1008,28 @@ class SDACSubmenuSelect(discord.ui.Select):
                 SetupCommandAliasModal(interaction.user.id, interaction.guild_id)
             )
             return
+        if action == "setup_sync_commands":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            await interaction.response.defer(ephemeral=True)
+            guild_config = get_guild_config(interaction.guild_id, create=False)
+            synced = await sync_guild_slash_commands(interaction.guild)
+            audit_interaction(
+                interaction,
+                "sync_commands_from_hub",
+                "guild",
+                interaction.guild_id,
+                f"Synced {len(synced)} guild command(s) from /sdac.",
+            )
+            lines = ["**SDAC Command Sync**", "Discord command sync requested."]
+            lines.extend(command_sync_status_lines(interaction.guild, guild_config))
+            lines.append("Discord may take a minute to refresh the command picker.")
+            await interaction.edit_original_response(
+                content="\n".join(lines)[:1900],
+                view=SDACSubmenuView(self.is_admin, self.section_key),
+            )
+            return
         if action == "setup_status":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
@@ -1153,6 +1177,28 @@ class SDACSubmenuButton(discord.ui.Button):
                 return
             await interaction.response.send_modal(
                 SetupCommandAliasModal(interaction.user.id, interaction.guild_id)
+            )
+            return
+        if action == "setup_sync_commands":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            await interaction.response.defer(ephemeral=True)
+            guild_config = get_guild_config(interaction.guild_id, create=False)
+            synced = await sync_guild_slash_commands(interaction.guild)
+            audit_interaction(
+                interaction,
+                "sync_commands_from_hub",
+                "guild",
+                interaction.guild_id,
+                f"Synced {len(synced)} guild command(s) from /sdac.",
+            )
+            lines = ["**SDAC Command Sync**", "Discord command sync requested."]
+            lines.extend(command_sync_status_lines(interaction.guild, guild_config))
+            lines.append("Discord may take a minute to refresh the command picker.")
+            await interaction.edit_original_response(
+                content="\n".join(lines)[:1900],
+                view=SDACSubmenuView(self.is_admin, self.section_key),
             )
             return
         if action == "setup_status":
@@ -5180,6 +5226,7 @@ def write_bot_status(event="heartbeat"):
         "event": event,
         "updated_at": utc_now_iso(),
         "release": os.getenv("SDAC_RELEASE") or "development",
+        "release_tag": os.getenv("SDAC_RELEASE_TAG") or "latest-official",
         "instance_id": BOT_INSTANCE_ID,
         "hostname": socket.gethostname(),
         "pid": os.getpid(),
@@ -5836,6 +5883,12 @@ def setup_status_rows(guild_config):
             "value": command_alias_display(guild_config),
             "required": False,
         },
+        {
+            "label": "Command sync",
+            "ok": slash_commands_synced,
+            "value": "Synced" if slash_commands_synced else "Not synced in this process",
+            "required": False,
+        },
     ]
     return rows
 
@@ -5885,7 +5938,7 @@ def setup_wizard_content(guild_config, page=1, notice=""):
     else:
         lines.append(
             "Use the controls below to choose enabled features, set an optional "
-            "server command launcher, and run a setup test."
+            "server command launcher, sync Discord commands, and run a setup test."
         )
     return "\n".join(lines)[:1900]
 
@@ -5897,6 +5950,53 @@ def setup_modal_allowed(interaction, owner_id, guild_id):
         and interaction.user.id == owner_id
         and admin_only(interaction)
     )
+
+
+def command_sync_status_lines(guild, guild_config):
+    alias = normalize_command_alias((guild_config or {}).get("command_alias"))
+    alias_display = f"/{alias}" if alias else "None"
+    global_names = sorted(command.name for command in tree.get_commands())
+    guild_commands = []
+    if guild is not None:
+        discord_guild = discord.Object(id=guild.id)
+        guild_commands = sorted(command.name for command in tree.get_commands(guild=discord_guild))
+    duplicate_names = sorted(set(global_names) & set(guild_commands))
+    expected_guild = [alias] if alias else []
+    unexpected_guild = sorted(name for name in guild_commands if name not in expected_guild)
+    lines = [
+        f"Global commands active: `{', '.join('/' + name for name in global_names) or 'none'}`",
+        f"Server alias: `{alias_display}`",
+        f"Guild-specific commands: `{', '.join('/' + name for name in guild_commands) or 'none'}`",
+    ]
+    if duplicate_names:
+        lines.append("Duplicate guild command copies: `found - sync commands to clear them`")
+    elif unexpected_guild:
+        lines.append("Duplicate guild command copies: `clear pending - unexpected guild commands remain`")
+    else:
+        lines.append("Duplicate guild command copies: `cleared`")
+    lines.append("Slash command sync state: `synced`" if slash_commands_synced else "Slash command sync state: `not synced in this process`")
+    return lines
+
+
+def command_visibility_audit_lines(guild=None, guild_config=None):
+    global_names = sorted(command.name for command in tree.get_commands())
+    visible_expected = sorted(CORE_SLASH_COMMANDS)
+    missing = sorted(set(visible_expected) - set(global_names))
+    extra = sorted(set(global_names) - set(visible_expected)) if SIMPLIFIED_SLASH_COMMANDS else []
+    lines = ["**Command Visibility Audit**"]
+    lines.append(f"Expected public globals: `{', '.join('/' + name for name in visible_expected)}`")
+    lines.append(f"Currently registered globals: `{', '.join('/' + name for name in global_names) or 'none'}`")
+    if missing:
+        lines.append("[MISSING] Missing public globals: " + ", ".join(f"`/{name}`" for name in missing))
+    else:
+        lines.append("[OK] Required public globals are registered.")
+    if extra:
+        lines.append("[WARN] Extra global commands visible in simplified mode: " + ", ".join(f"`/{name}`" for name in extra))
+    else:
+        lines.append("[OK] Advanced commands are behind `/sdac` in simplified mode.")
+    if guild is not None:
+        lines.extend(command_sync_status_lines(guild, guild_config or {}))
+    return lines
 
 
 async def setup_test_lines(guild, guild_config):
@@ -5951,11 +6051,7 @@ async def setup_test_lines(guild, guild_config):
         status = "[MISSING]" if summary.startswith("Missing required") else "[OK]"
         lines.append(f"{status} {guild_channel.mention}: {summary}")
 
-    lines.append(
-        "[OK] Slash commands synced."
-        if slash_commands_synced
-        else "[MISSING] Slash commands have not synced in this process yet."
-    )
+    lines.extend(command_visibility_audit_lines(guild, guild_config)[1:])
     public_url = os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN") or ""
     if public_url:
         lines.append(f"[OK] Public URL/domain configured: `{public_url}`")
@@ -6587,6 +6683,7 @@ class SetupWizardView(discord.ui.View):
             self.add_item(SetupPresetSelect(guild_config))
             self.add_item(SetupButton("Branding", "branding", row=2))
             self.add_item(SetupButton("Command Name", "command_alias", row=2))
+            self.add_item(SetupButton("Sync Commands", "sync_commands", row=2))
             self.add_item(SetupButton("Permission Check", "permission_check", row=3))
             self.add_item(SetupButton("Full Setup Test", "setup_test", row=3))
             self.add_item(SetupButton("Refresh", "refresh", row=3))
@@ -6674,6 +6771,9 @@ class SetupWizardView(discord.ui.View):
                 SetupCommandAliasModal(interaction.user.id, interaction.guild_id)
             )
             return
+        if action == "sync_commands":
+            await self.send_command_sync(interaction)
+            return
         if action == "permission_check":
             await self.send_permission_check(interaction)
             return
@@ -6692,6 +6792,25 @@ class SetupWizardView(discord.ui.View):
                 ),
                 view=None,
             )
+
+    async def send_command_sync(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+        guild_config = get_guild_config(interaction.guild_id, create=False)
+        synced = await sync_guild_slash_commands(interaction.guild)
+        audit_interaction(
+            interaction,
+            "setup_sync_commands",
+            "guild",
+            interaction.guild_id,
+            f"Synced {len(synced)} guild command(s) from setup wizard.",
+        )
+        lines = ["**SDAC Command Sync**", "Discord command sync requested."]
+        lines.extend(command_sync_status_lines(interaction.guild, guild_config))
+        lines.append("Discord may take a minute to refresh the command picker.")
+        await interaction.edit_original_response(
+            content="\n".join(lines)[:1900],
+            view=SetupWizardView(self.owner_id, self.guild_id, self.page),
+        )
 
     async def send_permission_check(self, interaction):
         guild_config = get_guild_config(interaction.guild_id, create=False)

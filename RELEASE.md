@@ -1,3 +1,27 @@
+# SDAC Bot Version 4.1.0 Official
+
+Date: 2026-07-12
+
+Update scope: Official server-owner command and release polish
+
+Version 4.1.0 is an official SDAC backend and Discord usability release that promotes the command-simplification work into the official update channel.
+
+Included:
+
+- added a manual Sync Commands action in `/sdac` setup panels and the setup wizard so owners can refresh Discord commands without a full restart
+- expanded setup status and setup tests with command visibility, server alias, and duplicate guild-command cleanup details
+- added a command visibility audit to protect the simplified public command surface
+- added dashboard and app metadata links for the GitHub repository and wiki/setup docs
+- added a Bot Owner Home restart warning when the dashboard release is newer than the bot heartbeat release
+- updated server-owner docs and wiki guidance for invite, setup, custom command aliases, command sync, and release restart checks
+
+Release channel:
+
+- `version-4.1.0` is this official server-owner command and release polish update
+- `latest-official` points to this build after publishing
+- `latest-experimental` remains available for future experimental builds
+
+---
 # SDAC Bot Version 4.0.8 Experimental
 
 Date: 2026-07-12
@@ -45,7 +69,8 @@ Release channel:
 - `latest-experimental` points to this build after publishing
 - `latest-official` remains on Version 4.0.0 until this build is promoted
 
----# SDAC Bot Version 4.0.6 Experimental
+---
+# SDAC Bot Version 4.0.6 Experimental
 
 Date: 2026-07-12
 

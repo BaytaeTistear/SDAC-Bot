@@ -6449,6 +6449,8 @@ ABOUT_HTML = """
         <a href="{{ url_for('public_stats') }}">Stats</a>
         <a href="{{ url_for('bot_invite') }}">Invite bot</a>
         <a href="{{ url_for('setup_guide') }}">Setup guide</a>
+        <a href="{{ app_info.github_url }}" target="_blank" rel="noopener">GitHub</a>
+        <a href="{{ app_info.wiki_url }}" target="_blank" rel="noopener">Wiki</a>
     </nav>
 
     <section class="panel">
@@ -6469,10 +6471,10 @@ ABOUT_HTML = """
         <div class="panel">
             <h2>Discord Commands</h2>
             <ul>
+                <li><code>/sdac</code> opens the mobile-friendly control center.</li>
                 <li><code>/submit</code> starts a guided media submission.</li>
-                <li><code>/setup</code> walks admins through server setup.</li>
-                <li><code>/startgame</code>, <code>/guess</code>, and <code>/correct</code> run guessing games.</li>
-                <li><code>/diagnose</code> checks database, folders, permissions, and runtime health.</li>
+                <li><code>/guess</code> and <code>/hint</code> handle active guessing games.</li>
+                <li>Admins use <code>/sdac</code> setup panels for setup, sync, checks, backups, and moderation.</li>
             </ul>
         </div>
         <div class="panel">
@@ -6498,8 +6500,9 @@ ABOUT_HTML = """
         {% endif %}
         <ol>
             <li>Invite the bot with the bot and application command scopes.</li>
-            <li>Run <code>/setup</code> in Discord.</li>
-            <li>Run <code>/setuptest</code> or <code>/diagnose</code>.</li>
+            <li>Run <code>/sdac</code> in Discord.</li>
+            <li>Open Setup, choose the required channels/categories, and optionally set a custom command name.</li>
+            <li>Use Sync Commands if Discord needs to refresh slash commands.</li>
             <li>Open the dashboard onboarding page if you want a browser checklist.</li>
         </ol>
     </section>
@@ -6589,6 +6592,7 @@ BOT_INVITE_HTML = """
             {% if app_info.privacy_url %}<li><a href="{{ app_info.privacy_url }}" target="_blank" rel="noopener">Privacy policy</a></li>{% endif %}
             {% if app_info.terms_url %}<li><a href="{{ app_info.terms_url }}" target="_blank" rel="noopener">Terms of service</a></li>{% endif %}
             <li><a href="{{ app_info.github_url }}" target="_blank" rel="noopener">Source and releases</a></li>
+            <li><a href="{{ app_info.wiki_url }}" target="_blank" rel="noopener">Wiki and setup docs</a></li>
         </ul>
     </section>
 </main>
@@ -8008,6 +8012,7 @@ def public_app_metadata():
         "privacy_url": os.getenv("SDAC_PRIVACY_URL", "").strip() or (f"{public_url}/privacy" if public_url else ""),
         "terms_url": os.getenv("SDAC_TERMS_URL", "").strip() or (f"{public_url}/terms" if public_url else ""),
         "github_url": os.getenv("SDAC_GITHUB_URL", "https://github.com/BaytaeTistear/SDAC-Bot").strip(),
+        "wiki_url": os.getenv("SDAC_WIKI_URL", "https://github.com/BaytaeTistear/SDAC-Bot/wiki").strip(),
         "permissions": os.getenv("SDAC_BOT_PERMISSIONS", "274878221376").strip(),
     }
 
@@ -10303,6 +10308,20 @@ def maybe_notify_stale_bot(bot_status):
         bot_status.get("message") or "The SDAC bot heartbeat is stale.",
         throttle_key="heartbeat_stale",
         throttle_seconds=3600,
+    )
+
+
+def bot_restart_warning(bot_status, status=None):
+    status = status or release_status()
+    installed = str(status.get("installed_version") or status.get("installed") or "").strip()
+    bot_release = str(bot_status.get("release") or "").strip()
+    if not installed or installed == "development" or not bot_release or bot_release == "development":
+        return ""
+    if bot_release == installed:
+        return ""
+    return (
+        f"Dashboard is on {installed}, but the bot heartbeat reports {bot_release}. "
+        "Restart the bot service so Discord commands and background workers use the installed release."
     )
 
 
@@ -17957,6 +17976,8 @@ def staff_home_context(mode_key, connection, config_data, selected_server_id, vi
     else:
         backups = recent_database_backups()
         release = release_status()
+        bot_status = read_bot_status()
+        restart_warning = bot_restart_warning(bot_status, release)
         production = production_health_report(config_data)
         cards = [
             {"label": "Allowed Servers", "value": len(visible_guild_ids)},
@@ -17967,9 +17988,9 @@ def staff_home_context(mode_key, connection, config_data, selected_server_id, vi
         status_items = [
             {
                 "label": "Bot Heartbeat",
-                "state": "Seen" if read_bot_status().get("event") else "Missing",
+                "state": "Seen" if bot_status.get("event") else "Missing",
                 "detail": summary["bot_heartbeat"],
-                "severity": "" if read_bot_status().get("event") else "warn",
+                "severity": "" if bot_status.get("event") else "warn",
             },
             {
                 "label": "Latest Backup",
@@ -17982,6 +18003,12 @@ def staff_home_context(mode_key, connection, config_data, selected_server_id, vi
                 "state": release.get("installed_version") or "Unknown",
                 "detail": "Official: " + str(release.get("official_version") or "unknown") + "; Experimental: " + str(release.get("experimental_version") or "unknown"),
                 "severity": "",
+            },
+            {
+                "label": "Bot Restart",
+                "state": "Needed" if restart_warning else "Current",
+                "detail": restart_warning or "Bot heartbeat release matches the installed dashboard release.",
+                "severity": "warn" if restart_warning else "",
             },
             {
                 "label": "Background Jobs",
@@ -19584,6 +19611,7 @@ def api_app_bootstrap():
             "privacy_url": app_info["privacy_url"],
             "terms_url": app_info["terms_url"],
             "github_url": app_info["github_url"],
+            "wiki_url": app_info["wiki_url"],
         },
         "auth": {
             "account_logged_in": account_logged_in,
