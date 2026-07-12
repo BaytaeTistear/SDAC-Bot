@@ -1,4 +1,26 @@
-# SDAC Bot Version 4.0.3 Experimental
+# SDAC Bot Version 4.0.4 Experimental
+
+Date: 2026-07-12
+
+Update scope: Usable Anime Activities commands and MyAnimeList profile import
+
+Version 4.0.4 is an experimental Anime Activities usability update.
+
+Included:
+
+- enabled the Anime Activities slash command set by default while keeping `SDAC_ENABLE_ANIME_COMMANDS=0` as the disable switch
+- added `/animeprofileimport username` to import public MyAnimeList profile data into a user anime profile
+- updated the Anime Activities dashboard command list so it shows usable slash-command syntax and MyAnimeList import support
+- updated command documentation and smoke coverage for the new anime profile import flow
+- added focused bot tests for default Anime command registration and MyAnimeList summary formatting
+
+Release channel:
+
+- `version-4.0.4` is this experimental Anime Activities command usability update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 4.0.0 until this build is promoted
+
+---# SDAC Bot Version 4.0.3 Experimental
 
 Date: 2026-07-11
 
@@ -20,7 +42,8 @@ Release channel:
 - `latest-experimental` points to this build after publishing
 - `latest-official` remains on Version 4.0.0 until this build is promoted
 
----# SDAC Bot Version 4.0.2 Experimental
+---
+# SDAC Bot Version 4.0.2 Experimental
 
 Date: 2026-07-11
 

@@ -114,6 +114,7 @@ class PreReleaseSmokeTests(unittest.TestCase):
         self.assertIn("/animeevent", anime_page)
         self.assertIn("screenshot-guess", anime_page)
         self.assertIn("seed_anime_library", anime_page)
+        self.assertIn("/animeprofileimport", anime_page)
         example_response = client.get("/admin/game-library/example.csv?key=ImTheBestAdmin")
         self.assertEqual(example_response.status_code, 200)
         self.assertIn("title,answer,aliases,category", example_response.get_data(as_text=True))

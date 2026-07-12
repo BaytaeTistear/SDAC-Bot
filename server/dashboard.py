@@ -2573,7 +2573,7 @@ ANIME_ACTIVITIES_HTML = """
     <section class="panel warning">
         <h2>Experimental Notice</h2>
         <p>{{ retirement_note }}</p>
-        <p class="muted">These commands are experimental wrappers around events, profiles, leaderboards, polls, and Game Library content. Individual modes may change or be removed.</p>
+        <p class="muted">These slash commands are enabled by default and sync to Discord when the bot starts. Set <code>SDAC_ENABLE_ANIME_COMMANDS=0</code> before startup if you want to hide them. Individual modes may change or be removed.</p>
     </section>
     <section class="panel">
         <h2>Seed All Activities</h2>
@@ -2595,9 +2595,10 @@ ANIME_ACTIVITIES_HTML = """
     <section class="panel">
         <h2>Implemented Entry Points</h2>
         <div class="commands">
-            <div class="card"><code>/animeevent activity channel details</code><p>Post an activity prompt to Discord using one of the keys below.</p></div>
+            <div class="card"><code>/animeevent activity #channel details</code><p>Post an activity prompt to Discord using one of the keys below.</p></div>
             <div class="card"><code>/animechallenge mode prompt answer hint</code><p>Create a Game Library item for anime guessing modes.</p></div>
             <div class="card"><code>/animeprofile favorites watching</code><p>Let users save favorite anime and currently watching notes.</p></div>
+            <div class="card"><code>/animeprofileimport username</code><p>Import public MyAnimeList favorites and watching data into a user anime profile.</p></div>
             <div class="card"><code>/animeleaderboard month</code><p>Show a combined anime score from submission votes and guessing points.</p></div>
         </div>
     </section>

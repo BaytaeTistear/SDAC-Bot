@@ -18,16 +18,31 @@ class BotStartupTests(unittest.TestCase):
             except OSError:
                 pass
 
-    def test_experimental_anime_commands_are_opt_in(self):
+    def test_experimental_anime_commands_are_enabled_by_default(self):
         import bot
 
         command_names = {command.name for command in bot.tree.get_commands()}
         self.assertIn("submit", command_names)
-        self.assertNotIn("animeactivities", command_names)
-        self.assertNotIn("animeevent", command_names)
-        self.assertNotIn("animechallenge", command_names)
-        self.assertNotIn("Anime Activities", bot.USER_COMMAND_GROUPS)
-        self.assertNotIn("animeactivities", bot.LOW_COST_COMMAND_COOLDOWNS)
+        self.assertIn("animeactivities", command_names)
+        self.assertIn("animeevent", command_names)
+        self.assertIn("animechallenge", command_names)
+        self.assertIn("animeprofileimport", command_names)
+        self.assertIn("Anime Activities", bot.USER_COMMAND_GROUPS)
+        self.assertIn("animeprofileimport", bot.LOW_COST_COMMAND_COOLDOWNS)
+
+    def test_mal_profile_summary_uses_public_list_data(self):
+        import bot
+
+        favorites, watching = bot.summarize_mal_profile(
+            "example_user",
+            {"data": [{"anime": {"title": "Watching One"}}]},
+            {"data": [{"anime": {"title": "Completed One"}}]},
+            {"data": {"anime": [{"title": "Favorite One"}]}},
+        )
+        self.assertIn("Favorite One", favorites)
+        self.assertIn("example_user", favorites)
+        self.assertIn("Watching One", watching)
+        self.assertIn("Completed One", watching)
 
     def test_guess_points_are_blocked_only_after_all_generated_hints(self):
         import bot

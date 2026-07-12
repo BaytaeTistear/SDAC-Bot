@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -44,7 +45,7 @@ BOT_INSTANCE_ID = (
 BACKUP_KEEP_COUNT = 30
 SCHEMA_VERSION = DATABASE_SCHEMA_VERSION
 OWNER_OVERRIDE_USERNAME = "baytae"
-ENABLE_ANIME_COMMANDS = os.getenv("SDAC_ENABLE_ANIME_COMMANDS", "").strip().casefold() in {"1", "true", "yes", "on"}
+ENABLE_ANIME_COMMANDS = os.getenv("SDAC_ENABLE_ANIME_COMMANDS", "1").strip().casefold() not in {"0", "false", "no", "off"}
 
 ALLOWED_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp",
@@ -487,12 +488,14 @@ if ENABLE_ANIME_COMMANDS:
         ("/animeactivities", "Show experimental anime activity ideas."),
         ("/animeprofile", "Save your experimental anime favorites/watching profile."),
         ("/animeprofileview", "View an experimental anime profile."),
+        ("/animeprofileimport username", "Import public MyAnimeList profile data."),
         ("/animeleaderboard", "Show the experimental anime community leaderboard."),
     ]
     USER_COMMAND_GROUPS["Anime Activities"] = [
         ("/animeactivities", "Show experimental anime game and community activity ideas."),
         ("/animeevent activity #channel details", "Post an experimental anime activity prompt."),
         ("/animechallenge mode prompt answer hint", "Create an experimental anime guessing library item."),
+        ("/animeprofileimport username", "Import public MyAnimeList profile data."),
     ]
 
 ADMIN_COMMAND_HELP = [
@@ -4575,6 +4578,7 @@ if ENABLE_ANIME_COMMANDS:
         "animeactivities": 10,
         "animeleaderboard": 15,
         "animeprofile": 5,
+        "animeprofileimport": 30,
     })
 active_submission_sessions = set()
 slash_commands_synced = False
@@ -6182,7 +6186,7 @@ async def animeactivities(interaction):
         "**Implemented experimental entry points**",
         "- `/animeevent activity channel details` posts one activity prompt.",
         "- `/animechallenge mode prompt answer hint` creates a Game Library item for guessing modes.",
-        "- `/animeprofile` and `/animeprofileview` store and show member anime profile notes.",
+        "- `/animeprofile`, `/animeprofileview`, and `/animeprofileimport username` store, show, or import member anime profile notes.",
         "- `/animeleaderboard` combines submission votes and guessing points.",
     ])
     chunks = []
@@ -6251,6 +6255,135 @@ async def animeevent(
         ephemeral=True,
     )
 
+
+JIKAN_API_BASE = "https://api.jikan.moe/v4"
+
+
+def jikan_get_json(path, params=None):
+    query = ""
+    if params:
+        query = "?" + "&".join(
+            f"{quote(str(key), safe='')}={quote(str(value), safe='')}"
+            for key, value in params.items()
+            if value is not None and value != ""
+        )
+    request = Request(
+        f"{JIKAN_API_BASE}{path}{query}",
+        headers={"User-Agent": "SDAC-Bot MyAnimeList import"},
+    )
+    try:
+        with urlopen(request, timeout=12) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        if error.code == 404:
+            raise ValueError("That MyAnimeList profile was not found or is not public.") from error
+        if error.code == 429:
+            raise ValueError("MyAnimeList import is rate limited right now. Try again in a minute.") from error
+        raise ValueError(f"MyAnimeList import failed with HTTP {error.code}.") from error
+    except (URLError, TimeoutError, json.JSONDecodeError) as error:
+        raise ValueError("MyAnimeList import could not reach the public anime list service.") from error
+
+
+def anime_title_from_jikan_entry(entry):
+    anime = entry.get("anime") if isinstance(entry, dict) else None
+    if isinstance(anime, dict):
+        return str(anime.get("title") or anime.get("title_english") or "").strip()
+    if isinstance(entry, dict):
+        return str(entry.get("title") or entry.get("name") or "").strip()
+    return ""
+
+
+def jikan_title_list(payload, limit=8):
+    titles = []
+    for entry in (payload or {}).get("data", []):
+        title = anime_title_from_jikan_entry(entry)
+        if title and title not in titles:
+            titles.append(title)
+        if len(titles) >= limit:
+            break
+    return titles
+
+
+def summarize_mal_profile(username, watching_payload, completed_payload, favorites_payload):
+    watching = jikan_title_list(watching_payload, limit=8)
+    completed = jikan_title_list(completed_payload, limit=8)
+    favorite_entries = ((favorites_payload or {}).get("data") or {}).get("anime", [])
+    favorites = jikan_title_list({"data": favorite_entries}, limit=8)
+    favorites_text = ", ".join(favorites or completed[:5] or watching[:5])
+    watching_parts = []
+    if watching:
+        watching_parts.append("Watching: " + ", ".join(watching))
+    if completed:
+        watching_parts.append("Completed highlights: " + ", ".join(completed[:5]))
+    watching_text = " | ".join(watching_parts) or "Imported from MyAnimeList; no public watching list items found."
+    note = f"Imported from MyAnimeList user {username}."
+    if favorites_text:
+        favorites_text = f"{favorites_text} ({note})"
+    else:
+        favorites_text = note
+    return favorites_text[:500], watching_text[:500]
+
+
+async def fetch_mal_profile_summary(username):
+    clean_username = re.sub(r"[^A-Za-z0-9_-]", "", (username or "").strip())[:40]
+    if not clean_username:
+        raise ValueError("Enter a valid MyAnimeList username.")
+    encoded = quote(clean_username, safe="")
+    watching_payload, completed_payload, favorites_payload = await asyncio.gather(
+        asyncio.to_thread(
+            jikan_get_json,
+            f"/users/{encoded}/animelist",
+            {"status": "watching", "limit": 10, "order_by": "updated_at", "sort": "desc"},
+        ),
+        asyncio.to_thread(
+            jikan_get_json,
+            f"/users/{encoded}/animelist",
+            {"status": "completed", "limit": 10, "order_by": "score", "sort": "desc"},
+        ),
+        asyncio.to_thread(jikan_get_json, f"/users/{encoded}/favorites", None),
+    )
+    favorites, watching = summarize_mal_profile(
+        clean_username,
+        watching_payload,
+        completed_payload,
+        favorites_payload,
+    )
+    return clean_username, favorites, watching
+
+
+@optional_tree_command(ENABLE_ANIME_COMMANDS, name="animeprofileimport", description="Import your anime profile from public MyAnimeList data")
+@app_commands.guild_only()
+@app_commands.describe(username="Your public MyAnimeList username")
+async def animeprofileimport(interaction, username: str):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    try:
+        mal_username, favorites, watching = await fetch_mal_profile_summary(username)
+    except ValueError as error:
+        await interaction.followup.send(str(error), ephemeral=True)
+        return
+    with database() as connection:
+        connection.execute("""
+            INSERT INTO anime_profiles (
+                guild_id, user_id, username, favorites, watching, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                username = excluded.username,
+                favorites = excluded.favorites,
+                watching = excluded.watching,
+                updated_at = excluded.updated_at
+        """, (
+            str(interaction.guild_id),
+            str(interaction.user.id),
+            str(interaction.user),
+            favorites,
+            watching,
+            utc_now_iso(),
+        ))
+    await interaction.followup.send(
+        f"Imported public MyAnimeList profile `{mal_username}` into your SDAC anime profile.",
+        ephemeral=True,
+    )
 
 @optional_tree_command(ENABLE_ANIME_COMMANDS, name="animeprofile", description="Save your experimental anime favorites and watching status")
 @app_commands.guild_only()
