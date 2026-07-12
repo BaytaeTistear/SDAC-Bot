@@ -770,14 +770,91 @@ SDAC_HUB_USER_OPTIONS = [
 ]
 
 SDAC_HUB_ADMIN_OPTIONS = [
-    ("setup", "Setup Wizard", "Open the guided server setup wizard."),
-    ("setup_status", "Setup Status", "Review current setup progress."),
-    ("setup_test", "Run Setup Test", "Check channels, permissions, and required settings."),
-    ("diagnostics", "Diagnostics", "Run runtime diagnostics."),
+    ("setup", "Setup", "Open setup, status, tests, and diagnostics."),
     ("backup", "Backups", "See the short backup setup path."),
     ("moderation", "Moderation", "See approval and moderation setup shortcuts."),
     ("admin_help", "Admin Help", "Browse advanced admin commands by category."),
 ]
+
+SDAC_SUBMENUS = {
+    "submit": {
+        "title": "Submit Media",
+        "placeholder": "Choose a submission action",
+        "options": [
+            ("submit_start", "Start Submission", "Run /submit for the guided upload flow."),
+            ("submit_categories", "View Categories", "Run /categories to see available destinations."),
+        ],
+    },
+    "guess": {
+        "title": "Guessing Games",
+        "placeholder": "Choose a guessing-game action",
+        "options": [
+            ("guess_answer", "Guess Answer", "Run /guess answer in the active game channel."),
+            ("guess_hint", "Show Hint", "Run /hint for the current game hint."),
+            ("guess_active", "Active Game", "Run /activegame to see the current game."),
+        ],
+    },
+    "anime": {
+        "title": "Anime Profile",
+        "placeholder": "Choose an anime profile action",
+        "options": [
+            ("anime_save", "Save Profile", "Run /animeprofile favorites watching."),
+            ("anime_import", "Import MyAnimeList", "Run /animeprofileimport username."),
+            ("anime_view", "View Profile", "Run /animeprofileview member."),
+            ("anime_activities", "Activity List", "Run /animeactivities for activity keys."),
+        ],
+    },
+    "setup": {
+        "title": "Setup",
+        "placeholder": "Choose a setup action",
+        "options": [
+            ("setup_wizard", "Open Setup Wizard", "Use selectors and buttons for server setup."),
+            ("setup_status", "Setup Status", "Review current setup progress."),
+            ("setup_test", "Run Setup Test", "Check channels, permissions, and required settings."),
+            ("diagnostics", "Diagnostics", "Run runtime diagnostics."),
+        ],
+    },
+    "backup": {
+        "title": "Backups",
+        "placeholder": "Choose a backup action",
+        "options": [
+            ("backup_guide", "Provider Guide", "Run /backupguide provider."),
+            ("backup_setup", "Save Backup Target", "Run /backupsetup provider remote."),
+            ("backup_now", "Test Backup", "Run /backupnow upload:true."),
+            ("backup_status", "Backup Status", "Run /backupstatus."),
+        ],
+    },
+    "moderation": {
+        "title": "Moderation",
+        "placeholder": "Choose a moderation action",
+        "options": [
+            ("moderation_approval", "Approval Queue", "Run /setapproval enabled #channel."),
+            ("moderation_filters", "Moderation Filters", "Run /setmoderation to update filters."),
+            ("moderation_reasons", "Reason Presets", "Run /reasonpresets."),
+            ("moderation_permissions", "Permission Check", "Run /checkpermissions or /repairpermissions."),
+        ],
+    },
+}
+
+SDAC_SUBMENU_DETAILS = {
+    "submit_start": "**Start Submission**\nRun `/submit` to open the guided 3-step upload flow.",
+    "submit_categories": "**View Categories**\nRun `/categories` to see the configured submission categories for this server.",
+    "guess_answer": "**Guess Answer**\nRun `/guess answer` in the channel where a guessing game is active.",
+    "guess_hint": "**Show Hint**\nRun `/hint` in the active game channel to see the current hint.",
+    "guess_active": "**Active Game**\nRun `/activegame` to see what game is currently running in this channel.",
+    "anime_save": "**Save Anime Profile**\nRun `/animeprofile favorites watching` to save favorites and currently watching notes.",
+    "anime_import": "**Import MyAnimeList**\nRun `/animeprofileimport username` to import public MyAnimeList favorites and watching data.",
+    "anime_view": "**View Anime Profile**\nRun `/animeprofileview @member` to view a saved anime profile.",
+    "anime_activities": "**Anime Activities**\nRun `/animeactivities` to see available activity keys and anime game/community ideas.",
+    "backup_guide": "**Backup Provider Guide**\nRun `/backupguide provider` for provider-specific setup steps.",
+    "backup_setup": "**Save Backup Target**\nRun `/backupsetup provider remote` to save the backup destination.",
+    "backup_now": "**Test Backup**\nRun `/backupnow upload:true` to create and upload a backup now.",
+    "backup_status": "**Backup Status**\nRun `/backupstatus` to confirm the latest backup result.",
+    "moderation_approval": "**Approval Queue**\nRun `/setapproval enabled #channel` to route approval-before-repost items.",
+    "moderation_filters": "**Moderation Filters**\nRun `/setmoderation blocked_words media_types quarantine retention_days enabled` for filter controls.",
+    "moderation_reasons": "**Reason Presets**\nRun `/reasonpresets` to see standard admin action reasons.",
+    "moderation_permissions": "**Permission Check**\nRun `/checkpermissions` to inspect access or `/repairpermissions` to get a repair invite.",
+}
 
 
 def sdac_hub_content(is_admin=False, notice=""):
@@ -790,17 +867,27 @@ def sdac_hub_content(is_admin=False, notice=""):
     lines.extend([
         "",
         "**Common user paths**",
-        "- Submit media: choose `Submit Media`, then run `/submit` for the guided 3-step flow.",
-        "- Guessing games: choose `Guessing Games` for the few commands players need.",
-        "- Anime profile: choose `Anime Profile` to save or import from MyAnimeList.",
+        "- Submit media: guided upload and category lookup.",
+        "- Guessing games: answer, hint, and active-game lookup.",
+        "- Anime profile: save, view, import from MyAnimeList, or list activities.",
     ])
     if is_admin:
         lines.extend([
             "",
-            "**Admin shortcuts**",
-            "- Setup Wizard replaces most setup commands with channel/role selectors and buttons.",
-            "- Setup Status, Setup Test, and Diagnostics collect the most common admin checks here.",
+            "**Admin paths**",
+            "- Setup: wizard, status, tests, and diagnostics.",
+            "- Backups: provider guide, target setup, test backup, and status.",
+            "- Moderation: approval, filters, reasons, and permission checks.",
         ])
+    return "\n".join(lines)[:1900]
+
+
+def sdac_submenu_content(section_key, notice=""):
+    submenu = SDAC_SUBMENUS.get(section_key, {})
+    title = submenu.get("title", "SDAC")
+    lines = [f"**{title}**", "Choose one action below. This submenu only shows actions for this section."]
+    if notice:
+        lines.extend(["", notice])
     return "\n".join(lines)[:1900]
 
 
@@ -817,7 +904,7 @@ class SDACHubSelect(discord.ui.Select):
                 for value, label, description in SDAC_HUB_ADMIN_OPTIONS
             )
         super().__init__(
-            placeholder="Choose what you want to do",
+            placeholder="Choose a section",
             min_values=1,
             max_values=1,
             options=options[:25],
@@ -825,49 +912,48 @@ class SDACHubSelect(discord.ui.Select):
 
     async def callback(self, interaction):
         action = self.values[0]
-        if action == "submit":
-            await interaction.response.edit_message(
-                content=(
-                    "**Submit Media**\n"
-                    "Run `/submit` to open the guided submission flow. "
-                    "It walks you through category selection, upload, and confirmation."
-                ),
-                view=self.view,
-            )
-            return
-        if action == "guess":
-            await interaction.response.edit_message(
-                content=(
-                    "**Guessing Games**\n"
-                    "Players usually only need these:\n"
-                    "- `/guess answer` to answer the active game\n"
-                    "- `/hint` to see the current hint\n"
-                    "- `/activegame` to check what is running here"
-                ),
-                view=self.view,
-            )
-            return
-        if action == "anime":
-            await interaction.response.edit_message(
-                content=(
-                    "**Anime Profile**\n"
-                    "- `/animeprofile favorites watching` saves profile notes\n"
-                    "- `/animeprofileimport username` imports public MyAnimeList data\n"
-                    "- `/animeprofileview @member` shows a profile\n"
-                    "- `/animeactivities` lists anime activity modes"
-                ),
-                view=self.view,
-            )
-            return
         if action == "public_help":
             chunks = command_help_chunks("SDAC User Commands", USER_COMMAND_GROUPS[next(iter(USER_COMMAND_GROUPS))])
             await interaction.response.edit_message(content=chunks[0], view=CommandHelpView(USER_COMMAND_GROUPS))
             return
-
-        if not admin_only(interaction):
+        if action == "admin_help":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            chunks = command_help_chunks("SDAC Admin Commands", ADMIN_COMMAND_GROUPS[next(iter(ADMIN_COMMAND_GROUPS))])
+            await interaction.response.edit_message(content=chunks[0], view=CommandHelpView(ADMIN_COMMAND_GROUPS))
+            return
+        if action in {"setup", "backup", "moderation"} and not admin_only(interaction):
             await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
             return
-        if action == "setup":
+        await interaction.response.edit_message(
+            content=sdac_submenu_content(action),
+            view=SDACSubmenuView(self.is_admin, action),
+        )
+
+
+class SDACSubmenuSelect(discord.ui.Select):
+    def __init__(self, is_admin, section_key):
+        self.is_admin = bool(is_admin)
+        self.section_key = section_key
+        submenu = SDAC_SUBMENUS[section_key]
+        options = [
+            discord.SelectOption(label=label, value=value, description=description[:100])
+            for value, label, description in submenu["options"]
+        ]
+        super().__init__(
+            placeholder=submenu.get("placeholder", "Choose an action"),
+            min_values=1,
+            max_values=1,
+            options=options[:25],
+        )
+
+    async def callback(self, interaction):
+        action = self.values[0]
+        if action == "setup_wizard":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
             guild_config = get_guild_config(interaction.guild_id)
             audit_interaction(
                 interaction,
@@ -882,17 +968,23 @@ class SDACHubSelect(discord.ui.Select):
             )
             return
         if action == "setup_status":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
             guild_config = get_guild_config(interaction.guild_id, create=False)
             await interaction.response.edit_message(
                 content=setup_wizard_content(
                     guild_config,
                     page=1,
-                    notice="Choose `Setup Wizard` in `/sdac` to change these settings.",
+                    notice="Choose `Open Setup Wizard` in `/sdac` to change these settings.",
                 ),
-                view=self.view,
+                view=SDACSubmenuView(self.is_admin, self.section_key),
             )
             return
         if action == "setup_test":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
             await interaction.response.defer(ephemeral=True)
             guild_config = get_guild_config(interaction.guild_id, create=False)
             lines = await setup_test_lines(interaction.guild, guild_config)
@@ -905,9 +997,15 @@ class SDACHubSelect(discord.ui.Select):
                 f"Ran setup test from /sdac: {summary}",
             )
             lines.insert(1, f"Saved result: `{status}`.")
-            await interaction.edit_original_response(content="\n".join(lines)[:1900], view=self.view)
+            await interaction.edit_original_response(
+                content="\n".join(lines)[:1900],
+                view=SDACSubmenuView(self.is_admin, self.section_key),
+            )
             return
         if action == "diagnostics":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
             await interaction.response.defer(ephemeral=True)
             lines = await diagnostic_lines(interaction)
             status, summary = save_setup_test_run(interaction, lines)
@@ -919,43 +1017,40 @@ class SDACHubSelect(discord.ui.Select):
                 f"Ran diagnostics from /sdac: {summary}",
             )
             lines.insert(1, f"Saved diagnostic result: `{status}`.")
-            await interaction.edit_original_response(content="\n".join(lines)[:1900], view=self.view)
-            return
-        if action == "backup":
-            await interaction.response.edit_message(
-                content=(
-                    "**Backups**\n"
-                    "Use this shorter path instead of memorizing every backup command:\n"
-                    "1. `/backupguide provider` for provider-specific setup steps\n"
-                    "2. `/backupsetup provider remote` to save the target\n"
-                    "3. `/backupnow upload:true` to test it\n"
-                    "4. `/backupstatus` to confirm the result"
-                ),
-                view=self.view,
+            await interaction.edit_original_response(
+                content="\n".join(lines)[:1900],
+                view=SDACSubmenuView(self.is_admin, self.section_key),
             )
             return
-        if action == "moderation":
-            await interaction.response.edit_message(
-                content=(
-                    "**Moderation Setup**\n"
-                    "Start with `/sdac` > `Setup Wizard` for channels and permissions.\n"
-                    "Then use these only when needed:\n"
-                    "- `/setapproval enabled #channel` for approval queue routing\n"
-                    "- `/setmoderation blocked_words media_types quarantine retention_days enabled` for filters\n"
-                    "- `/reasonpresets` for standard action reasons"
-                ),
-                view=self.view,
-            )
-            return
-        if action == "admin_help":
-            chunks = command_help_chunks("SDAC Admin Commands", ADMIN_COMMAND_GROUPS[next(iter(ADMIN_COMMAND_GROUPS))])
-            await interaction.response.edit_message(content=chunks[0], view=CommandHelpView(ADMIN_COMMAND_GROUPS))
+        await interaction.response.edit_message(
+            content=sdac_submenu_content(self.section_key, SDAC_SUBMENU_DETAILS.get(action, "Action selected.")),
+            view=SDACSubmenuView(self.is_admin, self.section_key),
+        )
+
+
+class SDACBackButton(discord.ui.Button):
+    def __init__(self, is_admin):
+        super().__init__(label="Back", style=discord.ButtonStyle.secondary)
+        self.is_admin = bool(is_admin)
+
+    async def callback(self, interaction):
+        await interaction.response.edit_message(
+            content=sdac_hub_content(self.is_admin),
+            view=SDACHubView(self.is_admin),
+        )
 
 
 class SDACHubView(discord.ui.View):
     def __init__(self, is_admin):
         super().__init__(timeout=600)
         self.add_item(SDACHubSelect(is_admin))
+
+
+class SDACSubmenuView(discord.ui.View):
+    def __init__(self, is_admin, section_key):
+        super().__init__(timeout=600)
+        self.add_item(SDACSubmenuSelect(is_admin, section_key))
+        self.add_item(SDACBackButton(is_admin))
 
 def fill_nested_defaults(target, defaults):
     changed = False

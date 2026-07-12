@@ -1,4 +1,26 @@
-# SDAC Bot Version 4.0.5 Experimental
+# SDAC Bot Version 4.0.6 Experimental
+
+Date: 2026-07-12
+
+Update scope: Guided command hub submenu fix
+
+Version 4.0.6 is an experimental usability patch for the `/sdac` guided command hub.
+
+Included:
+
+- changed `/sdac` top-level choices to open section-specific submenus instead of leaving the main menu visible
+- added dedicated submenus for submissions, guessing games, anime profiles, setup, backups, and moderation
+- added a Back button so users and admins can return to the main `/sdac` hub cleanly
+- kept advanced User Help and Admin Help as separate command browser views
+- preserved the setup wizard launch from the Setup submenu
+
+Release channel:
+
+- `version-4.0.6` is this experimental guided command hub submenu fix
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 4.0.0 until this build is promoted
+
+---# SDAC Bot Version 4.0.5 Experimental
 
 Date: 2026-07-12
 
@@ -21,7 +43,8 @@ Release channel:
 - `latest-experimental` points to this build after publishing
 - `latest-official` remains on Version 4.0.0 until this build is promoted
 
----# SDAC Bot Version 4.0.4 Experimental
+---
+# SDAC Bot Version 4.0.4 Experimental
 
 Date: 2026-07-12
 
