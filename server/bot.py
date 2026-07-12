@@ -5870,9 +5870,19 @@ def setup_status_rows(guild_config):
             "required": False,
         },
         {
-            "label": "Bot nickname",
-            "ok": True,
-            "value": guild_config.get("bot_nickname") or "Default bot username",
+            "label": "Bot name",
+            "ok": bool(guild_config.get("bot_nickname")),
+            "value": guild_config.get("bot_nickname") or "Default bot username (optional)",
+            "required": False,
+        },
+        {
+            "label": "Bot image",
+            "ok": bool(config.get("bot_avatar_updated_at")),
+            "value": (
+                f"Updated {config.get('bot_avatar_updated_at')}"
+                if config.get("bot_avatar_updated_at")
+                else "Default Discord bot image (optional)"
+            ),
             "required": False,
         },
         {
@@ -5976,8 +5986,9 @@ def setup_wizard_content(guild_config, page=1, notice=""):
         )
     else:
         lines.append(
-            "Use the controls below to choose enabled features, set the bot name, "
-            "set an optional server command launcher, sync Discord commands, and run a setup test."
+            "Use the controls below to choose enabled features, optionally set the bot name "
+            "and image, set an optional server command launcher, sync Discord commands, "
+            "and run a setup test."
         )
     return "\n".join(lines)[:1900]
 

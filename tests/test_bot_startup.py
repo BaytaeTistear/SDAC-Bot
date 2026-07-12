@@ -67,6 +67,25 @@ class BotStartupTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             dashboard.validate_bot_avatar_bytes(b"", "image/png")
 
+    def test_setup_identity_steps_are_optional(self):
+        import bot
+
+        original_avatar_timestamp = bot.config.get("bot_avatar_updated_at", "")
+        try:
+            bot.config["bot_avatar_updated_at"] = ""
+            rows = {row["label"]: row for row in bot.setup_status_rows({})}
+            self.assertFalse(rows["Bot name"]["required"])
+            self.assertFalse(rows["Bot image"]["required"])
+            self.assertFalse(rows["Bot name"]["ok"])
+            self.assertFalse(rows["Bot image"]["ok"])
+
+            bot.config["bot_avatar_updated_at"] = "2026-07-12T00:00:00+00:00"
+            rows = {row["label"]: row for row in bot.setup_status_rows({"bot_nickname": "Media Helper"})}
+            self.assertTrue(rows["Bot name"]["ok"])
+            self.assertTrue(rows["Bot image"]["ok"])
+        finally:
+            bot.config["bot_avatar_updated_at"] = original_avatar_timestamp
+
     def test_command_visibility_audit_reports_simplified_surface(self):
         import bot
 

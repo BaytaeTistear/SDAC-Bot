@@ -1,3 +1,23 @@
+# SDAC Bot Version 4.1.4 Experimental
+
+Release date: 2026-07-12
+
+Update scope: Optional setup identity steps
+
+Version 4.1.4 is an experimental setup polish update that makes bot name and bot image choices part of setup without making either one required.
+
+Included in this update:
+- shows Bot Name and Bot Image as optional recommended setup items in the Discord setup wizard
+- keeps required setup readiness focused on channels, categories, and core permissions
+- tracks selected bot name and global bot image as completed recommended items once configured
+- adds Bot Name and Bot Image to the dashboard Setup Checklist as optional recommended items
+- updates setup wording so owners know both identity choices are optional during setup
+- adds test coverage that bot name and bot image setup rows remain optional
+
+Release channel:
+- `version-4.1.4` is this experimental optional setup identity update.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.1.0 until it is promoted.
 # SDAC Bot Version 4.1.3 Experimental
 
 Release date: 2026-07-12

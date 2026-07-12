@@ -6550,7 +6550,7 @@ ABOUT_HTML = """
         <ol>
             <li>Invite the bot with the bot and application command scopes.</li>
             <li>Run <code>/sdac</code> in Discord.</li>
-            <li>Open Setup, choose the required channels/categories, and optionally set a custom command name.</li>
+            <li>Open Setup, choose the required channels/categories, and optionally set the bot name, bot image, and custom command name.</li>
             <li>Use Sync Commands if Discord needs to refresh slash commands.</li>
             <li>Open the dashboard onboarding page if you want a browser checklist.</li>
         </ol>
@@ -8209,6 +8209,18 @@ def build_onboarding_rows(config_data):
                 guild_config.get("brand_name"),
                 "Server branding",
                 "/setbranding name:#7c9cff",
+                optional=True,
+            ),
+            onboarding_item(
+                guild_config.get("bot_nickname"),
+                "Bot name chosen",
+                "/sdac -> Setup -> Bot Name",
+                optional=True,
+            ),
+            onboarding_item(
+                config_data.get("bot_avatar_updated_at"),
+                "Bot image chosen",
+                "/sdac -> Setup -> Bot Image or dashboard Settings",
                 optional=True,
             ),
             onboarding_item(
