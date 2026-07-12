@@ -1,4 +1,26 @@
-# SDAC Bot Version 4.0.2 Experimental
+# SDAC Bot Version 4.0.3 Experimental
+
+Date: 2026-07-11
+
+Update scope: Guess-game CSV example and Anime Activities library seeding
+
+Version 4.0.3 is an experimental admin workflow update for guess-game bulk imports and Anime Activities.
+
+Included:
+
+- added a checked-in example CSV for Game Library bulk imports
+- added a Game Library "Download an example CSV" link at `/admin/game-library/example.csv`
+- added Anime Activities seeding so admins can create one draft Game Library item for every anime activity key
+- added duplicate protection when seeding existing Anime Activity modes for a server
+- added smoke and focused test coverage for the example CSV and Anime Activities seed workflow
+
+Release channel:
+
+- `version-4.0.3` is this experimental Anime Activities and CSV example update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 4.0.0 until this build is promoted
+
+---# SDAC Bot Version 4.0.2 Experimental
 
 Date: 2026-07-11
 
@@ -20,7 +42,8 @@ Release channel:
 - `latest-experimental` points to this build after publishing
 - `latest-official` remains on Version 4.0.0 until this build is promoted
 
----# SDAC Bot Version 4.0.1 Experimental
+---
+# SDAC Bot Version 4.0.1 Experimental
 
 Date: 2026-07-11
 

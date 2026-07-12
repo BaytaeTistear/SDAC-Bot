@@ -1,0 +1,4 @@
+title,answer,aliases,category,hint,prompt_text,auto_hint_minutes,pack,tags,notes,enabled,status
+Screenshot - Skyline Anime,Example Anime Title,Example Title|Skyline Show,screenshot-guess,Look at the skyline and color palette.,Guess the anime from this screenshot after you attach media to the draft.,10,Anime Starter Pack,"anime,screenshot,easy",Attach screenshot media before activating.,1,draft
+Quote - Rival Speech,Example Character,Character Alias|Rival Name,quote-guess,The speaker is known for challenging the main character.,"Who said this quote: ""I will surpass you before the final bell.""",5,Anime Starter Pack,"anime,quote,medium",Replace the prompt and answer with a real quote.,1,draft
+Studio Clue,Example Studio,Studio Alias|Animation House,studio-guess,Think about the studio's signature action cuts.,Guess the animation studio from the clue or media.,0,Anime Starter Pack,"anime,studio,hard",Use status disabled for incomplete drafts.,1,disabled

@@ -309,6 +309,91 @@ def anime_activity_templates():
                 "warning": ANIME_ACTIVITY_RETIREMENT_NOTE,
             })
     return templates
+
+
+def anime_activity_seed_rows():
+    rows = []
+    for template in anime_activity_templates():
+        answer = f"Replace with answer for {template['name']}"[:200]
+        rows.append({
+            "title": template["name"][:120],
+            "answer": answer,
+            "answer_display": answer,
+            "answer_aliases": parse_answer_aliases(answer),
+            "prompt_text": template["summary"][:1000],
+            "category": template["key"][:80],
+            "tags": ["anime", template["key"], template["category"]],
+            "pack_name": "Experimental Anime Activities",
+            "hint_text": f"Activity mode: {template['name']}"[:500],
+            "notes": (
+                f"{ANIME_ACTIVITY_RETIREMENT_NOTE} Seeded from the Anime "
+                "Activities dashboard; attach media and replace the answer "
+                "before activating."
+            )[:1000],
+        })
+    return rows
+
+
+GUESS_BULK_IMPORT_EXAMPLE_ROWS = [
+    {
+        "title": "Screenshot - Skyline Anime",
+        "answer": "Example Anime Title",
+        "aliases": "Example Title|Skyline Show",
+        "category": "screenshot-guess",
+        "hint": "Look at the skyline and color palette.",
+        "prompt_text": "Guess the anime from this screenshot after you attach media to the draft.",
+        "auto_hint_minutes": "10",
+        "pack": "Anime Starter Pack",
+        "tags": "anime,screenshot,easy",
+        "notes": "Attach screenshot media before activating.",
+        "enabled": "1",
+        "status": "draft",
+    },
+    {
+        "title": "Quote - Rival Speech",
+        "answer": "Example Character",
+        "aliases": "Character Alias|Rival Name",
+        "category": "quote-guess",
+        "hint": "The speaker is known for challenging the main character.",
+        "prompt_text": 'Who said this quote: "I will surpass you before the final bell."',
+        "auto_hint_minutes": "5",
+        "pack": "Anime Starter Pack",
+        "tags": "anime,quote,medium",
+        "notes": "Replace the prompt and answer with a real quote.",
+        "enabled": "1",
+        "status": "draft",
+    },
+    {
+        "title": "Studio Clue",
+        "answer": "Example Studio",
+        "aliases": "Studio Alias|Animation House",
+        "category": "studio-guess",
+        "hint": "Think about the studio's signature action cuts.",
+        "prompt_text": "Guess the animation studio from the clue or media.",
+        "auto_hint_minutes": "0",
+        "pack": "Anime Starter Pack",
+        "tags": "anime,studio,hard",
+        "notes": "Use status disabled for incomplete drafts.",
+        "enabled": "1",
+        "status": "disabled",
+    },
+]
+
+
+GUESS_BULK_IMPORT_EXAMPLE_COLUMNS = [
+    "title",
+    "answer",
+    "aliases",
+    "category",
+    "hint",
+    "prompt_text",
+    "auto_hint_minutes",
+    "pack",
+    "tags",
+    "notes",
+    "enabled",
+    "status",
+]
 FEATURE_LABELS = {
     "submissions": "Submissions",
     "approval_queue": "Approval Queue",
@@ -2135,7 +2220,7 @@ GAME_LIBRARY_HTML = """
             margin: 0;
             padding: 24px;
         }
-        main { margin: 0 auto; width: min(100%, 1100px); }
+        main { margin: 0 auto; width: min(100%, 69rem); }
         h1, h2 { text-align: center; }
         a { color: #7c9cff; }
         nav {
@@ -2298,6 +2383,7 @@ GAME_LIBRARY_HTML = """
             <code>status</code>.
             Rows without valid media stay as drafts, so they will not be chosen
             by <code>/startlibrarygame</code> until media is added through a normal item.
+            <a href="{{ url_for('download_guess_bulk_import_example', key=admin_key) }}">Download an example CSV</a>.
         </p>
         <form method="post" enctype="multipart/form-data">
             <input type="hidden" name="key" value="{{ admin_key }}">
@@ -2456,14 +2542,21 @@ ANIME_ACTIVITIES_HTML = """
         a { color: #7c9cff; }
         nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
         .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
-        .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-        .card { background: #111318; border: 1px solid #30333b; border-radius: 8px; padding: 14px; }
+        .grid { display: grid; gap: clamp(0.65rem, 1.5vw, 0.85rem); grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); }
+        .card { background: #111318; border: 1px solid #30333b; border-radius: 0.5rem; padding: clamp(0.75rem, 1.8vw, 0.9rem); }
         .card h3 { margin: 0 0 8px; }
         .muted { color: #a8adb8; }
         .warning { border-color: #f59e0b; color: #ffd28a; }
-        .commands { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+        .commands { display: grid; gap: clamp(0.65rem, 1.5vw, 0.85rem); grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); }
         .commands code { display: block; white-space: normal; }
+        .actions { align-items: end; display: grid; gap: 0.75rem; grid-template-columns: minmax(0, 1fr) auto; }
+        input, select, button { border: 1px solid #30333b; border-radius: 0.45rem; box-sizing: border-box; font-size: 0.95rem; padding: 0.55rem 0.65rem; }
+        select { width: 100%; }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: 800; }
+        .notice { border: 1px solid #30333b; border-radius: 0.5rem; margin: 0 0 1rem; padding: 0.75rem; text-align: center; }
+        .notice.error { border-color: #e45d68; }
         code { color: #cdd7ff; }
+        @media (max-width: 44rem) { .actions { grid-template-columns: 1fr; } button { width: 100%; } }
     </style>
 </head>
 <body>
@@ -2476,10 +2569,28 @@ ANIME_ACTIVITIES_HTML = """
         <a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
     </nav>
+    {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
     <section class="panel warning">
         <h2>Experimental Notice</h2>
         <p>{{ retirement_note }}</p>
         <p class="muted">These commands are experimental wrappers around events, profiles, leaderboards, polls, and Game Library content. Individual modes may change or be removed.</p>
+    </section>
+    <section class="panel">
+        <h2>Seed All Activities</h2>
+        <p class="muted">Create one draft Game Library item for every anime activity key. Drafts include prompts, tags, pack names, and admin notes; attach media and replace answers before activating them.</p>
+        <form class="actions" method="post">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="seed_anime_library">
+            <label>Discord server
+                <select name="guild_id" required>
+                    {% for guild in guild_options %}
+                        <option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>{{ guild.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <button type="submit">Seed Drafts</button>
+        </form>
     </section>
     <section class="panel">
         <h2>Implemented Entry Points</h2>
@@ -13668,17 +13779,131 @@ def game_library_redirect(message, error=False, guild_id="all"):
     ))
 
 
-@app.route("/admin/anime-activities")
+@app.route("/admin/game-library/example.csv")
+def download_guess_bulk_import_example():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+    return csv_response(
+        "sdac-guess-games-bulk-import-example.csv",
+        GUESS_BULK_IMPORT_EXAMPLE_ROWS,
+        GUESS_BULK_IMPORT_EXAMPLE_COLUMNS,
+    )
+
+
+@app.route("/admin/anime-activities", methods=["GET", "POST"])
 def admin_anime_activities():
     login_response = require_admin_login("moderator")
     if login_response:
         return login_response
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    config_data = load_config()
+    options = guild_options(config_data, minimum_role="admin")
+    valid_guild_ids = {option["id"] for option in options}
+    selected_server_id = request.values.get("guild_id", "").strip()
+    if selected_server_id not in valid_guild_ids:
+        selected_server_id = options[0]["id"] if options else ""
+
+    if request.method == "POST":
+        admin_response = require_admin_login("admin")
+        if admin_response:
+            return admin_response
+        require_csrf_token()
+        action = request.form.get("action", "")
+        actor_id, actor_name = web_actor()
+        try:
+            if action != "seed_anime_library":
+                raise ValueError("Unknown anime activity action.")
+            guild_id = request.form.get("guild_id", "").strip()
+            if guild_id not in valid_guild_ids:
+                raise ValueError("Choose a valid Discord server.")
+            now = utc_now_iso()
+            created = 0
+            skipped = 0
+            with database() as connection:
+                for seed in anime_activity_seed_rows():
+                    existing = connection.execute("""
+                        SELECT id
+                        FROM guess_library_items
+                        WHERE guild_id = ?
+                          AND pack_name = ?
+                          AND category = ?
+                        LIMIT 1
+                    """, (
+                        guild_id,
+                        seed["pack_name"],
+                        seed["category"],
+                    )).fetchone()
+                    if existing:
+                        skipped += 1
+                        continue
+                    normalized_answer = seed["answer_aliases"][0]["normalized"]
+                    connection.execute("""
+                        INSERT INTO guess_library_items (
+                            guild_id, title, answer, answer_display,
+                            answer_aliases_json, prompt_text, category,
+                            tags_json, pack_name, enabled, notes,
+                            hint_text, auto_hint_minutes, media_path,
+                            media_name, media_type, media_size,
+                            media_metadata_json, status, times_used,
+                            created_by, created_at, updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0,
+                                '', '', 'unknown', 0, '{}', 'draft', 0, ?, ?, ?)
+                    """, (
+                        guild_id,
+                        seed["title"],
+                        normalized_answer,
+                        seed["answer_display"],
+                        json.dumps(seed["answer_aliases"], separators=(",", ":")),
+                        seed["prompt_text"],
+                        seed["category"],
+                        json.dumps(seed["tags"], separators=(",", ":")),
+                        seed["pack_name"],
+                        seed["notes"],
+                        seed["hint_text"],
+                        actor_name,
+                        now,
+                        now,
+                    ))
+                    created += 1
+                add_admin_audit_log(
+                    connection,
+                    guild_id,
+                    "dashboard_seed_anime_activities",
+                    actor_id,
+                    actor_name,
+                    "guess_library_item",
+                    "",
+                    f"Seeded {created} anime activity draft(s); skipped {skipped} existing mode(s).",
+                )
+            return redirect(url_for(
+                "admin_anime_activities",
+                key=ADMIN_KEY,
+                guild_id=guild_id,
+                notice=f"Seeded {created} anime activity draft(s); skipped {skipped} existing mode(s).",
+            ))
+        except (ValueError, sqlite3.Error) as form_error:
+            return redirect(url_for(
+                "admin_anime_activities",
+                key=ADMIN_KEY,
+                guild_id=request.form.get("guild_id", selected_server_id),
+                notice=str(form_error),
+                error=1,
+            ))
+
     return render_template_string(
         ANIME_ACTIVITIES_HTML,
         activity_key=anime_activity_key,
         admin_key=ADMIN_KEY,
         catalog=ANIME_ACTIVITY_CATALOG,
+        csrf_token=get_csrf_token(),
+        error=error,
+        guild_options=options,
+        notice=notice,
         retirement_note=ANIME_ACTIVITY_RETIREMENT_NOTE,
+        selected_guild_id=selected_server_id,
     )
 
 @app.route("/admin/game-library", methods=["GET", "POST"])

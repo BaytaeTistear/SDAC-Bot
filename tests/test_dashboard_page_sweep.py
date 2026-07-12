@@ -35,6 +35,7 @@ routes = [
     "/admin/audit",
     "/admin/health",
     "/admin/anime-activities",
+    "/admin/game-library/example.csv",
     "/admin/game-library",
     "/admin/users",
     "/admin/settings",
@@ -62,7 +63,7 @@ routes = [
     "/terms",
     "/setup-guide",
 ]
-api_routes = {"/admin/health"}
+api_routes = {"/admin/health", "/admin/game-library/example.csv"}
 redirect_ok = {"/admin/server-switcher"}
 failures = []
 client = dashboard.app.test_client()
