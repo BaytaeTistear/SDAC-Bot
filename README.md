@@ -490,87 +490,22 @@ cd /home/ubuntu/discord-screenshot-bot
 bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backups/SNAPSHOT-NAME
 ```
 
-### Discord User Commands
+### Discord Commands
 
-Anime commands sync by default. Set `SDAC_ENABLE_ANIME_COMMANDS=0` before bot startup to hide the experimental Anime Activities command set.
+By default SDAC syncs only the mobile-friendly main commands. Everything else is routed through `/sdac` panels and submenus.
 
 ```text
 /sdac
-/commands
-/animeactivities
-/animeprofile favorites watching
-/animeprofileview @member
-/animeleaderboard 2026-07
 /submit
-/categories
 /guess guess
 /hint
 ```
 
-### Discord Admin Commands
+Set `SDAC_SIMPLIFIED_COMMANDS=0` before bot startup if you temporarily need the legacy direct slash-command list. Set `SDAC_ENABLE_ANIME_COMMANDS=0` before startup to hide the experimental Anime Activities actions from `/sdac` and legacy mode.
 
-```text
-/admincommands
-/setsubmit #channel
-/clearsubmit
-/setcategory category #channel
-/editcategory oldname newname #channel
-/deletecategory category
-/categories
-/setup
-/setupstatus
-/setupchecklist
-/setuptest
-/diagnose
-/repository
-/settings
-/setfeature submissions true
-/checkpermissions
-/repairpermissions
-/setbranding "Server Name" #7c9cff https://example.com/logo.png
-/setapproval enabled #channel
-/setadminrole @role
-/removeadminrole @role
-/setweeklychannel #channel
-/setweeklyday Sunday
-/setweeklytime 0 0
-/settimezone America/New_York
-/setguesstimeout 10
-/setgamesummarychannel #channel
-/seterrorchannel #channel
-/setnotification system_errors #channel true
-/setnotification release_announcements #channel true
-/setdigest true weekly #channel
-/setlimit max_file_mb 25
-/setmoderation "badword1,badword2" "image,video,audio" false 7 false
-/setgamesettings 30 10 normal
-/setserverbackup true drive:sdac/server https://cdn.example.com/sdac/server true true false
-/serverbackupstatus
-/backupguide provider:Google Drive
-/backupsetup provider:Google Drive remote:drive:sdac/server
-/backupnow upload:true
-/backupstatus
-/supportbundle
-/sdacpanic true "Cleaning up spam"
-/sdacpanic false
-/sdacreset RESET "Restart after config changes"
-/startgame #channel answer media text category hint auto_hint_minutes
-/animeevent screenshot-guess #channel "Theme: opening scenes"
-/animechallenge quote-guess "Who said this quote?" "Answer" "Optional hint"
-/startlibrarygame #channel item_id category random_item
-/schedulegame channel:#channel start_time:"2026-07-01 19:30" item_id:0 category:movie random_item:true close_after_minutes:60
-/scheduledgames
-/cancelscheduledgame scheduled_id:1
-/activegame
-/correct
-/cancelgame
-/sethint hint
-/revealhint
-/reasonpresets
-/removesubmission submission_id:1 reason_preset:duplicate reason:"Optional details"
-/submissioninfo id
-```
+### Admin Actions
 
+Admins should start with `/sdac`. The panel opens button-based menus for setup, setup status, setup tests, diagnostics, backups, moderation, and advanced help.
 ### Dashboard Pages
 
 ```text

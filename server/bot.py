@@ -46,6 +46,8 @@ BACKUP_KEEP_COUNT = 30
 SCHEMA_VERSION = DATABASE_SCHEMA_VERSION
 OWNER_OVERRIDE_USERNAME = "baytae"
 ENABLE_ANIME_COMMANDS = os.getenv("SDAC_ENABLE_ANIME_COMMANDS", "1").strip().casefold() not in {"0", "false", "no", "off"}
+SIMPLIFIED_SLASH_COMMANDS = os.getenv("SDAC_SIMPLIFIED_COMMANDS", "1").strip().casefold() not in {"0", "false", "no", "off"}
+CORE_SLASH_COMMANDS = {"sdac", "submit", "guess", "hint"}
 
 ALLOWED_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp",
@@ -913,15 +915,29 @@ class SDACHubSelect(discord.ui.Select):
     async def callback(self, interaction):
         action = self.values[0]
         if action == "public_help":
-            chunks = command_help_chunks("SDAC User Commands", USER_COMMAND_GROUPS[next(iter(USER_COMMAND_GROUPS))])
-            await interaction.response.edit_message(content=chunks[0], view=CommandHelpView(USER_COMMAND_GROUPS))
+            await interaction.response.edit_message(
+                content=(
+                    "**Main SDAC Commands**\n"
+                    "- `/sdac` opens this mobile-friendly control panel\n"
+                    "- `/submit` starts guided media submission\n"
+                    "- `/guess answer` answers an active guessing game\n"
+                    "- `/hint` shows the active game hint"
+                ),
+                view=self.view,
+            )
             return
         if action == "admin_help":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
                 return
-            chunks = command_help_chunks("SDAC Admin Commands", ADMIN_COMMAND_GROUPS[next(iter(ADMIN_COMMAND_GROUPS))])
-            await interaction.response.edit_message(content=chunks[0], view=CommandHelpView(ADMIN_COMMAND_GROUPS))
+            await interaction.response.edit_message(
+                content=(
+                    "**Admin Actions**\n"
+                    "Use `/sdac` buttons for setup, setup tests, diagnostics, backups, and moderation. "
+                    "Set `SDAC_SIMPLIFIED_COMMANDS=0` before startup only if you need the legacy direct slash commands."
+                ),
+                view=self.view,
+            )
             return
         if action in {"setup", "backup", "moderation"} and not admin_only(interaction):
             await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
@@ -1040,16 +1056,155 @@ class SDACBackButton(discord.ui.Button):
         )
 
 
+class SDACHubButton(discord.ui.Button):
+    def __init__(self, is_admin, value, label, row=0, style=discord.ButtonStyle.secondary):
+        super().__init__(label=label, style=style, row=row)
+        self.is_admin = bool(is_admin)
+        self.value = value
+
+    async def callback(self, interaction):
+        action = self.value
+        if action == "public_help":
+            await interaction.response.edit_message(
+                content=(
+                    "**Main SDAC Commands**\n"
+                    "- `/sdac` opens this mobile-friendly control panel\n"
+                    "- `/submit` starts guided media submission\n"
+                    "- `/guess answer` answers an active guessing game\n"
+                    "- `/hint` shows the active game hint"
+                ),
+                view=self.view,
+            )
+            return
+        if action == "admin_help":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                content=(
+                    "**Admin Actions**\n"
+                    "Use `/sdac` buttons for setup, setup tests, diagnostics, backups, and moderation. "
+                    "Set `SDAC_SIMPLIFIED_COMMANDS=0` before startup only if you need the legacy direct slash commands."
+                ),
+                view=self.view,
+            )
+            return
+        if action in {"setup", "backup", "moderation"} and not admin_only(interaction):
+            await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+            return
+        await interaction.response.edit_message(
+            content=sdac_submenu_content(action),
+            view=SDACSubmenuView(self.is_admin, action),
+        )
+
+
+class SDACSubmenuButton(discord.ui.Button):
+    def __init__(self, is_admin, section_key, value, label, row=0, style=discord.ButtonStyle.secondary):
+        super().__init__(label=label, style=style, row=row)
+        self.is_admin = bool(is_admin)
+        self.section_key = section_key
+        self.value = value
+
+    async def callback(self, interaction):
+        action = self.value
+        if action == "setup_wizard":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            guild_config = get_guild_config(interaction.guild_id)
+            audit_interaction(
+                interaction,
+                "open_setup_wizard_from_hub",
+                "guild",
+                interaction.guild_id,
+                "Opened Discord setup wizard from /sdac.",
+            )
+            await interaction.response.edit_message(
+                content=setup_wizard_content(guild_config, page=1),
+                view=SetupWizardView(interaction.user.id, interaction.guild_id, 1),
+            )
+            return
+        if action == "setup_status":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            guild_config = get_guild_config(interaction.guild_id, create=False)
+            await interaction.response.edit_message(
+                content=setup_wizard_content(
+                    guild_config,
+                    page=1,
+                    notice="Choose `Open Setup Wizard` in `/sdac` to change these settings.",
+                ),
+                view=SDACSubmenuView(self.is_admin, self.section_key),
+            )
+            return
+        if action == "setup_test":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            await interaction.response.defer(ephemeral=True)
+            guild_config = get_guild_config(interaction.guild_id, create=False)
+            lines = await setup_test_lines(interaction.guild, guild_config)
+            status, summary = save_setup_test_run(interaction, lines)
+            audit_interaction(
+                interaction,
+                "run_setup_test_from_hub",
+                "guild",
+                interaction.guild_id,
+                f"Ran setup test from /sdac: {summary}",
+            )
+            lines.insert(1, f"Saved result: `{status}`.")
+            await interaction.edit_original_response(
+                content="\n".join(lines)[:1900],
+                view=SDACSubmenuView(self.is_admin, self.section_key),
+            )
+            return
+        if action == "diagnostics":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            await interaction.response.defer(ephemeral=True)
+            lines = await diagnostic_lines(interaction)
+            status, summary = save_setup_test_run(interaction, lines)
+            audit_interaction(
+                interaction,
+                "run_diagnostics_from_hub",
+                "guild",
+                interaction.guild_id,
+                f"Ran diagnostics from /sdac: {summary}",
+            )
+            lines.insert(1, f"Saved diagnostic result: `{status}`.")
+            await interaction.edit_original_response(
+                content="\n".join(lines)[:1900],
+                view=SDACSubmenuView(self.is_admin, self.section_key),
+            )
+            return
+        await interaction.response.edit_message(
+            content=sdac_submenu_content(self.section_key, SDAC_SUBMENU_DETAILS.get(action, "Action selected.")),
+            view=SDACSubmenuView(self.is_admin, self.section_key),
+        )
+
 class SDACHubView(discord.ui.View):
     def __init__(self, is_admin):
         super().__init__(timeout=600)
-        self.add_item(SDACHubSelect(is_admin))
+        user_rows = {"submit": 0, "guess": 0, "anime": 1, "public_help": 1}
+        for value, label, _description in SDAC_HUB_USER_OPTIONS:
+            style = discord.ButtonStyle.primary if value == "submit" else discord.ButtonStyle.secondary
+            self.add_item(SDACHubButton(is_admin, value, label, user_rows.get(value, 0), style))
+        if is_admin:
+            admin_rows = {"setup": 2, "backup": 2, "moderation": 3, "admin_help": 3}
+            for value, label, _description in SDAC_HUB_ADMIN_OPTIONS:
+                style = discord.ButtonStyle.primary if value == "setup" else discord.ButtonStyle.secondary
+                self.add_item(SDACHubButton(is_admin, value, label, admin_rows.get(value, 2), style))
 
 
 class SDACSubmenuView(discord.ui.View):
     def __init__(self, is_admin, section_key):
         super().__init__(timeout=600)
-        self.add_item(SDACSubmenuSelect(is_admin, section_key))
+        submenu = SDAC_SUBMENUS[section_key]
+        for index, (value, label, _description) in enumerate(submenu["options"][:20]):
+            style = discord.ButtonStyle.primary if index == 0 else discord.ButtonStyle.secondary
+            self.add_item(SDACSubmenuButton(is_admin, section_key, value, label, index // 2, style))
         self.add_item(SDACBackButton(is_admin))
 
 def fill_nested_defaults(target, defaults):
@@ -12026,6 +12181,17 @@ async def before_bot_status_scheduler():
     await bot.wait_until_ready()
 
 
+def prune_simplified_slash_commands():
+    if not SIMPLIFIED_SLASH_COMMANDS:
+        return []
+    removed = []
+    for command in list(tree.get_commands()):
+        if command.name in CORE_SLASH_COMMANDS:
+            continue
+        tree.remove_command(command.name)
+        removed.append(command.name)
+    return sorted(removed)
+
 async def sync_slash_commands():
     global slash_commands_synced
     if slash_commands_synced:
@@ -12172,6 +12338,13 @@ async def on_guild_join(guild):
                 continue
     write_bot_status("guild_join")
 
+
+PRUNED_SLASH_COMMANDS = prune_simplified_slash_commands()
+if PRUNED_SLASH_COMMANDS:
+    print(
+        "Simplified slash command mode hidden: " + ", ".join(PRUNED_SLASH_COMMANDS),
+        flush=True,
+    )
 
 def main():
     startup_health_check()

@@ -1,4 +1,27 @@
-# SDAC Bot Version 4.0.6 Experimental
+# SDAC Bot Version 4.0.7 Experimental
+
+Date: 2026-07-12
+
+Update scope: Mobile-friendly `/sdac` panels and simplified slash commands
+
+Version 4.0.7 is an experimental Discord usability update focused on mobile users and cleaner command discovery.
+
+Included:
+
+- changed `/sdac` from dropdown-first navigation to tap-friendly button panels
+- kept section-specific `/sdac` submenus for submissions, guessing games, anime profiles, setup, backups, and moderation
+- limited synced slash commands by default to `/sdac`, `/submit`, `/guess`, and `/hint`
+- kept legacy direct commands available behind `SDAC_SIMPLIFIED_COMMANDS=0` for troubleshooting or power-user installs
+- replaced old `/sdac` help browser actions with concise in-panel help that matches simplified mode
+- updated README command docs and startup tests for the simplified command surface
+
+Release channel:
+
+- `version-4.0.7` is this experimental mobile panel and simplified slash-command update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 4.0.0 until this build is promoted
+
+---# SDAC Bot Version 4.0.6 Experimental
 
 Date: 2026-07-12
 
@@ -20,7 +43,8 @@ Release channel:
 - `latest-experimental` points to this build after publishing
 - `latest-official` remains on Version 4.0.0 until this build is promoted
 
----# SDAC Bot Version 4.0.5 Experimental
+---
+# SDAC Bot Version 4.0.5 Experimental
 
 Date: 2026-07-12
 
