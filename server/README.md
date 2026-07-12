@@ -495,6 +495,7 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 Anime commands sync by default. Set `SDAC_ENABLE_ANIME_COMMANDS=0` before bot startup to hide the experimental Anime Activities command set.
 
 ```text
+/sdac
 /commands
 /animeactivities
 /animeprofile favorites watching

@@ -464,6 +464,7 @@ NOTIFICATION_EVENT_CHOICES = [
 ]
 
 USER_COMMAND_HELP = [
+    ("/sdac", "Open the guided SDAC control center."),
     ("/commands", "Show the public SDAC command list."),
     ("/submit", "Start a guided media submission."),
     ("/categories", "Show configured categories and basic server setup."),
@@ -484,7 +485,7 @@ USER_COMMAND_GROUPS = {
 }
 
 if ENABLE_ANIME_COMMANDS:
-    USER_COMMAND_HELP[1:1] = [
+    USER_COMMAND_HELP[2:2] = [
         ("/animeactivities", "Show experimental anime activity ideas."),
         ("/animeprofile", "Save your experimental anime favorites/watching profile."),
         ("/animeprofileview", "View an experimental anime profile."),
@@ -499,6 +500,7 @@ if ENABLE_ANIME_COMMANDS:
     ]
 
 ADMIN_COMMAND_HELP = [
+    ("/sdac", "Open the guided SDAC admin/user control center."),
     ("/admincommands", "Show this admin command list."),
     ("/setup", "Open the guided Discord setup wizard."),
     ("/setupstatus", "Show setup progress."),
@@ -759,6 +761,201 @@ async def send_command_help_menu(interaction, title, groups, intro=""):
     for chunk in chunks[1:]:
         await interaction.followup.send(chunk, ephemeral=True)
 
+
+SDAC_HUB_USER_OPTIONS = [
+    ("submit", "Submit Media", "Start the existing guided submission flow."),
+    ("guess", "Guessing Games", "See the small set of guessing actions users need."),
+    ("anime", "Anime Profile", "Save, view, or import anime profile data."),
+    ("public_help", "User Help", "Browse user commands by category."),
+]
+
+SDAC_HUB_ADMIN_OPTIONS = [
+    ("setup", "Setup Wizard", "Open the guided server setup wizard."),
+    ("setup_status", "Setup Status", "Review current setup progress."),
+    ("setup_test", "Run Setup Test", "Check channels, permissions, and required settings."),
+    ("diagnostics", "Diagnostics", "Run runtime diagnostics."),
+    ("backup", "Backups", "See the short backup setup path."),
+    ("moderation", "Moderation", "See approval and moderation setup shortcuts."),
+    ("admin_help", "Admin Help", "Browse advanced admin commands by category."),
+]
+
+
+def sdac_hub_content(is_admin=False, notice=""):
+    lines = [
+        "**SDAC Control Center**",
+        "Use the dropdown below instead of memorizing individual commands.",
+    ]
+    if notice:
+        lines.extend(["", notice])
+    lines.extend([
+        "",
+        "**Common user paths**",
+        "- Submit media: choose `Submit Media`, then run `/submit` for the guided 3-step flow.",
+        "- Guessing games: choose `Guessing Games` for the few commands players need.",
+        "- Anime profile: choose `Anime Profile` to save or import from MyAnimeList.",
+    ])
+    if is_admin:
+        lines.extend([
+            "",
+            "**Admin shortcuts**",
+            "- Setup Wizard replaces most setup commands with channel/role selectors and buttons.",
+            "- Setup Status, Setup Test, and Diagnostics collect the most common admin checks here.",
+        ])
+    return "\n".join(lines)[:1900]
+
+
+class SDACHubSelect(discord.ui.Select):
+    def __init__(self, is_admin):
+        self.is_admin = bool(is_admin)
+        options = [
+            discord.SelectOption(label=label, value=value, description=description[:100])
+            for value, label, description in SDAC_HUB_USER_OPTIONS
+        ]
+        if is_admin:
+            options.extend(
+                discord.SelectOption(label=label, value=value, description=description[:100])
+                for value, label, description in SDAC_HUB_ADMIN_OPTIONS
+            )
+        super().__init__(
+            placeholder="Choose what you want to do",
+            min_values=1,
+            max_values=1,
+            options=options[:25],
+        )
+
+    async def callback(self, interaction):
+        action = self.values[0]
+        if action == "submit":
+            await interaction.response.edit_message(
+                content=(
+                    "**Submit Media**\n"
+                    "Run `/submit` to open the guided submission flow. "
+                    "It walks you through category selection, upload, and confirmation."
+                ),
+                view=self.view,
+            )
+            return
+        if action == "guess":
+            await interaction.response.edit_message(
+                content=(
+                    "**Guessing Games**\n"
+                    "Players usually only need these:\n"
+                    "- `/guess answer` to answer the active game\n"
+                    "- `/hint` to see the current hint\n"
+                    "- `/activegame` to check what is running here"
+                ),
+                view=self.view,
+            )
+            return
+        if action == "anime":
+            await interaction.response.edit_message(
+                content=(
+                    "**Anime Profile**\n"
+                    "- `/animeprofile favorites watching` saves profile notes\n"
+                    "- `/animeprofileimport username` imports public MyAnimeList data\n"
+                    "- `/animeprofileview @member` shows a profile\n"
+                    "- `/animeactivities` lists anime activity modes"
+                ),
+                view=self.view,
+            )
+            return
+        if action == "public_help":
+            chunks = command_help_chunks("SDAC User Commands", USER_COMMAND_GROUPS[next(iter(USER_COMMAND_GROUPS))])
+            await interaction.response.edit_message(content=chunks[0], view=CommandHelpView(USER_COMMAND_GROUPS))
+            return
+
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+            return
+        if action == "setup":
+            guild_config = get_guild_config(interaction.guild_id)
+            audit_interaction(
+                interaction,
+                "open_setup_wizard_from_hub",
+                "guild",
+                interaction.guild_id,
+                "Opened Discord setup wizard from /sdac.",
+            )
+            await interaction.response.edit_message(
+                content=setup_wizard_content(guild_config, page=1),
+                view=SetupWizardView(interaction.user.id, interaction.guild_id, 1),
+            )
+            return
+        if action == "setup_status":
+            guild_config = get_guild_config(interaction.guild_id, create=False)
+            await interaction.response.edit_message(
+                content=setup_wizard_content(
+                    guild_config,
+                    page=1,
+                    notice="Choose `Setup Wizard` in `/sdac` to change these settings.",
+                ),
+                view=self.view,
+            )
+            return
+        if action == "setup_test":
+            await interaction.response.defer(ephemeral=True)
+            guild_config = get_guild_config(interaction.guild_id, create=False)
+            lines = await setup_test_lines(interaction.guild, guild_config)
+            status, summary = save_setup_test_run(interaction, lines)
+            audit_interaction(
+                interaction,
+                "run_setup_test_from_hub",
+                "guild",
+                interaction.guild_id,
+                f"Ran setup test from /sdac: {summary}",
+            )
+            lines.insert(1, f"Saved result: `{status}`.")
+            await interaction.edit_original_response(content="\n".join(lines)[:1900], view=self.view)
+            return
+        if action == "diagnostics":
+            await interaction.response.defer(ephemeral=True)
+            lines = await diagnostic_lines(interaction)
+            status, summary = save_setup_test_run(interaction, lines)
+            audit_interaction(
+                interaction,
+                "run_diagnostics_from_hub",
+                "guild",
+                interaction.guild_id,
+                f"Ran diagnostics from /sdac: {summary}",
+            )
+            lines.insert(1, f"Saved diagnostic result: `{status}`.")
+            await interaction.edit_original_response(content="\n".join(lines)[:1900], view=self.view)
+            return
+        if action == "backup":
+            await interaction.response.edit_message(
+                content=(
+                    "**Backups**\n"
+                    "Use this shorter path instead of memorizing every backup command:\n"
+                    "1. `/backupguide provider` for provider-specific setup steps\n"
+                    "2. `/backupsetup provider remote` to save the target\n"
+                    "3. `/backupnow upload:true` to test it\n"
+                    "4. `/backupstatus` to confirm the result"
+                ),
+                view=self.view,
+            )
+            return
+        if action == "moderation":
+            await interaction.response.edit_message(
+                content=(
+                    "**Moderation Setup**\n"
+                    "Start with `/sdac` > `Setup Wizard` for channels and permissions.\n"
+                    "Then use these only when needed:\n"
+                    "- `/setapproval enabled #channel` for approval queue routing\n"
+                    "- `/setmoderation blocked_words media_types quarantine retention_days enabled` for filters\n"
+                    "- `/reasonpresets` for standard action reasons"
+                ),
+                view=self.view,
+            )
+            return
+        if action == "admin_help":
+            chunks = command_help_chunks("SDAC Admin Commands", ADMIN_COMMAND_GROUPS[next(iter(ADMIN_COMMAND_GROUPS))])
+            await interaction.response.edit_message(content=chunks[0], view=CommandHelpView(ADMIN_COMMAND_GROUPS))
+
+
+class SDACHubView(discord.ui.View):
+    def __init__(self, is_admin):
+        super().__init__(timeout=600)
+        self.add_item(SDACHubSelect(is_admin))
 
 def fill_nested_defaults(target, defaults):
     changed = False
@@ -6164,6 +6361,16 @@ class SetupWizardView(discord.ui.View):
             ephemeral=True,
         )
 
+
+@tree.command(name="sdac", description="Open the guided SDAC control center")
+@app_commands.guild_only()
+async def sdac(interaction):
+    is_admin = admin_only(interaction)
+    await interaction.response.send_message(
+        sdac_hub_content(is_admin),
+        view=SDACHubView(is_admin),
+        ephemeral=True,
+    )
 
 @tree.command(name="commands", description="Show SDAC user commands")
 @app_commands.guild_only()

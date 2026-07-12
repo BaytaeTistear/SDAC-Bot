@@ -1,4 +1,27 @@
-# SDAC Bot Version 4.0.4 Experimental
+# SDAC Bot Version 4.0.5 Experimental
+
+Date: 2026-07-12
+
+Update scope: Guided Discord command hub
+
+Version 4.0.5 is an experimental Discord command simplification update.
+
+Included:
+
+- added `/sdac` as a guided control center for users and admins
+- grouped common user actions into dropdown paths for submissions, guessing games, anime profiles, and help
+- grouped common admin actions into dropdown paths for setup, setup status, setup tests, diagnostics, backups, moderation, and advanced help
+- routed setup from `/sdac` into the existing button/select setup wizard
+- updated command help and README docs so `/sdac` is the first command users see
+- added startup test coverage for the new guided hub command
+
+Release channel:
+
+- `version-4.0.5` is this experimental guided command hub update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 4.0.0 until this build is promoted
+
+---# SDAC Bot Version 4.0.4 Experimental
 
 Date: 2026-07-12
 
@@ -20,7 +43,8 @@ Release channel:
 - `latest-experimental` points to this build after publishing
 - `latest-official` remains on Version 4.0.0 until this build is promoted
 
----# SDAC Bot Version 4.0.3 Experimental
+---
+# SDAC Bot Version 4.0.3 Experimental
 
 Date: 2026-07-11
 
