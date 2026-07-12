@@ -1,3 +1,24 @@
+# SDAC Bot Version 4.1.2 Experimental
+
+Release date: 2026-07-12
+
+Update scope: Discord bot nickname setup
+
+Version 4.1.2 is an experimental Discord setup update that lets admins change the bot's server nickname directly from Discord.
+
+Included in this update:
+- added `/sdac` -> Setup -> Bot Name for server admins
+- added a Bot Name button to the setup wizard's final page
+- applies the nickname immediately in Discord and stores it in each server's config
+- supports leaving the name blank to reset the bot back to its global username
+- validates Discord nickname limits and gives clear permission errors when Manage Nicknames or role order blocks the change
+- added startup test coverage for bot nickname validation
+- updated admin docs for the new Discord nickname flow
+
+Release channel:
+- `version-4.1.2` is this experimental bot nickname setup update.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.1.0 until it is promoted.
 # SDAC Bot Version 4.1.1 Experimental
 
 Date: 2026-07-12

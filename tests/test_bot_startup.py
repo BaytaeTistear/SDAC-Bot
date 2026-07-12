@@ -38,6 +38,16 @@ class BotStartupTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bot.validate_command_alias("submit")
 
+    def test_bot_nickname_validation_matches_discord_limits(self):
+        import bot
+
+        self.assertEqual(bot.normalize_bot_nickname("  Media Helper  "), "Media Helper")
+        self.assertEqual(bot.normalize_bot_nickname(""), "")
+        with self.assertRaises(ValueError):
+            bot.normalize_bot_nickname("x" * 33)
+        with self.assertRaises(ValueError):
+            bot.normalize_bot_nickname("bad\nname")
+
     def test_command_visibility_audit_reports_simplified_surface(self):
         import bot
 

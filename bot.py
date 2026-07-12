@@ -816,6 +816,7 @@ SDAC_SUBMENUS = {
         "placeholder": "Choose a setup action",
         "options": [
             ("setup_wizard", "Open Setup Wizard", "Use selectors and buttons for server setup."),
+            ("setup_bot_name", "Bot Name", "Change the bot nickname shown in this server."),
             ("setup_command_alias", "Command Name", "Choose this server's optional /command launcher."),
             ("setup_sync_commands", "Sync Commands", "Refresh this server's Discord slash commands."),
             ("setup_status", "Setup Status", "Review current setup progress."),
@@ -855,6 +856,7 @@ SDAC_SUBMENU_DETAILS = {
     "anime_import": "**Import MyAnimeList**\nRun `/animeprofileimport username` to import public MyAnimeList favorites and watching data.",
     "anime_view": "**View Anime Profile**\nRun `/animeprofileview @member` to view a saved anime profile.",
     "anime_activities": "**Anime Activities**\nRun `/animeactivities` to see available activity keys and anime game/community ideas.",
+    "setup_bot_name": "**Bot Name**\nAdmins can set the bot nickname users see inside this server. Leave it blank to reset to the bot's global username.",
     "setup_command_alias": "**Command Name**\nAdmins can set a server-specific launcher like `/pepo`. `/sdac` always remains available as the fallback.",
     "setup_sync_commands": "**Sync Commands**\nRefresh this server's Discord command list without restarting the bot. This also clears copied guild duplicates.",
     "backup_guide": "**Backup Provider Guide**\nRun `/backupguide provider` for provider-specific setup steps.",
@@ -992,12 +994,12 @@ class SDACSubmenuSelect(discord.ui.Select):
                 view=SetupWizardView(interaction.user.id, interaction.guild_id, 1),
             )
             return
-        if action == "setup_command_alias":
+        if action == "setup_bot_name":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
                 return
             await interaction.response.send_modal(
-                SetupCommandAliasModal(interaction.user.id, interaction.guild_id)
+                SetupBotNicknameModal(interaction.user.id, interaction.guild_id)
             )
             return
         if action == "setup_command_alias":
@@ -1169,6 +1171,14 @@ class SDACSubmenuButton(discord.ui.Button):
             await interaction.response.edit_message(
                 content=setup_wizard_content(guild_config, page=1),
                 view=SetupWizardView(interaction.user.id, interaction.guild_id, 1),
+            )
+            return
+        if action == "setup_bot_name":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            await interaction.response.send_modal(
+                SetupBotNicknameModal(interaction.user.id, interaction.guild_id)
             )
             return
         if action == "setup_command_alias":
@@ -5837,6 +5847,12 @@ def setup_status_rows(guild_config):
             "required": False,
         },
         {
+            "label": "Bot nickname",
+            "ok": True,
+            "value": guild_config.get("bot_nickname") or "Default bot username",
+            "required": False,
+        },
+        {
             "label": "Approval queue",
             "ok": (
                 not guild_config.get("approval_enabled")
@@ -5937,8 +5953,8 @@ def setup_wizard_content(guild_config, page=1, notice=""):
         )
     else:
         lines.append(
-            "Use the controls below to choose enabled features, set an optional "
-            "server command launcher, sync Discord commands, and run a setup test."
+            "Use the controls below to choose enabled features, set the bot name, "
+            "set an optional server command launcher, sync Discord commands, and run a setup test."
         )
     return "\n".join(lines)[:1900]
 
@@ -6384,6 +6400,87 @@ class SetupBrandingModal(discord.ui.Modal):
         )
 
 
+def normalize_bot_nickname(value):
+    nickname = str(value or "").strip()
+    if len(nickname) > 32:
+        raise ValueError("Bot nickname must be 32 characters or fewer.")
+    if any(character in nickname for character in "\r\n"):
+        raise ValueError("Bot nickname cannot contain line breaks.")
+    return nickname
+
+
+async def apply_bot_nickname(guild, nickname):
+    if guild is None:
+        raise ValueError("This action must be used in a Discord server.")
+    bot_member = guild.me
+    if bot_member is None:
+        raise ValueError("The bot member could not be found in this server.")
+    await bot_member.edit(nick=nickname or None, reason="SDAC setup bot nickname update")
+
+
+class SetupBotNicknameModal(discord.ui.Modal):
+    def __init__(self, owner_id, guild_id):
+        super().__init__(title="Bot Name")
+        self.owner_id = owner_id
+        self.guild_id = str(guild_id)
+        guild_config = get_guild_config(guild_id, create=False)
+        self.nickname_input = discord.ui.TextInput(
+            label="Bot nickname in this server",
+            placeholder="SDAC Bot, Media Helper, etc. Blank resets.",
+            default=(guild_config.get("bot_nickname") or "")[:32],
+            max_length=32,
+            required=False,
+        )
+        self.add_item(self.nickname_input)
+
+    async def on_submit(self, interaction):
+        if not setup_modal_allowed(interaction, self.owner_id, self.guild_id):
+            await interaction.response.send_message(
+                "Only the admin who opened this setup wizard can use this modal.",
+                ephemeral=True,
+            )
+            return
+        try:
+            nickname = normalize_bot_nickname(self.nickname_input.value)
+            await apply_bot_nickname(interaction.guild, nickname)
+        except ValueError as error:
+            await interaction.response.send_message(str(error), ephemeral=True)
+            return
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "I could not change my nickname. Give the bot Manage Nicknames and make sure its role is high enough.",
+                ephemeral=True,
+            )
+            return
+        except discord.HTTPException as error:
+            await interaction.response.send_message(
+                f"Discord rejected the nickname update: `{error}`",
+                ephemeral=True,
+            )
+            return
+
+        guild_config = get_guild_config(interaction.guild_id)
+        guild_config["bot_nickname"] = nickname
+        save_config(config)
+        audit_interaction(
+            interaction,
+            "setup_set_bot_nickname",
+            "guild",
+            interaction.guild_id,
+            f"Set bot nickname to {nickname or 'default bot username'}.",
+        )
+        notice = (
+            f"Bot nickname set to `{nickname}`."
+            if nickname
+            else "Bot nickname reset to the global bot username."
+        )
+        await interaction.response.send_message(
+            setup_wizard_content(guild_config, page=3, notice=notice),
+            view=SetupWizardView(interaction.user.id, interaction.guild_id, 3),
+            ephemeral=True,
+        )
+
+
 class SetupCommandAliasModal(discord.ui.Modal):
     def __init__(self, owner_id, guild_id):
         super().__init__(title="Command Launcher")
@@ -6682,6 +6779,7 @@ class SetupWizardView(discord.ui.View):
             self.add_item(SetupFeatureSelect(guild_config))
             self.add_item(SetupPresetSelect(guild_config))
             self.add_item(SetupButton("Branding", "branding", row=2))
+            self.add_item(SetupButton("Bot Name", "bot_name", row=2))
             self.add_item(SetupButton("Command Name", "command_alias", row=2))
             self.add_item(SetupButton("Sync Commands", "sync_commands", row=2))
             self.add_item(SetupButton("Permission Check", "permission_check", row=3))
@@ -6764,6 +6862,11 @@ class SetupWizardView(discord.ui.View):
         if action == "branding":
             await interaction.response.send_modal(
                 SetupBrandingModal(interaction.user.id, interaction.guild_id)
+            )
+            return
+        if action == "bot_name":
+            await interaction.response.send_modal(
+                SetupBotNicknameModal(interaction.user.id, interaction.guild_id)
             )
             return
         if action == "command_alias":
