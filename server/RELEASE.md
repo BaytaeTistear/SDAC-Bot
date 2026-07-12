@@ -1,3 +1,25 @@
+# SDAC Bot Version 4.1.3 Experimental
+
+Release date: 2026-07-12
+
+Update scope: Dashboard and Discord bot image controls
+
+Version 4.1.3 is an experimental identity update that lets bot owners change the bot's global Discord image from either the dashboard or Discord.
+
+Included in this update:
+- added `/sdac` -> Setup -> Bot Image for bot owners
+- added a Bot Image button to the setup wizard's final page
+- added dashboard Settings controls for global bot image upload or HTTPS image URL
+- validates PNG, JPEG, GIF, and WebP bot images up to 8 MB
+- stores bot image update metadata in config and audit logs
+- keeps per-server bot nicknames separate from the global bot image
+- added validation coverage for bot image URL and image payload handling
+- updated admin docs for the new bot image flows
+
+Release channel:
+- `version-4.1.3` is this experimental bot image control update.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.1.0 until it is promoted.
 # SDAC Bot Version 4.1.2 Experimental
 
 Release date: 2026-07-12

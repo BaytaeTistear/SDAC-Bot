@@ -817,6 +817,7 @@ SDAC_SUBMENUS = {
         "options": [
             ("setup_wizard", "Open Setup Wizard", "Use selectors and buttons for server setup."),
             ("setup_bot_name", "Bot Name", "Change the bot nickname shown in this server."),
+            ("setup_bot_image", "Bot Image", "Change the global bot avatar from an HTTPS image URL."),
             ("setup_command_alias", "Command Name", "Choose this server's optional /command launcher."),
             ("setup_sync_commands", "Sync Commands", "Refresh this server's Discord slash commands."),
             ("setup_status", "Setup Status", "Review current setup progress."),
@@ -857,6 +858,7 @@ SDAC_SUBMENU_DETAILS = {
     "anime_view": "**View Anime Profile**\nRun `/animeprofileview @member` to view a saved anime profile.",
     "anime_activities": "**Anime Activities**\nRun `/animeactivities` to see available activity keys and anime game/community ideas.",
     "setup_bot_name": "**Bot Name**\nAdmins can set the bot nickname users see inside this server. Leave it blank to reset to the bot's global username.",
+    "setup_bot_image": "**Bot Image**\nBot owners can update the global Discord bot avatar from an HTTPS image URL. This affects every server and may be rate limited by Discord.",
     "setup_command_alias": "**Command Name**\nAdmins can set a server-specific launcher like `/pepo`. `/sdac` always remains available as the fallback.",
     "setup_sync_commands": "**Sync Commands**\nRefresh this server's Discord command list without restarting the bot. This also clears copied guild duplicates.",
     "backup_guide": "**Backup Provider Guide**\nRun `/backupguide provider` for provider-specific setup steps.",
@@ -1000,6 +1002,14 @@ class SDACSubmenuSelect(discord.ui.Select):
                 return
             await interaction.response.send_modal(
                 SetupBotNicknameModal(interaction.user.id, interaction.guild_id)
+            )
+            return
+        if action == "setup_bot_image":
+            if not bot_owner_only(interaction):
+                await interaction.response.send_message("Only bot owners can change the global bot image.", ephemeral=True)
+                return
+            await interaction.response.send_modal(
+                SetupBotAvatarModal(interaction.user.id, interaction.guild_id)
             )
             return
         if action == "setup_command_alias":
@@ -1179,6 +1189,14 @@ class SDACSubmenuButton(discord.ui.Button):
                 return
             await interaction.response.send_modal(
                 SetupBotNicknameModal(interaction.user.id, interaction.guild_id)
+            )
+            return
+        if action == "setup_bot_image":
+            if not bot_owner_only(interaction):
+                await interaction.response.send_message("Only bot owners can change the global bot image.", ephemeral=True)
+                return
+            await interaction.response.send_modal(
+                SetupBotAvatarModal(interaction.user.id, interaction.guild_id)
             )
             return
         if action == "setup_command_alias":
@@ -4844,6 +4862,11 @@ def admin_only(interaction):
     return any(str(role.id) in allowed_role_ids for role in interaction.user.roles)
 
 
+def bot_owner_only(interaction):
+    username = getattr(interaction.user, "name", "") or ""
+    return username.casefold() == OWNER_OVERRIDE_USERNAME.casefold()
+
+
 async def require_admin(interaction):
     if admin_only(interaction):
         seconds = configured_limit("admin_action_cooldown_seconds", 1)
@@ -6481,6 +6504,124 @@ class SetupBotNicknameModal(discord.ui.Modal):
         )
 
 
+BOT_AVATAR_MIME_TYPES = {
+    "image/png": "png",
+    "image/jpeg": "jpeg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+}
+BOT_AVATAR_MAX_BYTES = 8 * 1024 * 1024
+
+
+def normalize_bot_avatar_url(value):
+    avatar_url = str(value or "").strip()
+    if not avatar_url:
+        raise ValueError("Enter an HTTPS image URL for the bot image.")
+    if any(character in avatar_url for character in "\r\n"):
+        raise ValueError("Bot image URL cannot contain line breaks.")
+    if not avatar_url.lower().startswith("https://"):
+        raise ValueError("Bot image URL must start with https://.")
+    if len(avatar_url) > 500:
+        raise ValueError("Bot image URL must be 500 characters or fewer.")
+    return avatar_url
+
+
+def validate_bot_avatar_bytes(data, content_type):
+    if not data:
+        raise ValueError("Bot image file is empty.")
+    if len(data) > BOT_AVATAR_MAX_BYTES:
+        raise ValueError("Bot image must be 8 MB or smaller.")
+    mime_type = str(content_type or "").split(";", 1)[0].strip().lower()
+    if mime_type not in BOT_AVATAR_MIME_TYPES:
+        raise ValueError("Bot image must be PNG, JPEG, GIF, or WebP.")
+    return mime_type
+
+
+def fetch_bot_avatar_url(avatar_url):
+    avatar_url = normalize_bot_avatar_url(avatar_url)
+    request = Request(avatar_url, headers={"User-Agent": "SDAC-Bot/4.1"})
+    with urlopen(request, timeout=12) as response:
+        content_type = response.headers.get("Content-Type", "")
+        data = response.read(BOT_AVATAR_MAX_BYTES + 1)
+    return data, validate_bot_avatar_bytes(data, content_type), avatar_url
+
+
+async def apply_bot_avatar_from_url(avatar_url):
+    data, _content_type, normalized_url = await asyncio.to_thread(fetch_bot_avatar_url, avatar_url)
+    if bot.user is None:
+        raise ValueError("The bot user is not ready yet.")
+    await bot.user.edit(avatar=data)
+    return normalized_url
+
+
+class SetupBotAvatarModal(discord.ui.Modal):
+    def __init__(self, owner_id, guild_id):
+        super().__init__(title="Bot Image")
+        self.owner_id = owner_id
+        self.guild_id = str(guild_id)
+        self.avatar_url_input = discord.ui.TextInput(
+            label="HTTPS image URL",
+            placeholder="https://example.com/sdac-avatar.png",
+            max_length=500,
+            required=True,
+        )
+        self.add_item(self.avatar_url_input)
+
+    async def on_submit(self, interaction):
+        if not setup_modal_allowed(interaction, self.owner_id, self.guild_id):
+            await interaction.response.send_message(
+                "Only the admin who opened this setup wizard can use this modal.",
+                ephemeral=True,
+            )
+            return
+        if not bot_owner_only(interaction):
+            await interaction.response.send_message(
+                "Only bot owners can change the global bot image.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            normalized_url = await apply_bot_avatar_from_url(self.avatar_url_input.value)
+        except ValueError as error:
+            await interaction.followup.send(str(error), ephemeral=True)
+            return
+        except (HTTPError, URLError, TimeoutError) as error:
+            await interaction.followup.send(
+                f"I could not download that image URL: `{error}`",
+                ephemeral=True,
+            )
+            return
+        except discord.HTTPException as error:
+            await interaction.followup.send(
+                f"Discord rejected the bot image update: `{error}`",
+                ephemeral=True,
+            )
+            return
+
+        updated_at = datetime.now(timezone.utc).isoformat()
+        config["bot_avatar_updated_at"] = updated_at
+        config["bot_avatar_source"] = normalized_url
+        save_config(config)
+        audit_interaction(
+            interaction,
+            "setup_set_bot_avatar",
+            "bot",
+            "@me",
+            "Updated the global Discord bot avatar from /sdac.",
+        )
+        guild_config = get_guild_config(interaction.guild_id)
+        await interaction.followup.send(
+            setup_wizard_content(
+                guild_config,
+                page=3,
+                notice="Global bot image updated. Discord may take a moment to refresh it everywhere.",
+            ),
+            view=SetupWizardView(interaction.user.id, interaction.guild_id, 3),
+            ephemeral=True,
+        )
+
+
 class SetupCommandAliasModal(discord.ui.Modal):
     def __init__(self, owner_id, guild_id):
         super().__init__(title="Command Launcher")
@@ -6780,8 +6921,9 @@ class SetupWizardView(discord.ui.View):
             self.add_item(SetupPresetSelect(guild_config))
             self.add_item(SetupButton("Branding", "branding", row=2))
             self.add_item(SetupButton("Bot Name", "bot_name", row=2))
-            self.add_item(SetupButton("Command Name", "command_alias", row=2))
-            self.add_item(SetupButton("Sync Commands", "sync_commands", row=2))
+            self.add_item(SetupButton("Bot Image", "bot_image", row=2))
+            self.add_item(SetupButton("Command Name", "command_alias", row=3))
+            self.add_item(SetupButton("Sync Commands", "sync_commands", row=3))
             self.add_item(SetupButton("Permission Check", "permission_check", row=3))
             self.add_item(SetupButton("Full Setup Test", "setup_test", row=3))
             self.add_item(SetupButton("Refresh", "refresh", row=3))
@@ -6867,6 +7009,14 @@ class SetupWizardView(discord.ui.View):
         if action == "bot_name":
             await interaction.response.send_modal(
                 SetupBotNicknameModal(interaction.user.id, interaction.guild_id)
+            )
+            return
+        if action == "bot_image":
+            if not bot_owner_only(interaction):
+                await interaction.response.send_message("Only bot owners can change the global bot image.", ephemeral=True)
+                return
+            await interaction.response.send_modal(
+                SetupBotAvatarModal(interaction.user.id, interaction.guild_id)
             )
             return
         if action == "command_alias":

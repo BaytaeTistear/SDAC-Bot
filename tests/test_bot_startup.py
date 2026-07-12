@@ -48,6 +48,25 @@ class BotStartupTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bot.normalize_bot_nickname("bad\nname")
 
+    def test_bot_avatar_validation_accepts_supported_images(self):
+        import bot
+        import dashboard
+
+        self.assertEqual(
+            bot.normalize_bot_avatar_url("  https://example.com/avatar.png  "),
+            "https://example.com/avatar.png",
+        )
+        self.assertEqual(
+            dashboard.discord_avatar_payload(b"abc", "image/png"),
+            "data:image/png;base64,YWJj",
+        )
+        with self.assertRaises(ValueError):
+            bot.normalize_bot_avatar_url("http://example.com/avatar.png")
+        with self.assertRaises(ValueError):
+            bot.validate_bot_avatar_bytes(b"abc", "text/plain")
+        with self.assertRaises(ValueError):
+            dashboard.validate_bot_avatar_bytes(b"", "image/png")
+
     def test_command_visibility_audit_reports_simplified_surface(self):
         import bot
 

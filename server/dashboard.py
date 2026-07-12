@@ -1,3 +1,4 @@
+import base64
 import csv
 import gzip
 import html
@@ -3019,6 +3020,20 @@ SETTINGS_HTML = """
                     </tbody>
                 </table>
                 <button type="submit">Save Global Username</button>
+            </form>
+            <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="key" value="{{ admin_key }}">
+                <input type="hidden" name="action" value="set_global_bot_avatar">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <table>
+                    <tbody>
+                        <tr><th>Global bot image</th><td><input name="bot_avatar_file" type="file" accept="image/png,image/jpeg,image/gif,image/webp"></td></tr>
+                        <tr><th>Or image URL</th><td><input name="bot_avatar_url" maxlength="500" placeholder="https://example.com/bot-avatar.png"></td></tr>
+                        <tr><th>Last updated</th><td>{{ bot_avatar_updated_at or "Not tracked yet" }}</td></tr>
+                    </tbody>
+                </table>
+                <p class="muted">This changes the bot's global Discord avatar for every server. Discord may rate limit frequent image changes.</p>
+                <button type="submit">Save Global Bot Image</button>
             </form>
         {% endif %}
         <script>
@@ -13031,6 +13046,67 @@ def update_discord_bot_username(username):
         payload={"username": username},
     )
 
+
+BOT_AVATAR_MIME_TYPES = {
+    "image/png": "png",
+    "image/jpeg": "jpeg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+}
+BOT_AVATAR_MAX_BYTES = 8 * 1024 * 1024
+
+
+def normalize_bot_avatar_url(value):
+    avatar_url = str(value or "").strip()
+    if not avatar_url:
+        raise ValueError("Enter an HTTPS image URL or upload an image file.")
+    if any(character in avatar_url for character in "\r\n"):
+        raise ValueError("Bot image URL cannot contain line breaks.")
+    if not avatar_url.lower().startswith("https://"):
+        raise ValueError("Bot image URL must start with https://.")
+    if len(avatar_url) > 500:
+        raise ValueError("Bot image URL must be 500 characters or fewer.")
+    return avatar_url
+
+
+def validate_bot_avatar_bytes(data, content_type):
+    if not data:
+        raise ValueError("Bot image file is empty.")
+    if len(data) > BOT_AVATAR_MAX_BYTES:
+        raise ValueError("Bot image must be 8 MB or smaller.")
+    mime_type = str(content_type or "").split(";", 1)[0].strip().lower()
+    if mime_type not in BOT_AVATAR_MIME_TYPES:
+        raise ValueError("Bot image must be PNG, JPEG, GIF, or WebP.")
+    return mime_type
+
+
+def fetch_bot_avatar_url(avatar_url):
+    avatar_url = normalize_bot_avatar_url(avatar_url)
+    request_headers = {"User-Agent": "SDAC-Dashboard/4.1"}
+    with urlopen(Request(avatar_url, headers=request_headers), timeout=12) as response:
+        content_type = response.headers.get("Content-Type", "")
+        data = response.read(BOT_AVATAR_MAX_BYTES + 1)
+    return data, validate_bot_avatar_bytes(data, content_type), avatar_url
+
+
+def discord_avatar_payload(data, content_type):
+    mime_type = validate_bot_avatar_bytes(data, content_type)
+    encoded = base64.b64encode(data).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def update_discord_bot_avatar(data, content_type):
+    if not TOKEN:
+        raise ValueError("DISCORD_TOKEN is missing, so the dashboard cannot update the bot image.")
+    return discord_json_request(
+        "https://discord.com/api/v10/users/@me",
+        TOKEN,
+        token_type="Bot",
+        method="PATCH",
+        payload={"avatar": discord_avatar_payload(data, content_type)},
+    )
+
+
 def exchange_discord_oauth_code(code, redirect_uri=None):
     payload = urlencode({
         "client_id": DISCORD_OAUTH_CLIENT_ID,
@@ -15330,6 +15406,63 @@ def admin_settings():
                     connection,
                     None,
                     "dashboard_set_global_bot_username",
+                    actor_id,
+                    actor_name,
+                    "bot",
+                    "@me",
+                    message,
+                )
+            return redirect(url_for(
+                "admin_settings",
+                key=ADMIN_KEY,
+                notice=message,
+            ))
+        if action == "set_global_bot_avatar":
+            if not has_admin_role("bot_owner"):
+                abort(403)
+            source = "upload"
+            try:
+                uploaded = request.files.get("bot_avatar_file")
+                if uploaded and uploaded.filename:
+                    avatar_data = uploaded.read(BOT_AVATAR_MAX_BYTES + 1)
+                    avatar_type = uploaded.mimetype or ""
+                else:
+                    avatar_data, avatar_type, source = fetch_bot_avatar_url(
+                        request.form.get("bot_avatar_url")
+                    )
+                update_discord_bot_avatar(avatar_data, avatar_type)
+            except ValueError as form_error:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice=str(form_error),
+                    error=1,
+                ))
+            except HTTPError as discord_error:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice=discord_api_error_message(discord_error),
+                    error=1,
+                ))
+            except (URLError, TimeoutError, json.JSONDecodeError) as discord_error:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice=f"Discord API request failed: {discord_error}",
+                    error=1,
+                ))
+            config_data = load_config()
+            updated_at = datetime.now(timezone.utc).isoformat()
+            config_data["bot_avatar_updated_at"] = updated_at
+            config_data["bot_avatar_source"] = source
+            save_config(config_data)
+            message = "Global bot image updated. Discord may take a moment to refresh it everywhere."
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    "dashboard_set_global_bot_avatar",
                     actor_id,
                     actor_name,
                     "bot",
