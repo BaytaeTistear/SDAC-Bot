@@ -28,6 +28,15 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("animeactivities", bot.PRUNED_SLASH_COMMANDS)
         self.assertIn("admincommands", bot.PRUNED_SLASH_COMMANDS)
 
+    def test_command_alias_validation_supports_server_launchers(self):
+        import bot
+
+        self.assertEqual(bot.validate_command_alias("/Pepo Hub"), "pepo-hub")
+        self.assertEqual(bot.validate_command_alias("sdac"), "")
+        self.assertEqual(bot.command_alias_display({"command_alias": "pepo"}), "/pepo")
+        self.assertTrue(bot.PROJECT_WIKI_URL.endswith("/wiki"))
+        with self.assertRaises(ValueError):
+            bot.validate_command_alias("submit")
     def test_mal_profile_summary_uses_public_list_data(self):
         import bot
 

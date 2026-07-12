@@ -1,3 +1,27 @@
+# SDAC Bot Version 4.0.8 Experimental
+
+Date: 2026-07-12
+
+Update scope: Server command launcher aliases and duplicate slash-command cleanup
+
+Version 4.0.8 is an experimental Discord setup update that lets each server choose an optional command launcher while keeping `/sdac` as the stable fallback.
+
+Included:
+
+- added per-server command launcher support so owners can sync an alias like `/pepo` during setup
+- added a Command Name control to the setup wizard and `/sdac` setup submenu
+- kept `/sdac` available on every server even when a custom launcher is configured
+- fixed duplicate Discord slash commands by clearing guild-specific copied commands and syncing guild commands as alias-only
+- added GitHub and Wiki link buttons to the `/sdac` control center for easier user access
+- added a Codex handoff file with project rules, release policy, and reviewer notes
+
+Release channel:
+
+- `version-4.0.8` is this experimental custom command launcher update
+- `latest-experimental` points to this build after publishing
+- `latest-official` remains on Version 4.0.0 until this build is promoted
+
+---
 # SDAC Bot Version 4.0.7 Experimental
 
 Date: 2026-07-12

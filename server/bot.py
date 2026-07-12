@@ -48,6 +48,10 @@ OWNER_OVERRIDE_USERNAME = "baytae"
 ENABLE_ANIME_COMMANDS = os.getenv("SDAC_ENABLE_ANIME_COMMANDS", "1").strip().casefold() not in {"0", "false", "no", "off"}
 SIMPLIFIED_SLASH_COMMANDS = os.getenv("SDAC_SIMPLIFIED_COMMANDS", "1").strip().casefold() not in {"0", "false", "no", "off"}
 CORE_SLASH_COMMANDS = {"sdac", "submit", "guess", "hint"}
+PROJECT_GITHUB_URL = f"https://github.com/{ORIGINAL_REPO}"
+PROJECT_WIKI_URL = f"{PROJECT_GITHUB_URL}/wiki"
+COMMAND_ALIAS_PATTERN = re.compile(r"^[a-z0-9_-]{1,32}$")
+COMMAND_ALIAS_RESERVED = CORE_SLASH_COMMANDS | {"commands", "admincommands", "setup"}
 
 ALLOWED_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp",
@@ -155,6 +159,7 @@ DEFAULT_GUILD_CONFIG = {
     "bot_access_disabled": False,
     "bot_access_contact": "",
     "bot_access_reason": "",
+    "command_alias": "",
     "setup_preset": "",
     "admin_role_ids": [],
     "submit_channel": None,
@@ -811,6 +816,7 @@ SDAC_SUBMENUS = {
         "placeholder": "Choose a setup action",
         "options": [
             ("setup_wizard", "Open Setup Wizard", "Use selectors and buttons for server setup."),
+            ("setup_command_alias", "Command Name", "Choose this server's optional /command launcher."),
             ("setup_status", "Setup Status", "Review current setup progress."),
             ("setup_test", "Run Setup Test", "Check channels, permissions, and required settings."),
             ("diagnostics", "Diagnostics", "Run runtime diagnostics."),
@@ -848,6 +854,7 @@ SDAC_SUBMENU_DETAILS = {
     "anime_import": "**Import MyAnimeList**\nRun `/animeprofileimport username` to import public MyAnimeList favorites and watching data.",
     "anime_view": "**View Anime Profile**\nRun `/animeprofileview @member` to view a saved anime profile.",
     "anime_activities": "**Anime Activities**\nRun `/animeactivities` to see available activity keys and anime game/community ideas.",
+    "setup_command_alias": "**Command Name**\nAdmins can set a server-specific launcher like `/pepo`. `/sdac` always remains available as the fallback.",
     "backup_guide": "**Backup Provider Guide**\nRun `/backupguide provider` for provider-specific setup steps.",
     "backup_setup": "**Save Backup Target**\nRun `/backupsetup provider remote` to save the backup destination.",
     "backup_now": "**Test Backup**\nRun `/backupnow upload:true` to create and upload a backup now.",
@@ -862,7 +869,7 @@ SDAC_SUBMENU_DETAILS = {
 def sdac_hub_content(is_admin=False, notice=""):
     lines = [
         "**SDAC Control Center**",
-        "Use the dropdown below instead of memorizing individual commands.",
+        "Use the buttons below instead of memorizing individual commands.",
     ]
     if notice:
         lines.extend(["", notice])
@@ -981,6 +988,22 @@ class SDACSubmenuSelect(discord.ui.Select):
             await interaction.response.edit_message(
                 content=setup_wizard_content(guild_config, page=1),
                 view=SetupWizardView(interaction.user.id, interaction.guild_id, 1),
+            )
+            return
+        if action == "setup_command_alias":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            await interaction.response.send_modal(
+                SetupCommandAliasModal(interaction.user.id, interaction.guild_id)
+            )
+            return
+        if action == "setup_command_alias":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            await interaction.response.send_modal(
+                SetupCommandAliasModal(interaction.user.id, interaction.guild_id)
             )
             return
         if action == "setup_status":
@@ -1124,6 +1147,14 @@ class SDACSubmenuButton(discord.ui.Button):
                 view=SetupWizardView(interaction.user.id, interaction.guild_id, 1),
             )
             return
+        if action == "setup_command_alias":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            await interaction.response.send_modal(
+                SetupCommandAliasModal(interaction.user.id, interaction.guild_id)
+            )
+            return
         if action == "setup_status":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
@@ -1196,6 +1227,8 @@ class SDACHubView(discord.ui.View):
             for value, label, _description in SDAC_HUB_ADMIN_OPTIONS:
                 style = discord.ButtonStyle.primary if value == "setup" else discord.ButtonStyle.secondary
                 self.add_item(SDACHubButton(is_admin, value, label, admin_rows.get(value, 2), style))
+        self.add_item(discord.ui.Button(label="GitHub", style=discord.ButtonStyle.link, url=PROJECT_GITHUB_URL, row=4))
+        self.add_item(discord.ui.Button(label="Wiki", style=discord.ButtonStyle.link, url=PROJECT_WIKI_URL, row=4))
 
 
 class SDACSubmenuView(discord.ui.View):
@@ -5036,6 +5069,41 @@ last_permission_drift_date = {}
 last_optimization_maintenance_date = None
 
 
+
+def normalize_command_alias(value):
+    alias = str(value or "").strip().lower()
+    if alias.startswith("/"):
+        alias = alias[1:]
+    alias = re.sub(r"\s+", "-", alias)
+    alias = re.sub(r"[^a-z0-9_-]", "", alias)[:32]
+    if alias == "sdac":
+        return ""
+    return alias
+
+
+def command_alias_reserved_names():
+    reserved = set(COMMAND_ALIAS_RESERVED)
+    reserved.update(command.name for command in tree.get_commands())
+    reserved.update(globals().get("PRUNED_SLASH_COMMANDS", []))
+    return reserved
+
+
+def validate_command_alias(value):
+    alias = normalize_command_alias(value)
+    if not alias:
+        return ""
+    if alias in command_alias_reserved_names():
+        raise ValueError("That command name is reserved. Pick a custom name like `pepo`.")
+    if not COMMAND_ALIAS_PATTERN.match(alias):
+        raise ValueError("Command names can only use lowercase letters, numbers, hyphens, and underscores.")
+    return alias
+
+
+def command_alias_display(guild_config):
+    alias = normalize_command_alias((guild_config or {}).get("command_alias"))
+    return f"/{alias}" if alias else "/sdac"
+
+
 def bot_access_disabled_message(guild_config):
     contact = str((guild_config or {}).get("bot_access_contact") or "").strip()
     reason = str((guild_config or {}).get("bot_access_reason") or "").strip()
@@ -5762,6 +5830,12 @@ def setup_status_rows(guild_config):
             "value": channel_display(guild_config.get("error_channel")),
             "required": False,
         },
+        {
+            "label": "Command launcher",
+            "ok": True,
+            "value": command_alias_display(guild_config),
+            "required": False,
+        },
     ]
     return rows
 
@@ -5810,8 +5884,8 @@ def setup_wizard_content(guild_config, page=1, notice=""):
         )
     else:
         lines.append(
-            "Use the controls below to choose enabled features and run a "
-            "setup test."
+            "Use the controls below to choose enabled features, set an optional "
+            "server command launcher, and run a setup test."
         )
     return "\n".join(lines)[:1900]
 
@@ -6214,6 +6288,64 @@ class SetupBrandingModal(discord.ui.Modal):
         )
 
 
+class SetupCommandAliasModal(discord.ui.Modal):
+    def __init__(self, owner_id, guild_id):
+        super().__init__(title="Command Launcher")
+        self.owner_id = owner_id
+        self.guild_id = str(guild_id)
+        guild_config = get_guild_config(guild_id, create=False)
+        self.alias_input = discord.ui.TextInput(
+            label="Slash command name",
+            placeholder="sdac, pepo, etc.",
+            default=command_alias_display(guild_config).lstrip("/"),
+            max_length=32,
+            required=False,
+        )
+        self.add_item(self.alias_input)
+
+    async def on_submit(self, interaction):
+        if not setup_modal_allowed(interaction, self.owner_id, self.guild_id):
+            await interaction.response.send_message(
+                "Only the admin who opened this setup wizard can use this modal.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            alias = validate_command_alias(self.alias_input.value)
+        except ValueError as error:
+            await interaction.response.send_message(str(error), ephemeral=True)
+            return
+
+        guild_config = get_guild_config(interaction.guild_id)
+        guild_config["command_alias"] = alias
+        save_config(config)
+        audit_interaction(
+            interaction,
+            "setup_set_command_alias",
+            "guild",
+            interaction.guild_id,
+            f"Set command launcher to {command_alias_display(guild_config)}.",
+        )
+        try:
+            await sync_guild_slash_commands(interaction.guild)
+            notice = (
+                f"Command launcher saved as `{command_alias_display(guild_config)}`. "
+                "Discord may take a minute to show the updated server command."
+            )
+        except Exception as error:
+            capture_exception(error)
+            notice = (
+                f"Command launcher saved as `{command_alias_display(guild_config)}`, "
+                f"but Discord sync failed: `{error}`"
+            )
+        await interaction.response.send_message(
+            setup_wizard_content(guild_config, page=3, notice=notice),
+            view=SetupWizardView(interaction.user.id, interaction.guild_id, 3),
+            ephemeral=True,
+        )
+
+
 class SetupRoleSelect(discord.ui.RoleSelect):
     def __init__(self):
         super().__init__(
@@ -6454,7 +6586,8 @@ class SetupWizardView(discord.ui.View):
             self.add_item(SetupFeatureSelect(guild_config))
             self.add_item(SetupPresetSelect(guild_config))
             self.add_item(SetupButton("Branding", "branding", row=2))
-            self.add_item(SetupButton("Permission Check", "permission_check", row=2))
+            self.add_item(SetupButton("Command Name", "command_alias", row=2))
+            self.add_item(SetupButton("Permission Check", "permission_check", row=3))
             self.add_item(SetupButton("Full Setup Test", "setup_test", row=3))
             self.add_item(SetupButton("Refresh", "refresh", row=3))
             self.add_item(SetupButton("Back", "back", row=4))
@@ -6536,6 +6669,11 @@ class SetupWizardView(discord.ui.View):
                 SetupBrandingModal(interaction.user.id, interaction.guild_id)
             )
             return
+        if action == "command_alias":
+            await interaction.response.send_modal(
+                SetupCommandAliasModal(interaction.user.id, interaction.guild_id)
+            )
+            return
         if action == "permission_check":
             await self.send_permission_check(interaction)
             return
@@ -6549,7 +6687,7 @@ class SetupWizardView(discord.ui.View):
                     setup_wizard_content(
                         guild_config,
                         self.page,
-                        "Setup wizard closed. Run `/setup` any time to reopen it.",
+                        "Setup wizard closed. Run `/sdac` any time to reopen it.",
                     )
                 ),
                 view=None,
@@ -12192,6 +12330,42 @@ def prune_simplified_slash_commands():
         removed.append(command.name)
     return sorted(removed)
 
+
+async def sdac_alias_callback(interaction):
+    is_admin = admin_only(interaction)
+    await interaction.response.send_message(
+        sdac_hub_content(is_admin),
+        view=SDACHubView(is_admin),
+        ephemeral=True,
+    )
+
+
+def build_sdac_alias_command(alias):
+    return app_commands.Command(
+        name=alias,
+        description="Open this server's SDAC control center",
+        callback=sdac_alias_callback,
+    )
+
+
+async def sync_guild_slash_commands(guild):
+    discord_guild = discord.Object(id=guild.id)
+    guild_config = get_guild_config(guild.id, create=False)
+    alias = validate_command_alias(guild_config.get("command_alias"))
+    for command in list(tree.get_commands(guild=discord_guild)):
+        tree.remove_command(command.name, guild=discord_guild)
+    if alias:
+        tree.add_command(build_sdac_alias_command(alias), guild=discord_guild, override=True)
+    synced_guild = await tree.sync(guild=discord_guild)
+    guild_command_names = ", ".join(sorted(command.name for command in synced_guild))
+    print(
+        f"Synced {len(synced_guild)} slash commands to "
+        f"{guild.name} ({guild.id}): {guild_command_names}",
+        flush=True,
+    )
+    return synced_guild
+
+
 async def sync_slash_commands():
     global slash_commands_synced
     if slash_commands_synced:
@@ -12209,17 +12383,7 @@ async def sync_slash_commands():
     )
 
     for guild in bot.guilds:
-        discord_guild = discord.Object(id=guild.id)
-        tree.copy_global_to(guild=discord_guild)
-        synced_guild = await tree.sync(guild=discord_guild)
-        guild_command_names = ", ".join(
-            sorted(command.name for command in synced_guild)
-        )
-        print(
-            f"Synced {len(synced_guild)} slash commands to "
-            f"{guild.name} ({guild.id}): {guild_command_names}",
-            flush=True,
-        )
+        await sync_guild_slash_commands(guild)
     slash_commands_synced = True
     write_bot_status("slash_sync")
 
@@ -12303,17 +12467,16 @@ async def on_guild_join(guild):
         "Bot joined server and initialized default config.",
     )
     try:
-        discord_guild = discord.Object(id=guild.id)
-        tree.copy_global_to(guild=discord_guild)
-        await tree.sync(guild=discord_guild)
+        await sync_guild_slash_commands(guild)
     except Exception as error:
         capture_exception(error)
         print(f"Guild command sync failed for {guild.id}: {error}", flush=True)
 
     welcome = (
         "**SDAC is connected.**\n"
-        "An administrator can run `/setup` to walk through channels, roles, "
-        "features, timezone, branding, and the setup test from Discord."
+        "An administrator can run `/sdac` to walk through channels, roles, "
+        "features, timezone, branding, command launcher, and the setup test from Discord. "
+        "`/sdac` always stays available, and setup can add a server command like `/pepo`."
     )
     candidate_channels = []
     if guild.system_channel is not None:

@@ -501,11 +501,18 @@ By default SDAC syncs only the mobile-friendly main commands. Everything else is
 /hint
 ```
 
+`/sdac` is always the fallback control center. Server owners can also set an optional server-specific launcher such as `/pepo` from `/sdac` -> Setup -> Command Name, or from the setup wizard's final page. Discord may take a minute to show or remove commands after sync.
+
 Set `SDAC_SIMPLIFIED_COMMANDS=0` before bot startup if you temporarily need the legacy direct slash-command list. Set `SDAC_ENABLE_ANIME_COMMANDS=0` before startup to hide the experimental Anime Activities actions from `/sdac` and legacy mode.
+
+Project links are also available inside the `/sdac` panel:
+
+- GitHub: https://github.com/BaytaeTistear/SDAC-Bot
+- Wiki: https://github.com/BaytaeTistear/SDAC-Bot/wiki
 
 ### Admin Actions
 
-Admins should start with `/sdac`. The panel opens button-based menus for setup, setup status, setup tests, diagnostics, backups, moderation, and advanced help.
+Admins should start with `/sdac`. The panel opens button-based menus for setup, command launcher naming, setup status, setup tests, diagnostics, backups, moderation, and advanced help.
 ### Dashboard Pages
 
 ```text
