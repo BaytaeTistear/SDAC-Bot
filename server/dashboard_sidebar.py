@@ -219,6 +219,18 @@ def admin_sidebar_links(has_admin_role, admin_url):
     ]
 
 
+def flatten_sidebar_links(sections):
+    seen = set()
+    flattened = []
+    for section in sections:
+        for link in section["links"]:
+            key = (link["label"], link["url"])
+            if key in seen:
+                continue
+            seen.add(key)
+            flattened.append(link)
+    return flattened
+
 def should_render_admin_sidebar(is_admin_logged_in, admin_key):
     if request.endpoint in SIDEBAR_BLOCKED_ENDPOINTS:
         return False
@@ -247,23 +259,6 @@ def admin_sidebar_html(
     sidebar_server_options,
     admin_url,
 ):
-    groups = []
-    for section in sidebar_sections(is_admin_logged_in, has_admin_role, admin_url):
-        links = []
-        for link in section["links"]:
-            active_class = " active" if link["active"] else ""
-            links.append(
-                f'<a class="sdac-sidebar-link{active_class}" '
-                f'href="{html.escape(link["url"], quote=True)}">'
-                f'{html.escape(link["label"])}</a>'
-            )
-        open_attr = " open" if section["active"] else ""
-        groups.append(
-            f'<details class="sdac-sidebar-section"{open_attr}>'
-            f'<summary>{html.escape(section["label"])}</summary>'
-            f'<div class="sdac-sidebar-section-links">{"".join(links)}</div>'
-            f'</details>'
-        )
     account_url = (
         url_for("account_home", key=admin_key)
         if is_account_logged_in()
@@ -283,6 +278,26 @@ def admin_sidebar_html(
         role = "Public"
         username = "Guest"
         brand = "SDAC"
+
+    home_url = admin_url("admin_staff_home") if is_admin_logged_in() else url_for("index")
+    home_active = " active" if request.endpoint in {"admin_staff_home", "index"} else ""
+    nav_links = []
+    for link in flatten_sidebar_links(sidebar_sections(is_admin_logged_in, has_admin_role, admin_url)):
+        if link["label"] == "Home":
+            continue
+        active_class = " active" if link["active"] else ""
+        nav_links.append(
+            f'<a class="sdac-sidebar-link{active_class}" '
+            f'href="{html.escape(link["url"], quote=True)}">'
+            f'{html.escape(link["label"])}</a>'
+        )
+    navigation = (
+        '<div class="sdac-sidebar-section sdac-sidebar-main-section">'
+        '<div class="sdac-sidebar-section-links">'
+        + "".join(nav_links)
+        + "</div></div>"
+    )
+
     switcher = ""
     access_warning = ""
     if is_account_logged_in() or is_admin_logged_in():
@@ -315,9 +330,10 @@ def admin_sidebar_html(
 <aside class="sdac-sidebar" id="sdac-sidebar">
     <div class="sdac-sidebar-brand">{html.escape(brand)}</div>
     <div class="sdac-sidebar-user">{html.escape(username)}<br><span>{html.escape(role)}</span></div>
+    <a class="sdac-sidebar-home{home_active}" href="{html.escape(home_url, quote=True)}">Home</a>
     {switcher}
     {access_warning}
-    <nav>{"".join(groups)}</nav>
+    <nav>{navigation}</nav>
     <div class="sdac-sidebar-footer">
         <a class="sdac-sidebar-invite" href="{html.escape(url_for("bot_invite"), quote=True)}">Invite Bot</a>
         <a class="sdac-sidebar-link" href="{html.escape(account_url, quote=True)}">{html.escape(account_label)}</a>
@@ -329,8 +345,7 @@ def admin_sidebar_html(
         {('<a class="sdac-sidebar-link" href="' + html.escape(admin_url("admin_logout"), quote=True) + '">Logout</a>') if is_admin_logged_in() else ''}
         {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_logout"), quote=True) + '">Logout</a>') if is_account_logged_in() and not is_admin_logged_in() else ''}
     </div>
-</aside>
-<script>
+</aside><script>
 (function () {{
     try {{ localStorage.removeItem("sdacSidebarCollapsed"); }} catch (error) {{}}
     window.sdacToggleSidebar = function () {{

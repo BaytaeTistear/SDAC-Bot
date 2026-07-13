@@ -1,3 +1,24 @@
+# SDAC Bot Version 4.2.0 Official
+
+Release date: 2026-07-12
+
+Update scope: Unified dashboard sidebar and saved layout coverage
+
+Version 4.2.0 is an official dashboard polish release focused on making the sidebar consistent across the full dashboard and public page set.
+
+Included in this update:
+- changed the dashboard sidebar from multiple collapsible role sections into one continuous navigation section
+- kept the Menu button fixed at the top of every sidebar-enabled page
+- added a top Home button above the server selector
+- preserved the Invite Bot and account actions in the sidebar footer
+- kept saved Layout settings applied through the shared sidebar/theme injection path
+- strengthened the page sweep to verify sidebar, Home button, single navigation section, server selector hardening, and saved layout variables across all rendered pages
+- updated sidebar layout tests to block regressions to the old collapsible sidebar structure
+
+Release channel:
+- `version-4.2.0` is this official sidebar and layout consistency update.
+- `latest-official` points to this build after publishing.
+- `latest-experimental` already included the prior experimental identity setup work that is now part of this official build.
 # SDAC Bot Version 4.1.4 Experimental
 
 Release date: 2026-07-12

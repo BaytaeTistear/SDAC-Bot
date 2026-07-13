@@ -85,13 +85,20 @@ for route in routes:
         if route not in redirect_ok:
             failures.append(f"{route}: unexpected redirect {response.status_code}")
         continue
-    if response.status_code == 200 and route.startswith("/admin") and route not in api_routes:
+    if response.status_code == 200 and route not in api_routes:
         body = response.get_data(as_text=True)
         if "sdac-sidebar" not in body or "sdac-sidebar-style" not in body:
             failures.append(f"{route}: missing shared sidebar")
+        if "sdac-sidebar-home" not in body or ">Home</a>" not in body:
+            failures.append(f"{route}: missing top Home button")
+        if "sdac-sidebar-main-section" not in body:
+            failures.append(f"{route}: missing single navigation section")
+        if '<details class="sdac-sidebar-section"' in body:
+            failures.append(f"{route}: still uses collapsible sidebar sections")
+        if "--sdac-content-width" not in body or "--sdac-sidebar-width" not in body or "--sdac-layout-gap" not in body:
+            failures.append(f"{route}: missing saved layout variables")
         if ".sdac-sidebar .sdac-server-switcher select, .sdac-sidebar .sdac-server-switcher button" not in body or "grid-template-columns: minmax(0, 1fr)" not in body:
             failures.append(f"{route}: missing hardened server selector css")
-
 if failures:
     print("FAILURES:", failures)
     raise SystemExit(1)
