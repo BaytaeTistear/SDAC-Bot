@@ -1,3 +1,23 @@
+# SDAC Bot Version 4.2.3 Experimental
+
+Release date: 2026-07-13
+
+Update scope: Android APK release artifact
+
+Version 4.2.3 is an experimental app release packaging update focused on producing an installable SDACCompanion Android APK whenever release updates are published.
+
+Included in this update:
+- builds the SDACCompanion Capacitor web shell during the GitHub release workflow
+- syncs the Android project before packaging
+- publishes `SDACCompanion-Android-Debug.apk` as a release download for sideload testing
+- publishes `SDACCompanion-Android-Debug.apk.sha256` so the APK can be verified after download
+- keeps `SDACCompanion-App-Source.zip` and the normal bot installer/update artifacts in the same release
+- keeps `latest-official` on Version 4.2.0 until an official promotion is requested
+
+Release channel:
+- `version-4.2.3` is this experimental Android APK release artifact update.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.2 Experimental
 
 Release date: 2026-07-13
