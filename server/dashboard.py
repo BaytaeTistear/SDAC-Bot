@@ -19955,16 +19955,28 @@ def api_server(guild_id):
     return jsonify(ttl_cache_set(cache_id, payload, 30))
 
 
+DEFAULT_APP_ALLOWED_ORIGINS = {
+    "capacitor://localhost",
+    "ionic://localhost",
+    "http://localhost",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+}
+
+
 def app_allowed_cors_origin():
-    origin = request.headers.get("Origin", "").strip()
+    origin = request.headers.get("Origin", "").strip().rstrip("/")
     if not origin:
         return ""
-    allowed = {
+    allowed = set(DEFAULT_APP_ALLOWED_ORIGINS)
+    allowed.update(
         item.strip().rstrip("/")
         for item in os.getenv("SDAC_APP_ALLOWED_ORIGINS", "").split(",")
         if item.strip()
-    }
-    if origin.rstrip("/") in allowed:
+    )
+    if origin in allowed:
         return origin
     return ""
 
@@ -20875,6 +20887,7 @@ def delete_submission(submission_id):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 

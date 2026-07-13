@@ -32,7 +32,7 @@ $env:SDAC_APP_NAME="SDACCompanion"
 $env:SDAC_APP_ID="app.sdac.companion"
 ```
 
-If the app shell runs from a different origin than the dashboard during development, set this on the Flask dashboard server:
+The installed Capacitor app is allowed by the dashboard by default through `capacitor://localhost`. If the app shell runs from another origin during development, set this on the Flask dashboard server:
 
 ```bash
 SDAC_APP_ALLOWED_ORIGINS=http://localhost:5174,capacitor://localhost
@@ -221,4 +221,5 @@ apps/sdac-official-app/public/sdac-companion-art.png
 ```
 
 It is an original anime companion illustration holding an SD-style baseball emblem. It intentionally avoids copying an official sports logo.
+
 

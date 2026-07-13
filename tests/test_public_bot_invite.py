@@ -75,6 +75,23 @@ class PublicBotInviteTests(unittest.TestCase):
         self.assertIn("official_version", payload["release"])
         self.assertIn("experimental_version", payload["release"])
 
+    def test_app_bootstrap_allows_capacitor_origin_by_default(self):
+        response = self.client.get(
+            "/api/app/bootstrap",
+            headers={"Origin": "capacitor://localhost"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "capacitor://localhost")
+        self.assertEqual(response.headers.get("Access-Control-Allow-Credentials"), "true")
+
+    def test_app_bootstrap_rejects_unknown_origin_by_default(self):
+        response = self.client.get(
+            "/api/app/bootstrap",
+            headers={"Origin": "https://not-sdac.example"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.headers.get("Access-Control-Allow-Origin"))
+
 
 if __name__ == "__main__":
     unittest.main()

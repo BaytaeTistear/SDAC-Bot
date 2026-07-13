@@ -1,3 +1,22 @@
+# SDAC Bot Version 4.2.13 Experimental
+
+Release date: 2026-07-13
+
+Update scope: App backend connection fix
+
+Version 4.2.13 is an experimental app connectivity fix for the packaged SDACCompanion shell.
+
+Included in this update:
+- allows the standard Capacitor app origin `capacitor://localhost` to call `/api/app/bootstrap` by default
+- keeps unknown browser origins blocked unless they are explicitly listed in `SDAC_APP_ALLOWED_ORIGINS`
+- adds regression tests for app bootstrap CORS headers
+- updates app docs to clarify that the installed app origin is trusted by default
+- keeps `latest-official` on Version 4.2.0 until an official promotion is requested
+
+Release channel:
+- `version-4.2.13` is this experimental app backend connection fix.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.12 Experimental
 
 Release date: 2026-07-13
@@ -2395,3 +2414,4 @@ Not included:
 - `media/` uploads
 - `backups/`
 - `venv/` or Python cache files
+
