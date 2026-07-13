@@ -220,6 +220,53 @@ async function openExternalBrowser(route: string): Promise<void> {
   window.location.href = url;
 }
 
+
+async function claimAppLogin(ticket: string): Promise<void> {
+  if (!ticket) throw new Error("Missing app login ticket.");
+  const url = absoluteUrl("/api/app/claim-login");
+  if (isNative) {
+    const nativeResponse = await CapacitorHttp.post({
+      url,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json"
+      },
+      data: { ticket },
+      connectTimeout: 15000,
+      readTimeout: 15000,
+      responseType: "json"
+    });
+    if (nativeResponse.status < 200 || nativeResponse.status >= 300 || nativeResponse.data?.ok === false) {
+      throw new Error(nativeResponse.data?.error || `App login claim failed: ${nativeResponse.status}`);
+    }
+    await refreshBootstrap();
+    return;
+  }
+  const response = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ ticket })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.error || `App login claim failed: ${response.status}`);
+  }
+  await refreshBootstrap();
+}
+
+async function handleAppUrlOpen(url: string): Promise<void> {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "sdaccompanion:" || parsed.hostname !== "login-complete") {
+    await refreshBootstrap();
+    return;
+  }
+  await claimAppLogin(parsed.searchParams.get("ticket") || "");
+}
 async function resetAppLogin(): Promise<void> {
   try {
     localStorage.clear();
@@ -344,9 +391,7 @@ loadBootstrap()
   .then(render)
   .catch(renderError);
 
-App.addListener("appUrlOpen", () => {
-  if (currentPayload) {
-    Browser.close().catch(() => undefined);
-    refreshBootstrap().catch(renderError);
-  }
+App.addListener("appUrlOpen", (event) => {
+  Browser.close().catch(() => undefined);
+  handleAppUrlOpen(event.url).catch(renderError);
 });

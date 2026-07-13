@@ -24,6 +24,7 @@ from urllib.parse import urlencode, quote_plus
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from werkzeug.security import check_password_hash, generate_password_hash
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from flask import (
     Flask,
@@ -84,6 +85,8 @@ DISCORD_OAUTH_CLIENT_SECRET = (
 )
 DISCORD_OAUTH_REDIRECT_URI = os.getenv("SDAC_OAUTH_REDIRECT_URI", "")
 DISCORD_ADMINISTRATOR_PERMISSION = 0x8
+APP_LOGIN_TICKET_MAX_AGE_SECONDS = 5 * 60
+APP_LOGIN_DEEP_LINK_SCHEME = os.getenv("SDAC_APP_DEEP_LINK_SCHEME", "sdaccompanion").strip() or "sdaccompanion"
 BASE_DIR = Path(__file__).resolve().parent
 
 
@@ -13144,6 +13147,70 @@ def consume_oauth_state(state):
     return safe_next_url(row["next_url"], url_for("account_home"))
 
 
+
+def app_login_serializer():
+    return URLSafeTimedSerializer(app.secret_key, salt="sdac-app-login-v1")
+
+
+def create_app_login_ticket(username, role, login_role, guild_ids, discord_user_id=""):
+    return app_login_serializer().dumps({
+        "username": username,
+        "role": normalize_role(role),
+        "login_role": normalize_role(login_role),
+        "guild_ids": [str(guild_id) for guild_id in (guild_ids or [])],
+        "discord_user_id": str(discord_user_id or ""),
+        "created_at": utc_now_iso(),
+    })
+
+
+def load_app_login_ticket(ticket):
+    try:
+        payload = app_login_serializer().loads(
+            str(ticket or ""),
+            max_age=APP_LOGIN_TICKET_MAX_AGE_SECONDS,
+        )
+    except SignatureExpired:
+        return None, "That app login link expired. Start Discord login again."
+    except BadSignature:
+        return None, "That app login link was not valid. Start Discord login again."
+    if not isinstance(payload, dict) or not payload.get("username"):
+        return None, "That app login link was incomplete. Start Discord login again."
+    return payload, ""
+
+
+def apply_app_login_ticket(payload):
+    username = str(payload.get("username") or "").strip()
+    account = dashboard_user_by_login(username)
+    if not account or int(account["disabled"] or 0):
+        return False, "That dashboard account is not available."
+    config_data = load_config()
+    role = "bot_owner" if is_bot_owner_username(account["username"]) else normalize_role(account["role"] or payload.get("role") or "user")
+    login_role = dashboard_user_max_role(account["username"], role)
+    scope_ids = parse_guild_scope(payload.get("guild_ids") or account["guild_ids_json"])
+    if role == "bot_owner":
+        scope_ids = sorted(str(guild_id) for guild_id in (config_data.get("guilds") or {}))
+    remember_dashboard_session()
+    session["sdac_account_username"] = account["username"]
+    session["sdac_account_role"] = role
+    session["sdac_account_guild_ids"] = scope_ids
+    session["sdac_oauth_available_guild_ids"] = scope_ids
+    session["sdac_discord_user_id"] = account["discord_user_id"] or payload.get("discord_user_id") or ""
+    if ROLE_LEVELS.get(login_role, 0) >= ROLE_LEVELS["moderator"]:
+        session["sdac_admin"] = True
+        session["sdac_admin_username"] = account["username"]
+        session["sdac_admin_role"] = login_role
+        session["sdac_admin_auth"] = "app-ticket"
+        session["sdac_admin_guild_ids"] = scope_ids
+    return True, "Signed in."
+
+
+def app_login_deep_link(ticket):
+    return f"{APP_LOGIN_DEEP_LINK_SCHEME}://login-complete?ticket={quote_plus(ticket)}"
+
+
+def app_login_requested(next_url):
+    return str(next_url or "").startswith(url_for("app_login_complete"))
+
 def oauth_redirect_uri():
     if DISCORD_OAUTH_REDIRECT_URI:
         return DISCORD_OAUTH_REDIRECT_URI
@@ -19988,7 +20055,7 @@ def app_json_response(payload, status=200):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
         response.headers["Vary"] = "Origin"
     return response
 
@@ -20061,7 +20128,7 @@ def api_app_bootstrap():
         "routes": {
             "home": url_for("app_home"),
             "login": url_for("account_login"),
-            "discord_login": url_for("account_oauth_start", next=url_for("app_home")),
+            "discord_login": url_for("account_oauth_start", next=url_for("app_login_complete"), app="1"),
             "account": url_for("account_home"),
             "logout": url_for("account_logout"),
             "submissions": url_for("index"),
@@ -20573,6 +20640,70 @@ def download_backup(name):
     )
 
 
+
+
+APP_LOGIN_COMPLETE_HTML = """
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Return to SDAC</title>
+  <style>
+    body { background: #0f172a; color: #f8fafc; font-family: Arial, sans-serif; margin: 0; min-height: 100vh; display: grid; place-items: center; }
+    main { max-width: 480px; padding: 24px; text-align: center; }
+    a { background: #2563eb; border-radius: 8px; color: #fff; display: inline-block; font-weight: 700; margin-top: 16px; padding: 12px 16px; text-decoration: none; }
+    p { color: #cbd5e1; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Discord login complete</h1>
+    <p>Return to the SDAC app to finish signing in.</p>
+    <a href="{{ deep_link }}">Open SDAC App</a>
+  </main>
+  <script>window.location.href = {{ deep_link_json }};</script>
+</body>
+</html>
+"""
+
+
+@app.route("/app/login/complete")
+def app_login_complete():
+    if not is_account_logged_in():
+        return redirect(url_for("account_login", next=request.full_path))
+    config_data = load_config()
+    username = current_account_username()
+    role = normalize_role(session.get("sdac_account_role") or "user")
+    login_role = dashboard_user_max_role(username, role)
+    scope_ids = current_account_allowed_guild_ids(config_data)
+    ticket = create_app_login_ticket(
+        username,
+        role,
+        login_role,
+        scope_ids,
+        session.get("sdac_discord_user_id") or "",
+    )
+    deep_link = app_login_deep_link(ticket)
+    return render_template_string(
+        APP_LOGIN_COMPLETE_HTML,
+        deep_link=deep_link,
+        deep_link_json=json.dumps(deep_link),
+    )
+
+
+@app.route("/api/app/claim-login", methods=["POST", "OPTIONS"])
+def api_app_claim_login():
+    if request.method == "OPTIONS":
+        return app_json_response({})
+    payload = request.get_json(silent=True) or {}
+    ticket_payload, error = load_app_login_ticket(payload.get("ticket") or request.values.get("ticket"))
+    if error:
+        return app_json_response({"ok": False, "error": error}, 400)
+    ok, message = apply_app_login_ticket(ticket_payload)
+    if not ok:
+        return app_json_response({"ok": False, "error": message}, 403)
+    return app_json_response({"ok": True, "message": message})
 
 @app.route("/app")
 def app_home():

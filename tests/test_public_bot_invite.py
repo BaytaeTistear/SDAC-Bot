@@ -111,5 +111,27 @@ class PublicBotInviteTests(unittest.TestCase):
         self.assertEqual(query.get("prompt"), ["none"])
 
 
+    def test_app_bootstrap_discord_login_uses_app_handoff(self):
+        with mock.patch.object(dashboard, "DISCORD_OAUTH_CLIENT_ID", "1234567890"), mock.patch.object(dashboard, "DISCORD_OAUTH_CLIENT_SECRET", "secret"):
+            response = self.client.get("/api/app/bootstrap")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIn("/account/oauth/start", payload["routes"]["discord_login"])
+        self.assertIn("next=/app/login/complete", payload["routes"]["discord_login"])
+        self.assertIn("app=1", payload["routes"]["discord_login"])
+
+    def test_app_claim_login_rejects_bad_ticket(self):
+        response = self.client.post("/api/app/claim-login", json={"ticket": "bad-ticket"})
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.get_json()["ok"])
+
+    def test_app_claim_login_options_allows_post(self):
+        response = self.client.open(
+            "/api/app/claim-login",
+            method="OPTIONS",
+            headers={"Origin": "capacitor://localhost"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("POST", response.headers.get("Access-Control-Allow-Methods", ""))
 if __name__ == "__main__":
     unittest.main()

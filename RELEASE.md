@@ -1,3 +1,22 @@
+# SDAC Bot Version 4.2.17 Experimental
+
+Release date: 2026-07-13
+
+Update scope: Android app Discord login handoff
+
+Version 4.2.17 is an experimental app login fix for Android browser cookie isolation and Forbidden pages after Discord OAuth.
+
+Included in this update:
+- adds an app-specific Discord login completion page that returns to the Android app through `sdaccompanion://login-complete`
+- adds a signed short-lived app login ticket claim endpoint for the companion app
+- updates the Android app to claim the ticket and refresh its own dashboard session
+- registers the Android deep-link intent for the app login callback
+- keeps `latest-official` unchanged until an official promotion is requested
+
+Release channel:
+- `version-4.2.17` is this experimental Android login handoff fix.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.16 Experimental
 
 Release date: 2026-07-13
