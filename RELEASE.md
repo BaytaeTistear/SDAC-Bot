@@ -1,3 +1,21 @@
+# SDAC Bot Version 4.2.15 Experimental
+
+Release date: 2026-07-13
+
+Update scope: Discord OAuth mobile login fix
+
+Version 4.2.15 is an experimental dashboard/app login fix for Discord OAuth opening in mobile app browser flows.
+
+Included in this update:
+- removes `prompt=none` from normal Discord OAuth login starts so Discord can show the interactive login/authorize page on mobile
+- keeps explicit silent OAuth available only when requested with `silent=1`
+- adds regression tests for the generated Discord OAuth authorize URL
+- keeps `latest-official` on Version 4.2.0 until an official promotion is requested
+
+Release channel:
+- `version-4.2.15` is this experimental Discord OAuth mobile login fix.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.14 Experimental
 
 Release date: 2026-07-13
@@ -2433,5 +2451,6 @@ Not included:
 - `media/` uploads
 - `backups/`
 - `venv/` or Python cache files
+
 
 

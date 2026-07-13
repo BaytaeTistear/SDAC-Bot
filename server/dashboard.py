@@ -13703,17 +13703,16 @@ def account_oauth_start():
     session["sdac_account_oauth_state"] = state
     session["sdac_account_oauth_next"] = next_url
     store_oauth_state(state, next_url)
-    authorize_url = (
-        "https://discord.com/api/oauth2/authorize?"
-        + urlencode({
-            "client_id": DISCORD_OAUTH_CLIENT_ID,
-            "redirect_uri": url_for("account_oauth_callback", _external=True),
-            "response_type": "code",
-            "scope": "identify guilds",
-            "state": state,
-            "prompt": "none",
-        })
-    )
+    authorize_params = {
+        "client_id": DISCORD_OAUTH_CLIENT_ID,
+        "redirect_uri": url_for("account_oauth_callback", _external=True),
+        "response_type": "code",
+        "scope": "identify guilds",
+        "state": state,
+    }
+    if request.args.get("silent") == "1":
+        authorize_params["prompt"] = "none"
+    authorize_url = "https://discord.com/api/oauth2/authorize?" + urlencode(authorize_params)
     return redirect(authorize_url)
 
 
@@ -20887,6 +20886,7 @@ def delete_submission(submission_id):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 

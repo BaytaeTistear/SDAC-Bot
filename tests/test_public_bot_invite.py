@@ -1,5 +1,6 @@
 import os
 import unittest
+from urllib.parse import parse_qs, urlparse
 from unittest import mock
 
 import dashboard
@@ -91,6 +92,23 @@ class PublicBotInviteTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.headers.get("Access-Control-Allow-Origin"))
+
+    def test_account_oauth_start_is_interactive_by_default(self):
+        with mock.patch.object(dashboard, "DISCORD_OAUTH_CLIENT_ID", "1234567890"), mock.patch.object(dashboard, "DISCORD_OAUTH_CLIENT_SECRET", "secret"):
+            response = self.client.get("/account/oauth/start?next=/app")
+        self.assertEqual(response.status_code, 302)
+        location = response.headers["Location"]
+        query = parse_qs(urlparse(location).query)
+        self.assertEqual(query["client_id"], ["1234567890"])
+        self.assertEqual(query["redirect_uri"], ["http://localhost/account/oauth/callback"])
+        self.assertNotIn("prompt", query)
+
+    def test_account_oauth_start_supports_explicit_silent_prompt(self):
+        with mock.patch.object(dashboard, "DISCORD_OAUTH_CLIENT_ID", "1234567890"), mock.patch.object(dashboard, "DISCORD_OAUTH_CLIENT_SECRET", "secret"):
+            response = self.client.get("/account/oauth/start?next=/app&silent=1")
+        self.assertEqual(response.status_code, 302)
+        query = parse_qs(urlparse(response.headers["Location"]).query)
+        self.assertEqual(query.get("prompt"), ["none"])
 
 
 if __name__ == "__main__":
