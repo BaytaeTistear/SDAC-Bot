@@ -111,6 +111,12 @@ class PublicBotInviteTests(unittest.TestCase):
         self.assertEqual(query.get("prompt"), ["none"])
 
 
+    def test_app_sidebar_hides_discord_oauth_link(self):
+        response = self.client.get("/?sdac_app=1")
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("Use the app Login with Discord button above the dashboard.", body)
+        self.assertNotIn(">Login with Discord</a>", body)
     def test_app_bootstrap_discord_login_uses_app_handoff(self):
         with mock.patch.object(dashboard, "DISCORD_OAUTH_CLIENT_ID", "1234567890"), mock.patch.object(dashboard, "DISCORD_OAUTH_CLIENT_SECRET", "secret"):
             response = self.client.get("/api/app/bootstrap")

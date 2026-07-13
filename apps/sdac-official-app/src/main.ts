@@ -103,6 +103,12 @@ function routeButton(label: string, route: string, extraClass = ""): string {
   return `<a class="${escapeHtml(className)}" href="${escapeHtml(absoluteUrl(route))}">${escapeHtml(label)}</a>`;
 }
 
+
+function appFrameUrl(route: string): string {
+  const url = new URL(absoluteUrl(route));
+  url.searchParams.set("sdac_app", "1");
+  return url.toString();
+}
 function appButton(label: string, action: string, extraClass = ""): string {
   const className = `action ${extraClass}`.trim();
   return `<button class="${escapeHtml(className)}" type="button" data-app-action="${escapeHtml(action)}">${escapeHtml(label)}</button>`;
@@ -347,7 +353,7 @@ function render(payload: BootstrapPayload): void {
       </section>
       ${releaseNotice(payload)}
       ${diagnosticsPanel(payload)}
-      <iframe title="SDAC Dashboard" src="${escapeHtml(absoluteUrl(payload.app.entry_url))}"></iframe>
+      <iframe title="SDAC Dashboard" src="${escapeHtml(appFrameUrl(payload.app.entry_url))}"></iframe>
     </main>
   `;
 

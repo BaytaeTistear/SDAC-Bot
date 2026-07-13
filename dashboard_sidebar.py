@@ -244,6 +244,17 @@ def should_render_admin_sidebar(is_admin_logged_in, admin_key):
     return should_render_public_sidebar()
 
 
+
+def is_native_app_view():
+    if request.args.get("sdac_app") == "1":
+        session["sdac_native_app"] = "1"
+        return True
+    referrer = (request.referrer or "").strip().lower()
+    if referrer.startswith("capacitor://localhost") or referrer.startswith("ionic://localhost"):
+        session["sdac_native_app"] = "1"
+        return True
+    return session.get("sdac_native_app") == "1"
+
 def admin_sidebar_html(
     *,
     admin_key,
@@ -341,7 +352,7 @@ def admin_sidebar_html(
         {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_access_debug", next=request.full_path), quote=True) + '">Access Debug</a>') if is_account_logged_in() else ''}
         {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_refresh_discord", next=request.full_path), quote=True) + '">Refresh Discord Servers</a>') if is_account_logged_in() else ''}
         {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_server", next=request.full_path), quote=True) + '">Change Server</a>') if is_account_logged_in() else ''}
-        {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_oauth_start", next=request.full_path), quote=True) + '">Login with Discord</a>') if not is_account_logged_in() else ''}
+        {('<div class="sdac-sidebar-warning">Use the app Login with Discord button above the dashboard.</div>' if is_native_app_view() else '<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_oauth_start", next=request.full_path), quote=True) + '">Login with Discord</a>') if not is_account_logged_in() else ''}
         {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_register"), quote=True) + '">Create Account</a>') if not is_account_logged_in() else ''}
         {('<a class="sdac-sidebar-link" href="' + html.escape(admin_url("admin_logout"), quote=True) + '">Logout</a>') if is_admin_logged_in() else ''}
         {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_logout"), quote=True) + '">Logout</a>') if is_account_logged_in() and not is_admin_logged_in() else ''}

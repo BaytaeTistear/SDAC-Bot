@@ -20707,11 +20707,15 @@ def api_app_claim_login():
 
 @app.route("/app")
 def app_home():
+    app_marker = request.args.get("sdac_app") == "1" or session.get("sdac_native_app") == "1"
+    if app_marker:
+        session["sdac_native_app"] = "1"
+    marker_args = {"sdac_app": "1"} if app_marker else {}
     if is_admin_logged_in():
-        return redirect(url_for("admin_staff_home", key=ADMIN_KEY))
+        return redirect(url_for("admin_staff_home", key=ADMIN_KEY, **marker_args))
     if is_account_logged_in():
-        return redirect(url_for("account_home"))
-    return redirect(url_for("index"))
+        return redirect(url_for("account_home", **marker_args))
+    return redirect(url_for("index", **marker_args))
 
 
 @app.route("/manifest.webmanifest")

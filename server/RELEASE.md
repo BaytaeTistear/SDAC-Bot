@@ -1,3 +1,22 @@
+# SDAC Bot Version 4.2.18 Experimental
+
+Release date: 2026-07-13
+
+Update scope: App sidebar Discord login guard
+
+Version 4.2.18 is an experimental app fix for the dashboard sidebar Discord login link inside the Android app.
+
+Included in this update:
+- marks the dashboard iframe as an SDAC app view
+- preserves that app-view marker through `/app` redirects
+- replaces the sidebar Discord OAuth link in app view with guidance to use the native app login button
+- keeps the main app Login with Discord button on the working native handoff flow
+- keeps `latest-official` unchanged until an official promotion is requested
+
+Release channel:
+- `version-4.2.18` is this experimental app sidebar login fix.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.17 Experimental
 
 Release date: 2026-07-13
