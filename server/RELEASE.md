@@ -1,3 +1,23 @@
+# SDAC Bot Version 4.2.5 Experimental
+
+Release date: 2026-07-13
+
+Update scope: Android APK dependency compatibility
+
+Version 4.2.5 is an experimental APK packaging fix focused on satisfying the AndroidX Browser requirements used by the SDACCompanion Capacitor app build.
+
+Included in this update:
+- updates the SDACCompanion Android Gradle plugin from 8.7.3 to 8.9.1
+- updates the Android Gradle wrapper from Gradle 8.9 to Gradle 8.11.1
+- updates the app compile SDK from 34 to 36 for `androidx.browser:browser:1.9.0`
+- keeps target SDK at 34 so runtime behavior is not changed by this packaging fix
+- keeps the release workflow building `SDACCompanion-Android-Debug.apk` and its SHA256 checksum
+- keeps `latest-official` on Version 4.2.0 until an official promotion is requested
+
+Release channel:
+- `version-4.2.5` is this experimental Android APK dependency compatibility update.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.4 Experimental
 
 Release date: 2026-07-13

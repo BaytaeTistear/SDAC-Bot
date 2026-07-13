@@ -164,6 +164,9 @@ jobs:
           $text = Get-Content -LiteralPath $path -Raw
           $text = $text -replace "JavaVersion.VERSION_21", "JavaVersion.VERSION_17"
           Set-Content -LiteralPath $path -Value $text -NoNewline
+      - name: Install Android SDK platform
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - name: Build debug APK
         working-directory: apps/sdac-official-app/android
         run: |
