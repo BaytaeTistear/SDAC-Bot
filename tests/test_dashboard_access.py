@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 
@@ -54,6 +55,49 @@ class DashboardAccessTests(unittest.TestCase):
                 source="oauth",
                 preserve_existing_roles=False,
             )
+
+    def test_fallback_secret_key_is_reused_from_local_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            secret_file = Path(tmpdir) / ".sdac_secret_key"
+            with mock.patch.dict(os.environ, {"SDAC_SECRET_KEY": "", "SDAC_SECRET_KEY_FILE": str(secret_file)}, clear=False):
+                first_secret = self.dashboard.load_dashboard_secret_key(Path(tmpdir))
+                second_secret = self.dashboard.load_dashboard_secret_key(Path(tmpdir))
+
+        self.assertTrue(first_secret)
+        self.assertEqual(first_secret, second_secret)
+
+    def test_admin_password_login_sets_persistent_cookie(self):
+        password = "correct horse battery staple"
+        with self.dashboard.database() as connection:
+            connection.execute(
+                """
+                INSERT INTO dashboard_admin_users (
+                    username, email, display_name, password_hash, role,
+                    disabled, created_at, updated_at, guild_ids_json
+                )
+                VALUES (?, '', 'Remember Admin', ?, 'bot_owner', 0, '', '', '[]')
+                """,
+                ("remember-admin", self.dashboard.generate_password_hash(password)),
+            )
+
+        with self.dashboard.app.test_client() as client:
+            with client.session_transaction() as session:
+                session["csrf_token"] = "login-token"
+            response = client.post(
+                f"/admin/login?key={self.dashboard.ADMIN_KEY}",
+                data={
+                    "username": "remember-admin",
+                    "password": password,
+                    "csrf_token": "login-token",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        cookie_header = response.headers.get("Set-Cookie", "")
+        self.assertIn("Expires=", cookie_header)
+        self.assertIn("HttpOnly", cookie_header)
+        self.assertIn("SameSite=Lax", cookie_header)
 
     def test_account_selector_uses_access_rows_not_public_gallery(self):
         with self.dashboard.app.test_request_context("/"):

@@ -84,8 +84,33 @@ DISCORD_OAUTH_CLIENT_SECRET = (
 )
 DISCORD_OAUTH_REDIRECT_URI = os.getenv("SDAC_OAUTH_REDIRECT_URI", "")
 DISCORD_ADMINISTRATOR_PERMISSION = 0x8
-app.secret_key = os.getenv("SDAC_SECRET_KEY", secrets.token_hex(32))
 BASE_DIR = Path(__file__).resolve().parent
+
+
+def load_dashboard_secret_key(base_dir=BASE_DIR):
+    configured_secret = os.getenv("SDAC_SECRET_KEY", "").strip()
+    if configured_secret:
+        return configured_secret
+    secret_file = Path(os.getenv("SDAC_SECRET_KEY_FILE", base_dir / ".sdac_secret_key"))
+    try:
+        if secret_file.exists():
+            saved_secret = secret_file.read_text(encoding="utf-8").strip()
+            if saved_secret:
+                return saved_secret
+        generated_secret = secrets.token_urlsafe(48)
+        secret_file.parent.mkdir(parents=True, exist_ok=True)
+        secret_file.write_text(generated_secret + "\n", encoding="utf-8")
+        return generated_secret
+    except OSError:
+        return secrets.token_urlsafe(48)
+
+
+app.secret_key = load_dashboard_secret_key()
+app.config.update(
+    PERMANENT_SESSION_LIFETIME=timedelta(days=int(os.getenv("SDAC_SESSION_DAYS", "30"))),
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
 DB_FILE = Path(os.getenv("SDAC_DB_FILE", BASE_DIR / "sdac.db"))
 CONFIG_FILE = Path(os.getenv("SDAC_CONFIG_FILE", BASE_DIR / "config.json"))
 MEDIA_DIR = Path(os.getenv("SDAC_MEDIA_DIR", BASE_DIR / "media")).resolve()
@@ -11693,6 +11718,11 @@ def is_bot_owner_username(username):
         return False
 
 
+def remember_dashboard_session():
+    session.permanent = True
+    session.modified = True
+
+
 def is_admin_logged_in():
     return bool(session.get("sdac_admin"))
 
@@ -13282,6 +13312,7 @@ def admin_login():
 
             if login_ok and ROLE_LEVELS.get(role, 0) >= ROLE_LEVELS["moderator"]:
                 clear_login_failures(remote_key)
+                remember_dashboard_session()
                 session["sdac_admin"] = True
                 session["sdac_admin_username"] = user["username"]
                 session["sdac_admin_role"] = role
@@ -13426,6 +13457,7 @@ def account_register():
                     account_username,
                     f"User account registered with email {normalized_email}.",
                 )
+            remember_dashboard_session()
             session["sdac_account_username"] = account_username
             session["sdac_account_role"] = "user"
             session["sdac_discord_user_id"] = normalized_discord_user_id
@@ -13469,6 +13501,7 @@ def account_login():
                 and check_password_hash(account["password_hash"], password)
             ):
                 clear_login_failures(remote_key)
+                remember_dashboard_session()
                 session["sdac_account_username"] = account["username"]
                 account_role = "bot_owner" if is_bot_owner_username(account["username"]) else normalize_role(account["role"])
                 login_role = dashboard_user_max_role(account["username"], account_role)
@@ -13531,6 +13564,7 @@ def account_oauth_start():
             next=request.args.get("next") or url_for("account_home"),
         ))
     state = secrets.token_urlsafe(24)
+    remember_dashboard_session()
     session["sdac_account_oauth_state"] = state
     session["sdac_account_oauth_next"] = request.args.get("next") or url_for("account_home")
     authorize_url = (
@@ -13626,6 +13660,7 @@ def account_oauth_callback():
             account["username"],
             "User account Discord OAuth login succeeded.",
         )
+    remember_dashboard_session()
     session["sdac_account_username"] = account["username"]
     session["sdac_account_role"] = role
     session["sdac_account_guild_ids"] = scope_ids

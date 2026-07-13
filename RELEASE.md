@@ -1,3 +1,23 @@
+# SDAC Bot Version 4.2.1 Experimental
+
+Release date: 2026-07-13
+
+Update scope: Remembered dashboard logins
+
+Version 4.2.1 is an experimental login stability update focused on keeping Discord and admin dashboard sessions remembered across browser visits and dashboard restarts.
+
+Included in this update:
+- stores a stable local dashboard secret key when `SDAC_SECRET_KEY` is not configured
+- keeps `SDAC_SECRET_KEY` support as the preferred production override
+- marks successful admin password, account password, account registration, and Discord OAuth logins as persistent sessions
+- sets dashboard session cookies to 30 days by default with HttpOnly and SameSite=Lax protections
+- ignores the generated `.sdac_secret_key` file so local session secrets are not committed
+- adds regression coverage for fallback secret reuse and persistent admin login cookies
+
+Release channel:
+- `version-4.2.1` is this experimental remembered-login update.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.0 Official
 
 Release date: 2026-07-12
