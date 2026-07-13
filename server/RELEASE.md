@@ -1,3 +1,22 @@
+# SDAC Bot Version 4.2.7 Experimental
+
+Release date: 2026-07-13
+
+Update scope: Android Java toolchain fix
+
+Version 4.2.7 is an experimental APK packaging fix focused on matching the GitHub release runner Java toolchain to the Capacitor 8 Android build requirements.
+
+Included in this update:
+- updates the APK build workflow from Java 17 to Java 21 so Capacitor Android can compile its Java 21 sources
+- keeps the Android SDK 36 install step from the prior workflow fix
+- keeps Android Gradle plugin 8.9.1, Gradle 8.11.1, and compile SDK 36
+- keeps the release workflow building `SDACCompanion-Android-Debug.apk` and its SHA256 checksum
+- keeps `latest-official` on Version 4.2.0 until an official promotion is requested
+
+Release channel:
+- `version-4.2.7` is this experimental Android Java toolchain fix.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.6 Experimental
 
 Release date: 2026-07-13
