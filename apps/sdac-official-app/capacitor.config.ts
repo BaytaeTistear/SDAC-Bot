@@ -1,16 +1,16 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
-const dashboardUrl = process.env.SDAC_APP_DASHBOARD_URL || "https://freethefishies.us.to";
+const directDashboardUrl = process.env.SDAC_APP_DIRECT_URL || "";
 const appName = process.env.SDAC_APP_NAME || "SDACCompanion";
 
 const config: CapacitorConfig = {
   appId: process.env.SDAC_APP_ID || "app.sdac.companion",
   appName,
   webDir: "dist",
-  server: dashboardUrl
+  server: directDashboardUrl
     ? {
-        url: dashboardUrl,
-        cleartext: dashboardUrl.startsWith("http://")
+        url: directDashboardUrl,
+        cleartext: directDashboardUrl.startsWith("http://")
       }
     : undefined,
   plugins: {

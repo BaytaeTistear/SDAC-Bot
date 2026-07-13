@@ -1,3 +1,25 @@
+# SDAC Bot Version 4.2.12 Experimental
+
+Release date: 2026-07-13
+
+Update scope: Native app login and release readiness polish
+
+Version 4.2.12 is an experimental app/dashboard polish update focused on making the installed app easier to recover, easier to diagnose, and safer to prepare for a full release.
+
+Included in this update:
+- adds native in-app browser handling for Discord login from the SDACCompanion shell
+- adds Reset App Login and App Diagnostics panels for app session recovery and troubleshooting
+- adds a real app update notice using latest experimental and latest official release data
+- changes native builds to use the packaged app shell by default, with optional direct-dashboard mode via SDAC_APP_DIRECT_URL
+- adds a bot-owner/admin Release Checklist page for release readiness checks
+- expands the Invite Bot page into a guided setup flow with OAuth details, permissions, and next-step links
+- adds dashboard page-sweep coverage for the release checklist and horizontal overflow layout guards
+- keeps `latest-official` on Version 4.2.0 until an official promotion is requested
+
+Release channel:
+- `version-4.2.12` is this experimental native app login and readiness polish update.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.11 Experimental
 
 Release date: 2026-07-13

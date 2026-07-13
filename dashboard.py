@@ -539,6 +539,7 @@ ADMIN_ENDPOINT_GUILD_ROLE_REQUIREMENTS = {
     "admin_jobs": "admin",
     "admin_privacy": "admin",
     "admin_onboarding": "admin",
+    "admin_release_checklist": "admin",
     "admin_setup_checklist": "owner",
     "admin_category_manager": "owner",
     "admin_permission_health": "owner",
@@ -4900,6 +4901,68 @@ RELEASES_HTML = """
 """
 
 
+
+RELEASE_CHECKLIST_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Release Checklist</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
+        main { margin: 0 auto; width: min(100%, 1000px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        .ok { color: #63c174; font-weight: bold; }
+        .bad { color: #e45d68; font-weight: bold; }
+        .warn { color: #f5c451; font-weight: bold; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; overflow-wrap: anywhere; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Release Checklist</h1>
+    <nav>
+        <a href="{{ url_for('admin_releases', key=admin_key) }}">Releases</a>
+        <a href="{{ url_for('admin_production_health', key=admin_key) }}">Production Health</a>
+        <a href="{{ url_for('admin_install_doctor', key=admin_key) }}">Install Doctor</a>
+        <a href="{{ url_for('bot_invite') }}">Invite Flow</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+    <section class="panel">
+        <h2>Ready Score: {{ score }} / {{ max_score }}</h2>
+        <p class="muted">Use this before promoting an experimental build to an official or full release.</p>
+        <table>
+            <thead><tr><th>Area</th><th>Status</th><th>What To Check</th></tr></thead>
+            <tbody>
+                {% for item in checklist %}
+                    <tr>
+                        <td>{{ item.label }}</td>
+                        <td class="{{ 'ok' if item.ok else ('warn' if item.warning else 'bad') }}">{{ item.state }}</td>
+                        <td>{{ item.detail }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    <section class="panel">
+        <h2>Release Channels</h2>
+        <p>Installed: <code>{{ release.installed_version }}</code></p>
+        <p>Latest experimental: <code>{{ release.experimental_version }}</code></p>
+        <p>Latest official: <code>{{ release.official_version }}</code></p>
+        <p>Configured update tag: <code>{{ release.configured_tag }}</code></p>
+    </section>
+</main>
+</body>
+</html>
+"""
 CONFIG_DIFF_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -5337,7 +5400,7 @@ ADMIN_SIMPLE_TOOLS_HTML = """
     <nav>
         <a href="{{ url_for('admin_staff_home', key=admin_key) }}">Staff Home</a>
         <a href="{{ url_for('admin_moderation', key=admin_key) }}">Moderation</a>
-        <a href="{{ url_for('admin_setup_checklist', key=admin_key) }}">Setup Checklist</a>
+        <a href="{{ url_for('admin_setup_checklist') }}">Setup Checklist</a>
         <a href="{{ url_for('admin_category_manager', key=admin_key) }}">Categories</a>
         <a href="{{ url_for('admin_permission_health', key=admin_key) }}">Permissions</a>
         <a href="{{ url_for('admin_global_control', key=admin_key) }}">Global Control</a>
@@ -6665,14 +6728,15 @@ BOT_INVITE_HTML = """
 
     <section class="grid">
         <div class="panel">
-            <h2>Default Scopes</h2>
+            <h2>OAuth Details</h2>
             <ul>
-                <li><code>bot</code> lets SDAC join the server.</li>
-                <li><code>applications.commands</code> installs slash commands like <code>/submit</code> and <code>/setup</code>.</li>
+                <li>Client ID: <code>{{ app_info.client_id or "Not configured" }}</code></li>
+                <li>Scopes: <code>{{ "bot applications.commands" }}</code></li>
+                <li>Permissions: <code>{{ app_info.permissions or "274878221376" }}</code></li>
             </ul>
         </div>
         <div class="panel">
-            <h2>Recommended Permissions</h2>
+            <h2>Required Access</h2>
             <ul>
                 <li>Send Messages, Embed Links, Attach Files, Read Message History.</li>
                 <li>Manage Messages for moderation cleanup workflows.</li>
@@ -6682,13 +6746,14 @@ BOT_INVITE_HTML = """
     </section>
 
     <section class="panel">
-        <h2>After Install</h2>
+        <h2>Guided Setup Flow</h2>
         <ol>
-            <li>Run <code>/setup</code> in the server.</li>
-            <li>Create or choose submit, approval, repost, game, and error channels.</li>
-            <li>Run <code>/repairpermissions</code> if the bot cannot see or post in a channel.</li>
-            <li>Run <code>/setuptest</code> or <code>/diagnose</code> before opening submissions to users.</li>
-            <li>Open the dashboard setup checklist for a server-owner readiness view.</li>
+            <li>Invite the bot with the link above.</li>
+            <li>In Discord, run <code>/sdac</code> to open the guided control center.</li>
+            <li>Choose Setup and confirm submit, approval, repost, game, and error channels.</li>
+            <li>Optionally choose the server command name, bot display name, and bot image.</li>
+            <li>Run Sync Commands if Discord has stale slash commands.</li>
+            <li>Open <a href="{{ url_for('admin_setup_checklist') }}">Setup Checklist</a> and <a href="{{ url_for('admin_release_checklist') }}">Release Checklist</a> before launch.</li>
         </ol>
     </section>
 
@@ -17178,6 +17243,59 @@ def admin_polls():
     )
 
 
+
+def release_checklist_rows():
+    config_data = load_config()
+    release = release_status()
+    production = production_health_report(config_data)
+    app_info = public_app_metadata()
+    bot_status = read_bot_status()
+    backups = recent_database_backups()
+    warnings = security_warnings() + storage_warnings(config_data)
+    official_version = release.get("official_version") or "unknown"
+    experimental_version = release.get("experimental_version") or "unknown"
+    installed_version = release.get("installed_version") or release.get("installed") or "development"
+    checklist = []
+
+    def add(label, ok, detail, state=None, warning=False):
+        checklist.append({
+            "label": label,
+            "ok": bool(ok),
+            "warning": bool(warning and not ok),
+            "state": state or ("Ready" if ok else "Needs attention"),
+            "detail": detail,
+        })
+
+    add("Production health", production["score"] == production["max_score"], f"Health score {production['score']} / {production['max_score']}.", warning=production["score"] >= max(1, production["max_score"] - 2))
+    add("Discord OAuth", oauth_enabled(), "Discord login client ID and secret are configured." if oauth_enabled() else "Set SDAC_DISCORD_CLIENT_ID and SDAC_DISCORD_CLIENT_SECRET.")
+    add("Invite link", bool(app_info.get("invite_url")), "Public invite URL is available." if app_info.get("invite_url") else "Set SDAC_BOT_CLIENT_ID or DISCORD_CLIENT_ID.")
+    add("Public links", bool(app_info.get("github_url") and app_info.get("wiki_url") and app_info.get("privacy_url") and app_info.get("terms_url")), "GitHub, wiki, privacy, and terms links are exposed to users.")
+    add("Bot heartbeat", bool(bot_status.get("fresh") or bot_status.get("event")), bot_status.get("message") or "No bot heartbeat was recorded.", warning=bool(bot_status.get("event")))
+    add("Backups", bool(backups), backups[0]["modified"] if backups else "No local database backup found.")
+    add("Release channel", bool(release.get("configured_tag")), f"Configured tag: {release.get('configured_tag') or 'unknown'}.")
+    add("Experimental visible", experimental_version not in {"", "unknown"}, f"Latest experimental: {experimental_version}.")
+    add("Official visible", official_version not in {"", "unknown"}, f"Latest official: {official_version}.")
+    add("Installed release", installed_version not in {"", "development", "unknown"}, f"Installed release: {installed_version}.", warning=installed_version == "development")
+    add("Security warnings", not warnings, "No security warnings." if not warnings else "; ".join(warnings), warning=bool(warnings))
+    return checklist
+
+
+@app.route("/admin/release-checklist")
+def admin_release_checklist():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+    checklist = release_checklist_rows()
+    ready = sum(1 for item in checklist if item["ok"])
+    return render_template_string(
+        RELEASE_CHECKLIST_HTML,
+        admin_key=ADMIN_KEY,
+        checklist=checklist,
+        max_score=len(checklist),
+        release=release_status(),
+        score=ready,
+    )
+
 @app.route("/admin/releases", methods=["GET", "POST"])
 def admin_releases():
     login_response = require_admin_login("admin")
@@ -19884,6 +20002,18 @@ def api_app_bootstrap():
     else:
         server_rows = guild_options(config_data, public_only=True)
     app_info = public_app_metadata()
+    release = release_status()
+    installed_version = release.get("installed_version") or release.get("installed") or os.getenv("SDAC_RELEASE") or "development"
+    official_version = release.get("official_version") or "unknown"
+    experimental_version = release.get("experimental_version") or "unknown"
+    configured_tag = release.get("configured_tag") or os.getenv("SDAC_RELEASE_TAG") or "latest-official"
+    target_version = official_version if configured_tag == "latest-official" else experimental_version
+    update_available = bool(
+        target_version
+        and target_version not in {"unknown", installed_version}
+        and installed_version not in {"development", "unknown", ""}
+    )
+    session_cookie_name = app.config.get("SESSION_COOKIE_NAME", "session")
     payload = {
         "app": {
             "name": "SDAC",
@@ -19899,6 +20029,7 @@ def api_app_bootstrap():
             "terms_url": app_info["terms_url"],
             "github_url": app_info["github_url"],
             "wiki_url": app_info["wiki_url"],
+            "version": os.getenv("SDAC_APP_VERSION") or installed_version,
         },
         "auth": {
             "account_logged_in": account_logged_in,
@@ -19921,6 +20052,7 @@ def api_app_bootstrap():
             "login": url_for("account_login"),
             "discord_login": url_for("account_oauth_start", next=url_for("app_home")),
             "account": url_for("account_home"),
+            "logout": url_for("account_logout"),
             "submissions": url_for("index"),
             "my_submissions": url_for("my_submissions"),
             "guessing": url_for("guessing_leaderboard"),
@@ -19932,6 +20064,7 @@ def api_app_bootstrap():
             "terms": url_for("public_terms"),
             "admin": url_for("admin_staff_home") if admin_logged_in else url_for("admin_login"),
             "admin_releases": url_for("admin_releases") if admin_logged_in else url_for("admin_login"),
+            "release_checklist": url_for("admin_release_checklist") if admin_logged_in else url_for("admin_login"),
             "admin_theme": url_for("admin_theme") if admin_logged_in else url_for("admin_login"),
             "admin_layout": url_for("admin_layout") if admin_logged_in else url_for("admin_login"),
         },
@@ -19942,11 +20075,25 @@ def api_app_bootstrap():
         },
         "release": {
             "installed": os.getenv("SDAC_RELEASE") or "development",
-            "configured_tag": os.getenv("SDAC_RELEASE_TAG") or "latest-official",
+            "configured_tag": configured_tag,
+            "installed_version": installed_version,
+            "official_version": official_version,
+            "experimental_version": experimental_version,
+            "official_tag": (release.get("official") or {}).get("tag") or "unknown",
+            "experimental_tag": (release.get("experimental") or {}).get("tag") or "unknown",
+            "update_available": update_available,
+            "recommended_channel": "latest-official" if configured_tag == "latest-official" else "latest-experimental",
+        },
+        "diagnostics": {
+            "dashboard_url": request.host_url.rstrip("/"),
+            "native": request.headers.get("X-Requested-With", "").startswith("app."),
+            "platform": request.headers.get("Sec-CH-UA-Platform", "web").strip('"') or "web",
+            "session_cookie_seen": bool(request.cookies.get(session_cookie_name)),
+            "account_session_seen": account_logged_in,
+            "admin_session_seen": admin_logged_in,
         },
     }
     return app_json_response(payload)
-
 
 @app.route("/server/<guild_id>")
 def server_profile(guild_id):
@@ -20728,3 +20875,11 @@ def delete_submission(submission_id):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
+
+
+
+
+
+
+

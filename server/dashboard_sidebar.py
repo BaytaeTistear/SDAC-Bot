@@ -61,6 +61,7 @@ ADMIN_SECTIONS = [
             ("Maintenance", "admin_maintenance", {}),
             ("Optimization", "admin_optimization", {}),
             ("Releases", "admin_releases", {}),
+            ("Release Checklist", "admin_release_checklist", {}),
             ("Production", "admin_production_health", {}),
             ("Install Doctor", "admin_install_doctor", {}),
             ("Approvals", "admin_approvals", {}),
@@ -359,3 +360,5 @@ def admin_sidebar_html(
 }}());
 </script>
 """
+
+

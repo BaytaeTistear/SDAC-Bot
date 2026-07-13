@@ -36,6 +36,16 @@ class PublicBotInviteTests(unittest.TestCase):
         self.assertIn("discord.com/oauth2/authorize", body)
         self.assertIn("applications.commands", body)
 
+    def test_public_invite_page_is_guided_without_admin_key(self):
+        with mock.patch.dict(os.environ, {"SDAC_BOT_CLIENT_ID": "1234567890"}, clear=False):
+            response = self.client.get("/invite")
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("Guided Setup Flow", body)
+        self.assertIn("OAuth Details", body)
+        self.assertIn("Release Checklist", body)
+        self.assertNotIn(dashboard.ADMIN_KEY, body)
+
     def test_sidebar_exposes_invite_bot_action(self):
         with self.client.session_transaction() as session:
             session["sdac_account_username"] = "baytae"
@@ -60,6 +70,10 @@ class PublicBotInviteTests(unittest.TestCase):
         self.assertIn("support_url", payload["app"])
         self.assertEqual(payload["routes"]["invite"], "/invite")
         self.assertEqual(payload["routes"]["setup_guide"], "/setup-guide")
+        self.assertIn("diagnostics", payload)
+        self.assertIn("release_checklist", payload["routes"])
+        self.assertIn("official_version", payload["release"])
+        self.assertIn("experimental_version", payload["release"])
 
 
 if __name__ == "__main__":

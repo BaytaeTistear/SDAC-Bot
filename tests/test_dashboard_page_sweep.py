@@ -50,6 +50,7 @@ routes = [
     "/admin/monthly-report",
     "/admin/polls",
     "/admin/releases",
+    "/admin/release-checklist",
     "/admin/production-health",
     "/",
     "/my-submissions",
@@ -97,6 +98,8 @@ for route in routes:
             failures.append(f"{route}: still uses collapsible sidebar sections")
         if "--sdac-content-width" not in body or "--sdac-sidebar-width" not in body or "--sdac-layout-gap" not in body:
             failures.append(f"{route}: missing saved layout variables")
+        if "body.sdac-has-sidebar {" not in body or "overflow-x: hidden !important" not in body or ".sdac-sidebar * { box-sizing: border-box; max-width: 100%; min-width: 0; }" not in body:
+            failures.append(f"{route}: missing horizontal overflow layout guard")
         if ".sdac-sidebar .sdac-server-switcher select, .sdac-sidebar .sdac-server-switcher button" not in body or "grid-template-columns: minmax(0, 1fr)" not in body:
             failures.append(f"{route}: missing hardened server selector css")
 if failures:
@@ -156,3 +159,4 @@ class DashboardPageSweepTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

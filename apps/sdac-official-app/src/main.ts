@@ -1,4 +1,7 @@
 import "./styles.css";
+import { App } from "@capacitor/app";
+import { Browser } from "@capacitor/browser";
+import { Capacitor } from "@capacitor/core";
 
 type ServerRow = {
   id: string;
@@ -10,12 +13,17 @@ type BootstrapPayload = {
     display_name: string;
     entry_url: string;
     icon_url: string;
+    invite_url: string;
+    github_url: string;
+    wiki_url: string;
+    version: string;
   };
   auth: {
     account_logged_in: boolean;
     account_username: string;
     account_role: string;
     admin_logged_in: boolean;
+    admin_username: string;
     admin_role: string;
     discord_oauth_enabled: boolean;
   };
@@ -29,11 +37,29 @@ type BootstrapPayload = {
   release: {
     installed: string;
     configured_tag: string;
+    installed_version: string;
+    official_version: string;
+    experimental_version: string;
+    official_tag: string;
+    experimental_tag: string;
+    update_available: boolean;
+    recommended_channel: string;
+  };
+  diagnostics: {
+    dashboard_url: string;
+    native: boolean;
+    platform: string;
+    session_cookie_seen: boolean;
+    account_session_seen: boolean;
+    admin_session_seen: boolean;
   };
 };
 
 const dashboardBase = (import.meta.env.VITE_SDAC_DASHBOARD_URL || "https://freethefishies.us.to").replace(/\/$/, "");
+const nativePlatform = Capacitor.getPlatform();
+const isNative = Capacitor.isNativePlatform();
 const appRoot = document.querySelector<HTMLDivElement>("#app");
+let currentPayload: BootstrapPayload | null = null;
 
 function absoluteUrl(path: string): string {
   if (!path) return dashboardBase;
@@ -71,11 +97,134 @@ function applyTheme(payload: BootstrapPayload): void {
   Object.entries(vars).forEach(([key, value]) => root.style.setProperty(key, value));
 }
 
-function routeButton(label: string, route: string): string {
-  return `<a class="action" href="${escapeHtml(absoluteUrl(route))}">${escapeHtml(label)}</a>`;
+function routeButton(label: string, route: string, extraClass = ""): string {
+  const className = `action ${extraClass}`.trim();
+  return `<a class="${escapeHtml(className)}" href="${escapeHtml(absoluteUrl(route))}">${escapeHtml(label)}</a>`;
+}
+
+function appButton(label: string, action: string, extraClass = ""): string {
+  const className = `action ${extraClass}`.trim();
+  return `<button class="${escapeHtml(className)}" type="button" data-app-action="${escapeHtml(action)}">${escapeHtml(label)}</button>`;
+}
+
+function versionParts(value: string): number[] {
+  const match = String(value || "").match(/\d+(?:\.\d+)*/);
+  return match ? match[0].split(".").map((part) => Number.parseInt(part, 10) || 0) : [];
+}
+
+function compareVersions(left: string, right: string): number {
+  const a = versionParts(left);
+  const b = versionParts(right);
+  const length = Math.max(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    const delta = (a[index] || 0) - (b[index] || 0);
+    if (delta) return delta;
+  }
+  return 0;
+}
+
+function releaseNotice(payload: BootstrapPayload): string {
+  const release = payload.release || {};
+  const installed = release.installed_version || release.installed || "development";
+  const latestExperimental = release.experimental_version || "unknown";
+  const latestOfficial = release.official_version || "unknown";
+  const configured = release.configured_tag || "unknown";
+  const target = configured === "latest-official" ? latestOfficial : latestExperimental;
+  const newer = target !== "unknown" && installed !== "development" && compareVersions(target, installed) > 0;
+  const noticeClass = newer || release.update_available ? "panel update-card warn" : "panel update-card";
+  const title = newer || release.update_available ? "Update available" : "App update status";
+  return `
+    <section class="${noticeClass}">
+      <div>
+        <strong>${escapeHtml(title)}</strong>
+        <span>Installed ${escapeHtml(installed)} | Official ${escapeHtml(latestOfficial)} | Experimental ${escapeHtml(latestExperimental)}</span>
+      </div>
+      <div class="button-row">
+        ${routeButton("Release Page", payload.routes.admin_releases || payload.routes.home, "secondary")}
+        ${routeButton("Checklist", payload.routes.release_checklist || payload.routes.admin_releases || payload.routes.home, "secondary")}
+      </div>
+    </section>
+  `;
+}
+
+function diagnosticsPanel(payload: BootstrapPayload): string {
+  const loggedIn = payload.auth.account_logged_in || payload.auth.admin_logged_in;
+  return `
+    <details class="panel diagnostics">
+      <summary>App Diagnostics</summary>
+      <dl>
+        <dt>Dashboard</dt><dd>${escapeHtml(payload.diagnostics.dashboard_url)}</dd>
+        <dt>App version</dt><dd>${escapeHtml(payload.app.version || payload.release.installed || "development")}</dd>
+        <dt>Platform</dt><dd>${escapeHtml(payload.diagnostics.platform || nativePlatform)}</dd>
+        <dt>Login</dt><dd>${loggedIn ? "Signed in" : "Signed out"}</dd>
+        <dt>Cookie seen</dt><dd>${payload.diagnostics.session_cookie_seen ? "Yes" : "No"}</dd>
+        <dt>Account session</dt><dd>${payload.diagnostics.account_session_seen ? "Yes" : "No"}</dd>
+        <dt>Admin session</dt><dd>${payload.diagnostics.admin_session_seen ? "Yes" : "No"}</dd>
+      </dl>
+      <div class="button-row">
+        ${appButton("Refresh Status", "refresh", "secondary")}
+        ${appButton("Reset App Login", "reset-login", "danger")}
+      </div>
+    </details>
+  `;
+}
+
+async function refreshBootstrap(): Promise<void> {
+  const response = await fetch(absoluteUrl("/api/app/bootstrap"), { credentials: "include", cache: "no-store" });
+  if (!response.ok) throw new Error(`Bootstrap failed: ${response.status}`);
+  render(await response.json() as BootstrapPayload);
+}
+
+async function openNativeBrowser(route: string): Promise<void> {
+  const url = absoluteUrl(route);
+  if (isNative) {
+    await Browser.open({ url, presentationStyle: "fullscreen" });
+    return;
+  }
+  window.location.href = url;
+}
+
+async function resetAppLogin(): Promise<void> {
+  try {
+    localStorage.clear();
+    sessionStorage.clear();
+  } catch (error) {
+    console.warn("Could not clear local app storage", error);
+  }
+  const logoutUrl = absoluteUrl("/account/logout");
+  const frame = document.querySelector<HTMLIFrameElement>("iframe");
+  if (frame) {
+    frame.src = logoutUrl;
+  } else {
+    await fetch(logoutUrl, { credentials: "include", cache: "no-store" }).catch(() => undefined);
+  }
+  window.setTimeout(() => refreshBootstrap().catch(renderError), 900);
+}
+
+function wireAppActions(payload: BootstrapPayload): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-app-action]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const action = button.dataset.appAction || "";
+      button.disabled = true;
+      try {
+        if (action === "discord-login") {
+          await openNativeBrowser(payload.routes.discord_login);
+        } else if (action === "reset-login") {
+          await resetAppLogin();
+        } else if (action === "refresh") {
+          await refreshBootstrap();
+        } else if (action === "invite") {
+          await openNativeBrowser(payload.app.invite_url || payload.routes.invite);
+        }
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
 }
 
 function render(payload: BootstrapPayload): void {
+  currentPayload = payload;
   applyTheme(payload);
   const routes = payload.routes || {};
   const loggedIn = payload.auth.account_logged_in || payload.auth.admin_logged_in;
@@ -83,7 +232,7 @@ function render(payload: BootstrapPayload): void {
     .map((server) => `<option value="${escapeHtml(server.id)}" ${server.id === payload.server.selected_guild_id ? "selected" : ""}>${escapeHtml(server.name)}</option>`)
     .join("");
   const accountLabel = loggedIn
-    ? `${payload.auth.account_username || "Admin"} (${payload.auth.admin_role || payload.auth.account_role})`
+    ? `${payload.auth.account_username || payload.auth.admin_username || "Admin"} (${payload.auth.admin_role || payload.auth.account_role})`
     : "Guest";
 
   appRoot!.innerHTML = `
@@ -105,16 +254,16 @@ function render(payload: BootstrapPayload): void {
       <section class="actions">
         ${routeButton("Open Dashboard", routes.home)}
         ${loggedIn ? routeButton("My Account", routes.account) : routeButton("Login", routes.login)}
-        ${!loggedIn && payload.auth.discord_oauth_enabled ? routeButton("Login with Discord", routes.discord_login) : ""}
+        ${!loggedIn && payload.auth.discord_oauth_enabled ? appButton("Login with Discord", "discord-login") : ""}
+        ${appButton("Reset App Login", "reset-login", "secondary")}
+        ${payload.app.invite_url || routes.invite ? appButton("Invite Bot", "invite", "secondary") : ""}
         ${routeButton("Submissions", routes.submissions)}
         ${routeButton("Guessing", routes.guessing)}
         ${routeButton("Servers", routes.servers)}
         ${routeButton("Releases", routes.admin_releases)}
       </section>
-      <section class="panel muted">
-        <strong>Release</strong>
-        <span>${escapeHtml(payload.release.installed)} via ${escapeHtml(payload.release.configured_tag)}</span>
-      </section>
+      ${releaseNotice(payload)}
+      ${diagnosticsPanel(payload)}
       <iframe title="SDAC Dashboard" src="${escapeHtml(absoluteUrl(payload.app.entry_url))}"></iframe>
     </main>
   `;
@@ -123,6 +272,7 @@ function render(payload: BootstrapPayload): void {
     const guildId = (event.target as HTMLSelectElement).value;
     window.location.href = absoluteUrl(`${routes.submissions || "/"}?guild_id=${encodeURIComponent(guildId)}`);
   });
+  wireAppActions(payload);
 }
 
 function renderError(error: unknown): void {
@@ -145,3 +295,10 @@ fetch(absoluteUrl("/api/app/bootstrap"), { credentials: "include" })
   })
   .then(render)
   .catch(renderError);
+
+App.addListener("appUrlOpen", () => {
+  if (currentPayload) {
+    Browser.close().catch(() => undefined);
+    refreshBootstrap().catch(renderError);
+  }
+});

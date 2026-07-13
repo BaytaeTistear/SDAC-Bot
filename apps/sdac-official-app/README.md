@@ -23,7 +23,7 @@ npm run dev
 
 The default dashboard URL is `https://freethefishies.us.to`. For local dashboard testing, change `.env` to `http://127.0.0.1:5000`.
 
-Set `VITE_SDAC_DASHBOARD_URL` to the hosted dashboard URL for the Vite shell. For native builds, set `SDAC_APP_DASHBOARD_URL` before running Capacitor sync so the native app opens the hosted dashboard directly.
+Set `VITE_SDAC_DASHBOARD_URL` to the hosted dashboard URL for the Vite shell. Native builds now use the packaged app shell by default so app-only buttons such as Discord browser login, reset app login, diagnostics, and update notices are available. Only set `SDAC_APP_DIRECT_URL` before Capacitor sync if you intentionally want the old direct-dashboard WebView mode.
 
 The app name is configurable:
 
@@ -221,3 +221,4 @@ apps/sdac-official-app/public/sdac-companion-art.png
 ```
 
 It is an original anime companion illustration holding an SD-style baseball emblem. It intentionally avoids copying an official sports logo.
+
