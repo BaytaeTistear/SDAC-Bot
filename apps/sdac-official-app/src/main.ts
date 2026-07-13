@@ -1,5 +1,6 @@
 import "./styles.css";
 import { App } from "@capacitor/app";
+import { AppLauncher } from "@capacitor/app-launcher";
 import { Browser } from "@capacitor/browser";
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
 
@@ -204,6 +205,21 @@ async function openNativeBrowser(route: string): Promise<void> {
   window.location.href = url;
 }
 
+async function openExternalBrowser(route: string): Promise<void> {
+  const url = absoluteUrl(route);
+  if (isNative) {
+    try {
+      await AppLauncher.openUrl({ url });
+      return;
+    } catch (error) {
+      console.warn("External browser launch failed; falling back to Capacitor Browser", error);
+      await Browser.open({ url, presentationStyle: "fullscreen" });
+      return;
+    }
+  }
+  window.location.href = url;
+}
+
 async function resetAppLogin(): Promise<void> {
   try {
     localStorage.clear();
@@ -228,7 +244,7 @@ function wireAppActions(payload: BootstrapPayload): void {
       button.disabled = true;
       try {
         if (action === "discord-login") {
-          await openNativeBrowser(payload.routes.discord_login);
+          await openExternalBrowser(payload.routes.discord_login);
         } else if (action === "reset-login") {
           await resetAppLogin();
         } else if (action === "refresh") {
@@ -334,5 +350,3 @@ App.addListener("appUrlOpen", () => {
     refreshBootstrap().catch(renderError);
   }
 });
-
-

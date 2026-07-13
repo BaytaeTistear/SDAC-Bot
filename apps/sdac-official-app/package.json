@@ -1,6 +1,6 @@
 {
   "name": "sdac-companion",
-  "version": "4.2.14",
+  "version": "4.2.16",
   "private": true,
   "description": "Official SDACCompanion mobile/desktop app shell for the Flask dashboard.",
   "type": "module",
@@ -19,6 +19,7 @@
   "dependencies": {
     "@capacitor/android": "^8.4.1",
     "@capacitor/app": "^8.1.0",
+    "@capacitor/app-launcher": "^8.0.1",
     "@capacitor/browser": "^8.0.3",
     "@capacitor/core": "^8.4.1",
     "@capacitor/ios": "^8.4.1"

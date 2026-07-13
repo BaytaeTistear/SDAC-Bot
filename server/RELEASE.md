@@ -1,3 +1,23 @@
+# SDAC Bot Version 4.2.16 Experimental
+
+Release date: 2026-07-13
+
+Update scope: External Discord login launch
+
+Version 4.2.16 is an experimental app login fix for Discord blocking OAuth inside app-owned browser surfaces.
+
+Included in this update:
+- opens Discord OAuth with Android's normal external browser through Capacitor App Launcher
+- keeps Capacitor Browser as a fallback if external launch fails
+- keeps in-app/browser handling for non-Discord dashboard links
+- updates app dependencies and Android sync for the launcher plugin
+- keeps `latest-official` on Version 4.2.0 until an official promotion is requested
+
+Release channel:
+- `version-4.2.16` is this experimental external Discord login launch fix.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
+
 # SDAC Bot Version 4.2.15 Experimental
 
 Release date: 2026-07-13
