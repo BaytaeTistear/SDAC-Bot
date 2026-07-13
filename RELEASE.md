@@ -1,3 +1,22 @@
+# SDAC Bot Version 4.2.8 Experimental
+
+Release date: 2026-07-13
+
+Update scope: Android Kotlin dependency alignment
+
+Version 4.2.8 is an experimental APK packaging fix focused on resolving duplicate Kotlin runtime classes during the SDACCompanion Android debug APK build.
+
+Included in this update:
+- aligns Android Kotlin stdlib dependency variants to Kotlin 1.8.22 across app and Capacitor modules
+- fixes duplicate class failures between `kotlin-stdlib:1.8.22` and older `kotlin-stdlib-jdk7/jdk8:1.6.21` transitive dependencies
+- keeps the Java 21 APK runner, Android SDK 36 install step, Android Gradle plugin 8.9.1, Gradle 8.11.1, and compile SDK 36
+- keeps the release workflow building `SDACCompanion-Android-Debug.apk` and its SHA256 checksum
+- keeps `latest-official` on Version 4.2.0 until an official promotion is requested
+
+Release channel:
+- `version-4.2.8` is this experimental Android Kotlin dependency alignment fix.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.7 Experimental
 
 Release date: 2026-07-13
