@@ -914,18 +914,22 @@ HTML = """
             padding: 16px;
         }
 
-        .post-header {
+        .post {
             align-items: flex-start;
             display: flex;
             flex-wrap: wrap;
             gap: 10px 12px;
-            justify-content: flex-start;
+        }
+
+        .post-header {
+            display: contents;
         }
 
         .post-header > form,
         .post-header .vote-controls {
             flex: 0 1 auto;
             min-width: 0;
+            order: 4;
         }
 
         .meta {
@@ -933,6 +937,11 @@ HTML = """
             flex: 1 1 320px;
             font-size: 14px;
             min-width: min(100%, 260px);
+        }
+
+        .post-header .meta {
+            flex-basis: 100%;
+            order: 1;
         }
 
         .stars {
@@ -976,23 +985,36 @@ HTML = """
         .status-pending { color: #ffd75e; }
 
         .message {
-            margin-top: 12px;
+            flex: 1 0 100%;
+            margin-top: 2px;
+            order: 2;
             overflow-wrap: anywhere;
             white-space: pre-wrap;
         }
 
         .media-grid {
             display: grid;
+            flex: 1 0 100%;
             gap: 12px;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            margin-top: 14px;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+            margin-top: 4px;
+            order: 3;
+            width: 100%;
+        }
+
+        .media-grid > div,
+        .media-grid a {
+            display: block;
+            min-width: 0;
+            width: 100%;
         }
 
         .media-grid img, .media-grid video {
             background: #090a0c;
             border-radius: 8px;
             display: block;
-            max-height: 600px;
+            height: auto;
+            max-height: min(600px, 72dvh);
             object-fit: contain;
             width: 100%;
         }
@@ -1015,6 +1037,7 @@ HTML = """
             padding: 2px 7px;
         }
         .download { overflow-wrap: anywhere; }
+        .post-report-link { flex: 1 0 100%; order: 5; }
 
         .remove-controls {
             align-items: center;
@@ -1023,6 +1046,7 @@ HTML = """
             gap: 8px;
             grid-template-columns: max-content minmax(160px, 1fr) minmax(180px, 1.2fr) max-content;
             min-width: min(100%, 360px);
+            order: 4;
         }
 
         .remove-controls span {
@@ -1081,20 +1105,29 @@ HTML = """
 
         @media (max-width: 700px) {
             body { padding: 12px; }
-            .admin-nav, .filter form, .post-header, .remove-controls {
+            .admin-nav, .filter form {
                 align-items: stretch;
                 flex-direction: column;
             }
             .remove-controls {
-                display: flex;
-                flex-basis: auto;
+                flex: 1 1 100%;
+                grid-template-columns: minmax(0, 1fr) auto;
                 min-width: 0;
             }
+            .remove-controls span,
+            .remove-controls select,
+            .remove-controls input { grid-column: 1 / -1; }
             .admin-nav {
                 flex-wrap: wrap;
                 gap: 10px;
             }
             select, input, button { width: 100%; }
+            .post button,
+            .post-header button { width: auto; }
+            .post-header > form:not(.remove-controls),
+            .vote-controls,
+            .vote-controls form { display: inline-flex; }
+            .remove-controls button { justify-self: start; width: auto; }
             .remove-controls span { margin-bottom: -4px; }
             .media-grid { grid-template-columns: 1fr; }
         }
@@ -1342,7 +1375,7 @@ HTML = """
                                 {% endfor %}
                             </div>
                         {% endif %}
-                        <p class="meta">
+                        <p class="meta post-report-link">
                             <a href="{{ url_for('report_submission', submission_id=post.id) }}">Report this submission</a>
                         </p>
                     </article>

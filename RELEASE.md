@@ -1,3 +1,22 @@
+# SDAC Bot Version 4.2.10 Experimental
+
+Release date: 2026-07-13
+
+Update scope: App submission media layout fix
+
+Version 4.2.10 is an experimental dashboard/app polish update focused on restoring the submission image layout and keeping action buttons compact in the app view.
+
+Included in this update:
+- makes submission cards use an explicit layout order: details, message, media, then actions
+- keeps images and videos in the media area instead of visually falling below the action controls
+- stops mobile/app submission action buttons from being forced to full-width one-per-line stacks
+- keeps moderation controls wrapped side by side where space allows while preserving full-width inputs for removal reasons
+- keeps `latest-official` on Version 4.2.0 until an official promotion is requested
+
+Release channel:
+- `version-4.2.10` is this experimental app submission media layout fix.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.9 Experimental
 
 Release date: 2026-07-13
