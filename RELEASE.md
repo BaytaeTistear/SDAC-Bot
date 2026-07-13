@@ -1,3 +1,21 @@
+# SDAC Bot Version 4.2.6 Experimental
+
+Release date: 2026-07-13
+
+Update scope: Android SDK install workflow fix
+
+Version 4.2.6 is an experimental APK packaging fix focused on making the GitHub runner install the Android 36 SDK platform reliably before building the SDACCompanion APK.
+
+Included in this update:
+- updates the release workflow to call `sdkmanager` from the runner Android SDK path instead of assuming it is globally on PATH
+- keeps Android Gradle plugin 8.9.1, Gradle 8.11.1, and compile SDK 36 from the prior APK compatibility update
+- keeps the release workflow building `SDACCompanion-Android-Debug.apk` and its SHA256 checksum
+- keeps `latest-official` on Version 4.2.0 until an official promotion is requested
+
+Release channel:
+- `version-4.2.6` is this experimental Android SDK install workflow fix.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.5 Experimental
 
 Release date: 2026-07-13
