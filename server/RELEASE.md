@@ -1,3 +1,22 @@
+# SDAC Bot Version 4.2.14 Experimental
+
+Release date: 2026-07-13
+
+Update scope: Native app fetch fallback
+
+Version 4.2.14 is an experimental app connectivity fix for Android WebView fetch failures in the packaged SDACCompanion shell.
+
+Included in this update:
+- enables Capacitor's native HTTP bridge for the app shell
+- retries `/api/app/bootstrap` through native HTTP when WebView `fetch` fails
+- keeps the normal browser fetch path first so dashboard cookies still work when available
+- improves the app error screen with dashboard URL, platform details, Retry, and Open Dashboard actions
+- keeps `latest-official` on Version 4.2.0 until an official promotion is requested
+
+Release channel:
+- `version-4.2.14` is this experimental native app fetch fallback.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.13 Experimental
 
 Release date: 2026-07-13
@@ -2414,4 +2433,5 @@ Not included:
 - `media/` uploads
 - `backups/`
 - `venv/` or Python cache files
+
 

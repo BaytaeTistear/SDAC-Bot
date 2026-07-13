@@ -16,8 +16,12 @@ const config: CapacitorConfig = {
   plugins: {
     App: {
       launchAutoHide: true
+    },
+    CapacitorHttp: {
+      enabled: true
     }
   }
 };
 
 export default config;
+

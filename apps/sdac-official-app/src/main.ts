@@ -1,7 +1,7 @@
 import "./styles.css";
 import { App } from "@capacitor/app";
 import { Browser } from "@capacitor/browser";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, CapacitorHttp } from "@capacitor/core";
 
 type ServerRow = {
   id: string;
@@ -169,10 +169,30 @@ function diagnosticsPanel(payload: BootstrapPayload): string {
   `;
 }
 
+async function loadBootstrap(): Promise<BootstrapPayload> {
+  const url = absoluteUrl("/api/app/bootstrap");
+  try {
+    const response = await fetch(url, { credentials: "include", cache: "no-store" });
+    if (!response.ok) throw new Error(`Bootstrap failed: ${response.status}`);
+    return await response.json() as BootstrapPayload;
+  } catch (fetchError) {
+    if (!isNative) throw fetchError;
+    const nativeResponse = await CapacitorHttp.get({
+      url,
+      headers: { Accept: "application/json" },
+      connectTimeout: 15000,
+      readTimeout: 15000,
+      responseType: "json"
+    });
+    if (nativeResponse.status < 200 || nativeResponse.status >= 300) {
+      throw new Error(`Native bootstrap failed: ${nativeResponse.status}`);
+    }
+    return nativeResponse.data as BootstrapPayload;
+  }
+}
+
 async function refreshBootstrap(): Promise<void> {
-  const response = await fetch(absoluteUrl("/api/app/bootstrap"), { credentials: "include", cache: "no-store" });
-  if (!response.ok) throw new Error(`Bootstrap failed: ${response.status}`);
-  render(await response.json() as BootstrapPayload);
+  render(await loadBootstrap());
 }
 
 async function openNativeBrowser(route: string): Promise<void> {
@@ -278,21 +298,33 @@ function render(payload: BootstrapPayload): void {
 function renderError(error: unknown): void {
   appRoot!.innerHTML = `
     <main class="shell">
-      <section class="panel">
+      <section class="panel diagnostics" open>
         <h1>SDAC</h1>
         <p>Could not reach the SDAC dashboard backend.</p>
         <p class="muted">${escapeHtml(String(error))}</p>
-        <a class="action" href="${escapeHtml(dashboardBase)}">Open Dashboard</a>
+        <dl>
+          <dt>Dashboard</dt><dd>${escapeHtml(dashboardBase)}</dd>
+          <dt>Platform</dt><dd>${escapeHtml(nativePlatform)}</dd>
+          <dt>Native app</dt><dd>${isNative ? "Yes" : "No"}</dd>
+        </dl>
+        <div class="button-row">
+          <button class="action" type="button" data-error-action="retry">Retry</button>
+          <button class="action secondary" type="button" data-error-action="browser">Open Dashboard</button>
+        </div>
       </section>
     </main>
   `;
+  document.querySelector<HTMLButtonElement>("[data-error-action='retry']")?.addEventListener("click", () => {
+    loadBootstrap().then(render).catch(renderError);
+  });
+  document.querySelector<HTMLButtonElement>("[data-error-action='browser']")?.addEventListener("click", () => {
+    openNativeBrowser(dashboardBase).catch(() => {
+      window.location.href = dashboardBase;
+    });
+  });
 }
 
-fetch(absoluteUrl("/api/app/bootstrap"), { credentials: "include" })
-  .then((response) => {
-    if (!response.ok) throw new Error(`Bootstrap failed: ${response.status}`);
-    return response.json() as Promise<BootstrapPayload>;
-  })
+loadBootstrap()
   .then(render)
   .catch(renderError);
 
@@ -302,3 +334,5 @@ App.addListener("appUrlOpen", () => {
     refreshBootstrap().catch(renderError);
   }
 });
+
+
