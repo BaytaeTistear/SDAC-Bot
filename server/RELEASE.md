@@ -1,3 +1,22 @@
+# SDAC Bot Version 4.2.9 Experimental
+
+Release date: 2026-07-13
+
+Update scope: Dashboard app sidebar overflow fix
+
+Version 4.2.9 is an experimental dashboard polish update focused on keeping the app/sidebar navigation contained on narrow screens and long-link layouts.
+
+Included in this update:
+- keeps sidebar links, Home, and Invite Bot inside the sidebar width
+- allows long sidebar labels to wrap instead of overflowing horizontally
+- prevents footer account links from widening or spilling outside the sidebar
+- keeps the sidebar footer scrollable when account/admin actions take more vertical space
+- keeps `latest-official` on Version 4.2.0 until an official promotion is requested
+
+Release channel:
+- `version-4.2.9` is this experimental dashboard sidebar overflow fix.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.8 Experimental
 
 Release date: 2026-07-13
