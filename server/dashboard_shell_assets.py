@@ -95,12 +95,15 @@ SIDEBAR_STYLE = """
     --sdac-sidebar-toggle-left: clamp(0.6rem, 1.1vw, 1rem);
     --sdac-collapsed-sidebar-gutter: clamp(4.5rem, 7vw, 7rem);
 }
-html { min-height: 100%; }
+html { max-width: 100%; min-height: 100%; overflow-x: hidden !important; width: 100%; }
 body.sdac-theme {
     background-color: var(--sdac-bg) !important;
     color: var(--sdac-text) !important;
+    max-width: 100%;
     min-height: 100dvh;
-    overflow-x: hidden;
+    overflow-x: hidden !important;
+    position: relative;
+    width: 100%;
 }
 body.sdac-theme::before {
     content: "";
@@ -115,8 +118,11 @@ body.sdac-theme::before {
 }
 body.sdac-has-sidebar {
     box-sizing: border-box;
+    max-width: 100vw;
+    overflow-x: hidden !important;
     padding-left: calc(var(--sdac-sidebar-width) + var(--sdac-sidebar-gap)) !important;
     transition: padding-left .18s ease;
+    width: 100%;
 }
 body.sdac-has-sidebar.sdac-sidebar-collapsed { padding-left: var(--sdac-collapsed-sidebar-gutter) !important; }
 body.sdac-has-sidebar main {
@@ -174,13 +180,13 @@ body.sdac-sidebar-collapsed .sdac-sidebar-toggle { left: 16px !important; }
     gap: 0;
     height: 100dvh;
     inset: 0 auto 0 0;
-    max-width: calc(100vw - clamp(1rem, 3vw, 1.5rem));
+    max-width: min(82vw, calc(100dvw - clamp(1rem, 3vw, 1.5rem)));
     overflow: hidden;
     padding: clamp(3.25rem, 7dvh, 4rem) clamp(0.75rem, 1.6vw, 1rem) clamp(0.75rem, 1.6vw, 1rem);
     position: fixed;
     transform: translateX(0);
     transition: transform .18s ease;
-    width: min(var(--sdac-sidebar-width), 82vw);
+    width: min(var(--sdac-sidebar-width), 82dvw);
     z-index: 1001;
 }
 .sdac-sidebar * { box-sizing: border-box; max-width: 100%; min-width: 0; }
@@ -236,7 +242,7 @@ body.sdac-has-sidebar input, body.sdac-has-sidebar select, body.sdac-has-sidebar
     body.sdac-has-sidebar.sdac-sidebar-collapsed { padding-left: 0 !important; }
     body.sdac-has-sidebar main { padding-top: clamp(3rem, 8dvh, 3.75rem) !important; }
     .sdac-sidebar-toggle { left: clamp(0.65rem, 2.5vw, 0.85rem) !important; top: clamp(0.65rem, 2.5vw, 0.85rem) !important; }
-    .sdac-sidebar { border-radius: 0 0.875rem 0.875rem 0; box-shadow: 1.125rem 0 2.5rem rgba(2, 6, 23, 0.48); transform: translateX(-105%); }
+    .sdac-sidebar { border-radius: 0 0.875rem 0.875rem 0; box-shadow: 1.125rem 0 2.5rem rgba(2, 6, 23, 0.48); max-width: min(88dvw, calc(100dvw - 0.75rem)); transform: translateX(-105%); width: min(20rem, 88dvw); }
     body.sdac-sidebar-open .sdac-sidebar { transform: translateX(0); }
     body.sdac-sidebar-open .sdac-sidebar-toggle { left: clamp(0.65rem, 2.5vw, 0.85rem) !important; }
     body.sdac-sidebar-open.sdac-menu-viewport-left .sdac-sidebar-toggle { left: clamp(0.65rem, 2.5vw, 0.85rem) !important; }

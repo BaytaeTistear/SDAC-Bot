@@ -1,3 +1,22 @@
+# SDAC Bot Version 4.2.11 Experimental
+
+Release date: 2026-07-13
+
+Update scope: App sidebar scroll and Discord login state fix
+
+Version 4.2.11 is an experimental app/dashboard stability update focused on stopping horizontal sidebar scrolling and making Discord login more reliable in the installed app flow.
+
+Included in this update:
+- clamps the dashboard app shell at the root `html` and `body` levels to prevent left-right page scrolling
+- uses dynamic viewport widths for the off-canvas sidebar so it cannot create extra horizontal space in the app WebView
+- adds a short-lived server-side Discord OAuth state fallback so app logins can survive external-browser/WebView session changes
+- keeps the normal browser OAuth session check in place while allowing valid app callbacks to complete safely
+- keeps `latest-official` on Version 4.2.0 until an official promotion is requested
+
+Release channel:
+- `version-4.2.11` is this experimental app sidebar scroll and Discord login state fix.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.10 Experimental
 
 Release date: 2026-07-13

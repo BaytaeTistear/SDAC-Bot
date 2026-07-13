@@ -8695,6 +8695,14 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS dashboard_oauth_states (
+                state TEXT PRIMARY KEY,
+                next_url TEXT,
+                created_at REAL NOT NULL,
+                expires_at REAL NOT NULL
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS background_jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 job_type TEXT,
@@ -13043,6 +13051,34 @@ def oauth_enabled():
     return bool(DISCORD_OAUTH_CLIENT_ID and DISCORD_OAUTH_CLIENT_SECRET)
 
 
+OAUTH_STATE_TTL_SECONDS = 600
+
+
+def store_oauth_state(state, next_url):
+    expires_at = time.time() + OAUTH_STATE_TTL_SECONDS
+    with database() as connection:
+        connection.execute("DELETE FROM dashboard_oauth_states WHERE expires_at < ?", (time.time(),))
+        connection.execute("""
+            INSERT OR REPLACE INTO dashboard_oauth_states (state, next_url, created_at, expires_at)
+            VALUES (?, ?, ?, ?)
+        """, (state, safe_next_url(next_url, url_for("account_home")), time.time(), expires_at))
+
+
+def consume_oauth_state(state):
+    if not state:
+        return None
+    with database() as connection:
+        row = connection.execute("""
+            SELECT next_url, expires_at
+            FROM dashboard_oauth_states
+            WHERE state = ?
+        """, (state,)).fetchone()
+        connection.execute("DELETE FROM dashboard_oauth_states WHERE state = ? OR expires_at < ?", (state, time.time()))
+    if not row or float(row["expires_at"] or 0) < time.time():
+        return None
+    return safe_next_url(row["next_url"], url_for("account_home"))
+
+
 def oauth_redirect_uri():
     if DISCORD_OAUTH_REDIRECT_URI:
         return DISCORD_OAUTH_REDIRECT_URI
@@ -13597,9 +13633,11 @@ def account_oauth_start():
             next=request.args.get("next") or url_for("account_home"),
         ))
     state = secrets.token_urlsafe(24)
+    next_url = safe_next_url(request.args.get("next"), url_for("account_home"))
     remember_dashboard_session()
     session["sdac_account_oauth_state"] = state
-    session["sdac_account_oauth_next"] = request.args.get("next") or url_for("account_home")
+    session["sdac_account_oauth_next"] = next_url
+    store_oauth_state(state, next_url)
     authorize_url = (
         "https://discord.com/api/oauth2/authorize?"
         + urlencode({
@@ -13620,7 +13658,9 @@ def account_oauth_callback():
         abort(404)
     state = request.args.get("state", "")
     code = request.args.get("code", "")
-    if not code or state != session.get("sdac_account_oauth_state"):
+    session_state = session.get("sdac_account_oauth_state")
+    stored_next_url = consume_oauth_state(state)
+    if not code or not state or (state != session_state and not stored_next_url):
         return redirect(url_for("account_login", notice="Discord login state did not match. Try again.", error=1))
     try:
         token_payload = exchange_discord_oauth_code(
@@ -13706,7 +13746,7 @@ def account_oauth_callback():
         session["sdac_admin_auth"] = "discord"
         session["sdac_admin_guild_ids"] = scope_ids
     session.pop("sdac_account_oauth_state", None)
-    next_url = safe_next_url(session.pop("sdac_account_oauth_next", None), url_for("account_home"))
+    next_url = stored_next_url or safe_next_url(session.pop("sdac_account_oauth_next", None), url_for("account_home"))
     if not scope_ids or (new_account and len(scope_ids) != 1):
         return redirect(url_for("account_server", next=next_url, notice="Choose the Discord server you are joining from."))
     return redirect(next_url)
