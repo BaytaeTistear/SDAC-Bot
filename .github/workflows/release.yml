@@ -130,6 +130,7 @@ jobs:
             dist/SDAC-Bot-Ubuntu-Update.sh
             dist/SDAC-Bot-Windows-Update.ps1
             dist/sdac-update
+            dist/SDACCompanion-App-Source.zip
 
   linux-installer-smoke-test:
     name: Linux Installer Smoke Test
@@ -208,7 +209,13 @@ jobs:
 
           NOTES_FILE="$(mktemp)"
           if [[ -f RELEASE.md ]]; then
-            awk 'BEGIN { first=1 } /^---$/ { exit } { print }' RELEASE.md > "$NOTES_FILE"
+            awk '
+              /^# / {
+                if (seen) { exit }
+                seen=1
+              }
+              seen { print }
+            ' RELEASE.md > "$NOTES_FILE"
           fi
           if [[ ! -s "$NOTES_FILE" ]]; then
             echo "Automated SDAC Bot release." > "$NOTES_FILE"

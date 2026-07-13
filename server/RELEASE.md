@@ -1,3 +1,22 @@
+# SDAC Bot Version 4.2.2 Experimental
+
+Release date: 2026-07-13
+
+Update scope: App release artifact and release note cleanup
+
+Version 4.2.2 is an experimental release packaging fix focused on shipping the SDACCompanion app source with updates and keeping each GitHub release note body limited to only that update.
+
+Included in this update:
+- adds the SDACCompanion app source as a separate release download
+- publishes `SDACCompanion-App-Source.zip` as a GitHub release artifact
+- excludes generated app folders, local app env files, and Android signing files from the app source artifact
+- fixes the release workflow so each release uses only the newest top release note section
+- keeps `latest-official` on Version 4.2.0 until an official promotion is requested
+
+Release channel:
+- `version-4.2.2` is this experimental app packaging and release note cleanup update.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.1 Experimental
 
 Release date: 2026-07-13

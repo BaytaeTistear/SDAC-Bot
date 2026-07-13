@@ -116,6 +116,70 @@ function Convert-PayloadTextFilesToLf {
         }
 }
 
+function Copy-AppSource {
+    param([string]$TargetRoot)
+
+    $appRoot = Join-Path $Root "apps\sdac-official-app"
+    if (-not (Test-Path -LiteralPath $appRoot)) {
+        throw "Missing app source directory: apps\sdac-official-app"
+    }
+
+    $targetAppRoot = Join-Path $TargetRoot "apps\sdac-official-app"
+    if (Test-Path -LiteralPath $targetAppRoot) {
+        Remove-Item -LiteralPath $targetAppRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $targetAppRoot | Out-Null
+
+    $excludedDirectories = @(
+        ".gradle",
+        "build",
+        "dist",
+        "node_modules"
+    )
+    $excludedFiles = @(
+        ".env",
+        "keystore.properties"
+    )
+
+    $appRootFull = (Resolve-Path -LiteralPath $appRoot).Path.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    $appRootPrefix = $appRootFull + [IO.Path]::DirectorySeparatorChar
+
+    Get-ChildItem -LiteralPath $appRoot -Recurse -File |
+        Where-Object {
+            $fullName = $_.FullName
+            if (-not $fullName.StartsWith($appRootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                return $false
+            }
+            $relative = $fullName.Substring($appRootPrefix.Length)
+            $parts = $relative -split '[\\/]'
+            -not ($parts | Where-Object { $excludedDirectories -contains $_ }) -and
+            -not ($excludedFiles -contains $_.Name)
+        } |
+        ForEach-Object {
+            $relative = $_.FullName.Substring($appRootPrefix.Length)
+            $target = Join-Path $targetAppRoot $relative
+            $targetDir = Split-Path -Parent $target
+            New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+            Copy-Item -LiteralPath $_.FullName -Destination $target -Force
+        }
+}
+
+function New-AppSourceArchive {
+    param([string]$OutputPath)
+
+    $appPayloadRoot = Join-Path $Dist "app-source-root"
+    if (Test-Path -LiteralPath $appPayloadRoot) {
+        Remove-Item -LiteralPath $appPayloadRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $appPayloadRoot | Out-Null
+    Copy-AppSource -TargetRoot $appPayloadRoot
+    Convert-PayloadTextFilesToLf -PayloadRoot $appPayloadRoot
+    if (Test-Path -LiteralPath $OutputPath) {
+        Remove-Item -LiteralPath $OutputPath -Force
+    }
+    Compress-Archive -Path (Join-Path $appPayloadRoot "*") -DestinationPath $OutputPath -CompressionLevel Optimal
+    Remove-Item -LiteralPath $appPayloadRoot -Recurse -Force
+}
 function Split-Base64 {
     param([string]$Value, [int]$Width = 76)
 
@@ -923,6 +987,7 @@ New-WindowsInstaller `
     -OutputPath (Join-Path $Dist "SDAC-Bot-Windows-Installer.exe")
 
 Copy-ReleaseHelperScripts
+New-AppSourceArchive -OutputPath (Join-Path $Dist "SDACCompanion-App-Source.zip")
 
 Remove-Item -LiteralPath $payloadRoot -Recurse -Force
 
