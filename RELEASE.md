@@ -1,3 +1,23 @@
+# SDAC Bot Version 4.2.4 Experimental
+
+Release date: 2026-07-13
+
+Update scope: Android APK build compatibility
+
+Version 4.2.4 is an experimental APK packaging fix focused on making the SDACCompanion Android build complete on GitHub release runners.
+
+Included in this update:
+- updates the SDACCompanion Android Gradle plugin from 8.2.1 to 8.7.3
+- updates the Android Gradle wrapper from Gradle 8.2.1 to Gradle 8.9
+- keeps Capacitor Android Java compatibility pinned to Java 17
+- keeps the release workflow building `SDACCompanion-Android-Debug.apk` and its SHA256 checksum
+- keeps the app source zip and bot installer/update artifacts in the same release
+- keeps `latest-official` on Version 4.2.0 until an official promotion is requested
+
+Release channel:
+- `version-4.2.4` is this experimental Android APK build compatibility update.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.3 Experimental
 
 Release date: 2026-07-13
