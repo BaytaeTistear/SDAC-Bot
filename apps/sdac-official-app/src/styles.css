@@ -165,7 +165,13 @@ select {
 }
 
 .update-card {
+  gap: 14px;
+}
+
+.update-heading {
   align-items: center;
+  display: grid;
+  gap: 10px;
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
@@ -174,13 +180,87 @@ select {
   display: block;
 }
 
-.update-card span {
+.update-card span,
+.update-channel p {
   color: var(--sdac-muted);
-  margin-top: 4px;
+  margin: 4px 0 0;
 }
 
 .update-card.warn {
   border-color: color-mix(in srgb, var(--sdac-accent) 72%, transparent);
+}
+
+.update-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(25rem, 100%), 1fr));
+  min-width: 0;
+}
+
+.update-channel {
+  background: color-mix(in srgb, #020617 34%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sdac-muted) 20%, transparent);
+  border-radius: var(--sdac-radius);
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.update-channel.recommended {
+  border-color: color-mix(in srgb, var(--sdac-secondary) 68%, transparent);
+}
+
+.update-channel.newer {
+  border-color: color-mix(in srgb, var(--sdac-accent) 72%, transparent);
+}
+
+.update-channel .eyebrow {
+  color: var(--sdac-secondary);
+  font-size: .74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.update-channel dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+
+.update-channel dt {
+  color: var(--sdac-muted);
+  font-size: .74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.update-channel dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.update-channel code {
+  display: block;
+  font-size: .78rem;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.button-row.compact .action {
+  flex-basis: min(10rem, 100%);
+}
+
+.install-steps {
+  color: var(--sdac-muted);
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.install-steps li + li {
+  margin-top: 4px;
 }
 
 .diagnostics dl {
@@ -218,6 +298,7 @@ iframe {
     align-items: flex-start;
   }
 
+  .update-heading,
   .update-card {
     grid-template-columns: 1fr;
   }
@@ -230,3 +311,4 @@ iframe {
     min-height: 78vh;
   }
 }
+

@@ -1,3 +1,23 @@
+# SDAC Bot Version 4.2.20 Experimental
+
+Release date: 2026-07-14
+
+Update scope: Guided Android app updater
+
+Version 4.2.20 is an experimental app update that adds a guided APK updater for installs outside the Play Store.
+
+Included in this update:
+- exposes Android APK release asset URLs and SHA256 digests through the app bootstrap API
+- adds an in-app update panel with official and experimental channel cards
+- opens APK, checksum, and release links from the app using the native external browser handoff
+- shows install steps for Android sideload updates that require user confirmation
+- bumps the Android app shell to 4.2.20 with matching Android version metadata
+- keeps `latest-official` unchanged until an official promotion is requested
+
+Release channel:
+- `version-4.2.20` is this experimental guided app updater build.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.19 Experimental
 
 Release date: 2026-07-13
@@ -2528,6 +2548,7 @@ Not included:
 - `media/` uploads
 - `backups/`
 - `venv/` or Python cache files
+
 
 
 

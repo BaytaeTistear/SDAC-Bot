@@ -13046,6 +13046,22 @@ def read_update_config():
     return values
 
 
+def release_asset_metadata(payload, asset_name):
+    for asset in payload.get("assets") or []:
+        if asset.get("name") != asset_name:
+            continue
+        digest = asset.get("digest") or ""
+        if digest.startswith("sha256:"):
+            digest = digest.split(":", 1)[1]
+        return {
+            "name": asset.get("name") or asset_name,
+            "url": asset.get("browser_download_url") or "",
+            "size": asset.get("size") or 0,
+            "sha256": digest,
+        }
+    return {"name": asset_name, "url": "", "size": 0, "sha256": ""}
+
+
 def fetch_github_release(tag):
     token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
     headers = {
@@ -13062,11 +13078,16 @@ def fetch_github_release(tag):
         payload = json.loads(response.read().decode("utf-8"))
     release_tag = payload.get("tag_name") or tag
     release_name = payload.get("name") or ""
+    apk = release_asset_metadata(payload, "SDACCompanion-Android-Debug.apk")
+    apk_checksum = release_asset_metadata(payload, "SDACCompanion-Android-Debug.apk.sha256")
     return {
         "tag": release_tag,
         "name": release_name,
         "version": extract_release_version(f"{release_name} {release_tag}"),
         "published_at": payload.get("published_at") or "",
+        "html_url": payload.get("html_url") or f"https://github.com/{RELEASE_REPO}/releases/tag/{release_tag}",
+        "apk": apk,
+        "apk_sha256": apk_checksum,
     }
 
 
@@ -20159,6 +20180,14 @@ def api_app_bootstrap():
             "experimental_version": experimental_version,
             "official_tag": (release.get("official") or {}).get("tag") or "unknown",
             "experimental_tag": (release.get("experimental") or {}).get("tag") or "unknown",
+            "official_release_url": (release.get("official") or {}).get("html_url") or "",
+            "experimental_release_url": (release.get("experimental") or {}).get("html_url") or "",
+            "official_apk_url": ((release.get("official") or {}).get("apk") or {}).get("url") or "",
+            "experimental_apk_url": ((release.get("experimental") or {}).get("apk") or {}).get("url") or "",
+            "official_apk_sha256_url": ((release.get("official") or {}).get("apk_sha256") or {}).get("url") or "",
+            "experimental_apk_sha256_url": ((release.get("experimental") or {}).get("apk_sha256") or {}).get("url") or "",
+            "official_apk_sha256": ((release.get("official") or {}).get("apk") or {}).get("sha256") or "",
+            "experimental_apk_sha256": ((release.get("experimental") or {}).get("apk") or {}).get("sha256") or "",
             "update_available": update_available,
             "recommended_channel": "latest-official" if configured_tag == "latest-official" else "latest-experimental",
         },
@@ -21021,6 +21050,7 @@ def delete_submission(submission_id):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
 
 

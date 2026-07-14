@@ -37,6 +37,31 @@ class DashboardReleaseStatusTests(unittest.TestCase):
         self.assertNotEqual(banner["official"], "unknown")
         self.assertNotEqual(banner["experimental"], "unknown")
 
+    def test_release_asset_metadata_extracts_app_apk_digest(self):
+        payload = {
+            "assets": [
+                {
+                    "name": "SDACCompanion-Android-Debug.apk",
+                    "browser_download_url": "https://example.test/app.apk",
+                    "size": 123,
+                    "digest": "sha256:abc123",
+                },
+                {
+                    "name": "SDACCompanion-Android-Debug.apk.sha256",
+                    "browser_download_url": "https://example.test/app.apk.sha256",
+                    "size": 98,
+                    "digest": "sha256:def456",
+                },
+            ]
+        }
+
+        apk = dashboard.release_asset_metadata(payload, "SDACCompanion-Android-Debug.apk")
+        checksum = dashboard.release_asset_metadata(payload, "SDACCompanion-Android-Debug.apk.sha256")
+
+        self.assertEqual(apk["url"], "https://example.test/app.apk")
+        self.assertEqual(apk["sha256"], "abc123")
+        self.assertEqual(checksum["url"], "https://example.test/app.apk.sha256")
 
 if __name__ == "__main__":
     unittest.main()
+

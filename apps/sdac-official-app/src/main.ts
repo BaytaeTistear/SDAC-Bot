@@ -43,6 +43,14 @@ type BootstrapPayload = {
     experimental_version: string;
     official_tag: string;
     experimental_tag: string;
+    official_release_url: string;
+    experimental_release_url: string;
+    official_apk_url: string;
+    experimental_apk_url: string;
+    official_apk_sha256_url: string;
+    experimental_apk_sha256_url: string;
+    official_apk_sha256: string;
+    experimental_apk_sha256: string;
     update_available: boolean;
     recommended_channel: string;
   };
@@ -56,11 +64,24 @@ type BootstrapPayload = {
   };
 };
 
+type UpdateChannel = "experimental" | "official";
+
+type UpdateChannelInfo = {
+  channel: UpdateChannel;
+  label: string;
+  tag: string;
+  version: string;
+  releaseUrl: string;
+  apkUrl: string;
+  sha256Url: string;
+  sha256: string;
+};
+
+const APP_SHELL_VERSION = "4.2.20";
 const dashboardBase = (import.meta.env.VITE_SDAC_DASHBOARD_URL || "https://freethefishies.us.to").replace(/\/$/, "");
 const nativePlatform = Capacitor.getPlatform();
 const isNative = Capacitor.isNativePlatform();
 const appRoot = document.querySelector<HTMLDivElement>("#app");
-let currentPayload: BootstrapPayload | null = null;
 
 function absoluteUrl(path: string): string {
   if (!path) return dashboardBase;
@@ -103,12 +124,18 @@ function routeButton(label: string, route: string, extraClass = ""): string {
   return `<a class="${escapeHtml(className)}" href="${escapeHtml(absoluteUrl(route))}">${escapeHtml(label)}</a>`;
 }
 
+function externalButton(label: string, url: string, extraClass = ""): string {
+  const disabled = url ? "" : " disabled";
+  const className = `action ${extraClass}`.trim();
+  return `<button class="${escapeHtml(className)}" type="button" data-app-action="open-url" data-url="${escapeHtml(url)}"${disabled}>${escapeHtml(label)}</button>`;
+}
 
 function appFrameUrl(route: string): string {
   const url = new URL(absoluteUrl(route));
   url.searchParams.set("sdac_app", "1");
   return url.toString();
 }
+
 function appButton(label: string, action: string, extraClass = ""): string {
   const className = `action ${extraClass}`.trim();
   return `<button class="${escapeHtml(className)}" type="button" data-app-action="${escapeHtml(action)}">${escapeHtml(label)}</button>`;
@@ -130,26 +157,86 @@ function compareVersions(left: string, right: string): number {
   return 0;
 }
 
+function channelInfo(payload: BootstrapPayload, channel: UpdateChannel): UpdateChannelInfo {
+  const release = payload.release || {};
+  if (channel === "official") {
+    return {
+      channel,
+      label: "Official",
+      tag: release.official_tag || "latest-official",
+      version: release.official_version || "unknown",
+      releaseUrl: release.official_release_url || `${payload.app.github_url}/releases/tag/latest-official`,
+      apkUrl: release.official_apk_url || "",
+      sha256Url: release.official_apk_sha256_url || "",
+      sha256: release.official_apk_sha256 || ""
+    };
+  }
+  return {
+    channel,
+    label: "Experimental",
+    tag: release.experimental_tag || "latest-experimental",
+    version: release.experimental_version || "unknown",
+    releaseUrl: release.experimental_release_url || `${payload.app.github_url}/releases/tag/latest-experimental`,
+    apkUrl: release.experimental_apk_url || "",
+    sha256Url: release.experimental_apk_sha256_url || "",
+    sha256: release.experimental_apk_sha256 || ""
+  };
+}
+
+function updateChannelCard(info: UpdateChannelInfo, recommended: boolean): string {
+  const newer = info.version !== "unknown" && compareVersions(info.version, APP_SHELL_VERSION) > 0;
+  const cardClass = `update-channel${recommended ? " recommended" : ""}${newer ? " newer" : ""}`;
+  const status = newer ? "Update available" : info.version === "unknown" ? "Release unknown" : "No newer APK detected";
+  const shaDisplay = info.sha256 ? info.sha256 : "Open checksum file from the release.";
+  return `
+    <article class="${cardClass}">
+      <div>
+        <span class="eyebrow">${escapeHtml(info.label)} channel${recommended ? " · recommended" : ""}</span>
+        <strong>${escapeHtml(info.version)}</strong>
+        <p>${escapeHtml(status)} · ${escapeHtml(info.tag)}</p>
+      </div>
+      <dl>
+        <dt>APK SHA256</dt>
+        <dd><code>${escapeHtml(shaDisplay)}</code></dd>
+      </dl>
+      <div class="button-row compact">
+        ${externalButton("Download APK", info.apkUrl)}
+        ${externalButton("Checksum", info.sha256Url, "secondary")}
+        ${externalButton("Release", info.releaseUrl, "secondary")}
+        <button class="action secondary" type="button" data-app-action="copy-sha" data-sha="${escapeHtml(info.sha256)}" ${info.sha256 ? "" : "disabled"}>Copy SHA</button>
+      </div>
+    </article>
+  `;
+}
+
 function releaseNotice(payload: BootstrapPayload): string {
   const release = payload.release || {};
-  const installed = release.installed_version || release.installed || "development";
-  const latestExperimental = release.experimental_version || "unknown";
-  const latestOfficial = release.official_version || "unknown";
-  const configured = release.configured_tag || "unknown";
-  const target = configured === "latest-official" ? latestOfficial : latestExperimental;
-  const newer = target !== "unknown" && installed !== "development" && compareVersions(target, installed) > 0;
-  const noticeClass = newer || release.update_available ? "panel update-card warn" : "panel update-card";
-  const title = newer || release.update_available ? "Update available" : "App update status";
+  const recommendedChannel: UpdateChannel = release.recommended_channel === "latest-official" ? "official" : "experimental";
+  const official = channelInfo(payload, "official");
+  const experimental = channelInfo(payload, "experimental");
+  const recommended = recommendedChannel === "official" ? official : experimental;
+  const newer = recommended.version !== "unknown" && compareVersions(recommended.version, APP_SHELL_VERSION) > 0;
+  const noticeClass = newer ? "panel update-card warn" : "panel update-card";
+  const title = newer ? "App update available" : "App update status";
   return `
     <section class="${noticeClass}">
-      <div>
-        <strong>${escapeHtml(title)}</strong>
-        <span>Installed ${escapeHtml(installed)} | Official ${escapeHtml(latestOfficial)} | Experimental ${escapeHtml(latestExperimental)}</span>
+      <div class="update-heading">
+        <div>
+          <strong>${escapeHtml(title)}</strong>
+          <span>Installed APK ${escapeHtml(APP_SHELL_VERSION)} · recommended ${escapeHtml(recommended.label)} ${escapeHtml(recommended.version)}</span>
+        </div>
+        <button class="action secondary" type="button" data-app-action="refresh">Refresh</button>
       </div>
-      <div class="button-row">
-        ${routeButton("Release Page", payload.routes.admin_releases || payload.routes.home, "secondary")}
-        ${routeButton("Checklist", payload.routes.release_checklist || payload.routes.admin_releases || payload.routes.home, "secondary")}
+      <div class="update-grid">
+        ${updateChannelCard(experimental, recommendedChannel === "experimental")}
+        ${updateChannelCard(official, recommendedChannel === "official")}
       </div>
+      <ol class="install-steps">
+        <li>Tap Download APK for the channel you want.</li>
+        <li>If Android asks, allow this browser/app to install unknown apps.</li>
+        <li>Open the downloaded APK and approve the Android installer prompt.</li>
+        <li>After install, reopen SDACCompanion and check this panel again.</li>
+      </ol>
     </section>
   `;
 }
@@ -161,7 +248,8 @@ function diagnosticsPanel(payload: BootstrapPayload): string {
       <summary>App Diagnostics</summary>
       <dl>
         <dt>Dashboard</dt><dd>${escapeHtml(payload.diagnostics.dashboard_url)}</dd>
-        <dt>App version</dt><dd>${escapeHtml(payload.app.version || payload.release.installed || "development")}</dd>
+        <dt>App shell</dt><dd>${escapeHtml(APP_SHELL_VERSION)}</dd>
+        <dt>Backend version</dt><dd>${escapeHtml(payload.app.version || payload.release.installed || "development")}</dd>
         <dt>Platform</dt><dd>${escapeHtml(payload.diagnostics.platform || nativePlatform)}</dd>
         <dt>Login</dt><dd>${loggedIn ? "Signed in" : "Signed out"}</dd>
         <dt>Cookie seen</dt><dd>${payload.diagnostics.session_cookie_seen ? "Yes" : "No"}</dd>
@@ -211,14 +299,14 @@ async function openNativeBrowser(route: string): Promise<void> {
   window.location.href = url;
 }
 
-async function openExternalBrowser(route: string): Promise<void> {
-  const url = absoluteUrl(route);
+async function openExternalUrl(url: string): Promise<void> {
+  if (!url) return;
   if (isNative) {
     try {
       await AppLauncher.openUrl({ url });
       return;
     } catch (error) {
-      console.warn("External browser launch failed; falling back to Capacitor Browser", error);
+      console.warn("External URL launch failed; falling back to Capacitor Browser", error);
       await Browser.open({ url, presentationStyle: "fullscreen" });
       return;
     }
@@ -226,6 +314,9 @@ async function openExternalBrowser(route: string): Promise<void> {
   window.location.href = url;
 }
 
+async function openExternalBrowser(route: string): Promise<void> {
+  await openExternalUrl(absoluteUrl(route));
+}
 
 async function claimAppLogin(ticket: string): Promise<void> {
   if (!ticket) throw new Error("Missing app login ticket.");
@@ -273,6 +364,7 @@ async function handleAppUrlOpen(url: string): Promise<void> {
   }
   await claimAppLogin(parsed.searchParams.get("ticket") || "");
 }
+
 async function resetAppLogin(): Promise<void> {
   try {
     localStorage.clear();
@@ -290,6 +382,11 @@ async function resetAppLogin(): Promise<void> {
   window.setTimeout(() => refreshBootstrap().catch(renderError), 900);
 }
 
+async function copySha(value: string): Promise<void> {
+  if (!value) return;
+  await navigator.clipboard.writeText(value).catch(() => undefined);
+}
+
 function wireAppActions(payload: BootstrapPayload): void {
   document.querySelectorAll<HTMLButtonElement>("[data-app-action]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -304,6 +401,10 @@ function wireAppActions(payload: BootstrapPayload): void {
           await refreshBootstrap();
         } else if (action === "invite") {
           await openNativeBrowser(payload.app.invite_url || payload.routes.invite);
+        } else if (action === "open-url") {
+          await openExternalUrl(button.dataset.url || "");
+        } else if (action === "copy-sha") {
+          await copySha(button.dataset.sha || "");
         }
       } finally {
         button.disabled = false;
@@ -313,7 +414,6 @@ function wireAppActions(payload: BootstrapPayload): void {
 }
 
 function render(payload: BootstrapPayload): void {
-  currentPayload = payload;
   applyTheme(payload);
   const routes = payload.routes || {};
   const loggedIn = payload.auth.account_logged_in || payload.auth.admin_logged_in;
@@ -373,6 +473,7 @@ function renderError(error: unknown): void {
         <p class="muted">${escapeHtml(String(error))}</p>
         <dl>
           <dt>Dashboard</dt><dd>${escapeHtml(dashboardBase)}</dd>
+          <dt>App shell</dt><dd>${escapeHtml(APP_SHELL_VERSION)}</dd>
           <dt>Platform</dt><dd>${escapeHtml(nativePlatform)}</dd>
           <dt>Native app</dt><dd>${isNative ? "Yes" : "No"}</dd>
         </dl>
