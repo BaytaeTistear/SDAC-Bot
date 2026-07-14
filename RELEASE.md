@@ -1,3 +1,22 @@
+# SDAC Bot Version 4.2.19 Experimental
+
+Release date: 2026-07-13
+
+Update scope: Dashboard sidebar role-section polish
+
+Version 4.2.19 is an experimental dashboard polish update for the admin/sidebar layout.
+
+Included in this update:
+- groups dashboard navigation by User, Moderator, Server Owner, and Bot Owner sections
+- moves Home next to Menu in the fixed sidebar controls
+- combines user identity, server selection, navigation, invite, and account actions into one sidebar scroll area
+- removes separate nested sidebar/footer scrolling so the sidebar behaves consistently across screen sizes
+- keeps `latest-official` unchanged until an official promotion is requested
+
+Release channel:
+- `version-4.2.19` is this experimental dashboard sidebar polish update.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.18 Experimental
 
 Release date: 2026-07-13
@@ -2509,6 +2528,7 @@ Not included:
 - `media/` uploads
 - `backups/`
 - `venv/` or Python cache files
+
 
 
 

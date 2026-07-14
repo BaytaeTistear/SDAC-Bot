@@ -92,8 +92,12 @@ for route in routes:
             failures.append(f"{route}: missing shared sidebar")
         if "sdac-sidebar-home" not in body or ">Home</a>" not in body:
             failures.append(f"{route}: missing top Home button")
-        if "sdac-sidebar-main-section" not in body:
-            failures.append(f"{route}: missing single navigation section")
+        if "sdac-sidebar-controls" not in body:
+            failures.append(f"{route}: missing shared Menu/Home controls")
+        if "sdac-sidebar-scroll" not in body or "sdac-sidebar-nav" not in body:
+            failures.append(f"{route}: missing unified sidebar scroll area")
+        if "sdac-sidebar-main-section" not in body or "sdac-sidebar-section-title" not in body:
+            failures.append(f"{route}: missing role navigation sections")
         if '<details class="sdac-sidebar-section"' in body:
             failures.append(f"{route}: still uses collapsible sidebar sections")
         if "--sdac-content-width" not in body or "--sdac-sidebar-width" not in body or "--sdac-layout-gap" not in body:
@@ -159,4 +163,5 @@ class DashboardPageSweepTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 
