@@ -19,10 +19,12 @@ apps/sdac-official-app/android/app/build/outputs/bundle/release/app-release.aab.
 SHA256:
 
 ```text
-1357c0545245b40028abe646455f0c0adaf55a91ec04a9315afe5c0c233e655e  app-release.aab
+A7F46908E26FB1AC54E59DDC79517F0D1010A5CF32D0B3CA0528C8C300A8E5EF  app-release.aab
 ```
 
-Important: this generated `app-release.aab` is currently unsigned. Google Play requires a signed Android App Bundle, so do not upload this file until release signing is configured and the bundle is rebuilt.
+Signing status: `jarsigner -verify -verbose -certs app\build\outputs\bundle\release\app-release.aab` reports `jar verified`.
+
+Important: this generated `app-release.aab` is signed with the local Sana-Chan upload key. Keep the private keystore and `keystore.properties` private.
 
 ## App Identity
 
@@ -31,8 +33,8 @@ Use these values in Google Play Console:
 ```text
 App name: Sana-Chan
 Package name / application ID: com.baytae.sanachan
-Current Android versionCode: 42023
-Current Android versionName: 4.2.23
+Current Android versionCode: 42026
+Current Android versionName: 4.2.26
 Default launch command inside Discord: /sdac
 Deep link scheme: sanachan://login-complete
 ```
@@ -62,14 +64,14 @@ Do not upload the debug APK to Google Play production. The debug APK is only for
 You need a private upload keystore. Keep these private and do not commit them:
 
 ```text
-keystore file: C:\Users\YOUR_USER\.sana-chan\android-signing\sanachan-release.jks
+keystore file: C:\Users\YOUR_USER\.sana-chan\android-signing\sanachan-upload.jks
 keystore properties: apps/sdac-official-app/android/keystore.properties
 ```
 
 Example `keystore.properties`:
 
 ```properties
-storeFile=C:\Users\YOUR_USER\.sana-chan\android-signing\sanachan-release.jks
+storeFile=C:\Users\YOUR_USER\.sana-chan\android-signing\sanachan-upload.jks
 storePassword=YOUR_STORE_PASSWORD
 keyAlias=sanachan
 keyPassword=YOUR_KEY_PASSWORD
@@ -81,7 +83,7 @@ Recommended key generation command:
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.sana-chan\android-signing"
 keytool -genkeypair `
   -v `
-  -keystore "$env:USERPROFILE\.sana-chan\android-signing\sanachan-release.jks" `
+  -keystore "$env:USERPROFILE\.sana-chan\android-signing\sanachan-upload.jks" `
   -alias sanachan `
   -keyalg RSA `
   -keysize 4096 `
@@ -89,6 +91,8 @@ keytool -genkeypair `
 ```
 
 Keep the passwords somewhere safe. Losing the upload key/password can block future app updates until Google resets your upload key.
+
+The Android project reads `apps/sdac-official-app/android/keystore.properties` automatically during `bundleRelease`. That file is ignored by git and should never be committed.
 
 ## Build Commands
 
@@ -109,7 +113,7 @@ $env:Path="$env:JAVA_HOME\bin;$env:Path"
 .\gradlew.bat bundleRelease
 ```
 
-After signing is configured, verify:
+Verify the signed bundle:
 
 ```powershell
 jarsigner -verify -verbose -certs app\build\outputs\bundle\release\app-release.aab
@@ -156,13 +160,11 @@ If this is a newer personal Google Play developer account, Google may require a 
 
 ## Recommended First Release Path
 
-1. Configure upload keystore and release signing.
-2. Rebuild `app-release.aab`.
-3. Upload the signed `.aab` to Internal testing first.
-4. Install from Play internal testing and verify Discord login, dashboard loading, app update panel, Invite Bot, and submissions.
-5. Move to Closed testing if required.
-6. Request production access after testing requirements are met.
+1. Upload the signed `.aab` to Internal testing first.
+2. Install from Play internal testing and verify Discord login, dashboard loading, app update panel, Invite Bot, and submissions.
+3. Move to Closed testing if required.
+4. Request production access after testing requirements are met.
 
 ## Current Blocker
 
-The release AAB exists, but it is unsigned. The next step is creating/providing the upload keystore and adding `keystore.properties`, then rebuilding `bundleRelease`.
+No local signing blocker remains. The next blocker is Play Console readiness: upload the signed AAB to Internal testing and complete the required store listing, policy, and testing forms.

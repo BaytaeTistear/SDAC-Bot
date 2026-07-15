@@ -1,3 +1,17 @@
+# SDAC Bot Version 4.2.26 Experimental
+
+Version 4.2.26 is an experimental Android signing update for the Sana-Chan Play Store bundle.
+
+Update scope: Signed Android release bundle
+
+Changes:
+- adds ignored Android `keystore.properties` support for release signing
+- configures the Sana-Chan release build to sign bundles when the private keystore file is present
+- bumps the Sana-Chan app shell/versionCode to 4.2.26 / 42026
+- updates the Play Store checklist with the signed AAB status and checksum
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.25 Experimental
 
 Version 4.2.25 is an experimental documentation update for preparing Sana-Chan for Google Play upload.
