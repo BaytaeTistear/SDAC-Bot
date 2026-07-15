@@ -14,6 +14,7 @@ from werkzeug.security import generate_password_hash
 
 
 ROLE_LEVELS = {
+    "not_added": -1,
     "user": 0,
     "trusted": 0,
     "moderator": 1,

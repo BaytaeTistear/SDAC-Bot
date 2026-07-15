@@ -1,3 +1,15 @@
+# SDAC Bot Version 4.2.29 Experimental
+
+Version 4.2.29 is an experimental dashboard account helper update for local testing.
+
+Update scope: Dashboard account CLI role support
+
+Changes:
+- allows the server-shell dashboard account helper to create or update accounts with the `Not Added` role
+- keeps local test-account setup aligned with the dashboard role model added in 4.2.28
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.28 Experimental
 
 Version 4.2.28 is an experimental dashboard access-control update for server-scoped account management.
