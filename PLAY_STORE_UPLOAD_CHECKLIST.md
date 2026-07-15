@@ -19,7 +19,7 @@ apps/sdac-official-app/android/app/build/outputs/bundle/release/app-release.aab.
 SHA256:
 
 ```text
-A7F46908E26FB1AC54E59DDC79517F0D1010A5CF32D0B3CA0528C8C300A8E5EF  app-release.aab
+84D6B5550121637E2E518BA37840EAFB6AB4DFB432A3F9B7E6835BB3BAD877F2  app-release.aab
 ```
 
 Signing status: `jarsigner -verify -verbose -certs app\build\outputs\bundle\release\app-release.aab` reports `jar verified`.
@@ -33,8 +33,9 @@ Use these values in Google Play Console:
 ```text
 App name: Sana-Chan
 Package name / application ID: com.baytae.sanachan
-Current Android versionCode: 42026
-Current Android versionName: 4.2.26
+Current Android versionCode: 42027
+Current Android versionName: 4.2.27
+Current Android target API: 35
 Default launch command inside Discord: /sdac
 Deep link scheme: sanachan://login-complete
 ```
@@ -119,6 +120,10 @@ Verify the signed bundle:
 jarsigner -verify -verbose -certs app\build\outputs\bundle\release\app-release.aab
 Get-FileHash -Algorithm SHA256 app\build\outputs\bundle\release\app-release.aab
 ```
+
+## Deobfuscation File
+
+No deobfuscation file is required for the current release bundle because `minifyEnabled false` is set for the Android release build. If R8/ProGuard minification is enabled later, upload the generated mapping file with that release.
 
 ## Store Listing Items Needed
 

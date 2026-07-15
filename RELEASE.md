@@ -1,3 +1,16 @@
+# SDAC Bot Version 4.2.27 Experimental
+
+Version 4.2.27 is an experimental Google Play compatibility update for the Sana-Chan Android bundle.
+
+Update scope: Android target API and Play Console notes
+
+Changes:
+- raises the Android target API level from 34 to 35 while continuing to compile with SDK 36
+- bumps the Sana-Chan app shell/versionCode to 4.2.27 / 42027
+- documents that no deobfuscation file is required while Android release minification remains disabled
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.26 Experimental
 
 Version 4.2.26 is an experimental Android signing update for the Sana-Chan Play Store bundle.
