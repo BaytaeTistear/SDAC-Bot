@@ -99,8 +99,8 @@ for route in routes:
             failures.append(f"{route}: missing unified sidebar scroll area")
         if "sdac-sidebar-main-section" not in body or "sdac-sidebar-section-title" not in body:
             failures.append(f"{route}: missing role navigation sections")
-        if '<details class="sdac-sidebar-section"' in body:
-            failures.append(f"{route}: still uses collapsible sidebar sections")
+        if '<details class="sdac-sidebar-section sdac-sidebar-main-section' not in body or '<summary class="sdac-sidebar-section-title">' not in body:
+            failures.append(f"{route}: missing collapsible role navigation sections")
         if "--sdac-content-width" not in body or "--sdac-sidebar-width" not in body or "--sdac-layout-gap" not in body:
             failures.append(f"{route}: missing saved layout variables")
         if "body.sdac-has-sidebar {" not in body or "overflow-x: hidden !important" not in body or ".sdac-sidebar * { box-sizing: border-box; max-width: 100%; min-width: 0; }" not in body:

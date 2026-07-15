@@ -308,12 +308,16 @@ def admin_sidebar_html(
             )
         if section_links:
             active_class = " active" if section.get("active") else ""
+            open_attr = " open" if section.get("active") else ""
             nav_sections.append(
-                f'<section class="sdac-sidebar-section sdac-sidebar-main-section{active_class}">'
-                f'<div class="sdac-sidebar-section-title">{html.escape(section["label"])}</div>'
+                f'<details class="sdac-sidebar-section sdac-sidebar-main-section{active_class}"{open_attr}>'
+                f'<summary class="sdac-sidebar-section-title">'
+                f'<span>{html.escape(section["label"])}</span>'
+                '<span class="sdac-sidebar-section-caret" aria-hidden="true">+</span>'
+                '</summary>'
                 '<div class="sdac-sidebar-section-links">'
                 + "".join(section_links)
-                + "</div></section>"
+                + "</div></details>"
             )
     navigation = '<nav class="sdac-sidebar-nav">' + "".join(nav_sections) + "</nav>"
 

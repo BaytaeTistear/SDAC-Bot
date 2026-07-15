@@ -1,3 +1,22 @@
+# SDAC Bot Version 4.2.22 Experimental
+
+Release date: 2026-07-14
+
+Update scope: Collapsible dashboard sidebar sections
+
+Version 4.2.22 is an experimental dashboard polish update that makes the sidebar role sections collapsible.
+
+Included in this update:
+- changes User, Moderator, Server Owner, and Bot Owner sidebar groups into collapsible sections
+- keeps the active role section open by default so the current page remains visible
+- preserves the unified sidebar scroll area, Menu/Home controls, server selector, Invite Bot action, and account links
+- adds regression coverage for collapsible role navigation sections
+- keeps `latest-official` unchanged until an official promotion is requested
+
+Release channel:
+- `version-4.2.22` is this experimental collapsible sidebar build.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.21 Experimental
 
 Release date: 2026-07-14
@@ -2567,6 +2586,7 @@ Not included:
 - `media/` uploads
 - `backups/`
 - `venv/` or Python cache files
+
 
 
 
