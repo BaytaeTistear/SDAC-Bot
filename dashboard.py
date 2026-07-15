@@ -4905,6 +4905,93 @@ RELEASES_HTML = """
 
 
 
+
+GO_LIVE_CHECKLIST_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SDAC Go Live Checklist</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
+        main { margin: 0 auto; width: min(100%, 1100px); }
+        h1, h2 { text-align: center; }
+        a { color: #7c9cff; }
+        nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
+        .panel { background: #1b1d22; border: 1px solid #30333b; border-radius: 0.75rem; margin: clamp(0.75rem, 2vw, 1rem) 0; padding: clamp(0.85rem, 2vw, 1rem); }
+        .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); }
+        .metric { background: #111318; border: 1px solid #30333b; border-radius: 8px; padding: 14px; }
+        .metric strong { display: block; font-size: 1.7rem; }
+        .metric span { color: #a8adb8; display: block; font-size: .78rem; font-weight: 800; text-transform: uppercase; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; vertical-align: top; }
+        .ok { color: #63c174; font-weight: bold; }
+        .bad { color: #e45d68; font-weight: bold; }
+        .warn { color: #f5c451; font-weight: bold; }
+        .muted { color: #a8adb8; }
+        code { color: #cdd7ff; overflow-wrap: anywhere; }
+        ul { margin: 0; padding-left: 1.2rem; }
+        li + li { margin-top: 4px; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Go Live Checklist</h1>
+    <nav>
+        <a href="{{ url_for('admin_releases', key=admin_key) }}">Releases</a>
+        <a href="{{ url_for('admin_release_checklist', key=admin_key) }}">Release Checklist</a>
+        <a href="{{ url_for('admin_production_health', key=admin_key) }}">Production Health</a>
+        <a href="{{ url_for('admin_install_doctor', key=admin_key) }}">Install Doctor</a>
+        <a href="{{ url_for('bot_invite') }}">Invite Flow</a>
+        <a href="{{ url_for('admin_logout') }}">Log out</a>
+    </nav>
+    <section class="panel">
+        <div class="grid">
+            <div class="metric"><strong>{{ ready_count }} / {{ total_count }}</strong><span>Ready Checks</span></div>
+            <div class="metric"><strong>{{ blocker_count }}</strong><span>Launch Blockers</span></div>
+            <div class="metric"><strong>{{ warning_count }}</strong><span>Warnings</span></div>
+            <div class="metric"><strong>{{ launch_state }}</strong><span>Launch State</span></div>
+        </div>
+        <p class="muted">Use this page as the final gate before promoting an experimental build to official or inviting public servers.</p>
+    </section>
+    <section class="panel">
+        <h2>Checklist</h2>
+        <table>
+            <thead><tr><th>Area</th><th>Status</th><th>Details</th><th>Next Step</th></tr></thead>
+            <tbody>
+                {% for item in checklist %}
+                    <tr>
+                        <td>{{ item.label }}</td>
+                        <td class="{{ 'ok' if item.ok else ('warn' if item.severity == 'warning' else 'bad') }}">{{ item.state }}</td>
+                        <td>{{ item.detail }}</td>
+                        <td>{{ item.next_step }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    <section class="panel">
+        <h2>Manual Live Test Path</h2>
+        <ul>
+            {% for step in manual_steps %}
+                <li>{{ step }}</li>
+            {% endfor %}
+        </ul>
+    </section>
+    <section class="panel">
+        <h2>Release Channels</h2>
+        <p>Installed: <code>{{ release.installed_version }}</code></p>
+        <p>Latest experimental: <code>{{ release.experimental_version }}</code></p>
+        <p>Latest official: <code>{{ release.official_version }}</code></p>
+        <p>Configured update tag: <code>{{ release.configured_tag }}</code></p>
+    </section>
+</main>
+</body>
+</html>
+"""
+
 RELEASE_CHECKLIST_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -17331,6 +17418,163 @@ def admin_polls():
 
 
 
+
+def go_live_checklist_rows():
+    config_data = load_config()
+    release = release_status()
+    production = production_health_report(config_data)
+    doctor = install_doctor_report()
+    app_info = public_app_metadata()
+    bot_status = read_bot_status()
+    backups = recent_database_backups()
+    warnings = security_warnings() + storage_warnings(config_data)
+    update_config = read_update_config()
+    limits = normalized_limits(config_data)
+    guilds = config_data.get("guilds") or {}
+    official_version = release.get("official_version") or "unknown"
+    experimental_version = release.get("experimental_version") or "unknown"
+    installed_version = release.get("installed_version") or release.get("installed") or "development"
+    configured_tag = release.get("configured_tag") or "unknown"
+    checklist = []
+
+    def add(label, ok, detail, next_step, severity="blocker"):
+        checklist.append({
+            "label": label,
+            "ok": bool(ok),
+            "detail": detail,
+            "next_step": next_step,
+            "severity": severity,
+            "state": "Ready" if ok else ("Warning" if severity == "warning" else "Blocked"),
+        })
+
+    add(
+        "Release channel",
+        configured_tag in {"latest-official", "latest-experimental"} or configured_tag.startswith("version-"),
+        f"Configured update tag: {configured_tag}; installed {installed_version}; official {official_version}; experimental {experimental_version}.",
+        "Keep production on latest-official or a pinned version. Use latest-experimental only for validation.",
+    )
+    add(
+        "Official release visible",
+        official_version not in {"", "unknown"},
+        f"Latest official: {official_version}.",
+        "Verify the latest-official GitHub release before public launch.",
+    )
+    add(
+        "Experimental release visible",
+        experimental_version not in {"", "unknown"},
+        f"Latest experimental: {experimental_version}.",
+        "Keep latest-experimental available for release-candidate validation.",
+        "warning",
+    )
+    add(
+        "Installed build is named",
+        installed_version not in {"", "development", "unknown"},
+        f"Installed build: {installed_version}.",
+        "Deploy a numbered release before public launch so updates and support can target it.",
+        "warning" if installed_version == "development" else "blocker",
+    )
+    add(
+        "Discord OAuth",
+        oauth_enabled(),
+        "Discord OAuth is configured." if oauth_enabled() else "Discord OAuth client ID/secret are missing.",
+        "Set SDAC_DISCORD_CLIENT_ID and SDAC_DISCORD_CLIENT_SECRET, then test dashboard login.",
+    )
+    add(
+        "Invite flow",
+        bool(app_info.get("invite_url")),
+        "Invite URL is available." if app_info.get("invite_url") else "Invite URL is missing.",
+        "Set SDAC_BOT_CLIENT_ID or DISCORD_CLIENT_ID and verify /invite opens Discord OAuth.",
+    )
+    add(
+        "Public links",
+        bool(app_info.get("github_url") and app_info.get("wiki_url") and app_info.get("privacy_url") and app_info.get("terms_url")),
+        "GitHub, wiki, privacy, and terms links are exposed.",
+        "Add public GitHub/wiki/privacy/terms links before inviting public servers.",
+    )
+    add(
+        "Configured servers",
+        bool(guilds),
+        f"{len(guilds)} server(s) configured.",
+        "Invite the bot to a test server and complete the setup checklist.",
+    )
+    add(
+        "Production health",
+        production["score"] == production["max_score"],
+        f"Production health score {production['score']} / {production['max_score']}.",
+        "Open Production Health and fix failed checks before launch.",
+        "warning" if production["score"] >= max(1, production["max_score"] - 2) else "blocker",
+    )
+    add(
+        "Install doctor",
+        doctor["score"] == doctor["max_score"],
+        f"Install doctor score {doctor['score']} / {doctor['max_score']}.",
+        "Open Install Doctor and fix critical server/runtime warnings.",
+        "warning" if doctor["score"] >= max(1, doctor["max_score"] - 2) else "blocker",
+    )
+    add(
+        "Bot heartbeat",
+        bool(bot_status.get("fresh") or bot_status.get("event")),
+        bot_status.get("message") or "No bot heartbeat recorded.",
+        "Restart the bot service and confirm heartbeat updates on Maintenance.",
+        "warning" if bot_status.get("event") else "blocker",
+    )
+    add(
+        "Slash commands synced",
+        bool(bot_status.get("slash_commands_synced")),
+        "Slash commands synced on last bot startup." if bot_status.get("slash_commands_synced") else "Bot has not reported successful slash command sync.",
+        "Restart the bot or use the sync command flow, then check Discord for duplicate/stale commands.",
+        "warning",
+    )
+    add(
+        "Backups",
+        bool(backups),
+        backups[0]["modified"] if backups else "No local database backup found.",
+        "Create a backup and run a restore test before public launch.",
+    )
+    add(
+        "Restore tooling",
+        (BASE_DIR / "scripts" / "test_restore.sh").is_file(),
+        "Restore test script is bundled." if (BASE_DIR / "scripts" / "test_restore.sh").is_file() else "Restore test script is missing.",
+        "Run SDAC_RUN_RESTORE_TEST=1 sdac-update latest-official or bash scripts/test_restore.sh on the server.",
+    )
+    add(
+        "Cooldowns and spam guard",
+        int(limits.get("submission_user_cooldown_seconds") or 0) > 0 and int(limits.get("guess_command_cooldown_seconds") or 0) > 0 and int(limits.get("spam_burst_count") or 0) > 0,
+        f"Submit cooldown {limits.get('submission_user_cooldown_seconds')}s; guess cooldown {limits.get('guess_command_cooldown_seconds')}s; spam burst {limits.get('spam_burst_count')}.",
+        "Keep cooldowns enabled for public servers, especially submissions, guessing, and admin actions.",
+    )
+    add(
+        "Security warnings",
+        not warnings,
+        "No security/storage warnings." if not warnings else "; ".join(warnings),
+        "Resolve default secrets, missing HTTPS/public URL, and storage warnings before launch.",
+    )
+    add(
+        "Updater config",
+        bool(update_config) or (BASE_DIR / "scripts" / "update_from_github.sh").is_file(),
+        f"Updater config: {UPDATE_ENV_FILE}" if update_config else "Bundled updater script is available.",
+        "Install or verify sdac-update so server owners can safely update.",
+        "warning",
+    )
+    add(
+        "Android app updates",
+        bool(((release.get("experimental") or {}).get("apk") or {}).get("url") or ((release.get("official") or {}).get("apk") or {}).get("url")),
+        "APK release assets are visible to the app updater." if bool(((release.get("experimental") or {}).get("apk") or {}).get("url") or ((release.get("official") or {}).get("apk") or {}).get("url")) else "No APK release assets were detected.",
+        "Verify the companion app can see latest-experimental/latest-official APK assets.",
+        "warning",
+    )
+    manual_steps = [
+        "Install the latest experimental build on a clean test server and run sdac-update latest-experimental.",
+        "Restart sdac-bot and sdac-dashboard, then confirm bot heartbeat and slash command sync.",
+        "Invite the bot to a test Discord server using /invite and complete setup from the dashboard.",
+        "Submit image, video, and text media; vote from Discord and dashboard; remove/quarantine a test submission.",
+        "Run a guessing game with hints and confirm points are awarded only when hints are not exhausted.",
+        "Create a database backup, run restore validation, and confirm rollback instructions are visible.",
+        "Install or update the Android app from the release APK and verify login/update diagnostics.",
+        "Only after the exact experimental build passes, promote it to latest-official on request.",
+    ]
+    return checklist, manual_steps
+
 def release_checklist_rows():
     config_data = load_config()
     release = release_status()
@@ -17366,6 +17610,51 @@ def release_checklist_rows():
     add("Security warnings", not warnings, "No security warnings." if not warnings else "; ".join(warnings), warning=bool(warnings))
     return checklist
 
+
+
+@app.route("/admin/go-live-checklist")
+def admin_go_live_checklist():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    checklist, manual_steps = go_live_checklist_rows()
+    ready_count = sum(1 for item in checklist if item["ok"])
+    blocker_count = sum(1 for item in checklist if not item["ok"] and item["severity"] != "warning")
+    warning_count = sum(1 for item in checklist if not item["ok"] and item["severity"] == "warning")
+    launch_state = "Ready" if blocker_count == 0 else "Blocked"
+    return render_template_string(
+        GO_LIVE_CHECKLIST_HTML,
+        admin_key=ADMIN_KEY,
+        blocker_count=blocker_count,
+        checklist=checklist,
+        launch_state=launch_state,
+        manual_steps=manual_steps,
+        ready_count=ready_count,
+        release=release_status(),
+        total_count=len(checklist),
+        warning_count=warning_count,
+    )
+
+
+@app.route("/api/admin/go-live-checklist")
+def api_admin_go_live_checklist():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    checklist, manual_steps = go_live_checklist_rows()
+    ready_count = sum(1 for item in checklist if item["ok"])
+    blocker_count = sum(1 for item in checklist if not item["ok"] and item["severity"] != "warning")
+    warning_count = sum(1 for item in checklist if not item["ok"] and item["severity"] == "warning")
+    return jsonify({
+        "ok": blocker_count == 0,
+        "ready_count": ready_count,
+        "total_count": len(checklist),
+        "blocker_count": blocker_count,
+        "warning_count": warning_count,
+        "checks": checklist,
+        "manual_steps": manual_steps,
+        "release": release_status(),
+    })
 
 @app.route("/admin/release-checklist")
 def admin_release_checklist():

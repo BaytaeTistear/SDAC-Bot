@@ -50,7 +50,8 @@ routes = [
     "/admin/monthly-report",
     "/admin/polls",
     "/admin/releases",
-    "/admin/release-checklist",
+    "/admin/release-checklist, "
+    "/admin/go-live-checklist",
     "/admin/production-health",
     "/",
     "/my-submissions",
@@ -163,5 +164,8 @@ class DashboardPageSweepTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
 
 

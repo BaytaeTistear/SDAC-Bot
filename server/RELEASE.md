@@ -1,3 +1,22 @@
+# SDAC Bot Version 4.2.21 Experimental
+
+Release date: 2026-07-14
+
+Update scope: Go-live readiness checklist
+
+Version 4.2.21 is an experimental go-live hardening update for final bot, dashboard, server, and app readiness checks before public launch.
+
+Included in this update:
+- adds a Bot Owner Go Live Checklist page that combines release channel, OAuth, invite, backups, restore tooling, cooldowns, production health, install doctor, slash-command sync, and Android updater checks
+- adds a JSON go-live checklist API for automation or future dashboard widgets
+- links Go Live Checklist from the Bot Owner sidebar
+- adds the page to dashboard sweep coverage so it cannot silently break before launch
+- keeps `latest-official` unchanged until an official promotion is requested
+
+Release channel:
+- `version-4.2.21` is this experimental go-live readiness build.
+- `latest-experimental` points to this build after publishing.
+- `latest-official` remains Version 4.2.0 until it is promoted.
 # SDAC Bot Version 4.2.20 Experimental
 
 Release date: 2026-07-14
@@ -2548,6 +2567,7 @@ Not included:
 - `media/` uploads
 - `backups/`
 - `venv/` or Python cache files
+
 
 
 
