@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import sqlite3
 
 
-DATABASE_SCHEMA_VERSION = 16
+DATABASE_SCHEMA_VERSION = 17
 
 
 def utc_now_iso():
@@ -703,6 +703,30 @@ def migration_16_dashboard_access_and_bot_owners(connection):
     """)
 
 
+def migration_17_dashboard_auth_codes(connection):
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS dashboard_account_auth_codes (
+            code TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            guild_id TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user',
+            created_by TEXT,
+            created_at TEXT,
+            expires_at TEXT,
+            used_at TEXT,
+            used_by TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dashboard_account_auth_codes_user
+        ON dashboard_account_auth_codes (username, expires_at, used_at)
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dashboard_account_auth_codes_guild
+        ON dashboard_account_auth_codes (guild_id, expires_at, used_at)
+    """)
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -718,6 +742,7 @@ MIGRATIONS = (
     (14, migration_14_dashboard_account_discord_id),
     (15, migration_15_user_restrictions),
     (16, migration_16_dashboard_access_and_bot_owners),
+    (17, migration_17_dashboard_auth_codes),
 )
 
 

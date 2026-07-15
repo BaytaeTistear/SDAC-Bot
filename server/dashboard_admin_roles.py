@@ -1,6 +1,7 @@
 """Shared dashboard role constants and pure role helpers."""
 
 ROLE_LEVELS = {
+    "not_added": -1,
     "user": 0,
     "trusted": 0,
     "moderator": 1,
@@ -10,6 +11,7 @@ ROLE_LEVELS = {
 }
 
 ROLE_LABELS = {
+    "not_added": "Not Added",
     "user": "User",
     "trusted": "Trusted User",
     "moderator": "Moderator",
@@ -23,6 +25,8 @@ OWNER_OVERRIDE_USERNAME = "baytae"
 
 def normalize_role(role):
     key = str(role or "").strip().casefold().replace("-", "_")
+    if key in {"notadded", "not added", "not_added", "none", "unverified"}:
+        key = "not_added"
     if key in {"server_owner", "server owner"}:
         key = "owner"
     if key in {"botowner", "bot owner", "global_owner", "global owner"}:

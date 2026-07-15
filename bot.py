@@ -1690,6 +1690,19 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS dashboard_account_auth_codes (
+                code TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                guild_id TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                created_by TEXT,
+                created_at TEXT,
+                expires_at TEXT,
+                used_at TEXT,
+                used_by TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS dashboard_bot_owners (
                 username TEXT PRIMARY KEY,
                 source TEXT DEFAULT 'manual',
@@ -2420,6 +2433,14 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_dashboard_user_server_access_guild
             ON dashboard_user_server_access (guild_id, role)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_dashboard_account_auth_codes_user
+            ON dashboard_account_auth_codes (username, expires_at, used_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_dashboard_account_auth_codes_guild
+            ON dashboard_account_auth_codes (guild_id, expires_at, used_at)
         """)
         now = datetime.now(timezone.utc).isoformat()
         connection.execute("""

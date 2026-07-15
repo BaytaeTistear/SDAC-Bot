@@ -1419,17 +1419,24 @@ ACCOUNT_HOME_HTML = """
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
-        main { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 60px auto; padding: 24px; width: min(100%, 560px); }
+        main { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 60px auto; padding: 24px; width: min(100%, 640px); }
         a { color: #7c9cff; }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; }
+        input, button { border: 1px solid #30333b; border-radius: 7px; box-sizing: border-box; font-size: 15px; padding: 9px 10px; }
+        button { background: #7c9cff; color: #0b1020; cursor: pointer; font-weight: bold; }
         code { color: #cdd7ff; }
         pre { background: #111318; border: 1px solid #30333b; border-radius: 8px; max-height: 360px; overflow: auto; padding: 12px; white-space: pre-wrap; }
+        .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 16px; padding: 10px; text-align: center; }
+        .notice.error { border-color: #e45d68; }
+        .panel { border-top: 1px solid #30333b; margin-top: 18px; padding-top: 18px; }
+        .stack { display: grid; gap: 8px; }
     </style>
 </head>
 <body>
 <main>
     <h1>Your Sana-Chan Account</h1>
+    {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
     <table>
         <tbody>
             <tr><th>Username</th><td><code>{{ account.username }}</code></td></tr>
@@ -1437,9 +1444,18 @@ ACCOUNT_HOME_HTML = """
             <tr><th>Display name</th><td>{{ account.display_name or account.username }}</td></tr>
             <tr><th>Discord user ID</th><td>{{ account.discord_user_id or "Not linked" }}</td></tr>
             <tr><th>Role</th><td>{{ role_labels.get(account.role, account.role) }}</td></tr>
+            <tr><th>Server access</th><td>{{ access_summary }}</td></tr>
             <tr><th>Status</th><td>{{ "Disabled" if account.disabled else "Active" }}</td></tr>
         </tbody>
     </table>
+    <section class="panel">
+        <h2>Authenticate With Code</h2>
+        <form method="post" action="{{ url_for('account_auth_code') }}" class="stack">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input name="auth_code" autocomplete="one-time-code" placeholder="Authentication code" required>
+            <button type="submit">Authenticate Server Access</button>
+        </form>
+    </section>
     {% if can_open_admin %}
         <p><a href="{{ url_for('admin_settings', key=admin_key) }}">Open admin dashboard</a></p>
     {% endif %}
@@ -2761,13 +2777,14 @@ USERS_HTML = """
     <section class="panel">
         <h2>Dashboard Accounts</h2>
         <table>
-            <thead><tr><th>User</th><th>Discord</th><th>Role</th><th>Status</th><th>Promote</th><th>Ban</th></tr></thead>
+            <thead><tr><th>User</th><th>Discord</th><th>Role</th><th>Server Access</th><th>Status</th><th>Promote</th><th>Ban</th></tr></thead>
             <tbody>
             {% for user in dashboard_users %}
                 <tr>
                     <td><code>{{ user.username }}</code>{% if user.display_name %}<br><span class="muted">{{ user.display_name }}</span>{% endif %}</td>
                     <td><code>{{ user.discord_user_id or '' }}</code></td>
                     <td>{{ role_labels.get(user.role, user.role) }}</td>
+                    <td>{{ access_summary_by_user.get(user.username, 'Not Added') }}</td>
                     <td>{{ 'Banned' if user.disabled else 'Active' }}</td>
                     <td>
                         {% if can_promote_dashboard_user(user.role, 'moderator', user.username) or can_promote_dashboard_user(user.role, 'admin', user.username) or can_promote_dashboard_user(user.role, 'owner', user.username) %}
@@ -2820,54 +2837,116 @@ USERS_HTML = """
                     </td>
                 </tr>
             {% else %}
-                <tr><td colspan="6" class="muted">No dashboard accounts yet.</td></tr>
+                <tr><td colspan="7" class="muted">No dashboard accounts yet.</td></tr>
             {% endfor %}
             </tbody>
         </table>
     </section>
     <section class="panel">
         <h2>Per-Server Role Matrix</h2>
-        <p class="muted">Use this when a person should have different access on different servers.</p>
+        <p class="muted">Use this when a person should have different access on different servers. The server dropdown only shows servers already linked to that user.</p>
         <table>
-            <thead>
-                <tr>
-                    <th>User</th>
-                    {% for guild in guilds %}
-                        <th>{{ guild.name }}<br><code>{{ guild.id }}</code></th>
-                    {% endfor %}
-                </tr>
-            </thead>
+            <thead><tr><th>User</th><th>Current Servers</th><th>Update Existing Server</th><th>Add Server / Issue Code</th></tr></thead>
             <tbody>
             {% for user in dashboard_users %}
-                {% set user_access = access_by_user.get(user.username, {}) %}
+                {% set user_rows = access_rows_by_user.get(user.username, []) %}
+                {% set addable_guilds = addable_guilds_by_user.get(user.username, []) %}
                 <tr>
                     <td><code>{{ user.username }}</code><br><span class="muted">Default: {{ role_labels.get(user.role, user.role) }}</span></td>
-                    {% for guild in guilds %}
-                        {% set current_role = user_access.get(guild.id, user.role) %}
-                        <td>
-                            <form method="post" class="stack">
+                    <td>
+                        {% if user_rows %}
+                            {% for row in user_rows %}
+                                <div>{{ row.name }}<br><code>{{ row.id }}</code><br><span class="muted">{{ role_labels.get(row.role, row.role) }} via {{ row.source }}</span></div>
+                                {% if not loop.last %}<hr>{% endif %}
+                            {% endfor %}
+                        {% else %}
+                            <span class="muted">Not Added</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if user_rows %}
+                            <form method="post" class="stack" data-role-matrix-form>
                                 <input type="hidden" name="key" value="{{ admin_key }}">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <input type="hidden" name="action" value="set_dashboard_server_role">
                                 <input type="hidden" name="username" value="{{ user.username }}">
-                                <input type="hidden" name="guild_id" value="{{ guild.id }}">
-                                <select name="role">
-                                    {% for role_key, role_label in role_labels.items() %}
-                                        {% if can_promote_dashboard_user(current_role, role_key, user.username) or role_key == current_role %}
-                                            <option value="{{ role_key }}" {% if current_role == role_key %}selected{% endif %}>{{ role_label }}</option>
-                                        {% endif %}
+                                <select name="guild_id" aria-label="Existing server for {{ user.username }}">
+                                    {% for row in user_rows %}
+                                        <option value="{{ row.id }}" data-role="{{ row.role }}">{{ row.name }} ({{ role_labels.get(row.role, row.role) }})</option>
                                     {% endfor %}
                                 </select>
-                                <button type="submit">Save</button>
+                                <select name="role" aria-label="Role for selected server">
+                                    {% for role_key, role_label in matrix_role_labels.items() %}
+                                        <option value="{{ role_key }}" {% if user_rows and user_rows[0].role == role_key %}selected{% endif %}>{{ role_label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit">Save Server Role</button>
                             </form>
-                        </td>
-                    {% endfor %}
+                        {% else %}
+                            <span class="muted">Add the user to a server first.</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if addable_guilds %}
+                            <form method="post" class="stack">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="add_dashboard_user_to_server">
+                                <input type="hidden" name="username" value="{{ user.username }}">
+                                <select name="guild_id" aria-label="Server to add {{ user.username }}">
+                                    {% for guild in addable_guilds %}
+                                        <option value="{{ guild.id }}">{{ guild.name }} ({{ guild.id }})</option>
+                                    {% endfor %}
+                                </select>
+                                <select name="role" aria-label="Initial server role">
+                                    {% for role_key, role_label in assignable_role_labels.items() %}
+                                        <option value="{{ role_key }}">{{ role_label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit">Add User To Server</button>
+                            </form>
+                            <form method="post" class="stack">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="issue_dashboard_auth_code">
+                                <input type="hidden" name="username" value="{{ user.username }}">
+                                <select name="guild_id" aria-label="Server code for {{ user.username }}">
+                                    {% for guild in addable_guilds %}
+                                        <option value="{{ guild.id }}">{{ guild.name }} ({{ guild.id }})</option>
+                                    {% endfor %}
+                                </select>
+                                <select name="role" aria-label="Role granted by code">
+                                    {% for role_key, role_label in assignable_role_labels.items() %}
+                                        <option value="{{ role_key }}">{{ role_label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit">Create Auth Code</button>
+                            </form>
+                        {% else %}
+                            <span class="muted">All accessible servers already linked.</span>
+                        {% endif %}
+                    </td>
                 </tr>
             {% else %}
-                <tr><td colspan="{{ 1 + guilds|length }}" class="muted">No dashboard accounts yet.</td></tr>
+                <tr><td colspan="4" class="muted">No dashboard accounts yet.</td></tr>
             {% endfor %}
             </tbody>
         </table>
+        <script>
+        (() => {
+            document.querySelectorAll('[data-role-matrix-form]').forEach((form) => {
+                const server = form.querySelector('select[name="guild_id"]');
+                const role = form.querySelector('select[name="role"]');
+                if (!server || !role) return;
+                const syncRole = () => {
+                    const selectedRole = server.selectedOptions[0]?.dataset.role || 'not_added';
+                    role.value = selectedRole;
+                };
+                server.addEventListener('change', syncRole);
+                syncRole();
+            });
+        })();
+        </script>
     </section>
     <section class="panel">
         <h2>User Lockouts</h2>
@@ -8905,6 +8984,19 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS dashboard_account_auth_codes (
+                code TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                guild_id TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                created_by TEXT,
+                created_at TEXT,
+                expires_at TEXT,
+                used_at TEXT,
+                used_by TEXT
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS dashboard_bot_owners (
                 username TEXT PRIMARY KEY,
                 source TEXT DEFAULT 'manual',
@@ -9582,6 +9674,14 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_dashboard_user_server_access_guild
             ON dashboard_user_server_access (guild_id, role)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_dashboard_account_auth_codes_user
+            ON dashboard_account_auth_codes (username, expires_at, used_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_dashboard_account_auth_codes_guild
+            ON dashboard_account_auth_codes (guild_id, expires_at, used_at)
         """)
         now = utc_now_iso()
         connection.execute("""
@@ -12049,6 +12149,18 @@ def current_admin_is_baytae_owner():
     return bool(user and normalize_role(user["role"]) in {"owner", "bot_owner"} and not int(user["disabled"] or 0))
 
 
+def parse_database_datetime(value):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 def owner_ban_code_session_key(target_username):
     return f"owner_ban_code:{str(target_username or '').strip().casefold()}"
 
@@ -12342,6 +12454,168 @@ def set_user_server_role(connection, username, guild_id, role, source="manual"):
             source = excluded.source,
             updated_at = excluded.updated_at
     """, (username, guild_id, role, source, now, now))
+
+
+def remove_user_server_role(connection, username, guild_id):
+    username = normalize_account_username(username)
+    guild_id = str(guild_id or "").strip()
+    if not username or not guild_id:
+        raise ValueError("A user and server are required.")
+    connection.execute(
+        "DELETE FROM dashboard_user_server_access WHERE username = ? AND guild_id = ?",
+        (username, guild_id),
+    )
+    user = connection.execute("""
+        SELECT guild_ids_json
+        FROM dashboard_admin_users
+        WHERE username = ?
+    """, (username,)).fetchone()
+    if user:
+        new_scope = sorted(set(parse_guild_scope(user["guild_ids_json"])) - {guild_id})
+        connection.execute("""
+            UPDATE dashboard_admin_users
+            SET guild_ids_json = ?, updated_at = ?
+            WHERE username = ?
+        """, (json.dumps(new_scope, separators=(",", ":")), utc_now_iso(), username))
+    return True
+
+
+def dashboard_user_access_rows(user, config_data=None):
+    config_data = config_data or load_config()
+    configured = config_data.get("guilds") or {}
+    username = normalize_account_username(user["username"] if user else "")
+    if not username:
+        return []
+    if is_bot_owner_username(username) or normalize_role(user["role"] if user else "") == "bot_owner":
+        return [
+            {
+                "id": str(guild_id),
+                "name": guild_config.get("brand_name") or guild_config.get("guild_name") or f"Discord {guild_id}",
+                "role": "bot_owner",
+                "source": "bot owner",
+            }
+            for guild_id, guild_config in sorted(configured.items(), key=lambda item: (item[1].get("guild_name") or item[0]).casefold())
+        ]
+    access_map = dashboard_user_server_access_map(username)
+    legacy_scope = set(parse_guild_scope(user["guild_ids_json"] if user else []))
+    rows = []
+    for guild_id, guild_config in sorted(configured.items(), key=lambda item: (item[1].get("guild_name") or item[0]).casefold()):
+        guild_id = str(guild_id)
+        role = access_map.get(guild_id)
+        source = "per-server access"
+        if not role and guild_id in legacy_scope:
+            role = normalize_role(user["role"] if user else "user")
+            source = "legacy scope"
+        if not role:
+            continue
+        rows.append({
+            "id": guild_id,
+            "name": guild_config.get("brand_name") or guild_config.get("guild_name") or f"Discord {guild_id}",
+            "role": normalize_role(role),
+            "source": source,
+        })
+    return rows
+
+
+def dashboard_user_access_summary(user, config_data=None):
+    rows = dashboard_user_access_rows(user, config_data)
+    if not rows:
+        return "Not Added"
+    return "; ".join(
+        f"{row['name']} ({ROLE_LABELS.get(row['role'], row['role'])})"
+        for row in rows
+    )
+
+
+def dashboard_user_addable_guilds(user, config_data=None):
+    config_data = config_data or load_config()
+    existing_ids = {row["id"] for row in dashboard_user_access_rows(user, config_data)}
+    return [
+        guild
+        for guild in guild_options(config_data)
+        if str(guild["id"]) not in existing_ids
+        and can_admin_access_guild(str(guild["id"]), config_data)
+    ]
+
+
+def issue_dashboard_auth_code(connection, username, guild_id, role, created_by):
+    username = normalize_account_username(username)
+    guild_id = str(guild_id or "").strip()
+    role = normalize_role(role)
+    if role == "not_added":
+        raise ValueError("Choose an access role before issuing a code.")
+    if not username or not guild_id:
+        raise ValueError("A user and server are required.")
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    now_dt = datetime.now(timezone.utc)
+    expires_at = (now_dt + timedelta(hours=24)).isoformat()
+    for _ in range(10):
+        code = "".join(secrets.choice(alphabet) for _ in range(8))
+        existing = connection.execute(
+            "SELECT 1 FROM dashboard_account_auth_codes WHERE code = ?",
+            (code,),
+        ).fetchone()
+        if existing:
+            continue
+        connection.execute("""
+            INSERT INTO dashboard_account_auth_codes (
+                code, username, guild_id, role, created_by, created_at, expires_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (code, username, guild_id, role, created_by, now_dt.isoformat(), expires_at))
+        return code, expires_at
+    raise ValueError("Could not create a unique authentication code. Try again.")
+
+
+def redeem_dashboard_auth_code(connection, username, code, config_data=None):
+    config_data = config_data or load_config()
+    username = normalize_account_username(username)
+    code = str(code or "").strip().upper().replace("-", "")
+    if not username or not code:
+        raise ValueError("Enter an authentication code.")
+    row = connection.execute("""
+        SELECT *
+        FROM dashboard_account_auth_codes
+        WHERE code = ?
+          AND used_at IS NULL
+        LIMIT 1
+    """, (code,)).fetchone()
+    if not row:
+        raise ValueError("That authentication code was not found or has already been used.")
+    if normalize_account_username(row["username"]) != username:
+        raise ValueError("That authentication code belongs to a different account.")
+    expires_at = parse_database_datetime(row["expires_at"])
+    if not expires_at or expires_at < datetime.now(timezone.utc):
+        raise ValueError("That authentication code has expired.")
+    guild_id = str(row["guild_id"] or "")
+    if guild_id not in (config_data.get("guilds") or {}):
+        raise ValueError("That authentication code is for an unknown server.")
+    role = normalize_role(row["role"])
+    if role == "not_added":
+        raise ValueError("That authentication code does not grant server access.")
+    account = connection.execute("""
+        SELECT username, role, guild_ids_json
+        FROM dashboard_admin_users
+        WHERE username = ?
+    """, (username,)).fetchone()
+    if not account:
+        raise ValueError("Account was not found.")
+    set_user_server_role(connection, username, guild_id, role, source="code")
+    new_scope = sorted(set(parse_guild_scope(account["guild_ids_json"])) | {guild_id})
+    account_role = normalize_role(account["role"])
+    new_account_role = "user" if account_role == "not_added" else account_role
+    now = utc_now_iso()
+    connection.execute("""
+        UPDATE dashboard_admin_users
+        SET role = ?, guild_ids_json = ?, updated_at = ?
+        WHERE username = ?
+    """, (new_account_role, json.dumps(new_scope, separators=(",", ":")), now, username))
+    connection.execute("""
+        UPDATE dashboard_account_auth_codes
+        SET used_at = ?, used_by = ?
+        WHERE code = ?
+    """, (now, username, code))
+    return guild_id, role, new_scope, new_account_role
 
 
 def dashboard_user_max_role(username, fallback_role="user"):
@@ -13745,7 +14019,7 @@ def account_register():
                         password_hash, role, disabled, email_verified,
                         created_ip, created_at, updated_at, guild_ids_json
                     )
-                    VALUES (?, ?, ?, ?, ?, 'user', 0, 0, ?, ?, ?, '[]')
+                    VALUES (?, ?, ?, ?, ?, 'not_added', 0, 0, ?, ?, ?, '[]')
                 """, (
                     account_username,
                     normalized_email,
@@ -13768,7 +14042,7 @@ def account_register():
                 )
             remember_dashboard_session()
             session["sdac_account_username"] = account_username
-            session["sdac_account_role"] = "user"
+            session["sdac_account_role"] = "not_added"
             session["sdac_discord_user_id"] = normalized_discord_user_id
             return redirect(url_for(
                 "account_home",
@@ -14194,6 +14468,45 @@ def account_access_debug():
     )
 
 
+@app.route("/account/auth-code", methods=["POST"])
+def account_auth_code():
+    if not is_account_logged_in():
+        return redirect(url_for("account_login", next=url_for("account_home")))
+    require_csrf_token()
+    code = request.form.get("auth_code", "")
+    config_data = load_config()
+    try:
+        with database() as connection:
+            guild_id, role, new_scope, new_account_role = redeem_dashboard_auth_code(
+                connection,
+                current_account_username(),
+                code,
+                config_data,
+            )
+            add_admin_audit_log(
+                connection,
+                guild_id,
+                "account_auth_code_redeemed",
+                current_account_username(),
+                current_account_username(),
+                "dashboard_user",
+                current_account_username(),
+                f"Redeemed account authentication code for {guild_id} as {role}.",
+            )
+        session["sdac_account_guild_ids"] = new_scope
+        session["sdac_account_role"] = new_account_role
+        if ROLE_LEVELS.get(role, -1) >= ROLE_LEVELS["moderator"]:
+            session["sdac_admin"] = True
+            session["sdac_admin_username"] = current_account_username()
+            session["sdac_admin_role"] = dashboard_user_max_role(current_account_username(), new_account_role)
+            session["sdac_admin_auth"] = "code"
+            session["sdac_admin_guild_ids"] = new_scope
+        guild_label = guild_name_map(config_data).get(guild_id, guild_id)
+        return redirect(url_for("account_home", notice=f"Server access authenticated for {guild_label}."))
+    except ValueError as error:
+        return redirect(url_for("account_home", notice=str(error), error=1))
+
+
 @app.route("/account/logout")
 def account_logout():
     session.pop("sdac_account_username", None)
@@ -14225,11 +14538,16 @@ def account_home():
             error=1,
         ))
     role = normalize_role(account["role"])
+    max_role = dashboard_user_max_role(account["username"], role)
     return render_template_string(
         ACCOUNT_HOME_HTML,
         account=account,
+        access_summary=dashboard_user_access_summary(account, load_config()),
         admin_key=ADMIN_KEY,
-        can_open_admin=ROLE_LEVELS.get(role, 0) >= ROLE_LEVELS["moderator"],
+        can_open_admin=ROLE_LEVELS.get(max_role, -1) >= ROLE_LEVELS["moderator"],
+        csrf_token=get_csrf_token(),
+        error=request.args.get("error") == "1",
+        notice=request.args.get("notice", ""),
         role_labels=ROLE_LABELS,
     )
 
@@ -14968,6 +15286,7 @@ def admin_users():
     notice = request.args.get("notice", "")
     error = request.args.get("error") == "1"
     config_data = load_config()
+    guild_names = guild_name_map(config_data)
     actor_id, actor_name = web_actor()
 
     if request.method == "POST":
@@ -15064,7 +15383,7 @@ def admin_users():
                         f"Set dashboard user {username} role to {new_role}.",
                     )
                     notice = f"Dashboard user {username} role saved as {new_role}."
-                elif action == "set_dashboard_server_role":
+                elif action in {"set_dashboard_server_role", "add_dashboard_user_to_server"}:
                     username = normalize_account_username(request.form.get("username", ""))
                     guild_id = request.form.get("guild_id", "").strip()
                     new_role = normalize_role(request.form.get("role", "user"))
@@ -15079,23 +15398,33 @@ def admin_users():
                     """, (username,)).fetchone()
                     if not user:
                         raise ValueError("Dashboard user was not found.")
-                    current_target_role = dashboard_user_server_access_map(username).get(
-                        guild_id,
-                        normalize_role(user["role"]),
-                    )
+                    access_map = dashboard_user_server_access_map(username)
+                    if action == "set_dashboard_server_role" and guild_id not in access_map and normalize_role(user["role"]) != "bot_owner":
+                        raise ValueError("That user is not linked to the selected server yet.")
+                    current_target_role = access_map.get(guild_id, "not_added" if action == "add_dashboard_user_to_server" else normalize_role(user["role"]))
                     if not can_promote_dashboard_user(current_target_role, new_role, username):
                         abort(403)
-                    set_user_server_role(connection, username, guild_id, new_role)
-                    new_scope = sorted(set(parse_guild_scope(user["guild_ids_json"])) | {guild_id})
-                    connection.execute("""
-                        UPDATE dashboard_admin_users
-                        SET guild_ids_json = ?, updated_at = ?
-                        WHERE username = ?
-                    """, (
-                        json.dumps(new_scope, separators=(",", ":")),
-                        utc_now_iso(),
-                        username,
-                    ))
+                    if new_role == "not_added":
+                        remove_user_server_role(connection, username, guild_id)
+                        new_scope = sorted(set(parse_guild_scope(user["guild_ids_json"])) - {guild_id})
+                        audit_details = f"Removed dashboard user {username} from {guild_id}."
+                        notice = f"Removed {username} from that server."
+                    else:
+                        set_user_server_role(connection, username, guild_id, new_role)
+                        new_scope = sorted(set(parse_guild_scope(user["guild_ids_json"])) | {guild_id})
+                        new_account_role = "user" if normalize_role(user["role"]) == "not_added" else normalize_role(user["role"])
+                        connection.execute("""
+                            UPDATE dashboard_admin_users
+                            SET role = ?, guild_ids_json = ?, updated_at = ?
+                            WHERE username = ?
+                        """, (
+                            new_account_role,
+                            json.dumps(new_scope, separators=(",", ":")),
+                            utc_now_iso(),
+                            username,
+                        ))
+                        audit_details = f"Set dashboard user {username} role to {new_role} on {guild_id}."
+                        notice = f"Server role saved for {username}."
                     if username == current_admin_username().casefold():
                         session["sdac_admin_guild_ids"] = new_scope
                     if username == current_account_username().casefold():
@@ -15108,9 +15437,44 @@ def admin_users():
                         actor_name,
                         "dashboard_user",
                         username,
-                        f"Set dashboard user {username} role to {new_role} on {guild_id}.",
+                        audit_details,
                     )
-                    notice = f"Server role saved for {username}."
+                elif action == "issue_dashboard_auth_code":
+                    username = normalize_account_username(request.form.get("username", ""))
+                    guild_id = request.form.get("guild_id", "").strip()
+                    role = normalize_role(request.form.get("role", "user"))
+                    if guild_id not in (config_data.get("guilds") or {}):
+                        raise ValueError("Unknown server selected.")
+                    if not can_admin_access_guild(guild_id, config_data):
+                        abort(403)
+                    user = connection.execute("""
+                        SELECT username, role, disabled
+                        FROM dashboard_admin_users
+                        WHERE username = ?
+                    """, (username,)).fetchone()
+                    if not user:
+                        raise ValueError("Dashboard user was not found.")
+                    if not can_promote_dashboard_user("not_added", role, username):
+                        abort(403)
+                    code, expires_at = issue_dashboard_auth_code(
+                        connection,
+                        username,
+                        guild_id,
+                        role,
+                        current_admin_username(),
+                    )
+                    add_admin_audit_log(
+                        connection,
+                        guild_id,
+                        "dashboard_issue_auth_code",
+                        actor_id,
+                        actor_name,
+                        "dashboard_user",
+                        username,
+                        f"Issued account authentication code for {username} on {guild_id} as {role}.",
+                    )
+                    guild_label = guild_names.get(guild_id, guild_id)
+                    notice = f"Auth code for {username} on {guild_label}: {code}. It expires at {expires_at}."
                 elif action == "set_user_lockout":
                     user_id = normalize_discord_user_id(request.form.get("user_id", ""))
                     if not user_id:
@@ -15212,10 +15576,28 @@ def admin_users():
             ))
         return redirect(url_for("admin_users", key=ADMIN_KEY, notice=notice))
 
-    guild_names = guild_name_map(config_data)
+    dashboard_user_rows = dashboard_users()
     access_by_user = {
         user["username"]: dashboard_user_server_access_map(user["username"])
-        for user in dashboard_users()
+        for user in dashboard_user_rows
+    }
+    access_rows_by_user = {
+        user["username"]: dashboard_user_access_rows(user, config_data)
+        for user in dashboard_user_rows
+    }
+    access_summary_by_user = {
+        user["username"]: dashboard_user_access_summary(user, config_data)
+        for user in dashboard_user_rows
+    }
+    addable_guilds_by_user = {
+        user["username"]: dashboard_user_addable_guilds(user, config_data)
+        for user in dashboard_user_rows
+    }
+    matrix_role_labels = ROLE_LABELS
+    assignable_role_labels = {
+        key: label
+        for key, label in ROLE_LABELS.items()
+        if key != "not_added"
     }
     return render_template_string(
         USERS_HTML,
@@ -15225,12 +15607,17 @@ def admin_users():
         can_ban_dashboard_user=can_ban_dashboard_user,
         can_promote_dashboard_user=can_promote_dashboard_user,
         access_by_user=access_by_user,
-        dashboard_users=dashboard_users(),
+        access_rows_by_user=access_rows_by_user,
+        access_summary_by_user=access_summary_by_user,
+        addable_guilds_by_user=addable_guilds_by_user,
+        assignable_role_labels=assignable_role_labels,
+        dashboard_users=dashboard_user_rows,
         error=error,
         guild_names=guild_names,
         guilds=guild_options(config_data),
         known_users=known_discord_users(),
         lockout_scope_labels=LOCKOUT_SCOPE_LABELS,
+        matrix_role_labels=matrix_role_labels,
         notice=notice,
         owner_override_username=OWNER_OVERRIDE_USERNAME,
         restrictions=dashboard_user_restrictions(),

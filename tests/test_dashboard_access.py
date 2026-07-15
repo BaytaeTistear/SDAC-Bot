@@ -186,6 +186,42 @@ class DashboardAccessTests(unittest.TestCase):
             self.assertEqual(row["stars"], 0)
             self.assertNotIn("123456789012345678", row["voters"] or "")
 
+    def test_auth_code_redeems_server_access(self):
+        with self.dashboard.database() as connection:
+            connection.execute("DELETE FROM dashboard_account_auth_codes")
+            connection.execute(
+                """
+                UPDATE dashboard_admin_users
+                SET role = 'not_added', guild_ids_json = '[]'
+                WHERE username = 'scoped-user'
+                """
+            )
+            connection.execute(
+                "DELETE FROM dashboard_user_server_access WHERE username = 'scoped-user'"
+            )
+            code, _ = self.dashboard.issue_dashboard_auth_code(
+                connection,
+                "scoped-user",
+                "111",
+                "moderator",
+                "owner",
+            )
+            guild_id, role, scope, account_role = self.dashboard.redeem_dashboard_auth_code(
+                connection,
+                "scoped-user",
+                code,
+                self.config,
+            )
+
+        self.assertEqual(guild_id, "111")
+        self.assertEqual(role, "moderator")
+        self.assertEqual(scope, ["111"])
+        self.assertEqual(account_role, "user")
+        self.assertEqual(
+            self.dashboard.dashboard_user_server_access_map("scoped-user"),
+            {"111": "moderator"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

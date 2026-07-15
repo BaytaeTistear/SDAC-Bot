@@ -1,3 +1,19 @@
+# SDAC Bot Version 4.2.28 Experimental
+
+Version 4.2.28 is an experimental dashboard access-control update for server-scoped account management.
+
+Update scope: User access, per-server roles, and authentication codes
+
+Changes:
+- adds a `Not Added` dashboard role for accounts that have not authenticated or been assigned to a server
+- shows each dashboard account's server access on the Users page
+- replaces the wide per-server matrix with per-user server dropdowns that only list servers already linked to that user
+- adds controls to add a dashboard user to an accessible server
+- adds one-time account authentication codes that users can redeem from their account page
+- adds database support and tests for account authentication codes
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.27 Experimental
 
 Version 4.2.27 is an experimental Google Play compatibility update for the Sana-Chan Android bundle.
