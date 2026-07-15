@@ -1,3 +1,15 @@
+# SDAC Bot Version 4.2.25 Experimental
+
+Version 4.2.25 is an experimental documentation update for preparing Sana-Chan for Google Play upload.
+
+Update scope: Play Store upload checklist
+
+Changes:
+- adds `PLAY_STORE_UPLOAD_CHECKLIST.md` with the generated release bundle path, checksum, app identity, signing requirements, Play Console listing items, policy forms, and testing requirements
+- documents that the current generated `app-release.aab` is unsigned and must be rebuilt after upload-keystore signing is configured
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.24 Experimental
 
 Version 4.2.24 is an experimental release packaging fix for the Sana-Chan rename.
