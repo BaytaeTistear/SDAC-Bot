@@ -1,14 +1,14 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "app.sdac.companion"
+    namespace "com.baytae.sanachan"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "app.sdac.companion"
+        applicationId "com.baytae.sanachan"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 42020
-        versionName "4.2.20"
+        versionCode 42023
+        versionName "4.2.23"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

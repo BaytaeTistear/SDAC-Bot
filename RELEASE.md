@@ -1,3 +1,18 @@
+# SDAC Bot Version 4.2.23 Experimental
+
+Version 4.2.23 is an experimental branding and app package rename for the project transition to Sana-Chan.
+
+Update scope: Bot, Dashboard, and App rename
+
+Changes:
+- renames the visible bot, dashboard, PWA, and Android app branding from SDAC to Sana-Chan
+- changes the Android package/application ID to `com.baytae.sanachan`
+- updates the Android app display name, deep-link scheme, package namespace, and app shell version to 4.2.23
+- renames the release workflow app artifacts to `Sana-Chan-Android-Debug.apk` and `Sana-Chan-App-Source.zip`
+- keeps legacy `SDAC_*` environment variables, `/sdac`, and updater/service command names for compatibility with existing installs
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.22 Experimental
 
 Release date: 2026-07-14

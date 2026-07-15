@@ -1,6 +1,6 @@
-# SDACCompanion Official App Scaffold
+# Sana-Chan Official App Scaffold
 
-This is the first native-app scaffold for SDACCompanion. The Flask dashboard remains the backend and source of truth for login, server selection, submissions, guessing games, admin permissions, theme/layout settings, and release/update views.
+This is the first native-app scaffold for Sana-Chan. The Flask dashboard remains the backend and source of truth for login, server selection, submissions, guessing games, admin permissions, theme/layout settings, and release/update views.
 
 ## Recommendation
 
@@ -28,8 +28,8 @@ Set `VITE_SDAC_DASHBOARD_URL` to the hosted dashboard URL for the Vite shell. Na
 The app name is configurable:
 
 ```powershell
-$env:SDAC_APP_NAME="SDACCompanion"
-$env:SDAC_APP_ID="app.sdac.companion"
+$env:SDAC_APP_NAME="Sana-Chan"
+$env:SDAC_APP_ID="com.baytae.sanachan"
 ```
 
 The installed Capacitor app is allowed by the dashboard by default through `capacitor://localhost`. If the app shell runs from another origin during development, set this on the Flask dashboard server:
@@ -47,7 +47,7 @@ cd apps/sdac-official-app
 npm install
 npm run build
 $env:SDAC_APP_DASHBOARD_URL="https://freethefishies.us.to"
-$env:SDAC_APP_NAME="SDACCompanion"
+$env:SDAC_APP_NAME="Sana-Chan"
 npm run cap:add:android
 npm run cap:sync
 npm run cap:open:android
@@ -99,8 +99,8 @@ For Play Store/App Bundle signing, create a release keystore outside the repo:
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.sdac\android-signing"
 keytool -genkeypair `
   -v `
-  -keystore "$env:USERPROFILE\.sdac\android-signing\sdaccompanion-release.jks" `
-  -alias sdaccompanion `
+  -keystore "$env:USERPROFILE\.sdac\android-signing\Sana-Chan-release.jks" `
+  -alias Sana-Chan `
   -keyalg RSA `
   -keysize 2048 `
   -validity 10000
@@ -109,9 +109,9 @@ keytool -genkeypair `
 Create `apps/sdac-official-app/android/keystore.properties` and do not commit it:
 
 ```properties
-storeFile=C:\\Users\\YOUR_USER\\.sdac\\android-signing\\sdaccompanion-release.jks
+storeFile=C:\\Users\\YOUR_USER\\.sdac\\android-signing\\Sana-Chan-release.jks
 storePassword=YOUR_STORE_PASSWORD
-keyAlias=sdaccompanion
+keyAlias=Sana-Chan
 keyPassword=YOUR_KEY_PASSWORD
 ```
 
@@ -165,7 +165,7 @@ cd apps/sdac-official-app
 npm install
 npm run build
 export SDAC_APP_DASHBOARD_URL="https://freethefishies.us.to"
-export SDAC_APP_NAME="SDACCompanion"
+export SDAC_APP_NAME="Sana-Chan"
 npm run cap:add:ios
 npm run cap:sync
 npm run cap:open:ios
@@ -179,7 +179,7 @@ For desktop, use Tauri after the mobile app is stable. Keep this same Vite app a
 npm create tauri-app@latest
 ```
 
-Choose this existing frontend directory when prompted, then point the desktop app at the same hosted SDAC dashboard URL.
+Choose this existing frontend directory when prompted, then point the desktop app at the same hosted Sana-Chan dashboard URL.
 
 ## Backend Contract
 
@@ -214,7 +214,7 @@ Keep admin APIs protected by the existing dashboard login/session, CSRF strategy
 
 ## App Artwork
 
-The first generated SDACCompanion artwork is saved at:
+The first generated Sana-Chan artwork is saved at:
 
 ```text
 apps/sdac-official-app/public/sdac-companion-art.png

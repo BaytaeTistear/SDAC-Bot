@@ -77,7 +77,7 @@ type UpdateChannelInfo = {
   sha256: string;
 };
 
-const APP_SHELL_VERSION = "4.2.20";
+const APP_SHELL_VERSION = "4.2.23";
 const dashboardBase = (import.meta.env.VITE_SDAC_DASHBOARD_URL || "https://freethefishies.us.to").replace(/\/$/, "");
 const nativePlatform = Capacitor.getPlatform();
 const isNative = Capacitor.isNativePlatform();
@@ -235,7 +235,7 @@ function releaseNotice(payload: BootstrapPayload): string {
         <li>Tap Download APK for the channel you want.</li>
         <li>If Android asks, allow this browser/app to install unknown apps.</li>
         <li>Open the downloaded APK and approve the Android installer prompt.</li>
-        <li>After install, reopen SDACCompanion and check this panel again.</li>
+        <li>After install, reopen Sana-Chan and check this panel again.</li>
       </ol>
     </section>
   `;
@@ -358,7 +358,7 @@ async function claimAppLogin(ticket: string): Promise<void> {
 
 async function handleAppUrlOpen(url: string): Promise<void> {
   const parsed = new URL(url);
-  if (parsed.protocol !== "sdaccompanion:" || parsed.hostname !== "login-complete") {
+  if (parsed.protocol !== "Sana-Chan:" || parsed.hostname !== "login-complete") {
     await refreshBootstrap();
     return;
   }
@@ -453,7 +453,7 @@ function render(payload: BootstrapPayload): void {
       </section>
       ${releaseNotice(payload)}
       ${diagnosticsPanel(payload)}
-      <iframe title="SDAC Dashboard" src="${escapeHtml(appFrameUrl(payload.app.entry_url))}"></iframe>
+      <iframe title="Sana-Chan Dashboard" src="${escapeHtml(appFrameUrl(payload.app.entry_url))}"></iframe>
     </main>
   `;
 
@@ -468,8 +468,8 @@ function renderError(error: unknown): void {
   appRoot!.innerHTML = `
     <main class="shell">
       <section class="panel diagnostics" open>
-        <h1>SDAC</h1>
-        <p>Could not reach the SDAC dashboard backend.</p>
+        <h1>Sana-Chan</h1>
+        <p>Could not reach the Sana-Chan Dashboard backend.</p>
         <p class="muted">${escapeHtml(String(error))}</p>
         <dl>
           <dt>Dashboard</dt><dd>${escapeHtml(dashboardBase)}</dd>

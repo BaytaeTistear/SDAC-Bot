@@ -874,7 +874,7 @@ SDAC_SUBMENU_DETAILS = {
 
 def sdac_hub_content(is_admin=False, notice=""):
     lines = [
-        "**SDAC Control Center**",
+        "**Sana-Chan Control Center**",
         "Use the buttons below instead of memorizing individual commands.",
     ]
     if notice:
@@ -1034,7 +1034,7 @@ class SDACSubmenuSelect(discord.ui.Select):
                 interaction.guild_id,
                 f"Synced {len(synced)} guild command(s) from /sdac.",
             )
-            lines = ["**SDAC Command Sync**", "Discord command sync requested."]
+            lines = ["**Sana-Chan Command Sync**", "Discord command sync requested."]
             lines.extend(command_sync_status_lines(interaction.guild, guild_config))
             lines.append("Discord may take a minute to refresh the command picker.")
             await interaction.edit_original_response(
@@ -1221,7 +1221,7 @@ class SDACSubmenuButton(discord.ui.Button):
                 interaction.guild_id,
                 f"Synced {len(synced)} guild command(s) from /sdac.",
             )
-            lines = ["**SDAC Command Sync**", "Discord command sync requested."]
+            lines = ["**Sana-Chan Command Sync**", "Discord command sync requested."]
             lines.extend(command_sync_status_lines(interaction.guild, guild_config))
             lines.append("Discord may take a minute to refresh the command picker.")
             await interaction.edit_original_response(
@@ -4957,7 +4957,7 @@ def settings_lines(guild_config):
     brand_name = guild_config.get("brand_name") or guild_config.get("guild_name") or "SDAC"
     setup_preset = guild_config.get("setup_preset") or "custom"
     lines = [
-        "**SDAC Settings**",
+        "**Sana-Chan Settings**",
         f"Brand name: `{brand_name}`",
         f"Brand accent: `{guild_config.get('brand_accent') or '#7c9cff'}`",
         f"Setup preset: `{setup_preset}`",
@@ -5952,7 +5952,7 @@ def setup_wizard_content(guild_config, page=1, notice=""):
         3: "Features And Finish",
     }
     lines = [
-        "**SDAC Setup Wizard**",
+        "**Sana-Chan Setup Wizard**",
         f"Page {page} of 3: {page_titles.get(page, 'Setup')}",
         f"Required progress: `{complete_required}/{len(required_rows)}`",
     ]
@@ -6053,7 +6053,7 @@ async def setup_test_lines(guild, guild_config):
     rows = setup_status_rows(guild_config)
     required_rows = [row for row in rows if row["required"]]
     missing_required = [row["label"] for row in required_rows if not row["ok"]]
-    lines = ["**SDAC Setup Test**"]
+    lines = ["**Sana-Chan Setup Test**"]
     if missing_required:
         lines.append("[MISSING] Required setup: " + ", ".join(missing_required))
     else:
@@ -6460,7 +6460,7 @@ class SetupBotNicknameModal(discord.ui.Modal):
         guild_config = get_guild_config(guild_id, create=False)
         self.nickname_input = discord.ui.TextInput(
             label="Bot nickname in this server",
-            placeholder="SDAC Bot, Media Helper, etc. Blank resets.",
+            placeholder="Sana-Chan Bot, Media Helper, etc. Blank resets.",
             default=(guild_config.get("bot_nickname") or "")[:32],
             max_length=32,
             required=False,
@@ -7068,7 +7068,7 @@ class SetupWizardView(discord.ui.View):
             interaction.guild_id,
             f"Synced {len(synced)} guild command(s) from setup wizard.",
         )
-        lines = ["**SDAC Command Sync**", "Discord command sync requested."]
+        lines = ["**Sana-Chan Command Sync**", "Discord command sync requested."]
         lines.extend(command_sync_status_lines(interaction.guild, guild_config))
         lines.append("Discord may take a minute to refresh the command picker.")
         await interaction.edit_original_response(
@@ -7082,7 +7082,7 @@ class SetupWizardView(discord.ui.View):
         if not channel_ids and isinstance(interaction.channel, discord.TextChannel):
             channel_ids.append(interaction.channel.id)
 
-        lines = ["**SDAC Permission Check**"]
+        lines = ["**Sana-Chan Permission Check**"]
         if not channel_ids:
             lines.append("No configured text channels were found.")
 
@@ -7148,7 +7148,7 @@ async def sdac(interaction):
 async def commands_list(interaction):
     await send_command_help_menu(
         interaction,
-        "SDAC User Commands",
+        "Sana-Chan User Commands",
         USER_COMMAND_GROUPS,
         "These commands are available to regular users. Use the menu to switch sections.",
     )
@@ -7553,7 +7553,7 @@ async def admincommands(interaction):
         return
     await send_command_help_menu(
         interaction,
-        "SDAC Admin Commands",
+        "Sana-Chan Admin Commands",
         ADMIN_COMMAND_GROUPS,
         "These commands require SDAC admin access. Use the menu to switch sections.",
     )
@@ -7694,7 +7694,7 @@ async def repository(interaction):
     configured_repo = RELEASE_REPO
     original_repo = ORIGINAL_REPO
     lines = [
-        "**SDAC Repositories**",
+        "**Sana-Chan Repositories**",
         f"User/fork repository: https://github.com/{configured_repo}",
         f"Original repository: https://github.com/{original_repo}",
         f"Current update channel: `{os.getenv('SDAC_RELEASE_TAG') or 'latest-official'}`",
@@ -8061,7 +8061,7 @@ async def categories(interaction):
     )
     timezone_name = guild_config.get("timezone", DEFAULT_GUILD_CONFIG["timezone"])
     lines = [
-        "**SDAC Configuration**",
+        "**Sana-Chan Configuration**",
         f"Submit channel: {submit_channel.mention if submit_channel else 'Not set'}",
         f"Timezone: `{timezone_name}`",
         f"Weekly day: {guild_config.get('weekly_top_day', 'sunday').title()}",
@@ -8223,7 +8223,7 @@ async def checkpermissions(
     if not channel_ids and isinstance(interaction.channel, discord.TextChannel):
         channel_ids.append(interaction.channel.id)
 
-    lines = ["**SDAC Permission Check**"]
+    lines = ["**Sana-Chan Permission Check**"]
     if not channel_ids:
         lines.append("No configured text channels were found.")
 
@@ -8270,7 +8270,7 @@ async def repairpermissions(interaction):
 
     required_permission_integer = os.getenv("SDAC_BOT_PERMISSIONS", "274878221376")
     lines = [
-        "**SDAC Permission Repair Preview**",
+        "**Sana-Chan Permission Repair Preview**",
         "This command does not change permissions by itself. It previews what SDAC needs.",
         f"Invite scopes: `bot applications.commands`",
         f"Permissions integer: `{required_permission_integer}`",
@@ -9361,7 +9361,7 @@ async def backupstatus(interaction):
     ]
     await interaction.response.send_message(
         "\n".join([
-            "**SDAC Backup Status**",
+            "**Sana-Chan Backup Status**",
             f"Enabled: `{backup.get('enabled')}`",
             f"Provider: `{backup.get('provider') or 'rclone'}`",
             f"Remote: `{backup.get('remote') or 'Not set'}`",
@@ -9436,7 +9436,7 @@ async def reasonpresets(interaction):
         return
     await interaction.response.send_message(
         "\n".join(
-            ["**SDAC Reason Presets**"]
+            ["**Sana-Chan Reason Presets**"]
             + [
                 f"- `{key}` - {label}"
                 for key, label in MODERATION_REASON_PRESETS.items()
@@ -11781,7 +11781,7 @@ async def post_weekly_top(guild_id, guild_config, now):
                 rows.append(row)
 
     if rows:
-        lines = ["**SDAC Weekly Top Posts**"]
+        lines = ["**Sana-Chan Weekly Top Posts**"]
         for row in rows:
             link = (
                 f"https://discord.com/channels/{guild_id}/"
@@ -11954,7 +11954,7 @@ async def post_monthly_digests():
             continue
 
         lines = [
-            f"**SDAC Monthly Digest - {month}**",
+            f"**Sana-Chan Monthly Digest - {month}**",
             f"Submissions: `{totals['submissions']}`",
             f"Reports handled/opened: `{totals['reports']}`",
             "",
@@ -12109,7 +12109,7 @@ async def post_notification_digests():
             continue
 
         lines = [
-            f"**SDAC Admin Digest - {frequency.title()}**",
+            f"**Sana-Chan Admin Digest - {frequency.title()}**",
             f"Server: `{guild_config.get('guild_name') or guild_id}`",
             f"Window starts: `{since.strftime('%Y-%m-%d %H:%M %Z')}`",
             "",

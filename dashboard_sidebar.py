@@ -281,16 +281,16 @@ def admin_sidebar_html(
     if is_admin_logged_in():
         role = role_labels.get(current_admin_role(), current_admin_role().title())
         username = current_admin_username()
-        brand = "SDAC Admin"
+        brand = "Sana-Chan Admin"
     elif is_account_logged_in():
         account_role = "bot_owner" if is_bot_owner_username(current_account_username()) else normalize_role(session.get("sdac_account_role"))
         role = role_labels.get(account_role, "User")
         username = current_account_username()
-        brand = "SDAC"
+        brand = "Sana-Chan"
     else:
         role = "Public"
         username = "Guest"
-        brand = "SDAC"
+        brand = "Sana-Chan"
 
     home_url = admin_url("admin_staff_home") if is_admin_logged_in() else url_for("index")
     home_active = " active" if request.endpoint in {"admin_staff_home", "index"} else ""
@@ -386,7 +386,6 @@ def admin_sidebar_html(
 }}());
 </script>
 """
-
 
 
 

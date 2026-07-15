@@ -1,4 +1,4 @@
-package app.sdac.companion;
+package com.baytae.sanachan;
 
 import com.getcapacitor.BridgeActivity;
 

@@ -14,7 +14,7 @@ on:
       title:
         description: "Release title"
         required: false
-        default: "SDAC Bot Release"
+        default: "Sana-Chan Release"
 
 permissions:
   contents: write
@@ -130,7 +130,7 @@ jobs:
             dist/SDAC-Bot-Ubuntu-Update.sh
             dist/SDAC-Bot-Windows-Update.ps1
             dist/sdac-update
-            dist/SDACCompanion-App-Source.zip
+            dist/Sana-Chan-App-Source.zip
 
 
   build-android-app:
@@ -181,15 +181,15 @@ jobs:
         run: |
           set -Eeuo pipefail
           mkdir -p dist
-          cp apps/sdac-official-app/android/app/build/outputs/apk/debug/app-debug.apk dist/SDACCompanion-Android-Debug.apk
-          (cd dist && sha256sum SDACCompanion-Android-Debug.apk > SDACCompanion-Android-Debug.apk.sha256)
+          cp apps/sdac-official-app/android/app/build/outputs/apk/debug/app-debug.apk dist/Sana-Chan-Android-Debug.apk
+          (cd dist && sha256sum Sana-Chan-Android-Debug.apk > Sana-Chan-Android-Debug.apk.sha256)
       - name: Upload Android app artifacts
         uses: actions/upload-artifact@v4
         with:
           name: sdac-app-android
           path: |
-            dist/SDACCompanion-Android-Debug.apk
-            dist/SDACCompanion-Android-Debug.apk.sha256
+            dist/Sana-Chan-Android-Debug.apk
+            dist/Sana-Chan-Android-Debug.apk.sha256
 
   linux-installer-smoke-test:
     name: Linux Installer Smoke Test
@@ -260,7 +260,7 @@ jobs:
           set -Eeuo pipefail
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             TAG="$INPUT_TAG"
-            TITLE="${INPUT_TITLE:-SDAC Bot Release}"
+            TITLE="${INPUT_TITLE:-Sana-Chan Release}"
             if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
               git tag "$TAG"
               git push origin "$TAG"
@@ -281,7 +281,7 @@ jobs:
             ' RELEASE.md > "$NOTES_FILE"
           fi
           if [[ ! -s "$NOTES_FILE" ]]; then
-            echo "Automated SDAC Bot release." > "$NOTES_FILE"
+            echo "Automated Sana-Chan Release." > "$NOTES_FILE"
           fi
           NOTES_TITLE="$(grep -m1 '^# ' "$NOTES_FILE" | sed 's/^# //')"
           NOTES_VERSION="$(printf '%s\n' "$NOTES_TITLE" | grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1 || true)"

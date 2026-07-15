@@ -2,8 +2,8 @@
 
 PWA_HEAD_HTML = """
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="application-name" content="SDAC">
-<meta name="apple-mobile-web-app-title" content="SDAC">
+<meta name="application-name" content="Sana-Chan">
+<meta name="apple-mobile-web-app-title" content="Sana-Chan">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">

@@ -824,7 +824,7 @@ HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Dashboard</title>
+    <title>Sana-Chan Dashboard</title>
     <style>
         :root {
             color-scheme: dark;
@@ -1139,7 +1139,7 @@ HTML = """
 </head>
 <body>
 <main>
-    <h1>SDAC Dashboard</h1>
+    <h1>Sana-Chan Dashboard</h1>
     <p class="mode">
         {% if is_admin %}
             <strong>Admin mode</strong>
@@ -1415,7 +1415,7 @@ ACCOUNT_HOME_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Account</title>
+    <title>Sana-Chan Account</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -1429,7 +1429,7 @@ ACCOUNT_HOME_HTML = """
 </head>
 <body>
 <main>
-    <h1>Your SDAC Account</h1>
+    <h1>Your Sana-Chan Account</h1>
     <table>
         <tbody>
             <tr><th>Username</th><td><code>{{ account.username }}</code></td></tr>
@@ -1460,7 +1460,7 @@ ACCOUNT_SERVER_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Choose SDAC Server</title>
+    <title>Choose Sana-Chan Server</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -1553,7 +1553,7 @@ USER_PROFILE_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ profile.username }} - SDAC Profile</title>
+    <title>{{ profile.username }} - Sana-Chan Profile</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -1625,7 +1625,7 @@ MY_SUBMISSIONS_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>My SDAC Submissions</title>
+    <title>My Sana-Chan Submissions</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -1714,7 +1714,7 @@ AUDIT_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Audit Log</title>
+    <title>Sana-Chan Audit Log</title>
     <style>
         :root { color-scheme: dark; }
         body {
@@ -1779,7 +1779,7 @@ AUDIT_HTML = """
 </head>
 <body>
 <main>
-    <h1>SDAC Audit Log</h1>
+    <h1>Sana-Chan Audit Log</h1>
     <nav><a href="{{ url_for('index', key=admin_key) }}">Back to submissions</a></nav>
     <nav><a href="{{ url_for('admin_settings', key=admin_key) }}">Settings</a></nav>
     <nav><a href="{{ url_for('admin_game_library', key=admin_key) }}">Game Library</a></nav>
@@ -1849,7 +1849,7 @@ GUESSING_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Guessing Leaderboard</title>
+    <title>Sana-Chan Guessing Leaderboard</title>
     <style>
         :root { color-scheme: dark; }
         body {
@@ -2030,7 +2030,7 @@ SERVERS_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Servers</title>
+    <title>Sana-Chan Servers</title>
     <style>
         :root { color-scheme: dark; }
         body {
@@ -2061,7 +2061,7 @@ SERVERS_HTML = """
 </head>
 <body>
 <main>
-    <h1>SDAC Servers</h1>
+    <h1>Sana-Chan Servers</h1>
     <nav>
         <a href="{{ url_for('index') }}">Submissions</a>
         <a href="{{ url_for('guessing_leaderboard') }}">Guessing leaderboard</a>
@@ -2167,7 +2167,7 @@ ACHIEVEMENTS_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Achievements</title>
+    <title>Sana-Chan Achievements</title>
     <style>
         :root { color-scheme: dark; }
         body {
@@ -2307,7 +2307,7 @@ GAME_LIBRARY_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Game Library</title>
+    <title>Sana-Chan Game Library</title>
     <style>
         :root { color-scheme: dark; }
         body {
@@ -2630,7 +2630,7 @@ ANIME_ACTIVITIES_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Anime Activities</title>
+    <title>Sana-Chan Anime Activities</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -2725,7 +2725,7 @@ USERS_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Admin Users</title>
+    <title>Sana-Chan Admin Users</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -2942,7 +2942,7 @@ SETTINGS_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Admin Settings</title>
+    <title>Sana-Chan Admin Settings</title>
     <style>
         :root { color-scheme: dark; }
         body {
@@ -3078,7 +3078,7 @@ SETTINGS_HTML = """
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <table>
                     <tbody>
-                        <tr><th>Global bot username</th><td><input name="bot_username" maxlength="32" value="{{ global_bot_username }}" placeholder="SDAC Bot"></td></tr>
+                        <tr><th>Global bot username</th><td><input name="bot_username" maxlength="32" value="{{ global_bot_username }}" placeholder="Sana-Chan Bot"></td></tr>
                     </tbody>
                 </table>
                 <button type="submit">Save Global Username</button>
@@ -3637,7 +3637,7 @@ MAINTENANCE_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Maintenance</title>
+    <title>Sana-Chan Maintenance</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -3882,7 +3882,7 @@ OPTIMIZATION_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Optimization</title>
+    <title>Sana-Chan Optimization</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -4102,7 +4102,7 @@ MEDIA_CLEANUP_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Media Cleanup</title>
+    <title>Sana-Chan Media Cleanup</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -4275,7 +4275,7 @@ JOBS_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Jobs</title>
+    <title>Sana-Chan Jobs</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -4366,7 +4366,7 @@ PRIVACY_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Privacy Tools</title>
+    <title>Sana-Chan Privacy Tools</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -4486,7 +4486,7 @@ ANALYTICS_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Analytics</title>
+    <title>Sana-Chan Analytics</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -4583,7 +4583,7 @@ MONTHLY_REPORT_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Monthly Report</title>
+    <title>Sana-Chan Monthly Report</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -4677,7 +4677,7 @@ POLLS_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Polls</title>
+    <title>Sana-Chan Polls</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -4778,7 +4778,7 @@ RELEASES_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Release Channel</title>
+    <title>Sana-Chan Release Channel</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -4912,7 +4912,7 @@ GO_LIVE_CHECKLIST_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Go Live Checklist</title>
+    <title>Sana-Chan Go Live Checklist</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -4998,7 +4998,7 @@ RELEASE_CHECKLIST_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Release Checklist</title>
+    <title>Sana-Chan Release Checklist</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -5133,7 +5133,7 @@ INSTALL_DOCTOR_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Install Doctor</title>
+    <title>Sana-Chan Install Doctor</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -5187,7 +5187,7 @@ APPROVALS_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Admin Approvals</title>
+    <title>Sana-Chan Admin Approvals</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -5276,7 +5276,7 @@ ADMIN_OVERVIEW_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Admin Home</title>
+    <title>Sana-Chan Admin Home</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #0f172a; color: #f8fafc; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
@@ -5509,7 +5509,7 @@ THEME_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Theme</title>
+    <title>Sana-Chan Theme</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #0f172a; color: #f8fafc; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
@@ -5573,7 +5573,7 @@ LAYOUT_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Layout</title>
+    <title>Sana-Chan Layout</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #0f172a; color: #f8fafc; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
@@ -5721,7 +5721,7 @@ LAYOUT_HTML = """
                 <div class="preview-menu-button">Menu</div>
                 <div class="preview-shell">
                     <aside class="preview-sidebar">
-                        <strong>SDAC Admin</strong>
+                        <strong>Sana-Chan Admin</strong>
                         <span>Server Owner</span>
                         <div class="preview-nav-line active"></div>
                         <div class="preview-nav-line"></div>
@@ -5729,7 +5729,7 @@ LAYOUT_HTML = """
                         <div class="preview-nav-line"></div>
                     </aside>
                     <div class="preview-content">
-                        <div class="preview-heading">SDAC Dashboard</div>
+                        <div class="preview-heading">Sana-Chan Dashboard</div>
                         <div class="preview-filter">Filters</div>
                         <div class="preview-inner" id="layout-preview">
                             {% for item in layout_items %}
@@ -5975,7 +5975,7 @@ OWNER_PORTAL_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Owner Portal</title>
+    <title>Sana-Chan Owner Portal</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -6071,7 +6071,7 @@ SERVER_HEALTH_CARDS_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Server Health Cards</title>
+    <title>Sana-Chan Server Health Cards</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -6178,7 +6178,7 @@ PUBLIC_STATS_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Public Stats</title>
+    <title>Sana-Chan Public Stats</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -6196,7 +6196,7 @@ PUBLIC_STATS_HTML = """
 </head>
 <body>
 <main>
-    <h1>SDAC Public Stats</h1>
+    <h1>Sana-Chan Public Stats</h1>
     <nav>
         <a href="{{ url_for('index') }}">Submissions</a>
         <a href="{{ url_for('servers') }}">Servers</a>
@@ -6251,7 +6251,7 @@ PRODUCTION_HEALTH_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Production Health</title>
+    <title>Sana-Chan Production Health</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -6312,7 +6312,7 @@ MODERATION_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Moderation</title>
+    <title>Sana-Chan Moderation</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -6474,7 +6474,7 @@ REMOVAL_REASONS_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Removal Reasons</title>
+    <title>Sana-Chan Removal Reasons</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -6529,7 +6529,7 @@ ONBOARDING_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Server Onboarding</title>
+    <title>Sana-Chan Server Onboarding</title>
     <style>
         :root { color-scheme: dark; }
         body {
@@ -6588,7 +6588,7 @@ ONBOARDING_HTML = """
     <section class="server">
         <h2>New Server Setup Link</h2>
         {% if invite_url %}
-            <p><a href="{{ invite_url }}" target="_blank">Invite SDAC Bot to a Discord server</a></p>
+            <p><a href="{{ invite_url }}" target="_blank">Invite Sana-Chan Bot to a Discord server</a></p>
         {% else %}
             <p class="muted">
                 Set <code>SDAC_BOT_CLIENT_ID</code> or <code>DISCORD_CLIENT_ID</code>
@@ -6685,7 +6685,7 @@ ABOUT_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>About SDAC Bot</title>
+    <title>About Sana-Chan Bot</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -6702,7 +6702,7 @@ ABOUT_HTML = """
 </head>
 <body>
 <main>
-    <h1>About SDAC Bot</h1>
+    <h1>About Sana-Chan Bot</h1>
     <nav>
         <a href="{{ url_for('index') }}">Submissions</a>
         <a href="{{ url_for('servers') }}">Servers</a>
@@ -6716,7 +6716,7 @@ ABOUT_HTML = """
     <section class="panel">
         <h2>What It Does</h2>
         <p>
-            SDAC Bot lets Discord communities collect media submissions,
+            Sana-Chan Bot lets Discord communities collect media submissions,
             repost them into organized category channels, vote on favorites,
             and run media guessing games with monthly and cross-server rankings.
         </p>
@@ -6750,7 +6750,7 @@ ABOUT_HTML = """
     <section class="panel">
         <h2>Add It To A Server</h2>
         {% if invite_url %}
-            <p><a href="{{ invite_url }}" target="_blank">Invite SDAC Bot with the required permissions</a></p>
+            <p><a href="{{ invite_url }}" target="_blank">Invite Sana-Chan Bot with the required permissions</a></p>
         {% else %}
             <p class="muted">
                 The invite link is not configured yet. Set
@@ -6806,10 +6806,10 @@ BOT_INVITE_HTML = """
     </nav>
 
     <section class="panel">
-        <h2>Install SDAC In Discord</h2>
+        <h2>Install Sana-Chan In Discord</h2>
         <p>{{ app_info.tagline }}</p>
         {% if app_info.invite_url %}
-            <p><a class="button" href="{{ app_info.invite_url }}" target="_blank" rel="noopener">Invite SDAC Bot</a></p>
+            <p><a class="button" href="{{ app_info.invite_url }}" target="_blank" rel="noopener">Invite Sana-Chan Bot</a></p>
             <p class="muted"><code>{{ app_info.invite_url }}</code></p>
         {% else %}
             <p class="muted">The public invite link is not configured yet. Set <code>SDAC_BOT_CLIENT_ID</code> or <code>DISCORD_CLIENT_ID</code> on the host.</p>
@@ -6912,7 +6912,7 @@ SETUP_GUIDE_HTML = """
 </head>
 <body>
 <main>
-    <h1>Set Up SDAC In Your Discord</h1>
+    <h1>Set Up Sana-Chan In Your Discord</h1>
     <nav>
         <a href="{{ url_for('index') }}">Gallery</a>
         <a href="{{ url_for('servers') }}">Servers</a>
@@ -6922,7 +6922,7 @@ SETUP_GUIDE_HTML = """
     <section class="panel">
         <h2>Fast Path</h2>
         {% if invite_url %}
-            <p><a href="{{ invite_url }}" target="_blank" rel="noopener">Invite SDAC Bot</a></p>
+            <p><a href="{{ invite_url }}" target="_blank" rel="noopener">Invite Sana-Chan Bot</a></p>
         {% else %}
             <p class="muted">The bot invite link is not configured on this dashboard yet.</p>
         {% endif %}
@@ -8265,7 +8265,7 @@ def public_app_metadata():
         public_url = f"https://{domain}"
     invite_url = bot_invite_url(public_url=public_url)
     return {
-        "name": os.getenv("SDAC_PUBLIC_BOT_NAME", "SDAC Bot").strip() or "SDAC Bot",
+        "name": os.getenv("SDAC_PUBLIC_BOT_NAME", "Sana-Chan Bot").strip() or "Sana-Chan Bot",
         "tagline": os.getenv("SDAC_PUBLIC_TAGLINE", "Screenshot, media, and guessing-game management for Discord communities.").strip(),
         "client_id": bot_client_id(),
         "invite_url": invite_url,
@@ -13165,8 +13165,8 @@ def fetch_github_release(tag):
         payload = json.loads(response.read().decode("utf-8"))
     release_tag = payload.get("tag_name") or tag
     release_name = payload.get("name") or ""
-    apk = release_asset_metadata(payload, "SDACCompanion-Android-Debug.apk")
-    apk_checksum = release_asset_metadata(payload, "SDACCompanion-Android-Debug.apk.sha256")
+    apk = release_asset_metadata(payload, "Sana-Chan-Android-Debug.apk")
+    apk_checksum = release_asset_metadata(payload, "Sana-Chan-Android-Debug.apk.sha256")
     return {
         "tag": release_tag,
         "name": release_name,
@@ -14110,7 +14110,7 @@ def account_access_debug():
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Access Debug</title>
+    <title>Sana-Chan Access Debug</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #0f172a; color: #f8fafc; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
@@ -19500,7 +19500,7 @@ def public_privacy_policy():
         return redirect(app_info["privacy_url"])
     return render_template_string(
         PUBLIC_POLICY_HTML,
-        title="SDAC Privacy Policy",
+        title="Sana-Chan Privacy Policy",
         env_var="SDAC_PRIVACY_URL",
         body="SDAC stores Discord IDs, usernames, submitted media metadata, moderation actions, setup state, and game scores needed to run the bot and dashboard. Server owners should publish their final privacy policy before opening the bot broadly.",
     )
@@ -19513,7 +19513,7 @@ def public_terms():
         return redirect(app_info["terms_url"])
     return render_template_string(
         PUBLIC_POLICY_HTML,
-        title="SDAC Terms of Service",
+        title="Sana-Chan Terms of Service",
         env_var="SDAC_TERMS_URL",
         body="Use SDAC only in Discord servers where you have permission to install and configure bots. Server owners are responsible for moderation, channel permissions, submitted media rules, and public-facing community policy before a broad public release.",
     )
@@ -20404,8 +20404,8 @@ def api_app_bootstrap():
     session_cookie_name = app.config.get("SESSION_COOKIE_NAME", "session")
     payload = {
         "app": {
-            "name": "SDAC",
-            "display_name": "SDAC Bot and App",
+            "name": "Sana-Chan",
+            "display_name": "Sana-Chan Bot and App",
             "public_name": app_info["name"],
             "tagline": app_info["tagline"],
             "entry_url": url_for("app_home"),
@@ -20966,7 +20966,7 @@ APP_LOGIN_COMPLETE_HTML = """
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Return to SDAC</title>
+  <title>Return to Sana-Chan</title>
   <style>
     body { background: #0f172a; color: #f8fafc; font-family: Arial, sans-serif; margin: 0; min-height: 100vh; display: grid; place-items: center; }
     main { max-width: 480px; padding: 24px; text-align: center; }
@@ -21039,9 +21039,9 @@ def app_home():
 @app.route("/manifest.webmanifest")
 def pwa_manifest():
     manifest = {
-        "name": "SDAC Bot and App",
-        "short_name": "SDAC",
-        "description": "SDAC submissions, games, moderation, and server tools.",
+        "name": "Sana-Chan Bot and App",
+        "short_name": "Sana-Chan",
+        "description": "Sana-Chan submissions, games, moderation, and server tools.",
         "start_url": url_for("app_home"),
         "scope": "/",
         "display": "standalone",
@@ -21059,8 +21059,8 @@ def pwa_manifest():
             }
         ],
         "shortcuts": [
-            {"name": "Submissions", "url": url_for("index"), "description": "Open SDAC submissions."},
-            {"name": "My Account", "url": url_for("account_home"), "description": "Open your SDAC account."},
+            {"name": "Submissions", "url": url_for("index"), "description": "Open Sana-Chan submissions."},
+            {"name": "My Account", "url": url_for("account_home"), "description": "Open your Sana-Chan account."},
             {"name": "Guessing", "url": url_for("guessing_leaderboard"), "description": "Open guessing leaderboards."},
         ],
     }
@@ -21339,7 +21339,6 @@ def delete_submission(submission_id):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
 
 
 

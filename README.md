@@ -1,6 +1,6 @@
-# SDAC Bot
+# Sana-Chan Bot
 
-SDAC Bot is a Discord media submission and guessing-game system with a web dashboard. Discord users submit images, audio, or video through `/submit`. Admins configure categories, review pending submissions, run guessing games, and view submissions, votes, leaderboards, maintenance status, and moderation history from the dashboard.
+Sana-Chan Bot is a Discord media submission and guessing-game system with a web dashboard. Discord users submit images, audio, or video through `/submit`. Admins configure categories, review pending submissions, run guessing games, and view submissions, votes, leaderboards, maintenance status, and moderation history from the dashboard.
 
 ## What It Does
 
@@ -514,7 +514,7 @@ Project links are also available inside the `/sdac` panel:
 
 Admins should start with `/sdac`. The panel opens button-based menus for setup, command launcher naming, setup status, setup tests, diagnostics, backups, moderation, and advanced help.### Server Owner Quick Setup
 
-1. Invite SDAC with the bot and application command scopes.
+1. Invite Sana-Chan with the bot and application command scopes.
 2. Run `/sdac` in Discord and open Setup.
 3. Pick the admin role, submit channel, category repost channels, and optional approval channel.
 4. On the final setup page, optionally set a server command name like `/pepo`.
@@ -571,7 +571,7 @@ Admins should start with `/sdac`. The panel opens button-based menus for setup, 
 
 ### Windows
 
-Download `SDAC-Bot-Windows-Installer.exe` from the latest GitHub release, run it, enter the Discord token, then start SDAC with:
+Download `SDAC-Bot-Windows-Installer.exe` from the latest GitHub release, run it, enter the Discord token, then start Sana-Chan with:
 
 ```bat
 start-sdac.bat
@@ -611,7 +611,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\SDAC-Bot-Windows-Update.ps
 
 The local `server/` folder is the clean upload folder for manual Ubuntu updates.
 
-## SDAC App Install
+## Sana-Chan app Install
 
 The dashboard also works as an installable web app. Open the dashboard in a modern mobile or desktop browser and use the browser install prompt, or tap the in-page **Install App** button when it appears. This uses the existing website, Discord login, server selector, submissions, games, and admin pages; no app-store install is required.
 
@@ -619,7 +619,7 @@ The app entry point is `/app`. It sends admins to the admin overview, signed-in 
 
 ## Official Native App Scaffold
 
-The first official app scaffold lives in `apps/sdac-official-app`. It uses Vite and Capacitor so the existing Flask dashboard remains the source of truth while mobile builds can wrap the hosted dashboard. The current app display name is `SDACCompanion`, and it defaults to `https://freethefishies.us.to`.
+The first official app scaffold lives in `apps/sdac-official-app`. It uses Vite and Capacitor so the existing Flask dashboard remains the source of truth while mobile builds can wrap the hosted dashboard. The current app display name is `Sana-Chan`, and it defaults to `https://freethefishies.us.to`.
 
 Recommended path:
 
@@ -636,11 +636,11 @@ Android supports both direct APK/sideload testing and Play Store AAB builds. See
 
 ## Update Scope Labels
 
-SDAC keeps the bot, dashboard, and companion app in one repository while the app depends on the dashboard backend. Every release note should identify the affected product scope:
+Sana-Chan keeps the bot, dashboard, and companion app in one repository while the app depends on the dashboard backend. Every release note should identify the affected product scope:
 
 - `Bot update` for bot/dashboard/server-only changes.
-- `App update` for SDACCompanion-only changes.
-- `Bot and App update` for changes that affect both the server/dashboard and SDACCompanion.
+- `App update` for Sana-Chan-only changes.
+- `Bot and App update` for changes that affect both the server/dashboard and Sana-Chan.
 
 Use the same scope wording in GitHub release titles, Discord update announcements, and `RELEASE.md` entries so server owners know whether they need to update the server, the Android app, or both.
 
