@@ -987,7 +987,7 @@ New-WindowsInstaller `
     -OutputPath (Join-Path $Dist "SDAC-Bot-Windows-Installer.exe")
 
 Copy-ReleaseHelperScripts
-New-AppSourceArchive -OutputPath (Join-Path $Dist "SDACCompanion-App-Source.zip")
+New-AppSourceArchive -OutputPath (Join-Path $Dist "Sana-Chan-App-Source.zip")
 
 Remove-Item -LiteralPath $payloadRoot -Recurse -Force
 

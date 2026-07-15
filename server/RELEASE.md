@@ -1,3 +1,15 @@
+# SDAC Bot Version 4.2.24 Experimental
+
+Version 4.2.24 is an experimental release packaging fix for the Sana-Chan rename.
+
+Update scope: App source release artifact
+
+Changes:
+- fixes the installer build script so it creates `Sana-Chan-App-Source.zip`
+- keeps the release workflow and dashboard release metadata aligned with the renamed Sana-Chan APK/source assets
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.23 Experimental
 
 Version 4.2.23 is an experimental branding and app package rename for the project transition to Sana-Chan.
