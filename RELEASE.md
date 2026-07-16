@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.2.45 Experimental
+
+Version 4.2.45 is an experimental release helper staging fix.
+
+Update scope: Release validation and release tooling
+
+Changes:
+- commits the Sana-Chan web manifest smoke-test expectation into both root and server copies
+- updates the experimental release helper so future smoke-test changes are staged automatically
+- keeps the Theme page embedded layout workbench from 4.2.43 and the validation alignment from 4.2.44 intact
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # Sana-Chan Version 4.2.44 Experimental
 
 Version 4.2.44 is an experimental release smoke-test alignment update.

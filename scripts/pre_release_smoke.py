@@ -87,7 +87,7 @@ class PreReleaseSmokeTests(unittest.TestCase):
             self.assertLess(response.status_code, 500, path)
         manifest_response = client.get("/manifest.webmanifest")
         self.assertEqual(manifest_response.status_code, 200)
-        self.assertEqual(manifest_response.json["short_name"], "SDAC")
+        self.assertEqual(manifest_response.json["short_name"], "Sana-Chan")
         self.assertIn("max-age", manifest_response.headers.get("Cache-Control", ""))
         compressed_response = client.get("/account/login", headers={"Accept-Encoding": "gzip"})
         self.assertEqual(compressed_response.headers.get("Content-Encoding"), "gzip")
