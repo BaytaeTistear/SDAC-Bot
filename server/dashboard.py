@@ -510,10 +510,12 @@ DEFAULT_DASHBOARD_LAYOUT = {
     "background_position": "center",
     "density": "comfortable",
     "menu_button_alignment": "sidebar_edge",
-    "item_order": "submissions,users,games,storage,release,health",
+    "item_order": "menu_button,home_button,submissions,users,games,storage,release,health",
     "item_properties": {},
 }
 LAYOUT_EDITOR_ITEMS = [
+    ("menu_button", "Menu Button", "Menu", "primary"),
+    ("home_button", "Home Button", "Home", "secondary"),
     ("submissions", "Submissions", "128", "primary"),
     ("users", "Users", "42", "secondary"),
     ("games", "Active Games", "6", "accent"),
@@ -5661,7 +5663,7 @@ THEME_HTML = """
     <section class="panel">
         <h2>Full Layout Workbench</h2>
         <p class="muted">Use the embedded layout editor below to manage object position, card sizing, sidebar width, spacing, background placement, and density while staying on the Theme page.</p>
-        <iframe class="layout-workbench" src="{{ url_for('admin_layout', key=admin_key) }}" title="Sana-Chan layout workbench"></iframe>
+        <iframe class="layout-workbench" src="{{ url_for('admin_layout', key=admin_key, embed=1) }}" title="Sana-Chan layout workbench"></iframe>
     </section>
 </main>
 </body>
@@ -5686,7 +5688,8 @@ LAYOUT_HTML = """
         input, select, button { background: #1f2937; border: 1px solid #30333b; border-radius: 7px; box-sizing: border-box; color: #f8fafc; font-size: 15px; padding: 10px; width: 100%; }
         button { background: #4f46e5; color: white; cursor: pointer; font-weight: bold; margin-top: 16px; }
         .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 14px; padding: 12px; }
-        .editor-shell { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 300px; }
+        .editor-shell { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(320px, 360px); }
+        .site-layout-panel { display: none; }
         .preview {
             --preview-content-width: min(calc(100% - var(--preview-sidebar-width) - 32px), calc(var(--sdac-content-width) * .52));
             --preview-grid-min: calc(var(--sdac-grid-min) * .54);
@@ -5712,6 +5715,7 @@ LAYOUT_HTML = """
         .preview-sidebar span { color: var(--sdac-muted); display: block; font-size: .72rem; margin-bottom: var(--sdac-layout-gap); }
         .preview-nav-line { background: color-mix(in srgb, var(--sdac-text) 14%, transparent); border-radius: var(--sdac-card-radius); height: 18px; margin: 8px 0; }
         .preview-nav-line.active { background: linear-gradient(90deg, var(--sdac-primary), var(--sdac-secondary)); }
+        .preview-menu-actions { display: flex; gap: 8px; left: min(calc(var(--preview-sidebar-width) + 12px), calc(100% - 160px)); position: absolute; top: 12px; transition: left .18s ease; z-index: 2; }
         .preview-menu-button {
             background: linear-gradient(90deg, var(--sdac-primary), var(--sdac-secondary));
             border: 1px solid var(--sdac-border);
@@ -5720,10 +5724,10 @@ LAYOUT_HTML = """
             color: #fff;
             font-size: .78rem;
             font-weight: 850;
-            left: min(calc(var(--preview-sidebar-width) + 12px), calc(100% - 82px));
+            left: auto;
             padding: 8px 11px;
-            position: absolute;
-            top: 12px;
+            position: relative;
+            top: auto;
             transition: left .18s ease, border-radius .18s ease;
             z-index: 2;
         }
@@ -5754,7 +5758,10 @@ LAYOUT_HTML = """
         .preview-card[data-tone="secondary"] { background: color-mix(in srgb, var(--sdac-secondary) 22%, var(--sdac-surface)); }
         .preview-card[data-tone="accent"] { background: color-mix(in srgb, var(--sdac-accent) 24%, var(--sdac-surface)); }
         .preview-card[data-visible="false"] { opacity: .42; }
-        .preview-card[data-locked="true"] { cursor: not-allowed; }
+        .preview-editable-control.is-selected,
+        .preview-card.is-selected { outline: 2px solid var(--sdac-accent); outline-offset: 2px; }
+        .preview-card[data-locked="true"],
+        .preview-editable-control[data-locked="true"] { cursor: not-allowed; }
         .preview-card[data-locked="true"]::after { content: "Locked"; color: var(--sdac-muted); display: block; font-size: .72rem; font-weight: 800; margin-top: 10px; }
         .item-list { display: grid; gap: 8px; margin: 10px 0 14px; }
         .item-list button { align-items: center; background: #111827; border: 1px solid #30333b; display: flex; justify-content: space-between; margin: 0; text-align: left; }
@@ -5769,7 +5776,9 @@ LAYOUT_HTML = """
         .preview[data-density="compact"] { --sdac-layout-gap: 8px; }
         .preview[data-density="comfortable"] { --sdac-layout-gap: 14px; }
         .preview[data-density="spacious"] { --sdac-layout-gap: 20px; }
-        .property-panel { align-self: start; background: #0b1220; border: 1px solid #30333b; border-radius: 8px; padding: 14px; position: sticky; top: 14px; }
+        .property-panel { align-self: start; background: #0b1220; border: 1px solid #30333b; border-radius: 8px; max-height: min(86vh, 900px); overflow: auto; padding: 14px; position: sticky; top: 14px; }
+        .property-panel .grid { grid-template-columns: 1fr; }
+        .property-section { border-top: 1px solid #30333b; margin-top: 14px; padding-top: 14px; }
         .property-panel h3 { margin: 0 0 8px; }
         .muted { color: #94a3b8; }
         @media (max-width: 900px) {
@@ -5784,9 +5793,9 @@ LAYOUT_HTML = """
 <main>
     <h1>Layout</h1>
     {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
-    <section class="panel">
+    <section class="panel site-layout-panel">
         <h2>Site Layout</h2>
-        <form method="post">
+        <form id="layout-form" method="post">
             <input type="hidden" name="key" value="{{ admin_key }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="grid">
@@ -5830,7 +5839,10 @@ LAYOUT_HTML = """
         <h2>Visual Test Environment</h2>
         <div class="editor-shell">
             <div class="preview" id="layout-preview-frame" data-density="{{ layout.density }}" data-menu-alignment="{{ layout.menu_button_alignment }}">
-                <div class="preview-menu-button">Menu</div>
+                <div class="preview-menu-actions">
+                    {% for item in layout_items %}{% if item.id == "menu_button" %}<div class="preview-menu-button preview-editable-control" data-id="{{ item.id }}" data-tone="{{ item.tone }}" data-font-size="{{ item.font_size }}" data-locked="{{ 'true' if item.locked else 'false' }}">{{ item.value }}</div>{% endif %}{% endfor %}
+                    {% for item in layout_items %}{% if item.id == "home_button" %}<div class="preview-menu-button preview-editable-control" data-id="{{ item.id }}" data-tone="{{ item.tone }}" data-font-size="{{ item.font_size }}" data-locked="{{ 'true' if item.locked else 'false' }}">{{ item.value }}</div>{% endif %}{% endfor %}
+                </div>
                 <div class="preview-shell">
                     <aside class="preview-sidebar">
                         <strong>Sana-Chan Admin</strong>
@@ -5845,6 +5857,7 @@ LAYOUT_HTML = """
                         <div class="preview-filter">Filters</div>
                         <div class="preview-inner" id="layout-preview">
                             {% for item in layout_items %}
+                                {% if item.id not in ("menu_button", "home_button") %}
                                 <div class="preview-card"
                                      draggable="true"
                                      data-id="{{ item.id }}"
@@ -5856,6 +5869,7 @@ LAYOUT_HTML = """
                                     <strong>{{ item.value }}</strong>
                                     <span>{{ item.label }}</span>
                                 </div>
+                                                            {% endif %}
                             {% endfor %}
                         </div>
                         <div class="preview-grid-demo" aria-hidden="true">
@@ -5912,6 +5926,9 @@ LAYOUT_HTML = """
             const defaults = {{ item_defaults_json | safe }};
             const previewFrame = document.getElementById("layout-preview-frame");
             const preview = document.getElementById("layout-preview");
+            const propertyPanel = document.querySelector(".property-panel");
+            const layoutForm = document.getElementById("layout-form");
+            const siteLayoutPanel = document.querySelector(".site-layout-panel");
             const orderInput = document.getElementById("item_order");
             const propertiesInput = document.getElementById("item_properties");
             const labelInput = document.getElementById("prop_label");
@@ -5964,7 +5981,11 @@ LAYOUT_HTML = """
             }
 
             function cards() {
-                return Array.from(preview.querySelectorAll(".preview-card"));
+                return Array.from(previewFrame.querySelectorAll(".preview-editable-control, .preview-card"));
+            }
+
+            function isPreviewCard(card) {
+                return card && card.classList.contains("preview-card");
             }
 
             function itemDefaults(id) {
@@ -5987,10 +6008,14 @@ LAYOUT_HTML = """
                 card.dataset.visible = props.visible === false ? "false" : "true";
                 card.dataset.fontSize = props.font_size || "normal";
                 card.dataset.locked = props.locked === true ? "true" : "false";
-                card.draggable = props.locked !== true;
+                card.draggable = isPreviewCard(card) && props.locked !== true;
                 card.style.setProperty("--item-font-size", fontSizes[props.font_size || "normal"] || fontSizes.normal);
-                card.querySelector("strong").textContent = props.value || "";
-                card.querySelector("span").textContent = props.label || "";
+                if (isPreviewCard(card)) {
+                    card.querySelector("strong").textContent = props.value || "";
+                    card.querySelector("span").textContent = props.label || "";
+                } else {
+                    card.textContent = props.value || props.label || "";
+                }
             }
 
             function renderItemList() {
@@ -6027,9 +6052,11 @@ LAYOUT_HTML = """
                 toneInput.value = props.tone || "surface";
                 visibleInput.checked = props.visible !== false;
                 lockedInput.checked = props.locked === true;
-                const index = cards().indexOf(card);
-                moveUpButton.disabled = index <= 0 || props.locked === true;
-                moveDownButton.disabled = index >= cards().length - 1 || props.locked === true;
+                const cardList = Array.from(preview.querySelectorAll(".preview-card"));
+                const index = cardList.indexOf(card);
+                const canMove = isPreviewCard(card) && props.locked !== true;
+                moveUpButton.disabled = !canMove || index <= 0;
+                moveDownButton.disabled = !canMove || index >= cardList.length - 1;
                 renderItemList();
             }
 
@@ -6062,8 +6089,8 @@ LAYOUT_HTML = """
             }
 
             function moveSelected(direction) {
-                if (!selected || selected.dataset.locked === "true") return;
-                const list = cards();
+                if (!selected || selected.dataset.locked === "true" || !isPreviewCard(selected)) return;
+                const list = Array.from(preview.querySelectorAll(".preview-card"));
                 const index = list.indexOf(selected);
                 const targetIndex = index + direction;
                 if (targetIndex < 0 || targetIndex >= list.length) return;
@@ -6073,8 +6100,8 @@ LAYOUT_HTML = """
                 selectCard(selected);
             }
 
-            preview.addEventListener("click", (event) => {
-                const card = event.target.closest(".preview-card");
+            previewFrame.addEventListener("click", (event) => {
+                const card = event.target.closest(".preview-editable-control, .preview-card");
                 if (card) selectCard(card);
             });
             preview.addEventListener("dragstart", (event) => {
@@ -6128,10 +6155,27 @@ LAYOUT_HTML = """
                 editableControls.forEach((input) => input.disabled = true);
                 applyAll();
             });
+            function moveLayoutControlsIntoSidebar() {
+                if (!siteLayoutPanel || !propertyPanel || !layoutForm) return;
+                const layoutGrid = siteLayoutPanel.querySelector(".grid");
+                const saveButton = siteLayoutPanel.querySelector('button[type="submit"]');
+                if (!layoutGrid || document.getElementById("right-layout-controls")) return;
+                const section = document.createElement("div");
+                section.className = "property-section";
+                section.id = "right-layout-controls";
+                const heading = document.createElement("h3");
+                heading.textContent = "Page Layout";
+                section.appendChild(heading);
+                section.appendChild(layoutGrid);
+                if (saveButton) section.appendChild(saveButton);
+                section.querySelectorAll("input, select, button").forEach((control) => control.setAttribute("form", "layout-form"));
+                propertyPanel.insertBefore(section, propertyPanel.firstChild);
+            }
             Object.values(layoutControls).forEach((input) => {
                 input.addEventListener("input", updateLayoutPreview);
                 input.addEventListener("change", updateLayoutPreview);
             });
+            moveLayoutControlsIntoSidebar();
             updateLayoutPreview();
             applyAll();
         }());
@@ -13331,7 +13375,7 @@ def inject_admin_sidebar(response):
     if "sdac-theme-vars" not in page_html:
         page_html = page_html.replace("</head>", dashboard_theme_css() + "\n</head>", 1)
     page_html = add_body_classes(page_html, "sdac-theme")
-    if should_render_admin_sidebar() and 'class="sdac-sidebar"' not in page_html:
+    if should_render_admin_sidebar() and request.args.get("embed") != "1" and 'class="sdac-sidebar"' not in page_html:
         if "sdac-sidebar-style" not in page_html:
             page_html = page_html.replace("</head>", SIDEBAR_STYLE + "\n</head>", 1)
         menu_alignment = dashboard_layout().get("menu_button_alignment", "sidebar_edge")

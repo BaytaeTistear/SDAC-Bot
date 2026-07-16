@@ -1,3 +1,18 @@
+# Sana-Chan Version 4.2.47 Experimental
+
+Version 4.2.47 is an experimental embedded Layout workbench correction.
+
+Update scope: Dashboard theme/layout workbench
+
+Changes:
+- changes the Theme page workbench iframe to use an embedded Layout view without injecting the full admin sidebar
+- moves Page Layout controls into the workbench right-side panel so the selected item editor stays visible
+- adds editable Menu and Home button items to the workbench item list
+- keeps Menu/Home out of the dashboard card grid while allowing their text, font, style, visibility, and lock state to be edited
+- fixes item move controls so only movable dashboard cards can be reordered
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # Sana-Chan Version 4.2.46 Experimental
 
 Version 4.2.46 is an experimental Layout workbench usability update.
