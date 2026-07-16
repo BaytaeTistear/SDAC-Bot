@@ -60,13 +60,13 @@ jobs:
           from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
 
           names = {command.name for command in bot.tree.get_commands()}
-          required = {"sdac", "submit", "guess", "hint"}
+          required = {"sana", "submit", "guess", "hint"}
           missing = sorted(required - names)
           if missing:
               raise SystemExit(f"Missing simplified slash command(s): {missing}")
-          hidden = {"setup", "sdacpanic", "diagnose", "supportbundle"} & names
+          hidden = {"setup", "sdacpanic", "sanapause", "sanareset", "diagnose", "supportbundle"} & names
           if hidden:
-              raise SystemExit(f"Legacy slash command(s) should be behind /sdac: {sorted(hidden)}")
+              raise SystemExit(f"Legacy slash command(s) should be behind /sana: {sorted(hidden)}")
 
           with tempfile.TemporaryDirectory() as temp_dir:
               db_path = Path(temp_dir) / "sdac.db"
