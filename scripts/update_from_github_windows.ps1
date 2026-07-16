@@ -2,7 +2,7 @@ param(
     [Parameter(Position = 0)]
     [string]$ReleaseTag = "",
     [string]$Repo = "",
-    [string]$AssetName = "SDAC-Bot-Windows-Installer.exe",
+    [string]$AssetName = "Sana-Chan-Windows-Installer.exe",
     [switch]$Help,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$RemainingArgs
@@ -69,17 +69,17 @@ function Resolve-ReleaseTag {
 
 function Show-Usage {
     Write-Host "Usage:"
-    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 [release-tag]"
-    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 rollback"
-    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 'Version 3'"
-    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 3"
-    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 3.0"
-    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 'Version 2'"
-    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 2"
-    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 2.6"
-    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 latest-official"
-    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 latest-experimental"
-    Write-Host "  .\SDAC-Bot-Windows-Update.ps1 latest-expirimental"
+    Write-Host "  .\Sana-Chan-Windows-Update.ps1 [release-tag]"
+    Write-Host "  .\Sana-Chan-Windows-Update.ps1 rollback"
+    Write-Host "  .\Sana-Chan-Windows-Update.ps1 'Version 3'"
+    Write-Host "  .\Sana-Chan-Windows-Update.ps1 3"
+    Write-Host "  .\Sana-Chan-Windows-Update.ps1 3.0"
+    Write-Host "  .\Sana-Chan-Windows-Update.ps1 'Version 2'"
+    Write-Host "  .\Sana-Chan-Windows-Update.ps1 2"
+    Write-Host "  .\Sana-Chan-Windows-Update.ps1 2.6"
+    Write-Host "  .\Sana-Chan-Windows-Update.ps1 latest-official"
+    Write-Host "  .\Sana-Chan-Windows-Update.ps1 latest-experimental"
+    Write-Host "  .\Sana-Chan-Windows-Update.ps1 latest-expirimental"
     Write-Host ""
     Write-Host "Environment:"
     Write-Host "  SDAC_GITHUB_REPO=$Repo"

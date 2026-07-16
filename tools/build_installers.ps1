@@ -222,13 +222,13 @@ function New-LinuxInstaller {
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# SDAC Bot single-file Linux installer.
+# Sana-Chan single-file Linux installer.
 # This installer does not contain .env, Discord tokens, SQLite databases,
 # media uploads, backups, virtualenvs, or Python cache files.
 #
 # Usage:
-#   chmod +x SDAC-Bot-Linux-Installer.sh
-#   ./SDAC-Bot-Linux-Installer.sh
+#   chmod +x Sana-Chan-Linux-Installer.sh
+#   ./Sana-Chan-Linux-Installer.sh
 #
 # Optional environment overrides:
 #   SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot
@@ -954,7 +954,7 @@ function Copy-ReleaseHelperScripts {
     $source = Join-Path $Root "scripts\update_from_github.sh"
     $content = [IO.File]::ReadAllText($source)
     $content = $content -replace "`r`n", "`n" -replace "`r", "`n"
-    foreach ($legacyName in @("SDAC-Bot-Ubuntu-Update.sh", "sdac-update")) {
+    foreach ($legacyName in @("SDAC-Bot-Linux-Installer.sh", "SDAC-Bot-Ubuntu-Update.sh", "SDAC-Bot-Windows-Installer.exe", "SDAC-Bot-Windows-Update.ps1", "sdac-update")) {
         $legacyPath = Join-Path $Dist $legacyName
         if (Test-Path -LiteralPath $legacyPath) {
             Remove-Item -LiteralPath $legacyPath -Force
@@ -973,7 +973,7 @@ function Copy-ReleaseHelperScripts {
     $windowsContent = [IO.File]::ReadAllText($windowsSource)
     $windowsContent = $windowsContent -replace "`r`n", "`n" -replace "`r", "`n"
     [IO.File]::WriteAllText(
-        (Join-Path $Dist "SDAC-Bot-Windows-Update.ps1"),
+        (Join-Path $Dist "Sana-Chan-Windows-Update.ps1"),
         $windowsContent,
         [Text.UTF8Encoding]::new($false)
     )
@@ -986,11 +986,11 @@ Convert-PayloadTextFilesToLf -PayloadRoot $payloadRoot
 
 New-LinuxInstaller `
     -PayloadRoot $payloadRoot `
-    -OutputPath (Join-Path $Dist "SDAC-Bot-Linux-Installer.sh")
+    -OutputPath (Join-Path $Dist "Sana-Chan-Linux-Installer.sh")
 
 New-WindowsInstaller `
     -PayloadRoot $payloadRoot `
-    -OutputPath (Join-Path $Dist "SDAC-Bot-Windows-Installer.exe")
+    -OutputPath (Join-Path $Dist "Sana-Chan-Windows-Installer.exe")
 
 Copy-ReleaseHelperScripts
 New-AppSourceArchive -OutputPath (Join-Path $Dist "Sana-Chan-App-Source.zip")

@@ -571,7 +571,7 @@ Admins should start with `/sdac`. The panel opens button-based menus for setup, 
 
 ### Windows
 
-Download `SDAC-Bot-Windows-Installer.exe` from the latest GitHub release, run it, enter the Discord token, then start SDAC with:
+Download `Sana-Chan-Windows-Installer.exe` from the latest GitHub release, run it, enter the Discord token, then start Sana-Chan with:
 
 ```bat
 start-sdac.bat
@@ -592,11 +592,11 @@ update-sdac.bat "Version 2"
 update-sdac.bat latest-experimental
 ```
 
-The release also includes `SDAC-Bot-Windows-Update.ps1` for Windows-only
+The release also includes `Sana-Chan-Windows-Update.ps1` for Windows-only
 updates.
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\SDAC-Bot-Windows-Update.ps1 latest-official
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Sana-Chan-Windows-Update.ps1 latest-official
 ```
 
 ## Do Not Upload Or Commit

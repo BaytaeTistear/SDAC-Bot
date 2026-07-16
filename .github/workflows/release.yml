@@ -123,12 +123,12 @@ jobs:
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sdac-installers
+          name: sana-installers
           path: |
-            dist/SDAC-Bot-Linux-Installer.sh
-            dist/SDAC-Bot-Windows-Installer.exe
+            dist/Sana-Chan-Linux-Installer.sh
+            dist/Sana-Chan-Windows-Installer.exe
             dist/Sana-Chan-Ubuntu-Update.sh
-            dist/SDAC-Bot-Windows-Update.ps1
+            dist/Sana-Chan-Windows-Update.ps1
             dist/sana-update
             dist/sanachan-update
             dist/Sana-Chan-App-Source.zip
@@ -187,7 +187,7 @@ jobs:
       - name: Upload Android app artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sdac-app-android
+          name: sana-app-android
           path: |
             dist/Sana-Chan-Android-Debug.apk
             dist/Sana-Chan-Android-Debug.apk.sha256
@@ -199,12 +199,12 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: sdac-installers
+          name: sana-installers
           path: artifacts
       - name: Verify Linux line endings and installer extraction
         run: |
           set -Eeuo pipefail
-          if grep -q $'\r' artifacts/SDAC-Bot-Linux-Installer.sh; then
+          if grep -q $'\r' artifacts/Sana-Chan-Linux-Installer.sh; then
             echo "Linux installer contains CRLF line endings."
             exit 1
           fi
@@ -223,12 +223,12 @@ jobs:
           bash -n artifacts/Sana-Chan-Ubuntu-Update.sh
           bash -n artifacts/sana-update
           bash -n artifacts/sanachan-update
-          chmod +x artifacts/SDAC-Bot-Linux-Installer.sh
+          chmod +x artifacts/Sana-Chan-Linux-Installer.sh
           export SDAC_APP_DIR="$RUNNER_TEMP/sdac-smoke"
           export SDAC_APP_USER="$(id -un)"
           export SDAC_ENV_FILE="$RUNNER_TEMP/sdac.env"
           export SDAC_SKIP_SERVICES=1
-          artifacts/SDAC-Bot-Linux-Installer.sh
+          artifacts/Sana-Chan-Linux-Installer.sh
           find "$SDAC_APP_DIR" -type f \
             \( -name "*.sh" -o -name "*.py" -o -name "*.template" -o -name "*.conf" -o -name "*.md" -o -name "*.yml" -o -name "*.json" \) \
             -print0 | xargs -0 grep -l $'\r' > "$RUNNER_TEMP/crlf-files.txt" || true
@@ -249,11 +249,11 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
-          name: sdac-installers
+          name: sana-installers
           path: artifacts
       - uses: actions/download-artifact@v4
         with:
-          name: sdac-app-android
+          name: sana-app-android
           path: artifacts
       - name: Create or update release
         env:
@@ -301,6 +301,14 @@ jobs:
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --title "$TITLE" --notes-file "$NOTES_FILE"
+            for stale_asset in \
+              SDAC-Bot-Linux-Installer.sh \
+              SDAC-Bot-Ubuntu-Update.sh \
+              SDAC-Bot-Windows-Installer.exe \
+              SDAC-Bot-Windows-Update.ps1 \
+              sdac-update; do
+              gh release delete-asset "$TAG" "$stale_asset" --yes >/dev/null 2>&1 || true
+            done
             gh release upload "$TAG" artifacts/* --clobber
           else
             gh release create "$TAG" artifacts/* --title "$TITLE" --notes-file "$NOTES_FILE"

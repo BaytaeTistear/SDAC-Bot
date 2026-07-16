@@ -1,3 +1,17 @@
+# SDAC Bot Version 4.2.35 Experimental
+
+Version 4.2.35 is an experimental public artifact naming cleanup for Sana-Chan releases.
+
+Update scope: Release asset names
+
+Changes:
+- renames public Linux, Ubuntu updater, Windows installer, and Windows updater downloads to `Sana-Chan-*`
+- keeps `sana-update` as the main Ubuntu update command and `sanachan-update` as an alias
+- updates release workflow artifact names, smoke tests, Windows updater defaults, docs, and helper tooling to use Sana-Chan names
+- deletes stale `SDAC-Bot-*` and `sdac-update` assets when updating an existing GitHub release
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.34 Experimental
 
 Version 4.2.34 is an experimental Sana-Chan updater naming cleanup.
