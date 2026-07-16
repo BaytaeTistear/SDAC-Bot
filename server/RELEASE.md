@@ -1,3 +1,17 @@
+# SDAC Bot Version 4.2.38 Experimental
+
+Version 4.2.38 is an experimental Sana-Chan sidebar layout stabilization update.
+
+Update scope: Dashboard sidebar consistency
+
+Changes:
+- forces sidebar role sections to render full-width instead of shrinking to their label contents
+- normalizes closed and open sidebar section sizing across dashboard pages
+- improves sidebar summary, link, and footer width rules so the menu stays aligned after theme changes
+- keeps the existing collapsible sidebar behavior and server selector behavior unchanged
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.37 Experimental
 
 Version 4.2.37 is an experimental Sana-Chan dashboard typography polish update.
