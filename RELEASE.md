@@ -1,3 +1,18 @@
+# SDAC Bot Version 4.2.36 Experimental
+
+Version 4.2.36 is an experimental Sana-Chan dashboard theme polish update.
+
+Update scope: Banner-matched visual styling
+
+Changes:
+- deepens the dashboard background toward the Sana-Chan banner's near-black navy base
+- adds subtle dotted and angled glow texture behind dashboard pages
+- strengthens glass-panel cards with blur, brighter cyan/violet edge lighting, and deeper shadows
+- updates sidebar sections, active links, invite button, headings, forms, badges, and buttons to better match the banner palette
+- updates the PWA theme color to the darker Sana-Chan base color
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.35 Experimental
 
 Version 4.2.35 is an experimental public artifact naming cleanup for Sana-Chan releases.
