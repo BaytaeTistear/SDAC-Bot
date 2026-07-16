@@ -501,8 +501,82 @@ body.sdac-theme .tag::before {
     border-radius: 999px;
     box-shadow: 0 0 10px currentColor;
     content: "";
+    flex: 0 0 auto;
     height: .42rem;
     width: .42rem;
+}
+body.sdac-theme .health-metric,
+body.sdac-theme .metric-grid,
+body.sdac-theme .bubble-grid {
+    align-items: stretch;
+    display: grid !important;
+    gap: .65rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.75rem), 1fr)) !important;
+    width: 100%;
+}
+body.sdac-theme .health-pill,
+body.sdac-theme .metric-pill,
+body.sdac-theme .bubble-card {
+    align-items: start;
+    background: linear-gradient(180deg, rgba(8, 15, 32, .84), rgba(10, 21, 42, .74)) !important;
+    border: 1px solid rgba(24, 217, 255, .25) !important;
+    border-radius: 14px !important;
+    box-shadow: inset 0 0 22px rgba(24, 217, 255, .08);
+    box-sizing: border-box;
+    display: grid !important;
+    gap: .28rem;
+    grid-template-columns: minmax(0, 1fr);
+    height: auto !important;
+    line-height: 1.18;
+    min-height: 4.15rem;
+    min-width: 0;
+    overflow: hidden;
+    padding: .72rem .82rem !important;
+    text-align: left;
+    white-space: normal !important;
+    width: 100%;
+}
+body.sdac-theme .health-pill::before,
+body.sdac-theme .metric-pill::before,
+body.sdac-theme .bubble-card::before {
+    content: none !important;
+}
+body.sdac-theme .health-pill strong,
+body.sdac-theme .health-pill span,
+body.sdac-theme .health-pill .muted,
+body.sdac-theme .metric-pill strong,
+body.sdac-theme .metric-pill span,
+body.sdac-theme .metric-pill .muted,
+body.sdac-theme .bubble-card strong,
+body.sdac-theme .bubble-card span,
+body.sdac-theme .bubble-card .muted {
+    display: block;
+    max-width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+    white-space: normal !important;
+}
+body.sdac-theme .health-pill strong,
+body.sdac-theme .metric-pill strong,
+body.sdac-theme .bubble-card strong {
+    font-size: clamp(.82rem, 1vw, .95rem) !important;
+    line-height: 1.1 !important;
+}
+body.sdac-theme .health-pill .health-value,
+body.sdac-theme .metric-pill .metric-value,
+body.sdac-theme .bubble-card .bubble-value {
+    color: var(--sdac-text) !important;
+    font-size: clamp(1rem, 1.25vw, 1.2rem) !important;
+    font-weight: 850;
+    line-height: 1.1;
+}
+body.sdac-theme .health-pill .muted,
+body.sdac-theme .metric-pill .muted,
+body.sdac-theme .bubble-card .muted {
+    color: var(--sdac-muted) !important;
+    font-size: .78rem !important;
+    line-height: 1.18 !important;
 }
 body.sdac-theme table {
     border-collapse: separate !important;

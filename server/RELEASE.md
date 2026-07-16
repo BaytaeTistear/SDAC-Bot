@@ -1,4 +1,17 @@
-# Sana-Chan Version 4.2.47 Experimental
+# Sana-Chan Version 4.2.48 Experimental
+
+Version 4.2.48 is an experimental dashboard metric bubble layout fix.
+
+Update scope: Dashboard shared theme and server health cards
+
+Changes:
+- gives Server Health metric bubbles dedicated layout classes so they are not treated like tiny inline status badges
+- stacks each bubble label, value, and detail safely so storage forecasts, counts, and long server details do not overlap
+- adds shared bubble/grid safety rules for future metric-pill and bubble-card dashboard elements
+- keeps normal badges, tags, and submission status pills compact while preventing their icon dot from shrinking
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.# Sana-Chan Version 4.2.47 Experimental
 
 Version 4.2.47 is an experimental embedded Layout workbench correction.
 

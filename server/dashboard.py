@@ -6299,8 +6299,11 @@ SERVER_HEALTH_CARDS_HTML = """
         nav { display: flex; flex-wrap: wrap; gap: clamp(0.6rem, 1.5vw, 0.9rem); justify-content: center; margin-bottom: clamp(1rem, 3vw, 1.5rem); }
         .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
         .card { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; padding: 16px; }
-        .metric { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .pill { background: #111318; border: 1px solid #30333b; border-radius: 8px; padding: 10px; }
+        .health-metric { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr)); }
+        .health-pill { background: #111318; border: 1px solid #30333b; border-radius: 10px; display: grid; gap: 4px; grid-template-columns: minmax(0, 1fr); min-height: 0; padding: 10px; }
+        .health-pill strong, .health-pill span { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+        .health-pill .health-value { font-size: 1.1rem; font-weight: 850; line-height: 1.1; }
+        .health-pill .muted { line-height: 1.2; }
         .ok { color: #63c174; font-weight: bold; }
         .bad { color: #e45d68; font-weight: bold; }
         .muted { color: #a8adb8; }
@@ -6334,34 +6337,34 @@ SERVER_HEALTH_CARDS_HTML = """
             <article class="card">
                 <h2>{{ row.name }}</h2>
                 <p class="muted"><code>{{ row.guild_id }}</code></p>
-                <div class="metric">
-                    <div class="pill">
+                <div class="health-metric">
+                    <div class="health-pill">
                         <strong>Setup</strong><br>
-                        <span class="{{ 'ok' if row.setup_score >= 80 else 'bad' }}">{{ row.setup_score }}%</span>
+                        <span class="health-value {{ 'ok' if row.setup_score >= 80 else 'bad' }}">{{ row.setup_score }}%</span>
                     </div>
-                    <div class="pill">
+                    <div class="health-pill">
                         <strong>Storage</strong><br>
-                        {{ row.storage.current if row.storage else "Unknown" }}<br>
+                        <span class="health-value">{{ row.storage.current if row.storage else "Unknown" }}</span>
                         <span class="muted">{{ row.storage.forecast if row.storage else "No forecast" }}</span>
                     </div>
-                    <div class="pill">
+                    <div class="health-pill">
                         <strong>Submissions</strong><br>
-                        {{ row.submissions }} total<br>
+                        <span class="health-value">{{ row.submissions }} total</span>
                         <span class="muted">{{ row.pending_submissions }} pending</span>
                     </div>
-                    <div class="pill">
+                    <div class="health-pill">
                         <strong>Games</strong><br>
-                        {{ row.active_games }} active<br>
+                        <span class="health-value">{{ row.active_games }} active</span>
                         <span class="muted">{{ row.scheduled_games }} scheduled</span>
                     </div>
-                    <div class="pill">
+                    <div class="health-pill">
                         <strong>Library</strong><br>
-                        {{ row.enabled_library_items }} enabled<br>
+                        <span class="health-value">{{ row.enabled_library_items }} enabled</span>
                         <span class="muted">{{ row.library_items }} total</span>
                     </div>
-                    <div class="pill">
+                    <div class="health-pill">
                         <strong>Achievements</strong><br>
-                        {{ row.achievements }} awarded
+                        <span class="health-value">{{ row.achievements }} awarded</span>
                     </div>
                 </div>
                 <p>
