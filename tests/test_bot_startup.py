@@ -22,7 +22,7 @@ class BotStartupTests(unittest.TestCase):
         import bot
 
         command_names = {command.name for command in bot.tree.get_commands()}
-        self.assertEqual(command_names, {"sdac", "submit", "guess", "hint"})
+        self.assertEqual(command_names, {"sana", "submit", "guess", "hint"})
         self.assertTrue(bot.SIMPLIFIED_SLASH_COMMANDS)
         self.assertIn("animeprofileimport", bot.LOW_COST_COMMAND_COOLDOWNS)
         self.assertIn("animeactivities", bot.PRUNED_SLASH_COMMANDS)
@@ -32,7 +32,7 @@ class BotStartupTests(unittest.TestCase):
         import bot
 
         self.assertEqual(bot.validate_command_alias("/Pepo Hub"), "pepo-hub")
-        self.assertEqual(bot.validate_command_alias("sdac"), "")
+        self.assertEqual(bot.validate_command_alias("sana"), "")
         self.assertEqual(bot.command_alias_display({"command_alias": "pepo"}), "/pepo")
         self.assertTrue(bot.PROJECT_WIKI_URL.endswith("/wiki"))
         with self.assertRaises(ValueError):
@@ -91,9 +91,9 @@ class BotStartupTests(unittest.TestCase):
 
         lines = bot.command_visibility_audit_lines()
         joined = "\n".join(lines)
-        self.assertIn("/sdac", joined)
+        self.assertIn("/sana", joined)
         self.assertIn("/submit", joined)
-        self.assertIn("Advanced commands are behind `/sdac`", joined)
+        self.assertIn("Advanced commands are behind `/sana`", joined)
         self.assertNotIn("Extra global commands visible", joined)
 
     def test_mal_profile_summary_uses_public_list_data(self):

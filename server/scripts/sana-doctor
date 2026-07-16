@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_DIR="${SANA_BASE_DIR:-${SDAC_BASE_DIR:-/home/ubuntu/discord-screenshot-bot}}"
+PYTHON_BIN="${SANA_PYTHON:-${SDAC_PYTHON:-$APP_DIR/venv/bin/python}}"
+
+if [[ ! -x "$PYTHON_BIN" ]]; then
+    PYTHON_BIN="python3"
+fi
+
+exec "$PYTHON_BIN" "$APP_DIR/scripts/sdac_doctor.py" "$@"

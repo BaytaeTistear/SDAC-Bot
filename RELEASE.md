@@ -1,3 +1,22 @@
+# Sana-Chan Version 4.2.41 Experimental
+
+Version 4.2.41 is an experimental Sana-Chan naming, app-auth, and readiness polish update.
+
+Update scope: Sana naming, self-contained app shell, and public URL cleanup
+
+Changes:
+- restores dashboard, app, and docs defaults from `thelab.us.to` to `freethefishies.us.to`
+- moves the visible Discord control command from `/sdac` to `/sana` and renames visible pause/reset commands to `/sanapause` and `/sanareset`
+- removes the Android Capacitor direct-dashboard wrapper fallback so native builds use the packaged Sana-Chan shell
+- updates Android app login to prefer browser/Discord authentication and the `sanachan://login-complete` callback
+- renames app-facing assets, CSS variables, and preferred app build settings to Sana names while keeping old settings as compatibility fallbacks where needed
+- adds a Bot Owner UI Health page for sidebar, server selector, login, release, invite, and layout readiness checks
+- adds a native-app bottom navigation bar and updates the app shell to version 4.2.41
+- adds `sana-doctor` as the preferred server doctor command while keeping `sdac-doctor` as a compatibility alias
+
+Notes:
+- Internal compatibility names such as existing `SDAC_*` environment variables, service names, database names, and installed paths remain supported so existing servers do not break during the rename.
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.40 Experimental
 
 Version 4.2.40 is an experimental Sana-Chan dashboard formatting fix.
@@ -117,8 +136,8 @@ Version 4.2.32 is an experimental domain and store-listing update for the Sana-C
 Update scope: Public dashboard URL and Google Play copy
 
 Changes:
-- updates source documentation and app defaults from `freethefishies.us.to` to `thelab.us.to`
-- updates hosted dashboard examples, production checks, certbot examples, and app setup docs to use `thelab.us.to`
+- updates source documentation and app defaults for the hosted dashboard URL
+- updates hosted dashboard examples, production checks, certbot examples, and app setup docs
 - adds reusable Google Play short and full descriptions for Sana-Chan
 - keeps `latest-official` unchanged while moving the experimental channel forward
 

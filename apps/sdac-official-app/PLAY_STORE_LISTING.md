@@ -4,7 +4,7 @@ Short description (75 characters):
 Discord media submissions, guessing games, and moderation in one dashboard.
 
 Full description:
-Sana-Chan is a companion app for Discord communities that use the Sana-Chan bot and dashboard at https://thelab.us.to.
+Sana-Chan is a companion app for Discord communities that use the Sana-Chan bot and dashboard at https://freethefishies.us.to.
 
 Use Sana-Chan to open your community dashboard, review submitted media, vote on posts, manage guessing-game library items, and keep moderation workflows organized from your phone or tablet.
 

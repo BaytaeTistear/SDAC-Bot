@@ -45,9 +45,9 @@ BOT_INSTANCE_ID = (
 BACKUP_KEEP_COUNT = 30
 SCHEMA_VERSION = DATABASE_SCHEMA_VERSION
 OWNER_OVERRIDE_USERNAME = "baytae"
-ENABLE_ANIME_COMMANDS = os.getenv("SDAC_ENABLE_ANIME_COMMANDS", "1").strip().casefold() not in {"0", "false", "no", "off"}
-SIMPLIFIED_SLASH_COMMANDS = os.getenv("SDAC_SIMPLIFIED_COMMANDS", "1").strip().casefold() not in {"0", "false", "no", "off"}
-CORE_SLASH_COMMANDS = {"sdac", "submit", "guess", "hint"}
+ENABLE_ANIME_COMMANDS = os.getenv("SANA_ENABLE_ANIME_COMMANDS", os.getenv("SDAC_ENABLE_ANIME_COMMANDS", "1")).strip().casefold() not in {"0", "false", "no", "off"}
+SIMPLIFIED_SLASH_COMMANDS = os.getenv("SANA_SIMPLIFIED_COMMANDS", os.getenv("SDAC_SIMPLIFIED_COMMANDS", "1")).strip().casefold() not in {"0", "false", "no", "off"}
+CORE_SLASH_COMMANDS = {"sana", "submit", "guess", "hint"}
 PROJECT_GITHUB_URL = f"https://github.com/{ORIGINAL_REPO}"
 PROJECT_WIKI_URL = f"{PROJECT_GITHUB_URL}/wiki"
 COMMAND_ALIAS_PATTERN = re.compile(r"^[a-z0-9_-]{1,32}$")
@@ -471,8 +471,8 @@ NOTIFICATION_EVENT_CHOICES = [
 ]
 
 USER_COMMAND_HELP = [
-    ("/sdac", "Open the guided SDAC control center."),
-    ("/commands", "Show the public SDAC command list."),
+    ("/sana", "Open the guided Sana-Chan control center."),
+    ("/commands", "Show the public Sana-Chan command list."),
     ("/submit", "Start a guided media submission."),
     ("/categories", "Show configured categories and basic server setup."),
     ("/guess guess", "Guess the active game answer in the current channel."),
@@ -507,7 +507,7 @@ if ENABLE_ANIME_COMMANDS:
     ]
 
 ADMIN_COMMAND_HELP = [
-    ("/sdac", "Open the guided SDAC admin/user control center."),
+    ("/sana", "Open the guided Sana-Chan admin/user control center."),
     ("/admincommands", "Show this admin command list."),
     ("/setup", "Open the guided Discord setup wizard."),
     ("/setupstatus", "Show setup progress."),
@@ -515,7 +515,7 @@ ADMIN_COMMAND_HELP = [
     ("/setuptest", "Run setup checks."),
     ("/diagnose", "Run setup and runtime diagnostics."),
     ("/repository", "Show the configured user/fork repo and original repo."),
-    ("/settings", "Show SDAC bot settings."),
+    ("/settings", "Show Sana-Chan bot settings."),
     ("/setsubmit #channel", "Set the submission channel."),
     ("/clearsubmit", "Clear the submission channel."),
     ("/setcategory category #channel", "Create or update a repost category."),
@@ -526,8 +526,8 @@ ADMIN_COMMAND_HELP = [
     ("/repairpermissions", "Show missing permissions and the repair invite."),
     ("/setbranding name accent logo_url", "Set dashboard branding."),
     ("/setapproval enabled #channel", "Configure approval-before-repost."),
-    ("/setadminrole @role", "Allow a role to manage SDAC."),
-    ("/removeadminrole @role", "Remove an SDAC admin role."),
+    ("/setadminrole @role", "Allow a role to manage Sana-Chan."),
+    ("/removeadminrole @role", "Remove a Sana-Chan admin role."),
     ("/setweeklychannel #channel", "Set weekly top channel."),
     ("/clearweeklychannel", "Clear weekly top channel."),
     ("/setweeklyday day", "Set weekly top posting day."),
@@ -550,8 +550,8 @@ ADMIN_COMMAND_HELP = [
     ("/backupstatus", "Show backup settings and prerequisites."),
     ("/setdigest enabled frequency #channel", "Configure admin notification digest."),
     ("/supportbundle", "Create a small diagnostic bundle."),
-    ("/sdacpanic paused reason", "Pause or resume SDAC activity."),
-    ("/sdacreset RESET reason", "Restart the SDAC bot process."),
+    ("/sanapause paused reason", "Pause or resume Sana-Chan activity."),
+    ("/sanareset RESET reason", "Restart the Sana-Chan bot process."),
     ("/schedulegame #channel start_time ...", "Schedule a saved library game."),
     ("/scheduledgames", "List queued and running scheduled games."),
     ("/cancelscheduledgame id", "Cancel a queued scheduled game."),
@@ -576,7 +576,7 @@ ADMIN_COMMAND_GROUPS = {
         ("/setuptest", "Run setup checks."),
         ("/diagnose", "Run setup and runtime diagnostics."),
         ("/repository", "Show the configured user/fork repo and original repo."),
-        ("/settings", "Show SDAC bot settings."),
+        ("/settings", "Show Sana-Chan bot settings."),
         ("/setfeature feature enabled", "Enable or disable a feature."),
     ],
     "Channels": [
@@ -593,8 +593,8 @@ ADMIN_COMMAND_GROUPS = {
     "Permissions": [
         ("/checkpermissions", "Check bot permissions in configured channels."),
         ("/repairpermissions", "Show missing permissions and the repair invite."),
-        ("/setadminrole @role", "Allow a role to manage SDAC."),
-        ("/removeadminrole @role", "Remove an SDAC admin role."),
+        ("/setadminrole @role", "Allow a role to manage Sana-Chan."),
+        ("/removeadminrole @role", "Remove a Sana-Chan admin role."),
     ],
     "Games": [
         ("/startgame #channel answer media text category hint auto_hint_minutes", "Start a guessing game."),
@@ -614,7 +614,7 @@ ADMIN_COMMAND_GROUPS = {
         ("/removesubmission id reason_preset reason", "Remove a submission with an audit reason."),
         ("/submissioninfo id", "Show submission details."),
         ("/reasonpresets", "Show standard admin action reasons."),
-        ("/sdacpanic paused reason", "Pause or resume SDAC activity."),
+        ("/sanapause paused reason", "Pause or resume Sana-Chan activity."),
     ],
     "Backups": [
         ("/backupguide provider", "Show setup steps for a backup provider."),
@@ -658,12 +658,12 @@ BACKUP_PROVIDER_GUIDES = {
     },
     "s3": {
         "label": "Amazon S3 compatible",
-        "remote_hint": "s3:bucket/sdac/server-name",
+        "remote_hint": "s3:bucket/sana/server-name",
         "steps": "Run `rclone config`, choose S3, enter keys/region/bucket provider, then use the remote path.",
     },
     "b2": {
         "label": "Backblaze B2",
-        "remote_hint": "b2:bucket/sdac/server-name",
+        "remote_hint": "b2:bucket/sana/server-name",
         "steps": "Run `rclone config`, choose Backblaze B2, enter key ID/application key, then use the remote path.",
     },
     "box": {
@@ -859,7 +859,7 @@ SDAC_SUBMENU_DETAILS = {
     "anime_activities": "**Anime Activities**\nRun `/animeactivities` to see available activity keys and anime game/community ideas.",
     "setup_bot_name": "**Bot Name**\nAdmins can set the bot nickname users see inside this server. Leave it blank to reset to the bot's global username.",
     "setup_bot_image": "**Bot Image**\nBot owners can update the global Discord bot avatar from an HTTPS image URL. This affects every server and may be rate limited by Discord.",
-    "setup_command_alias": "**Command Name**\nAdmins can set a server-specific launcher like `/pepo`. `/sdac` always remains available as the fallback.",
+    "setup_command_alias": "**Command Name**\nAdmins can set a server-specific launcher like `/pepo`. `/sana` always remains available as the fallback.",
     "setup_sync_commands": "**Sync Commands**\nRefresh this server's Discord command list without restarting the bot. This also clears copied guild duplicates.",
     "backup_guide": "**Backup Provider Guide**\nRun `/backupguide provider` for provider-specific setup steps.",
     "backup_setup": "**Save Backup Target**\nRun `/backupsetup provider remote` to save the backup destination.",
@@ -899,7 +899,7 @@ def sdac_hub_content(is_admin=False, notice=""):
 
 def sdac_submenu_content(section_key, notice=""):
     submenu = SDAC_SUBMENUS.get(section_key, {})
-    title = submenu.get("title", "SDAC")
+    title = submenu.get("title", "Sana-Chan")
     lines = [f"**{title}**", "Choose one action below. This submenu only shows actions for this section."]
     if notice:
         lines.extend(["", notice])
@@ -930,8 +930,8 @@ class SDACHubSelect(discord.ui.Select):
         if action == "public_help":
             await interaction.response.edit_message(
                 content=(
-                    "**Main SDAC Commands**\n"
-                    "- `/sdac` opens this mobile-friendly control panel\n"
+                    "**Main Sana-Chan Commands**\n"
+                    "- `/sana` opens this mobile-friendly control panel\n"
                     "- `/submit` starts guided media submission\n"
                     "- `/guess answer` answers an active guessing game\n"
                     "- `/hint` shows the active game hint"
@@ -946,8 +946,8 @@ class SDACHubSelect(discord.ui.Select):
             await interaction.response.edit_message(
                 content=(
                     "**Admin Actions**\n"
-                    "Use `/sdac` buttons for setup, setup tests, diagnostics, backups, and moderation. "
-                    "Set `SDAC_SIMPLIFIED_COMMANDS=0` before startup only if you need the legacy direct slash commands."
+                    "Use `/sana` buttons for setup, setup tests, diagnostics, backups, and moderation. "
+                    "Set `SANA_SIMPLIFIED_COMMANDS=0` or `SDAC_SIMPLIFIED_COMMANDS=0` before startup only if you need the legacy direct slash commands."
                 ),
                 view=self.view,
             )
@@ -989,7 +989,7 @@ class SDACSubmenuSelect(discord.ui.Select):
                 "open_setup_wizard_from_hub",
                 "guild",
                 interaction.guild_id,
-                "Opened Discord setup wizard from /sdac.",
+                "Opened Discord setup wizard from /sana.",
             )
             await interaction.response.edit_message(
                 content=setup_wizard_content(guild_config, page=1),
@@ -1032,7 +1032,7 @@ class SDACSubmenuSelect(discord.ui.Select):
                 "sync_commands_from_hub",
                 "guild",
                 interaction.guild_id,
-                f"Synced {len(synced)} guild command(s) from /sdac.",
+                f"Synced {len(synced)} guild command(s) from /sana.",
             )
             lines = ["**Sana-Chan Command Sync**", "Discord command sync requested."]
             lines.extend(command_sync_status_lines(interaction.guild, guild_config))
@@ -1051,7 +1051,7 @@ class SDACSubmenuSelect(discord.ui.Select):
                 content=setup_wizard_content(
                     guild_config,
                     page=1,
-                    notice="Choose `Open Setup Wizard` in `/sdac` to change these settings.",
+                    notice="Choose `Open Setup Wizard` in `/sana` to change these settings.",
                 ),
                 view=SDACSubmenuView(self.is_admin, self.section_key),
             )
@@ -1069,7 +1069,7 @@ class SDACSubmenuSelect(discord.ui.Select):
                 "run_setup_test_from_hub",
                 "guild",
                 interaction.guild_id,
-                f"Ran setup test from /sdac: {summary}",
+                f"Ran setup test from /sana: {summary}",
             )
             lines.insert(1, f"Saved result: `{status}`.")
             await interaction.edit_original_response(
@@ -1089,7 +1089,7 @@ class SDACSubmenuSelect(discord.ui.Select):
                 "run_diagnostics_from_hub",
                 "guild",
                 interaction.guild_id,
-                f"Ran diagnostics from /sdac: {summary}",
+                f"Ran diagnostics from /sana: {summary}",
             )
             lines.insert(1, f"Saved diagnostic result: `{status}`.")
             await interaction.edit_original_response(
@@ -1126,8 +1126,8 @@ class SDACHubButton(discord.ui.Button):
         if action == "public_help":
             await interaction.response.edit_message(
                 content=(
-                    "**Main SDAC Commands**\n"
-                    "- `/sdac` opens this mobile-friendly control panel\n"
+                    "**Main Sana-Chan Commands**\n"
+                    "- `/sana` opens this mobile-friendly control panel\n"
                     "- `/submit` starts guided media submission\n"
                     "- `/guess answer` answers an active guessing game\n"
                     "- `/hint` shows the active game hint"
@@ -1142,8 +1142,8 @@ class SDACHubButton(discord.ui.Button):
             await interaction.response.edit_message(
                 content=(
                     "**Admin Actions**\n"
-                    "Use `/sdac` buttons for setup, setup tests, diagnostics, backups, and moderation. "
-                    "Set `SDAC_SIMPLIFIED_COMMANDS=0` before startup only if you need the legacy direct slash commands."
+                    "Use `/sana` buttons for setup, setup tests, diagnostics, backups, and moderation. "
+                    "Set `SANA_SIMPLIFIED_COMMANDS=0` or `SDAC_SIMPLIFIED_COMMANDS=0` before startup only if you need the legacy direct slash commands."
                 ),
                 view=self.view,
             )
@@ -1176,7 +1176,7 @@ class SDACSubmenuButton(discord.ui.Button):
                 "open_setup_wizard_from_hub",
                 "guild",
                 interaction.guild_id,
-                "Opened Discord setup wizard from /sdac.",
+                "Opened Discord setup wizard from /sana.",
             )
             await interaction.response.edit_message(
                 content=setup_wizard_content(guild_config, page=1),
@@ -1219,7 +1219,7 @@ class SDACSubmenuButton(discord.ui.Button):
                 "sync_commands_from_hub",
                 "guild",
                 interaction.guild_id,
-                f"Synced {len(synced)} guild command(s) from /sdac.",
+                f"Synced {len(synced)} guild command(s) from /sana.",
             )
             lines = ["**Sana-Chan Command Sync**", "Discord command sync requested."]
             lines.extend(command_sync_status_lines(interaction.guild, guild_config))
@@ -1238,7 +1238,7 @@ class SDACSubmenuButton(discord.ui.Button):
                 content=setup_wizard_content(
                     guild_config,
                     page=1,
-                    notice="Choose `Open Setup Wizard` in `/sdac` to change these settings.",
+                    notice="Choose `Open Setup Wizard` in `/sana` to change these settings.",
                 ),
                 view=SDACSubmenuView(self.is_admin, self.section_key),
             )
@@ -1256,7 +1256,7 @@ class SDACSubmenuButton(discord.ui.Button):
                 "run_setup_test_from_hub",
                 "guild",
                 interaction.guild_id,
-                f"Ran setup test from /sdac: {summary}",
+                f"Ran setup test from /sana: {summary}",
             )
             lines.insert(1, f"Saved result: `{status}`.")
             await interaction.edit_original_response(
@@ -1276,7 +1276,7 @@ class SDACSubmenuButton(discord.ui.Button):
                 "run_diagnostics_from_hub",
                 "guild",
                 interaction.guild_id,
-                f"Ran diagnostics from /sdac: {summary}",
+                f"Ran diagnostics from /sana: {summary}",
             )
             lines.insert(1, f"Saved diagnostic result: `{status}`.")
             await interaction.edit_original_response(
@@ -2633,7 +2633,7 @@ def emergency_pause_message(guild_config):
     if not (guild_config or {}).get("emergency_paused"):
         return ""
     reason = (guild_config or {}).get("emergency_reason") or "No reason provided."
-    return f"SDAC is paused for this server. Reason: {reason}"
+    return f"Sana-Chan is paused for this server. Reason: {reason}"
 
 
 def parse_answer_aliases(answer):
@@ -4317,7 +4317,7 @@ async def start_library_game_item(
 ):
     guild_config = get_guild_config(guild.id, create=False)
     if emergency_pause_message(guild_config):
-        raise RuntimeError("SDAC is paused for this server.")
+        raise RuntimeError("Sana-Chan is paused for this server.")
     if not feature_enabled(guild_config, "guessing_games"):
         raise RuntimeError("Guessing games are disabled for this server.")
 
@@ -4975,7 +4975,7 @@ def settings_lines(guild_config):
         "weekly_top_day",
         DEFAULT_GUILD_CONFIG["weekly_top_day"],
     ).title()
-    brand_name = guild_config.get("brand_name") or guild_config.get("guild_name") or "SDAC"
+    brand_name = guild_config.get("brand_name") or guild_config.get("guild_name") or "Sana-Chan"
     setup_preset = guild_config.get("setup_preset") or "custom"
     lines = [
         "**Sana-Chan Settings**",
@@ -5176,7 +5176,7 @@ def normalize_command_alias(value):
         alias = alias[1:]
     alias = re.sub(r"\s+", "-", alias)
     alias = re.sub(r"[^a-z0-9_-]", "", alias)[:32]
-    if alias == "sdac":
+    if alias in {"sana", "sanachan", "sdac"}:
         return ""
     return alias
 
@@ -5201,13 +5201,13 @@ def validate_command_alias(value):
 
 def command_alias_display(guild_config):
     alias = normalize_command_alias((guild_config or {}).get("command_alias"))
-    return f"/{alias}" if alias else "/sdac"
+    return f"/{alias}" if alias else "/sana"
 
 
 def bot_access_disabled_message(guild_config):
     contact = str((guild_config or {}).get("bot_access_contact") or "").strip()
     reason = str((guild_config or {}).get("bot_access_reason") or "").strip()
-    lines = ["SDAC access is currently disabled for this server by the Bot Owner."]
+    lines = ["Sana-Chan access is currently disabled for this server by the Bot Owner."]
     if reason:
         lines.append(f"Reason: {reason[:500]}")
     if contact:
@@ -6064,7 +6064,7 @@ def command_visibility_audit_lines(guild=None, guild_config=None):
     if extra:
         lines.append("[WARN] Extra global commands visible in simplified mode: " + ", ".join(f"`/{name}`" for name in extra))
     else:
-        lines.append("[OK] Advanced commands are behind `/sdac` in simplified mode.")
+        lines.append("[OK] Advanced commands are behind `/sana` in simplified mode.")
     if guild is not None:
         lines.extend(command_sync_status_lines(guild, guild_config or {}))
     return lines
@@ -6593,7 +6593,7 @@ class SetupBotAvatarModal(discord.ui.Modal):
         self.guild_id = str(guild_id)
         self.avatar_url_input = discord.ui.TextInput(
             label="HTTPS image URL",
-            placeholder="https://example.com/sdac-avatar.png",
+            placeholder="https://example.com/sana-avatar.png",
             max_length=500,
             required=True,
         )
@@ -6640,7 +6640,7 @@ class SetupBotAvatarModal(discord.ui.Modal):
             "setup_set_bot_avatar",
             "bot",
             "@me",
-            "Updated the global Discord bot avatar from /sdac.",
+            "Updated the global Discord bot avatar from /sana.",
         )
         guild_config = get_guild_config(interaction.guild_id)
         await interaction.followup.send(
@@ -7072,7 +7072,7 @@ class SetupWizardView(discord.ui.View):
                     setup_wizard_content(
                         guild_config,
                         self.page,
-                        "Setup wizard closed. Run `/sdac` any time to reopen it.",
+                        "Setup wizard closed. Run `/sana` any time to reopen it.",
                     )
                 ),
                 view=None,
@@ -7154,9 +7154,9 @@ class SetupWizardView(discord.ui.View):
         )
 
 
-@tree.command(name="sdac", description="Open the guided SDAC control center")
+@tree.command(name="sana", description="Open the guided Sana-Chan control center")
 @app_commands.guild_only()
-async def sdac(interaction):
+async def sana(interaction):
     is_admin = admin_only(interaction)
     await interaction.response.send_message(
         sdac_hub_content(is_admin),
@@ -7164,7 +7164,7 @@ async def sdac(interaction):
         ephemeral=True,
     )
 
-@tree.command(name="commands", description="Show SDAC user commands")
+@tree.command(name="commands", description="Show Sana-Chan user commands")
 @app_commands.guild_only()
 async def commands_list(interaction):
     await send_command_help_menu(
@@ -7656,7 +7656,7 @@ async def animechallenge(
         raise
 
 
-@tree.command(name="admincommands", description="Show SDAC admin commands")
+@tree.command(name="admincommands", description="Show Sana-Chan admin commands")
 @app_commands.guild_only()
 async def admincommands(interaction):
     if not await require_admin(interaction):
@@ -7669,7 +7669,7 @@ async def admincommands(interaction):
     )
 
 
-@tree.command(name="setup", description="Open the guided SDAC setup wizard")
+@tree.command(name="setup", description="Open the guided Sana-Chan setup wizard")
 @app_commands.guild_only()
 async def setup(interaction):
     if not await require_admin(interaction):
@@ -7689,7 +7689,7 @@ async def setup(interaction):
     )
 
 
-@tree.command(name="setupstatus", description="Show SDAC setup progress")
+@tree.command(name="setupstatus", description="Show Sana-Chan setup progress")
 @app_commands.guild_only()
 async def setupstatus(interaction):
     if not await require_admin(interaction):
@@ -7705,7 +7705,7 @@ async def setupstatus(interaction):
     )
 
 
-@tree.command(name="setupchecklist", description="Show SDAC setup and production checklist")
+@tree.command(name="setupchecklist", description="Show Sana-Chan setup and production checklist")
 @app_commands.guild_only()
 async def setupchecklist(interaction):
     if not await require_admin(interaction):
@@ -8199,7 +8199,7 @@ async def categories(interaction):
     )
 
 
-@tree.command(name="settings", description="Show SDAC bot settings")
+@tree.command(name="settings", description="Show Sana-Chan bot settings")
 @app_commands.guild_only()
 async def settings(interaction):
     if not await require_admin(interaction):
@@ -8241,13 +8241,13 @@ async def setfeature(
     )
 
 
-@tree.command(name="sdacpanic", description="Pause or resume SDAC activity in this server")
+@tree.command(name="sanapause", description="Pause or resume Sana-Chan activity in this server")
 @app_commands.guild_only()
 @app_commands.describe(
     paused="True pauses submissions, games, and guesses. False resumes them.",
     reason="Optional reason shown to users while paused",
 )
-async def sdacpanic(
+async def sanapause(
     interaction,
     paused: bool = True,
     reason: str = "",
@@ -8264,25 +8264,25 @@ async def sdacpanic(
         "sdac_panic_pause" if paused else "sdac_panic_resume",
         "guild",
         interaction.guild_id,
-        reason or ("Paused SDAC." if paused else "Resumed SDAC."),
+        reason or ("Paused Sana-Chan." if paused else "Resumed Sana-Chan."),
     )
     await interaction.response.send_message(
         (
             f"SDAC is now paused for this server. Reason: {reason or 'No reason provided.'}"
             if paused
-            else "SDAC is resumed for this server."
+            else "Sana-Chan is resumed for this server."
         ),
         ephemeral=True,
     )
 
 
-@tree.command(name="sdacreset", description="Restart the SDAC bot process from Discord")
+@tree.command(name="sanareset", description="Restart the Sana-Chan bot process from Discord")
 @app_commands.guild_only()
 @app_commands.describe(
     confirm="Type RESET to confirm the bot process restart",
     reason="Optional reason recorded in the audit log and bot status",
 )
-async def sdacreset(
+async def sanareset(
     interaction,
     confirm: str,
     reason: str = "",
@@ -8305,7 +8305,7 @@ async def sdacreset(
     )
     write_bot_status("discord_reset_requested")
     await interaction.response.send_message(
-        "SDAC bot reset requested. The service should come back automatically if systemd restart is enabled.",
+        "Sana-Chan bot reset requested. The service should come back automatically if systemd restart is enabled.",
         ephemeral=True,
     )
 
@@ -10281,7 +10281,7 @@ class SubmissionCategoryView(discord.ui.View):
                 pass
 
 
-@tree.command(name="submit", description="Start a guided SDAC submission")
+@tree.command(name="submit", description="Start a guided Sana-Chan submission")
 @app_commands.guild_only()
 async def submit(interaction):
     guild_config = get_guild_config(interaction.guild_id, create=False)
@@ -12836,7 +12836,7 @@ async def sdac_alias_callback(interaction):
 def build_sdac_alias_command(alias):
     return app_commands.Command(
         name=alias,
-        description="Open this server's SDAC control center",
+        description="Open this server's Sana-Chan control center",
         callback=sdac_alias_callback,
     )
 
@@ -12967,9 +12967,9 @@ async def on_guild_join(guild):
 
     welcome = (
         "**SDAC is connected.**\n"
-        "An administrator can run `/sdac` to walk through channels, roles, "
+        "An administrator can run `/sana` to walk through channels, roles, "
         "features, timezone, branding, command launcher, and the setup test from Discord. "
-        "`/sdac` always stays available, and setup can add a server command like `/pepo`."
+        "`/sana` always stays available, and setup can add a server command like `/pepo`."
     )
     candidate_channels = []
     if guild.system_channel is not None:

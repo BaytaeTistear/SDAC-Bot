@@ -65,6 +65,7 @@ ADMIN_SECTIONS = [
             ("Go Live Checklist", "admin_go_live_checklist", {}),
             ("Production", "admin_production_health", {}),
             ("Install Doctor", "admin_install_doctor", {}),
+            ("UI Health", "admin_ui_health", {}),
             ("Approvals", "admin_approvals", {}),
             ("Jobs", "admin_jobs", {}),
             ("Analytics", "admin_analytics", {}),

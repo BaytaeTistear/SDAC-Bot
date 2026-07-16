@@ -105,11 +105,12 @@ install_update_command() {
     sudo install -m 755 "$APP_DIR/scripts/update_from_github.sh" "/usr/local/bin/sana-update"
     sudo install -m 755 "$APP_DIR/scripts/update_from_github.sh" "/usr/local/bin/sanachan-update"
     sudo rm -f "/usr/local/bin/sdac-update"
-    if [[ -f "$APP_DIR/scripts/sdac-doctor" ]]; then
-        echo "Installing sdac-doctor command"
+    if [[ -f "$APP_DIR/scripts/sana-doctor" && -f "$APP_DIR/scripts/sdac-doctor" ]]; then
+        echo "Installing sana-doctor command"
+        sudo install -m 755 "$APP_DIR/scripts/sana-doctor" "/usr/local/bin/sana-doctor"
         sudo install -m 755 "$APP_DIR/scripts/sdac-doctor" "/usr/local/bin/sdac-doctor"
     elif [[ -f "$APP_DIR/scripts/sdac_doctor.py" ]]; then
-        echo "Installing sdac-doctor command"
+        echo "Installing sana-doctor command"
         DOCTOR_TMP="$(mktemp)"
         cat > "$DOCTOR_TMP" <<'DOCTOR'
 #!/usr/bin/env bash
@@ -121,8 +122,12 @@ if [[ ! -x "$PYTHON_BIN" ]]; then
 fi
 exec "$PYTHON_BIN" "$APP_DIR/scripts/sdac_doctor.py" "$@"
 DOCTOR
+        sudo install -m 755 "$DOCTOR_TMP" "/usr/local/bin/sana-doctor"
         sudo install -m 755 "$DOCTOR_TMP" "/usr/local/bin/sdac-doctor"
         rm -f "$DOCTOR_TMP"
+    fi
+    if [[ -f "/usr/local/bin/sana-doctor" ]]; then
+        sudo sed -i 's/\r$//' "/usr/local/bin/sana-doctor"
     fi
     if [[ -f "/usr/local/bin/sdac-doctor" ]]; then
         sudo sed -i 's/\r$//' "/usr/local/bin/sdac-doctor"

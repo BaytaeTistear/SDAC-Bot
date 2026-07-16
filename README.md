@@ -73,7 +73,7 @@ Sana-Chan Bot is a Discord media submission and guessing-game system with a web 
 - `/repository` shows the configured user/fork GitHub repo and the original
   upstream repo
 - Website-managed guessing-game seasons with top 10 leaderboard snapshots
-- Emergency `/sdacpanic` pause/resume command for submissions and games
+- Emergency `/sanapause` pause/resume command for submissions and games
 - Per-server limits for file size, monthly submissions, active games, and storage
 - Content moderation controls for blocked words, allowed media types, new-user
   approval, and spoiler approval
@@ -129,7 +129,7 @@ chmod +x Sana-Chan-Ubuntu-Update.sh
 SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot \
 SDAC_APP_USER=ubuntu \
 SDAC_ENV_FILE=/etc/sdac-bot/sdac.env \
-SDAC_DOMAIN=thelab.us.to \
+SDAC_DOMAIN=freethefishies.us.to \
 ./Sana-Chan-Ubuntu-Update.sh --install-command
 ```
 
@@ -275,27 +275,27 @@ journalctl -u nginx -n 80 --no-pager
 
 ```bash
 curl http://127.0.0.1:5000/health
-curl -I https://thelab.us.to/health
+curl -I https://freethefishies.us.to/health
 ```
 
 Admin JSON health:
 
 ```text
-https://thelab.us.to/admin/health?key=ImTheBestAdmin
+https://freethefishies.us.to/admin/health?key=ImTheBestAdmin
 ```
 
 Human-friendly maintenance page:
 
 ```text
-https://thelab.us.to/admin/maintenance?key=ImTheBestAdmin
+https://freethefishies.us.to/admin/maintenance?key=ImTheBestAdmin
 ```
 
 ### Nginx And HTTPS
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=thelab.us.to bash scripts/install_nginx_site.sh
-sudo certbot --nginx -d thelab.us.to --cert-name thelab.us.to --key-type rsa
+SDAC_DOMAIN=freethefishies.us.to bash scripts/install_nginx_site.sh
+sudo certbot --nginx -d freethefishies.us.to --cert-name freethefishies.us.to --key-type rsa
 sudo certbot renew --dry-run
 ```
 
@@ -337,14 +337,14 @@ SDAC_MEDIA_RCLONE_REMOTE=drive:sdac-media bash scripts/sync_media_rclone.sh
 If the mirrored media has a public URL prefix, set:
 
 ```text
-SDAC_MEDIA_PUBLIC_BASE_URL=https://cdn.example.com/sdac-media
+SANA_MEDIA_PUBLIC_BASE_URL=https://cdn.example.com/sana-media
 ```
 
 Per-server alternate backups:
 
 ```bash
 # First set the remote from Discord:
-# /setserverbackup true drive:sdac/server-123 https://cdn.example.com/sdac/server-123 true true false
+# /setserverbackup true drive:sana/server-123 https://cdn.example.com/sana/server-123 true true false
 
 # Then run the guild backup from the host:
 SDAC_GUILD_ID=123456789 bash scripts/backup_guild_offsite.sh
@@ -419,13 +419,13 @@ the app image separate from uploaded media, backups, and `sdac.db`.
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=thelab.us.to bash scripts/check_production.sh
+SDAC_DOMAIN=freethefishies.us.to bash scripts/check_production.sh
 ```
 
 Include Certbot dry-run:
 
 ```bash
-SDAC_DOMAIN=thelab.us.to SDAC_RUN_CERTBOT_DRY_RUN=1 bash scripts/check_production.sh
+SDAC_DOMAIN=freethefishies.us.to SDAC_RUN_CERTBOT_DRY_RUN=1 bash scripts/check_production.sh
 ```
 
 Create a one-command support bundle:
@@ -492,30 +492,30 @@ bash scripts/rollback_ubuntu.sh /home/ubuntu/discord-screenshot-bot/deploy-backu
 
 ### Discord Commands
 
-By default SDAC syncs only the mobile-friendly main commands. Everything else is routed through `/sdac` panels and submenus.
+By default SDAC syncs only the mobile-friendly main commands. Everything else is routed through `/sana` panels and submenus.
 
 ```text
-/sdac
+/sana
 /submit
 /guess guess
 /hint
 ```
 
-`/sdac` is always the fallback control center. Server owners can also set an optional server-specific launcher such as `/pepo` from `/sdac` -> Setup -> Command Name, or from the setup wizard's final page. During setup, owners are prompted to optionally set the bot's server nickname from `/sdac` -> Setup -> Bot Name; leaving the name blank resets it to the bot's global username. Bot Owners are also prompted to optionally change the global bot image from `/sdac` -> Setup -> Bot Image with an HTTPS image URL, or from the dashboard Settings page by upload or URL. The bot needs Manage Nicknames and a high enough role to apply server nicknames; global username and image changes may be rate limited by Discord. Run `/sdac` -> Setup -> Sync Commands after changing the alias or if Discord still shows old duplicate commands. Discord may take a minute to show or remove commands after sync.
+`/sana` is always the fallback control center. Server owners can also set an optional server-specific launcher such as `/pepo` from `/sana` -> Setup -> Command Name, or from the setup wizard's final page. During setup, owners are prompted to optionally set the bot's server nickname from `/sana` -> Setup -> Bot Name; leaving the name blank resets it to the bot's global username. Bot Owners are also prompted to optionally change the global bot image from `/sana` -> Setup -> Bot Image with an HTTPS image URL, or from the dashboard Settings page by upload or URL. The bot needs Manage Nicknames and a high enough role to apply server nicknames; global username and image changes may be rate limited by Discord. Run `/sana` -> Setup -> Sync Commands after changing the alias or if Discord still shows old duplicate commands. Discord may take a minute to show or remove commands after sync.
 
-Set `SDAC_SIMPLIFIED_COMMANDS=0` before bot startup if you temporarily need the legacy direct slash-command list. Set `SDAC_ENABLE_ANIME_COMMANDS=0` before startup to hide the experimental Anime Activities actions from `/sdac` and legacy mode.
+Set `SANA_SIMPLIFIED_COMMANDS=0` before bot startup if you temporarily need the legacy direct slash-command list. Set `SDAC_ENABLE_ANIME_COMMANDS=0` before startup to hide the experimental Anime Activities actions from `/sana` and legacy mode.
 
-Project links are also available inside the `/sdac` panel:
+Project links are also available inside the `/sana` panel:
 
 - GitHub: https://github.com/BaytaeTistear/SDAC-Bot
 - Wiki: https://github.com/BaytaeTistear/SDAC-Bot/wiki
 
 ### Admin Actions
 
-Admins should start with `/sdac`. The panel opens button-based menus for setup, command launcher naming, setup status, setup tests, diagnostics, backups, moderation, and advanced help.### Server Owner Quick Setup
+Admins should start with `/sana`. The panel opens button-based menus for setup, command launcher naming, setup status, setup tests, diagnostics, backups, moderation, and advanced help.### Server Owner Quick Setup
 
 1. Invite Sana-Chan with the bot and application command scopes.
-2. Run `/sdac` in Discord and open Setup.
+2. Run `/sana` in Discord and open Setup.
 3. Pick the admin role, submit channel, category repost channels, and optional approval channel.
 4. On the final setup page, optionally set a server command name like `/pepo`.
 5. Use Sync Commands if Discord still shows old duplicate commands or the new alias has not appeared.
@@ -619,7 +619,7 @@ The app entry point is `/app`. It sends admins to the admin overview, signed-in 
 
 ## Official Native App Scaffold
 
-The first official app scaffold lives in `apps/sdac-official-app`. It uses Vite and Capacitor so the existing Flask dashboard remains the source of truth while mobile builds can wrap the hosted dashboard. The current app display name is `Sana-Chan`, and it defaults to `https://thelab.us.to`.
+The official Sana-Chan app scaffold lives in `apps/sdac-official-app`. It uses Vite and Capacitor so the existing Flask dashboard remains the source of truth while mobile builds use the packaged Sana-Chan shell. The current app display name is `Sana-Chan`, and it defaults to `https://freethefishies.us.to`.
 
 Recommended path:
 
@@ -630,7 +630,7 @@ Recommended path:
 
 The native scaffold reads `GET /api/app/bootstrap` for app metadata, current login/session state, server access, theme/layout settings, useful routes, and release info.
 
-If the app shell runs from another origin during development, set `SDAC_APP_ALLOWED_ORIGINS` on the dashboard server, for example `http://localhost:5174,capacitor://localhost`.
+If the app shell runs from another origin during development, set `SANA_APP_ALLOWED_ORIGINS` on the dashboard server, for example `http://localhost:5174,capacitor://localhost`.
 
 Android supports both direct APK/sideload testing and Play Store AAB builds. See `apps/sdac-official-app/README.md` for the exact Android SDK, APK, and store build commands.
 

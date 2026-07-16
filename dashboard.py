@@ -87,7 +87,11 @@ DISCORD_OAUTH_CLIENT_SECRET = (
 DISCORD_OAUTH_REDIRECT_URI = os.getenv("SDAC_OAUTH_REDIRECT_URI", "")
 DISCORD_ADMINISTRATOR_PERMISSION = 0x8
 APP_LOGIN_TICKET_MAX_AGE_SECONDS = 5 * 60
-APP_LOGIN_DEEP_LINK_SCHEME = os.getenv("SDAC_APP_DEEP_LINK_SCHEME", "sdaccompanion").strip() or "sdaccompanion"
+APP_LOGIN_DEEP_LINK_SCHEME = (
+    os.getenv("SANA_APP_DEEP_LINK_SCHEME")
+    or os.getenv("SDAC_APP_DEEP_LINK_SCHEME")
+    or "sanachan"
+).strip() or "sanachan"
 BASE_DIR = Path(__file__).resolve().parent
 
 
@@ -3538,7 +3542,7 @@ SETTINGS_HTML = """
                             </select>
                         </td></tr>
                         <tr><th>Backup remote</th><td><input name="external_backup_remote" value="{{ guild.external_backup.remote }}" placeholder="drive:sdac/{{ guild.id }}"></td></tr>
-                        <tr><th>Public media base URL</th><td><input name="external_backup_public_base_url" value="{{ guild.external_backup.public_base_url }}" placeholder="https://cdn.example.com/sdac/{{ guild.id }}"></td></tr>
+                        <tr><th>Public media base URL</th><td><input name="external_backup_public_base_url" value="{{ guild.external_backup.public_base_url }}" placeholder="https://cdn.example.com/sana/{{ guild.id }}"></td></tr>
                         <tr><th>Backup includes media</th><td>
                             <select name="external_backup_include_media">
                                 <option value="1" {% if guild.external_backup.include_media %}selected{% endif %}>Enabled</option>
@@ -4973,7 +4977,7 @@ RELEASES_HTML = """
         <p><code>sudo sdac-update 3.0.13</code></p>
         <p><code>sudo sdac-update 3.0.12</code></p>
         <p>Run server diagnostics after any rollback or update:</p>
-        <p><code>sudo sdac-doctor</code></p>
+        <p><code>sudo sana-doctor</code></p>
         <p class="muted">
             You can also queue rollback from Maintenance. The dashboard service
             user must have permission to restart the SDAC systemd services.
@@ -6201,7 +6205,7 @@ SERVER_HEALTH_CARDS_HTML = """
             <p>Service status:</p>
             <p><code>sudo systemctl status sdac-bot --no-pager</code></p>
             <p>Full server doctor:</p>
-            <p><code>sudo sdac-doctor</code></p>
+            <p><code>sudo sana-doctor</code></p>
         </article>
         {% for row in servers %}
             <article class="card">
@@ -6822,10 +6826,10 @@ ABOUT_HTML = """
         <div class="panel">
             <h2>Discord Commands</h2>
             <ul>
-                <li><code>/sdac</code> opens the mobile-friendly control center.</li>
+                <li><code>/sana</code> opens the mobile-friendly control center.</li>
                 <li><code>/submit</code> starts a guided media submission.</li>
                 <li><code>/guess</code> and <code>/hint</code> handle active guessing games.</li>
-                <li>Admins use <code>/sdac</code> setup panels for setup, sync, checks, backups, and moderation.</li>
+                <li>Admins use <code>/sana</code> setup panels for setup, sync, checks, backups, and moderation.</li>
             </ul>
         </div>
         <div class="panel">
@@ -6851,7 +6855,7 @@ ABOUT_HTML = """
         {% endif %}
         <ol>
             <li>Invite the bot with the bot and application command scopes.</li>
-            <li>Run <code>/sdac</code> in Discord.</li>
+            <li>Run <code>/sana</code> in Discord.</li>
             <li>Open Setup, choose the required channels/categories, and optionally set the bot name, bot image, and custom command name.</li>
             <li>Use Sync Commands if Discord needs to refresh slash commands.</li>
             <li>Open the dashboard onboarding page if you want a browser checklist.</li>
@@ -6930,7 +6934,7 @@ BOT_INVITE_HTML = """
         <h2>Guided Setup Flow</h2>
         <ol>
             <li>Invite the bot with the link above.</li>
-            <li>In Discord, run <code>/sdac</code> to open the guided control center.</li>
+            <li>In Discord, run <code>/sana</code> to open the guided control center.</li>
             <li>Choose Setup and confirm submit, approval, repost, game, and error channels.</li>
             <li>Optionally choose the server command name, bot display name, and bot image.</li>
             <li>Run Sync Commands if Discord has stale slash commands.</li>
@@ -7856,7 +7860,7 @@ def install_doctor_report():
     )
 
     add("Updater config", bool(update_config), f"Update config: {UPDATE_ENV_FILE}" if update_config else f"No readable updater config at {UPDATE_ENV_FILE}.")
-    add("Updater command", Path("/usr/local/bin/sdac-update").exists() or (BASE_DIR / "scripts" / "update_from_github.sh").is_file(), "sdac-update command or bundled updater script found.")
+    add("Updater command", Path("/usr/local/bin/sana-update").exists() or Path("/usr/local/bin/sanachan-update").exists() or (BASE_DIR / "scripts" / "update_from_github.sh").is_file(), "sana-update command or bundled updater script found.")
     add("Rollback script", (BASE_DIR / "scripts" / "rollback_ubuntu.sh").is_file(), "Rollback script is bundled." if (BASE_DIR / "scripts" / "rollback_ubuntu.sh").is_file() else "Missing scripts/rollback_ubuntu.sh.")
 
     systemd_available = command_available("systemctl")
@@ -8590,13 +8594,13 @@ def build_onboarding_rows(config_data):
             onboarding_item(
                 guild_config.get("bot_nickname"),
                 "Bot name chosen",
-                "/sdac -> Setup -> Bot Name",
+                "/sana -> Setup -> Bot Name",
                 optional=True,
             ),
             onboarding_item(
                 config_data.get("bot_avatar_updated_at"),
                 "Bot image chosen",
-                "/sdac -> Setup -> Bot Image or dashboard Settings",
+                "/sana -> Setup -> Bot Image or dashboard Settings",
                 optional=True,
             ),
             onboarding_item(
@@ -20878,7 +20882,7 @@ def app_allowed_cors_origin():
     allowed = set(DEFAULT_APP_ALLOWED_ORIGINS)
     allowed.update(
         item.strip().rstrip("/")
-        for item in os.getenv("SDAC_APP_ALLOWED_ORIGINS", "").split(",")
+        for item in (os.getenv("SANA_APP_ALLOWED_ORIGINS") or os.getenv("SDAC_APP_ALLOWED_ORIGINS", "")).split(",")
         if item.strip()
     )
     if origin in allowed:
@@ -20946,7 +20950,7 @@ def api_app_bootstrap():
             "terms_url": app_info["terms_url"],
             "github_url": app_info["github_url"],
             "wiki_url": app_info["wiki_url"],
-            "version": os.getenv("SDAC_APP_VERSION") or installed_version,
+            "version": os.getenv("SANA_APP_VERSION") or os.getenv("SDAC_APP_VERSION") or installed_version,
         },
         "auth": {
             "account_logged_in": account_logged_in,
@@ -21209,6 +21213,148 @@ def health():
         "bot_heartbeat_fresh": bool(bot_status.get("fresh")),
     })
 
+
+
+@app.route("/admin/ui-health")
+def admin_ui_health():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+
+    config_data = load_config()
+    release = release_status()
+    app_info = public_app_metadata()
+    bot_status = read_bot_status()
+    session_cookie_name = app.config.get("SESSION_COOKIE_NAME", "session")
+    sidebar_sections_count = len(admin_sidebar_sections())
+    server_rows = sidebar_server_options(config_data)
+    selected_server = session.get("sdac_guild_id") or request.args.get("guild_id") or "all"
+    health_cards = [
+        {
+            "label": "Dashboard URL",
+            "value": request.host_url.rstrip("/"),
+            "detail": "Expected public URL should be https://freethefishies.us.to unless testing locally.",
+            "ok": request.host_url.startswith("https://") or request.host.startswith(("127.0.0.1", "localhost")),
+        },
+        {
+            "label": "Release Channel",
+            "value": release.get("configured_tag") or os.getenv("SDAC_RELEASE_TAG") or "latest-official",
+            "detail": f"Running {release.get('installed_version') or os.getenv('SDAC_RELEASE') or 'development'}; official {release.get('official_version') or 'unknown'}; experimental {release.get('experimental_version') or 'unknown'}.",
+            "ok": bool(release.get("configured_tag") or os.getenv("SDAC_RELEASE_TAG")),
+        },
+        {
+            "label": "Bot Heartbeat",
+            "value": "Fresh" if bot_status.get("fresh") else "Stale",
+            "detail": bot_status.get("detail") or bot_status.get("updated_at") or "No heartbeat detail was recorded.",
+            "ok": bool(bot_status.get("fresh")),
+        },
+        {
+            "label": "Sidebar",
+            "value": f"{sidebar_sections_count} sections",
+            "detail": "Menu, Home, server selector, account links, and role sections are rendered by the shared shell.",
+            "ok": sidebar_sections_count > 0,
+        },
+        {
+            "label": "Server Selector",
+            "value": f"{len(server_rows)} visible",
+            "detail": f"Current selection: {selected_server}. Access is scoped by the logged-in account/server role matrix.",
+            "ok": bool(server_rows),
+        },
+        {
+            "label": "Discord OAuth",
+            "value": "Configured" if oauth_enabled() else "Missing",
+            "detail": "Required for Discord login in browser and app.",
+            "ok": oauth_enabled(),
+        },
+        {
+            "label": "Invite Bot",
+            "value": "Ready" if app_info.get("invite_url") else "Missing",
+            "detail": "The invite button needs a bot client ID and permissions integer.",
+            "ok": bool(app_info.get("invite_url")),
+        },
+        {
+            "label": "Session Cookie",
+            "value": "Seen" if request.cookies.get(session_cookie_name) else "Not seen",
+            "detail": f"Cookie name: {session_cookie_name}. Useful when debugging app/browser login state.",
+            "ok": bool(request.cookies.get(session_cookie_name)),
+        },
+    ]
+    layout_checks = [
+        "Open /admin, /admin/moderation, /admin/users, /admin/setup-checklist, /admin/releases, and / in desktop and mobile widths.",
+        "Confirm the sidebar cannot scroll horizontally and that Menu/Home remain side by side.",
+        "Confirm server selector text fits and action buttons wrap into rows instead of single full-width stacks.",
+        "Confirm empty states and status badges are readable on mobile.",
+        "Confirm app login, reset login, diagnostics, update notice, and Invite Bot actions work inside the Android app.",
+    ]
+    return render_template_string("""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sana-Chan UI Health</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #030713; color: #f8fbff; font-family: Arial, sans-serif; margin: 0; padding: 24px; }
+        main { margin: 0 auto; width: min(100%, 1180px); }
+        a { color: #18d9ff; }
+        .panel { background: #080f20; border: 1px solid rgba(126,151,255,.24); border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+        .card { background: #050a17; border: 1px solid rgba(126,151,255,.24); border-left: 4px solid #18d9ff; border-radius: 10px; padding: 14px; }
+        .card.bad { border-left-color: #fb7185; }
+        .card strong { display: block; font-size: 1.35rem; overflow-wrap: anywhere; }
+        .card span { color: #a6b0ca; display: block; font-size: .78rem; font-weight: 800; margin-top: 4px; text-transform: uppercase; }
+        .muted, li { color: #a6b0ca; }
+        code, pre { background: rgba(2,6,23,.72); border: 1px solid rgba(126,151,255,.24); border-radius: 8px; color: #dbeafe; display: block; overflow-x: auto; padding: 10px; }
+        .toolbar { display: flex; flex-wrap: wrap; gap: 10px; }
+        .button { background: linear-gradient(100deg, #7c5cff, #18d9ff); border-radius: 8px; color: #fff; font-weight: 800; padding: 10px 12px; text-decoration: none; }
+    </style>
+</head>
+<body>
+<main>
+    <p><a href="{{ url_for('admin_staff_home') }}">Back to admin home</a></p>
+    <h1>Sana-Chan UI Health</h1>
+    <p class="muted">A single place to check dashboard, app, login, release, sidebar, and invite readiness before a release.</p>
+    <section class="panel">
+        <h2>Status</h2>
+        <div class="grid">
+            {% for card in health_cards %}
+                <article class="card {{ '' if card.ok else 'bad' }}">
+                    <strong>{{ card.value }}</strong>
+                    <span>{{ card.label }}</span>
+                    <p class="muted">{{ card.detail }}</p>
+                </article>
+            {% endfor %}
+        </div>
+    </section>
+    <section class="panel">
+        <h2>Layout Check</h2>
+        <ol>
+            {% for item in layout_checks %}<li>{{ item }}</li>{% endfor %}
+        </ol>
+        <div class="toolbar">
+            <a class="button" href="{{ url_for('admin_health') }}">JSON Health</a>
+            <a class="button" href="{{ url_for('admin_release_checklist') }}">Release Checklist</a>
+            <a class="button" href="{{ url_for('bot_invite') }}">Invite Bot</a>
+        </div>
+    </section>
+    <section class="panel">
+        <h2>Report Layout Issue</h2>
+        <p class="muted">Copy this into an issue or support note when a page breaks.</p>
+        <pre>Page: {{ request.path }}
+URL: {{ request.url }}
+Dashboard: {{ request.host_url.rstrip('/') }}
+Release: {{ release.get('installed_version') or 'development' }}
+Channel: {{ release.get('configured_tag') or 'unknown' }}
+Server selection: {{ selected_server }}
+Browser/app:
+Viewport:
+What looked wrong:</pre>
+    </section>
+</main>
+</body>
+</html>
+""", health_cards=health_cards, layout_checks=layout_checks, release=release, selected_server=selected_server)
 
 @app.route("/admin/health")
 def admin_health():
@@ -21506,8 +21652,8 @@ APP_LOGIN_COMPLETE_HTML = """
 <body>
   <main>
     <h1>Discord login complete</h1>
-    <p>Return to the SDAC app to finish signing in.</p>
-    <a href="{{ deep_link }}">Open SDAC App</a>
+    <p>Return to the Sana-Chan app to finish signing in.</p>
+    <a href="{{ deep_link }}">Open Sana-Chan App</a>
   </main>
   <script>window.location.href = {{ deep_link_json }};</script>
 </body>
@@ -21554,10 +21700,16 @@ def api_app_claim_login():
 
 @app.route("/app")
 def app_home():
-    app_marker = request.args.get("sdac_app") == "1" or session.get("sdac_native_app") == "1"
+    app_marker = (
+        request.args.get("sana_app") == "1"
+        or request.args.get("sdac_app") == "1"
+        or session.get("sana_native_app") == "1"
+        or session.get("sdac_native_app") == "1"
+    )
     if app_marker:
+        session["sana_native_app"] = "1"
         session["sdac_native_app"] = "1"
-    marker_args = {"sdac_app": "1"} if app_marker else {}
+    marker_args = {"sana_app": "1"} if app_marker else {}
     if is_admin_logged_in():
         return redirect(url_for("admin_staff_home", key=ADMIN_KEY, **marker_args))
     if is_account_logged_in():

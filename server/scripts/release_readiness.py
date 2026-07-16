@@ -185,7 +185,7 @@ def check_dashboard_packaging(runner: CheckRunner) -> None:
 def check_release_metadata(runner: CheckRunner) -> None:
     release_text = read_text(ROOT / "RELEASE.md")
     server_release_text = read_text(SERVER / "RELEASE.md")
-    match = re.search(r"SDAC Bot Version\s+([0-9]+(?:\.[0-9]+){1,2})", release_text)
+    match = re.search(r"(?:Sana-Chan|SDAC Bot) Version\s+([0-9]+(?:\.[0-9]+){1,2})", release_text)
     if not match:
         runner.fail("Release notes", "top RELEASE.md entry does not expose a version")
         return

@@ -77,8 +77,8 @@ type UpdateChannelInfo = {
   sha256: string;
 };
 
-const APP_SHELL_VERSION = "4.2.32";
-const dashboardBase = (import.meta.env.VITE_SDAC_DASHBOARD_URL || "https://thelab.us.to").replace(/\/$/, "");
+const APP_SHELL_VERSION = "4.2.41";
+const dashboardBase = (import.meta.env.VITE_SANA_DASHBOARD_URL || import.meta.env.VITE_SDAC_DASHBOARD_URL || "https://freethefishies.us.to").replace(/\/$/, "");
 const nativePlatform = Capacitor.getPlatform();
 const isNative = Capacitor.isNativePlatform();
 const appRoot = document.querySelector<HTMLDivElement>("#app");
@@ -107,14 +107,14 @@ function applyTheme(payload: BootstrapPayload): void {
   const theme = payload.theme || {};
   const layout = payload.layout || {};
   const vars: Record<string, string> = {
-    "--sdac-primary": theme.primary || "#4f46e5",
-    "--sdac-secondary": theme.secondary || "#06b6d4",
-    "--sdac-accent": theme.accent || "#f59e0b",
-    "--sdac-bg": theme.background || "#0f172a",
-    "--sdac-surface": theme.surface || "#111827",
-    "--sdac-text": theme.text || "#f8fafc",
-    "--sdac-muted": theme.muted || "#94a3b8",
-    "--sdac-radius": `${layout.card_radius || "8"}px`
+    "--sana-primary": theme.primary || "#4f46e5",
+    "--sana-secondary": theme.secondary || "#06b6d4",
+    "--sana-accent": theme.accent || "#f59e0b",
+    "--sana-bg": theme.background || "#0f172a",
+    "--sana-surface": theme.surface || "#111827",
+    "--sana-text": theme.text || "#f8fafc",
+    "--sana-muted": theme.muted || "#94a3b8",
+    "--sana-radius": `${layout.card_radius || "8"}px`
   };
   Object.entries(vars).forEach(([key, value]) => root.style.setProperty(key, value));
 }
@@ -122,6 +122,12 @@ function applyTheme(payload: BootstrapPayload): void {
 function routeButton(label: string, route: string, extraClass = ""): string {
   const className = `action ${extraClass}`.trim();
   return `<a class="${escapeHtml(className)}" href="${escapeHtml(absoluteUrl(route))}">${escapeHtml(label)}</a>`;
+}
+
+function browserButton(label: string, route: string, extraClass = ""): string {
+  const disabled = route ? "" : " disabled";
+  const className = `action ${extraClass}`.trim();
+  return `<button class="${escapeHtml(className)}" type="button" data-app-action="browser-route" data-route="${escapeHtml(route)}"${disabled}>${escapeHtml(label)}</button>`;
 }
 
 function externalButton(label: string, url: string, extraClass = ""): string {
@@ -132,7 +138,7 @@ function externalButton(label: string, url: string, extraClass = ""): string {
 
 function appFrameUrl(route: string): string {
   const url = new URL(absoluteUrl(route));
-  url.searchParams.set("sdac_app", "1");
+  url.searchParams.set("sana_app", "1");
   return url.toString();
 }
 
@@ -238,6 +244,24 @@ function releaseNotice(payload: BootstrapPayload): string {
         <li>After install, reopen Sana-Chan and check this panel again.</li>
       </ol>
     </section>
+  `;
+}
+
+
+function bottomNav(payload: BootstrapPayload): string {
+  const routes = payload.routes || {};
+  const loggedIn = payload.auth.account_logged_in || payload.auth.admin_logged_in;
+  const accountControl = loggedIn
+    ? `<a href="${escapeHtml(absoluteUrl(routes.account || "/account"))}">Account</a>`
+    : `<button type="button" data-app-action="browser-route" data-route="${escapeHtml(routes.discord_login || routes.login || "/account/login")}">Login</button>`;
+  return `
+    <nav class="bottom-nav" aria-label="Primary app navigation">
+      <a href="${escapeHtml(absoluteUrl(routes.home || "/"))}">Home</a>
+      <a href="${escapeHtml(absoluteUrl(routes.submissions || "/"))}">Submit</a>
+      <a href="${escapeHtml(absoluteUrl(routes.guessing || "/guessing"))}">Games</a>
+      ${accountControl}
+      <button type="button" data-app-action="refresh">Refresh</button>
+    </nav>
   `;
 }
 
@@ -358,7 +382,7 @@ async function claimAppLogin(ticket: string): Promise<void> {
 
 async function handleAppUrlOpen(url: string): Promise<void> {
   const parsed = new URL(url);
-  if (parsed.protocol !== "Sana-Chan:" || parsed.hostname !== "login-complete") {
+  if (parsed.protocol !== "sanachan:" || parsed.hostname !== "login-complete") {
     await refreshBootstrap();
     return;
   }
@@ -395,6 +419,8 @@ function wireAppActions(payload: BootstrapPayload): void {
       try {
         if (action === "discord-login") {
           await openExternalBrowser(payload.routes.discord_login);
+        } else if (action === "browser-route") {
+          await openExternalBrowser(button.dataset.route || "");
         } else if (action === "reset-login") {
           await resetAppLogin();
         } else if (action === "refresh") {
@@ -427,7 +453,7 @@ function render(payload: BootstrapPayload): void {
   appRoot!.innerHTML = `
     <main class="shell">
       <section class="hero">
-        <img src="/sdac-companion-art.png" alt="" />
+        <img src="/sana-companion-art.png" alt="" />
         <div>
           <h1>${escapeHtml(payload.app.display_name)}</h1>
           <p>${escapeHtml(accountLabel)}</p>
@@ -442,7 +468,7 @@ function render(payload: BootstrapPayload): void {
       </section>
       <section class="actions">
         ${routeButton("Open Dashboard", routes.home)}
-        ${loggedIn ? routeButton("My Account", routes.account) : routeButton("Login", routes.login)}
+        ${loggedIn ? routeButton("My Account", routes.account) : browserButton("Login", routes.discord_login || routes.login)}
         ${!loggedIn && payload.auth.discord_oauth_enabled ? appButton("Login with Discord", "discord-login") : ""}
         ${appButton("Reset App Login", "reset-login", "secondary")}
         ${payload.app.invite_url || routes.invite ? appButton("Invite Bot", "invite", "secondary") : ""}
@@ -454,6 +480,7 @@ function render(payload: BootstrapPayload): void {
       ${releaseNotice(payload)}
       ${diagnosticsPanel(payload)}
       <iframe title="Sana-Chan Dashboard" src="${escapeHtml(appFrameUrl(payload.app.entry_url))}"></iframe>
+      ${bottomNav(payload)}
     </main>
   `;
 

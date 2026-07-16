@@ -21,21 +21,21 @@ copy .env.example .env
 npm run dev
 ```
 
-The default dashboard URL is `https://thelab.us.to`. For local dashboard testing, change `.env` to `http://127.0.0.1:5000`.
+The default dashboard URL is `https://freethefishies.us.to`. For local dashboard testing, change `.env` to `http://127.0.0.1:5000`.
 
-Set `VITE_SDAC_DASHBOARD_URL` to the hosted dashboard URL for the Vite shell. Native builds now use the packaged app shell by default so app-only buttons such as Discord browser login, reset app login, diagnostics, and update notices are available. Only set `SDAC_APP_DIRECT_URL` before Capacitor sync if you intentionally want the old direct-dashboard WebView mode.
+Set `VITE_SANA_DASHBOARD_URL` to the hosted dashboard URL for the Vite shell. `VITE_SDAC_DASHBOARD_URL` is still accepted for old local build scripts, but new builds should use the Sana name. Native builds always use the packaged Sana-Chan shell; the old direct-dashboard WebView wrapper mode has been removed.
 
 The app name is configurable:
 
 ```powershell
-$env:SDAC_APP_NAME="Sana-Chan"
-$env:SDAC_APP_ID="com.baytae.sanachan"
+$env:SANA_APP_NAME="Sana-Chan"
+$env:SANA_APP_ID="com.baytae.sanachan"
 ```
 
 The installed Capacitor app is allowed by the dashboard by default through `capacitor://localhost`. If the app shell runs from another origin during development, set this on the Flask dashboard server:
 
 ```bash
-SDAC_APP_ALLOWED_ORIGINS=http://localhost:5174,capacitor://localhost
+SANA_APP_ALLOWED_ORIGINS=http://localhost:5174,capacitor://localhost
 ```
 
 ## Android
@@ -46,8 +46,8 @@ Install Android Studio and the Android SDK first. Then run:
 cd apps/sdac-official-app
 npm install
 npm run build
-$env:SDAC_APP_DASHBOARD_URL="https://thelab.us.to"
-$env:SDAC_APP_NAME="Sana-Chan"
+$env:VITE_SANA_DASHBOARD_URL="https://freethefishies.us.to"
+$env:SANA_APP_NAME="Sana-Chan"
 npm run cap:add:android
 npm run cap:sync
 npm run cap:open:android
@@ -164,8 +164,8 @@ Run the same setup on macOS with Xcode installed:
 cd apps/sdac-official-app
 npm install
 npm run build
-export SDAC_APP_DASHBOARD_URL="https://thelab.us.to"
-export SDAC_APP_NAME="Sana-Chan"
+export VITE_SANA_DASHBOARD_URL="https://freethefishies.us.to"
+export SANA_APP_NAME="Sana-Chan"
 npm run cap:add:ios
 npm run cap:sync
 npm run cap:open:ios
@@ -217,7 +217,7 @@ Keep admin APIs protected by the existing dashboard login/session, CSRF strategy
 The first generated Sana-Chan artwork is saved at:
 
 ```text
-apps/sdac-official-app/public/sdac-companion-art.png
+apps/sdac-official-app/public/sana-companion-art.png
 ```
 
 It is an original anime companion illustration holding an SD-style baseball emblem. It intentionally avoids copying an official sports logo.
