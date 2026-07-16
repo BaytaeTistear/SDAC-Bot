@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.2.46 Experimental
+
+Version 4.2.46 is an experimental Layout workbench usability update.
+
+Update scope: Dashboard theme and layout editor
+
+Changes:
+- adds a right-side Editable Items panel to the Layout workbench so owners can select dashboard objects directly
+- adds non-drag Move Up and Move Down controls for environments where iframe drag-and-drop is awkward
+- adds editable text label, main text/number, font size, object size, color style, visibility, and lock/unlock controls
+- saves the new font size and locked state safely with layout item properties
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # Sana-Chan Version 4.2.45 Experimental
 
 Version 4.2.45 is an experimental release helper staging fix.

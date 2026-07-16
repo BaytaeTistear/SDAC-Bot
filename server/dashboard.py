@@ -5744,7 +5744,7 @@ LAYOUT_HTML = """
         .preview-card:active { cursor: grabbing; }
         .preview-card.is-selected { outline: 2px solid var(--sdac-accent); outline-offset: 2px; }
         .preview-card.is-dragging { opacity: .42; }
-        .preview-card strong { display: block; font-size: 1.6rem; line-height: 1.1; }
+        .preview-card strong { display: block; font-size: var(--item-font-size, 1.6rem); line-height: 1.1; }
         .preview-card span { color: var(--sdac-muted); display: block; font-size: .8rem; font-weight: 750; margin-top: 6px; text-transform: uppercase; }
         .preview-card[data-width="small"] { grid-column: span 3; }
         .preview-card[data-width="medium"] { grid-column: span 4; }
@@ -5754,6 +5754,16 @@ LAYOUT_HTML = """
         .preview-card[data-tone="secondary"] { background: color-mix(in srgb, var(--sdac-secondary) 22%, var(--sdac-surface)); }
         .preview-card[data-tone="accent"] { background: color-mix(in srgb, var(--sdac-accent) 24%, var(--sdac-surface)); }
         .preview-card[data-visible="false"] { opacity: .42; }
+        .preview-card[data-locked="true"] { cursor: not-allowed; }
+        .preview-card[data-locked="true"]::after { content: "Locked"; color: var(--sdac-muted); display: block; font-size: .72rem; font-weight: 800; margin-top: 10px; }
+        .item-list { display: grid; gap: 8px; margin: 10px 0 14px; }
+        .item-list button { align-items: center; background: #111827; border: 1px solid #30333b; display: flex; justify-content: space-between; margin: 0; text-align: left; }
+        .item-list button.is-selected { background: linear-gradient(90deg, var(--sdac-primary), var(--sdac-secondary)); }
+        .item-list small { color: #cbd5e1; font-weight: 700; }
+        .property-actions { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
+        .property-actions button { margin-top: 0; }
+        .lock-row { align-items: center; display: flex; gap: 8px; margin: 10px 0; }
+        .lock-row input { width: auto; }
         .preview-grid-demo { display: grid; gap: var(--sdac-layout-gap); grid-template-columns: repeat(auto-fit, minmax(max(70px, var(--preview-grid-min)), 1fr)); margin-top: var(--sdac-layout-gap); }
         .preview-grid-demo div { background: color-mix(in srgb, var(--sdac-secondary) 14%, var(--sdac-surface)); border: 1px solid var(--sdac-border); border-radius: var(--sdac-card-radius); min-height: 44px; padding: calc(var(--sdac-panel-padding) * .48); }
         .preview[data-density="compact"] { --sdac-layout-gap: 8px; }
@@ -5840,7 +5850,9 @@ LAYOUT_HTML = """
                                      data-id="{{ item.id }}"
                                      data-width="{{ item.width }}"
                                      data-tone="{{ item.tone }}"
-                                     data-visible="{{ 'true' if item.visible else 'false' }}">
+                                     data-visible="{{ 'true' if item.visible else 'false' }}"
+                                     data-font-size="{{ item.font_size }}"
+                                     data-locked="{{ 'true' if item.locked else 'false' }}">
                                     <strong>{{ item.value }}</strong>
                                     <span>{{ item.label }}</span>
                                 </div>
@@ -5856,27 +5868,41 @@ LAYOUT_HTML = """
                 </div>
             </div>
             <aside class="property-panel">
+                <h3>Editable Items</h3>
+                <p class="muted" id="selected-help">Select an item here or click it in the preview. Use Move buttons if drag is awkward.</p>
+                <div class="item-list" id="layout-item-list"></div>
+                <div class="property-actions">
+                    <button id="move-up" type="button" disabled>Move Up</button>
+                    <button id="move-down" type="button" disabled>Move Down</button>
+                </div>
                 <h3 id="selected-title">Select an item</h3>
-                <p class="muted" id="selected-help">Click a preview item to edit its properties. Drag cards to reorder them.</p>
-                <label for="prop_label">Label</label>
+                <label for="prop_label">Text Label</label>
                 <input id="prop_label" disabled>
-                <label for="prop_value">Value</label>
+                <label for="prop_value">Main Text / Number</label>
                 <input id="prop_value" disabled>
-                <label for="prop_width">Width</label>
+                <label for="prop_font_size">Font Size</label>
+                <select id="prop_font_size" disabled>
+                    <option value="small">Small</option>
+                    <option value="normal">Normal</option>
+                    <option value="large">Large</option>
+                    <option value="display">Display</option>
+                </select>
+                <label for="prop_width">Object Size</label>
                 <select id="prop_width" disabled>
                     <option value="small">Small</option>
                     <option value="medium">Medium</option>
                     <option value="wide">Wide</option>
-                    <option value="full">Full</option>
+                    <option value="full">Full Width</option>
                 </select>
-                <label for="prop_tone">Tone</label>
+                <label for="prop_tone">Color Style</label>
                 <select id="prop_tone" disabled>
                     <option value="surface">Surface</option>
                     <option value="primary">Primary</option>
                     <option value="secondary">Secondary</option>
                     <option value="accent">Accent</option>
                 </select>
-                <label><input id="prop_visible" type="checkbox" disabled> Visible</label>
+                <label class="lock-row"><input id="prop_visible" type="checkbox" disabled> Visible</label>
+                <label class="lock-row"><input id="prop_locked" type="checkbox" disabled> Locked</label>
                 <button id="reset-item" type="button" disabled>Reset Selected Item</button>
                 <button id="reset-layout" type="button">Reset Test Layout</button>
             </aside>
@@ -5891,11 +5917,18 @@ LAYOUT_HTML = """
             const labelInput = document.getElementById("prop_label");
             const valueInput = document.getElementById("prop_value");
             const widthInput = document.getElementById("prop_width");
+            const fontSizeInput = document.getElementById("prop_font_size");
             const toneInput = document.getElementById("prop_tone");
             const visibleInput = document.getElementById("prop_visible");
+            const lockedInput = document.getElementById("prop_locked");
+            const itemList = document.getElementById("layout-item-list");
+            const moveUpButton = document.getElementById("move-up");
+            const moveDownButton = document.getElementById("move-down");
             const selectedTitle = document.getElementById("selected-title");
             const selectedHelp = document.getElementById("selected-help");
             const resetItem = document.getElementById("reset-item");
+            const editableControls = [labelInput, valueInput, widthInput, fontSizeInput, toneInput, visibleInput, lockedInput, resetItem, moveUpButton, moveDownButton];
+            const fontSizes = { small: "1.25rem", normal: "1.6rem", large: "2rem", display: "2.35rem" };
             let selected = null;
             let dragging = null;
             let properties = {};
@@ -5919,18 +5952,12 @@ LAYOUT_HTML = """
             }
 
             function updateLayoutPreview() {
-                const contentWidth = numberValue(layoutControls.contentWidth, 1220, 840, 1600);
-                const sidebarWidth = numberValue(layoutControls.sidebarWidth, 260, 220, 360);
-                const cardRadius = numberValue(layoutControls.cardRadius, 8, 0, 24);
-                const panelPadding = numberValue(layoutControls.panelPadding, 16, 10, 34);
-                const gridMinWidth = numberValue(layoutControls.gridMinWidth, 190, 150, 360);
-                const backgroundOpacity = numberValue(layoutControls.backgroundOpacity, 18, 0, 60);
-                previewFrame.style.setProperty("--sdac-content-width", contentWidth + "px");
-                previewFrame.style.setProperty("--sdac-sidebar-width", sidebarWidth + "px");
-                previewFrame.style.setProperty("--sdac-card-radius", cardRadius + "px");
-                previewFrame.style.setProperty("--sdac-panel-padding", panelPadding + "px");
-                previewFrame.style.setProperty("--sdac-grid-min", gridMinWidth + "px");
-                previewFrame.style.setProperty("--sdac-theme-image-opacity", (backgroundOpacity / 100).toFixed(2));
+                previewFrame.style.setProperty("--sdac-content-width", numberValue(layoutControls.contentWidth, 1220, 840, 1600) + "px");
+                previewFrame.style.setProperty("--sdac-sidebar-width", numberValue(layoutControls.sidebarWidth, 260, 220, 360) + "px");
+                previewFrame.style.setProperty("--sdac-card-radius", numberValue(layoutControls.cardRadius, 8, 0, 24) + "px");
+                previewFrame.style.setProperty("--sdac-panel-padding", numberValue(layoutControls.panelPadding, 16, 10, 34) + "px");
+                previewFrame.style.setProperty("--sdac-grid-min", numberValue(layoutControls.gridMinWidth, 190, 150, 360) + "px");
+                previewFrame.style.setProperty("--sdac-theme-image-opacity", (numberValue(layoutControls.backgroundOpacity, 18, 0, 60) / 100).toFixed(2));
                 previewFrame.style.setProperty("--sdac-bg-position", layoutControls.backgroundPosition.value || "center");
                 previewFrame.dataset.menuAlignment = layoutControls.menuButtonAlignment.value || "sidebar_edge";
                 previewFrame.dataset.density = layoutControls.density.value || "comfortable";
@@ -5958,12 +5985,31 @@ LAYOUT_HTML = """
                 card.dataset.width = props.width || "medium";
                 card.dataset.tone = props.tone || "surface";
                 card.dataset.visible = props.visible === false ? "false" : "true";
+                card.dataset.fontSize = props.font_size || "normal";
+                card.dataset.locked = props.locked === true ? "true" : "false";
+                card.draggable = props.locked !== true;
+                card.style.setProperty("--item-font-size", fontSizes[props.font_size || "normal"] || fontSizes.normal);
                 card.querySelector("strong").textContent = props.value || "";
                 card.querySelector("span").textContent = props.label || "";
             }
 
+            function renderItemList() {
+                itemList.innerHTML = "";
+                cards().forEach((card, index) => {
+                    const props = itemProps(card.dataset.id);
+                    const button = document.createElement("button");
+                    button.type = "button";
+                    button.className = card === selected ? "is-selected" : "";
+                    button.dataset.id = card.dataset.id;
+                    button.innerHTML = "<span>" + (props.label || card.dataset.id) + "</span><small>" + (props.locked ? "Locked" : "Item " + (index + 1)) + "</small>";
+                    button.addEventListener("click", () => selectCard(card));
+                    itemList.appendChild(button);
+                });
+            }
+
             function applyAll() {
                 cards().forEach(applyCard);
+                renderItemList();
                 syncHiddenInputs();
             }
 
@@ -5972,13 +6018,19 @@ LAYOUT_HTML = """
                 cards().forEach((item) => item.classList.toggle("is-selected", item === card));
                 const props = itemProps(card.dataset.id);
                 selectedTitle.textContent = props.label || "Selected item";
-                selectedHelp.textContent = "Editing " + card.dataset.id;
-                [labelInput, valueInput, widthInput, toneInput, visibleInput, resetItem].forEach((input) => input.disabled = false);
+                selectedHelp.textContent = "Editing " + card.dataset.id + ". Change text, font, size, lock state, or order from this panel.";
+                editableControls.forEach((input) => input.disabled = false);
                 labelInput.value = props.label || "";
                 valueInput.value = props.value || "";
                 widthInput.value = props.width || "medium";
+                fontSizeInput.value = props.font_size || "normal";
                 toneInput.value = props.tone || "surface";
                 visibleInput.checked = props.visible !== false;
+                lockedInput.checked = props.locked === true;
+                const index = cards().indexOf(card);
+                moveUpButton.disabled = index <= 0 || props.locked === true;
+                moveDownButton.disabled = index >= cards().length - 1 || props.locked === true;
+                renderItemList();
             }
 
             function updateSelected() {
@@ -5988,11 +6040,14 @@ LAYOUT_HTML = """
                     label: labelInput.value.trim() || itemDefaults(id).label,
                     value: valueInput.value.trim() || itemDefaults(id).value,
                     width: widthInput.value,
+                    font_size: fontSizeInput.value,
                     tone: toneInput.value,
-                    visible: visibleInput.checked
+                    visible: visibleInput.checked,
+                    locked: lockedInput.checked
                 };
                 applyCard(selected);
                 syncHiddenInputs();
+                selectCard(selected);
             }
 
             function dragAfterElement(y) {
@@ -6006,13 +6061,29 @@ LAYOUT_HTML = """
                 }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
             }
 
+            function moveSelected(direction) {
+                if (!selected || selected.dataset.locked === "true") return;
+                const list = cards();
+                const index = list.indexOf(selected);
+                const targetIndex = index + direction;
+                if (targetIndex < 0 || targetIndex >= list.length) return;
+                if (direction < 0) preview.insertBefore(selected, list[targetIndex]);
+                else preview.insertBefore(list[targetIndex], selected);
+                syncHiddenInputs();
+                selectCard(selected);
+            }
+
             preview.addEventListener("click", (event) => {
                 const card = event.target.closest(".preview-card");
                 if (card) selectCard(card);
             });
             preview.addEventListener("dragstart", (event) => {
                 dragging = event.target.closest(".preview-card");
-                if (!dragging) return;
+                if (!dragging || dragging.dataset.locked === "true") {
+                    event.preventDefault();
+                    dragging = null;
+                    return;
+                }
                 dragging.classList.add("is-dragging");
                 event.dataTransfer.effectAllowed = "move";
             });
@@ -6020,22 +6091,23 @@ LAYOUT_HTML = """
                 event.preventDefault();
                 if (!dragging) return;
                 const after = dragAfterElement(event.clientY);
-                if (after == null) {
-                    preview.appendChild(dragging);
-                } else {
-                    preview.insertBefore(dragging, after);
-                }
+                if (after == null) preview.appendChild(dragging);
+                else preview.insertBefore(dragging, after);
                 syncHiddenInputs();
+                renderItemList();
             });
             preview.addEventListener("dragend", () => {
                 if (dragging) dragging.classList.remove("is-dragging");
                 dragging = null;
                 syncHiddenInputs();
+                renderItemList();
             });
-            [labelInput, valueInput, widthInput, toneInput, visibleInput].forEach((input) => {
+            [labelInput, valueInput, widthInput, fontSizeInput, toneInput, visibleInput, lockedInput].forEach((input) => {
                 input.addEventListener("input", updateSelected);
                 input.addEventListener("change", updateSelected);
             });
+            moveUpButton.addEventListener("click", () => moveSelected(-1));
+            moveDownButton.addEventListener("click", () => moveSelected(1));
             resetItem.addEventListener("click", () => {
                 if (!selected) return;
                 delete properties[selected.dataset.id];
@@ -6049,12 +6121,12 @@ LAYOUT_HTML = """
                     const card = preview.querySelector('[data-id="' + item.id + '"]');
                     if (card) preview.appendChild(card);
                 });
-                applyAll();
                 selected = null;
                 cards().forEach((item) => item.classList.remove("is-selected"));
                 selectedTitle.textContent = "Select an item";
-                selectedHelp.textContent = "Click a preview item to edit its properties. Drag cards to reorder them.";
-                [labelInput, valueInput, widthInput, toneInput, visibleInput, resetItem].forEach((input) => input.disabled = true);
+                selectedHelp.textContent = "Select an item here or click it in the preview. Use Move buttons if drag is awkward.";
+                editableControls.forEach((input) => input.disabled = true);
+                applyAll();
             });
             Object.values(layoutControls).forEach((input) => {
                 input.addEventListener("input", updateLayoutPreview);
@@ -12846,6 +12918,8 @@ def layout_item_defaults():
             "tone": tone,
             "width": "medium",
             "visible": True,
+            "font_size": "normal",
+            "locked": False,
         }
         for item_id, label, value, tone in LAYOUT_EDITOR_ITEMS
     ]
@@ -12888,12 +12962,17 @@ def sanitize_layout_item_properties(raw_value):
             width = default["width"]
         if tone not in {"surface", "primary", "secondary", "accent"}:
             tone = default["tone"]
+        font_size = str(values.get("font_size") or default.get("font_size", "normal")).strip()
+        if font_size not in {"small", "normal", "large", "display"}:
+            font_size = default.get("font_size", "normal")
         clean[item_id] = {
             "label": label or default["label"],
             "value": value or default["value"],
             "width": width,
             "tone": tone,
             "visible": values.get("visible") is not False,
+            "font_size": font_size,
+            "locked": values.get("locked") is True,
         }
     return clean
 
