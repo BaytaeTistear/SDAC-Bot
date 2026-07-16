@@ -270,6 +270,20 @@ body.sdac-has-sidebar input, body.sdac-has-sidebar select, body.sdac-has-sidebar
 .sdac-dashboard-grid { display: grid; gap: var(--sdac-layout-gap); grid-template-columns: repeat(auto-fit, minmax(var(--sdac-grid-min), 1fr)); margin: clamp(0.75rem, 1.6vw, 1.25rem) 0; }
 .sdac-dashboard-card { border: 1px solid var(--sdac-border); border-radius: var(--sdac-card-radius); padding: var(--sdac-panel-padding); }
 .sdac-dashboard-card strong { display: block; font-size: clamp(1.35rem, 2.2vw, 1.8rem); line-height: 1.1; }
+body.sdac-theme .sdac-dashboard-card strong,
+body.sdac-theme .sdac-dashboard-panel .card strong,
+body.sdac-theme .card strong,
+body.sdac-theme .metric strong,
+body.sdac-theme .preview-card strong {
+    color: #f8fbff !important;
+    font-family: "Segoe UI Variable Display", "Aptos Display", "Inter", "Segoe UI", system-ui, sans-serif !important;
+    font-feature-settings: "tnum" 1, "ss01" 1;
+    font-variant-numeric: tabular-nums lining-nums;
+    font-weight: 850 !important;
+    letter-spacing: .01em !important;
+    line-height: .98 !important;
+    text-shadow: 0 0 22px rgba(24, 217, 255, .16), 0 8px 26px rgba(0, 0, 0, .30);
+}
 .sdac-dashboard-card span { color: var(--sdac-muted); display: block; font-size: .82rem; font-weight: 750; margin-top: 6px; text-transform: uppercase; }
 .sdac-dashboard-panel { border: 1px solid var(--sdac-border); border-radius: var(--sdac-card-radius); margin: clamp(0.75rem, 1.4vw, 1.125rem) 0; padding: var(--sdac-panel-padding); }
 .sdac-range-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }

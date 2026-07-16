@@ -1,3 +1,16 @@
+# SDAC Bot Version 4.2.37 Experimental
+
+Version 4.2.37 is an experimental Sana-Chan dashboard typography polish update.
+
+Update scope: Dashboard numeric display styling
+
+Changes:
+- updates large dashboard counters and metric values to use a heavier rounded display font stack
+- adds tabular lining numerals so stat cards, release cards, and metric cards align more like the Sana-Chan banner mockup
+- adds subtle glow and shadow treatment to numeric displays while preserving existing page layouts
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.36 Experimental
 
 Version 4.2.36 is an experimental Sana-Chan dashboard theme polish update.
