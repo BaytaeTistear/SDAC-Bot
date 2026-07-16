@@ -337,6 +337,202 @@ body.sdac-theme .badge, body.sdac-theme .pill, body.sdac-theme .status, body.sda
     border-color: rgba(24, 217, 255, .30) !important;
     box-shadow: 0 0 18px rgba(24, 217, 255, .12) inset;
 }
+
+/* Sana-Chan shared polish pass */
+body.sdac-theme main > section,
+body.sdac-theme main > .panel,
+body.sdac-theme main > .section,
+body.sdac-theme main > .notice,
+body.sdac-theme main > form,
+body.sdac-theme main > details,
+body.sdac-theme .content-panel {
+    max-width: 100%;
+}
+body.sdac-theme h2,
+body.sdac-theme h3 {
+    align-items: center;
+    display: flex;
+    gap: .55rem;
+}
+body.sdac-theme h2::before,
+body.sdac-theme h3::before {
+    background: linear-gradient(180deg, var(--sdac-secondary), var(--sdac-accent));
+    border-radius: 999px;
+    box-shadow: 0 0 16px rgba(24, 217, 255, .24);
+    content: "";
+    display: inline-block;
+    flex: 0 0 auto;
+    height: 1.15em;
+    width: .24rem;
+}
+.sdac-sidebar-section-title span:first-child::before,
+.sdac-sidebar-link::before,
+.sdac-sidebar-invite::before {
+    display: inline-block;
+    margin-right: .45rem;
+    opacity: .92;
+    text-align: center;
+    width: 1.05rem;
+}
+.sdac-sidebar-section-title span:first-child::before { content: "◇"; }
+.sdac-sidebar-link::before { content: "›"; }
+.sdac-sidebar-link.active::before { content: "◆"; }
+.sdac-sidebar-invite::before { content: "+"; }
+body.sdac-theme .empty,
+body.sdac-theme .empty-state,
+body.sdac-theme .no-results,
+body.sdac-theme .placeholder,
+body.sdac-theme td[colspan] {
+    background: linear-gradient(180deg, rgba(24, 217, 255, .055), rgba(139, 92, 246, .045));
+    border: 1px dashed rgba(24, 217, 255, .28);
+    border-radius: 10px;
+    color: var(--sdac-muted) !important;
+    line-height: 1.45;
+    padding: .9rem 1rem !important;
+    text-align: center;
+}
+body.sdac-theme .ok,
+body.sdac-theme .ready,
+body.sdac-theme .active,
+body.sdac-theme .posted,
+body.sdac-theme .success { color: var(--sdac-success) !important; }
+body.sdac-theme .warn,
+body.sdac-theme .warning,
+body.sdac-theme .needs_review,
+body.sdac-theme .pending { color: #fbbf24 !important; }
+body.sdac-theme .bad,
+body.sdac-theme .error,
+body.sdac-theme .failed,
+body.sdac-theme .danger,
+body.sdac-theme .banned { color: var(--sdac-danger) !important; }
+body.sdac-theme .badge,
+body.sdac-theme .pill,
+body.sdac-theme .status,
+body.sdac-theme .tag,
+body.sdac-theme .label {
+    align-items: center;
+    border: 1px solid rgba(126, 151, 255, .24) !important;
+    border-radius: 999px !important;
+    display: inline-flex;
+    font-size: .78rem;
+    gap: .38rem;
+    line-height: 1;
+    min-height: 1.55rem;
+    padding: .28rem .55rem !important;
+    vertical-align: middle;
+}
+body.sdac-theme .badge::before,
+body.sdac-theme .pill::before,
+body.sdac-theme .status::before,
+body.sdac-theme .tag::before {
+    background: currentColor;
+    border-radius: 999px;
+    box-shadow: 0 0 10px currentColor;
+    content: "";
+    height: .42rem;
+    width: .42rem;
+}
+body.sdac-theme table {
+    border-collapse: separate !important;
+    border-spacing: 0 .38rem !important;
+}
+body.sdac-theme thead th {
+    background: rgba(8, 15, 32, .88) !important;
+    border-bottom: 1px solid var(--sdac-border) !important;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+body.sdac-theme th,
+body.sdac-theme td {
+    padding: .7rem .72rem !important;
+    vertical-align: top;
+}
+body.sdac-theme tbody tr {
+    transition: background .15s ease, transform .15s ease;
+}
+body.sdac-theme tbody tr:hover {
+    background: rgba(24, 217, 255, .045) !important;
+}
+body.sdac-theme .actions,
+body.sdac-theme .action-row,
+body.sdac-theme .button-row,
+body.sdac-theme .controls,
+body.sdac-theme .toolbar,
+body.sdac-theme form.inline {
+    align-items: center;
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: .5rem;
+    max-width: 100%;
+}
+body.sdac-theme .actions > *,
+body.sdac-theme .action-row > *,
+body.sdac-theme .button-row > *,
+body.sdac-theme .controls > *,
+body.sdac-theme .toolbar > *,
+body.sdac-theme form.inline > * {
+    flex: 0 1 auto;
+}
+body.sdac-theme button:focus-visible,
+body.sdac-theme a:focus-visible,
+body.sdac-theme input:focus-visible,
+body.sdac-theme select:focus-visible,
+body.sdac-theme textarea:focus-visible {
+    outline: 3px solid rgba(24, 217, 255, .34) !important;
+    outline-offset: 2px;
+}
+body.sdac-theme ::placeholder { color: color-mix(in srgb, var(--sdac-muted) 72%, transparent) !important; }
+body.sdac-theme .post,
+body.sdac-theme .panel,
+body.sdac-theme .section,
+body.sdac-theme .notice,
+.sdac-dashboard-card,
+.sdac-dashboard-panel {
+    transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+body.sdac-theme .post:hover,
+body.sdac-theme .panel:hover,
+body.sdac-theme .section:hover,
+.sdac-dashboard-card:hover,
+.sdac-dashboard-panel:hover {
+    border-color: rgba(24, 217, 255, .34) !important;
+    box-shadow: 0 26px 70px rgba(0, 0, 0, .48), 0 0 38px rgba(24, 217, 255, .09) !important;
+}
+@media (max-width: 42rem) {
+    body.sdac-theme main { width: min(100%, 96%) !important; }
+    body.sdac-theme table,
+    body.sdac-theme thead,
+    body.sdac-theme tbody,
+    body.sdac-theme tr,
+    body.sdac-theme th,
+    body.sdac-theme td { display: block; }
+    body.sdac-theme thead { display: none; }
+    body.sdac-theme tbody tr {
+        border: 1px solid var(--sdac-border);
+        border-radius: 10px;
+        margin: .65rem 0;
+        padding: .35rem;
+    }
+    body.sdac-theme td {
+        border-bottom: 1px solid rgba(126, 151, 255, .12);
+        min-height: 2.25rem;
+    }
+    body.sdac-theme td:last-child { border-bottom: 0; }
+    body.sdac-theme .actions,
+    body.sdac-theme .action-row,
+    body.sdac-theme .button-row,
+    body.sdac-theme .controls,
+    body.sdac-theme .toolbar,
+    body.sdac-theme form.inline { align-items: stretch; }
+    body.sdac-theme .actions > *,
+    body.sdac-theme .action-row > *,
+    body.sdac-theme .button-row > *,
+    body.sdac-theme .controls > *,
+    body.sdac-theme .toolbar > *,
+    body.sdac-theme form.inline > * { flex: 1 1 9rem; }
+}
+
 @media (max-width: 56rem) {
     body.sdac-has-sidebar,
     body.sdac-has-sidebar.sdac-sidebar-collapsed { padding-left: 0 !important; }

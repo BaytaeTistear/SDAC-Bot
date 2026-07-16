@@ -1,3 +1,17 @@
+# SDAC Bot Version 4.2.39 Experimental
+
+Version 4.2.39 is an experimental Sana-Chan dashboard and app polish update.
+
+Update scope: Shared dashboard and Android app UX polish
+
+Changes:
+- adds shared dashboard polish for sidebar icon cues, empty states, status badges, table rows, action rows, focus states, and section headings
+- improves responsive table and action layouts so admin and moderation pages behave better on mobile
+- updates the Android app shell with the darker Sana-Chan glass theme, gradient heading treatment, and polished loading/error panels
+- keeps existing page routes, forms, server selector, and sidebar behavior unchanged while improving the shared presentation layer
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.38 Experimental
 
 Version 4.2.38 is an experimental Sana-Chan sidebar layout stabilization update.
