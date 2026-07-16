@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.2.42 Experimental
+
+Version 4.2.42 is an experimental dashboard dropdown readability fix.
+
+Update scope: Shared dashboard form styling
+
+Changes:
+- forces themed dashboard dropdown menus to use a dark option background with white text
+- improves selected, hovered, focused, and disabled dropdown option contrast
+- keeps existing server selector layout and sidebar behavior unchanged
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # Sana-Chan Version 4.2.41 Experimental
 
 Version 4.2.41 is an experimental Sana-Chan naming, app-auth, and readiness polish update.

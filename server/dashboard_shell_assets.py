@@ -365,6 +365,26 @@ body.sdac-theme input, body.sdac-theme select, body.sdac-theme textarea {
     color: var(--sdac-text) !important;
     min-height: 2.35rem;
 }
+body.sdac-theme select {
+    background-color: color-mix(in srgb, var(--sdac-surface) 88%, #020617) !important;
+    color: var(--sdac-text) !important;
+    color-scheme: dark;
+}
+body.sdac-theme select option,
+body.sdac-theme select optgroup {
+    background-color: #080f20 !important;
+    color: #f8fbff !important;
+}
+body.sdac-theme select option:checked,
+body.sdac-theme select option:hover,
+body.sdac-theme select option:focus {
+    background-color: #12345f !important;
+    color: #ffffff !important;
+}
+body.sdac-theme select option:disabled {
+    background-color: #080f20 !important;
+    color: #94a3b8 !important;
+}
 body.sdac-theme input:focus, body.sdac-theme select:focus, body.sdac-theme textarea:focus {
     border-color: var(--sdac-secondary) !important;
     box-shadow: 0 0 0 3px rgba(34, 211, 238, .16) !important;
