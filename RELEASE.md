@@ -1,3 +1,20 @@
+# SDAC Bot Version 4.2.31 Experimental
+
+Version 4.2.31 is an experimental guess-library bulk media import update.
+
+Update scope: CSV + ZIP guess imports and Discord anime challenge media
+
+Changes:
+- adds optional `media_filename` support to guess-game bulk import CSVs
+- lets admins upload a matching media ZIP with the CSV so rows can attach image, video, or audio files during import
+- explains the CSV + ZIP workflow directly on the Game Library dashboard page
+- updates the example bulk import CSV files to include `media_filename`
+- lets `/animechallenge` accept optional Discord media and save it to the selected anime guess mode
+- stores normalized answer aliases for Discord-created anime challenges
+- adds a test for ZIP media extraction into the Game Library media folder
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.30 Experimental
 
 Version 4.2.30 is an experimental Google Play review account update.

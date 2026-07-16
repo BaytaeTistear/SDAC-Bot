@@ -1,4 +1,6 @@
+import io
 import os
+import zipfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -240,6 +242,30 @@ class DashboardAccessTests(unittest.TestCase):
         self.assertEqual(row["disabled"], 0)
         self.assertEqual(row["guild_ids_json"], "[]")
         self.assertTrue(self.dashboard.check_password_hash(row["password_hash"], "JohnDoe"))
+    def test_guess_bulk_zip_media_helper_saves_matching_file(self):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("anime/skyline.png", b"not really a png, but non-empty")
+        buffer.seek(0)
+        upload = type("Upload", (), {"filename": "media.zip", "stream": buffer})()
+        archive, lookup = self.dashboard.open_guess_media_zip(upload)
+        try:
+            self.assertIn("anime/skyline.png", lookup)
+            self.assertIn("skyline.png", lookup)
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with mock.patch.object(self.dashboard, "MEDIA_DIR", Path(tmpdir)):
+                    media_info = self.dashboard.save_guess_library_zip_media(
+                        "111",
+                        archive,
+                        lookup["skyline.png"],
+                        {"max_file_bytes": 1024 * 1024},
+                    )
+                    self.assertEqual(media_info["name"], "skyline.png")
+                    self.assertEqual(media_info["type"], "image")
+                    self.assertGreater(media_info["size"], 0)
+                    self.assertTrue(Path(media_info["path"]).is_file())
+        finally:
+            archive.close()
 
 if __name__ == "__main__":
     unittest.main()

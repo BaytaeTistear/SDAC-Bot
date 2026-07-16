@@ -7508,8 +7508,9 @@ async def animeleaderboard(interaction, month: Optional[str] = ""):
 @app_commands.describe(
     mode="Activity key or mode, such as quote-guess, studio-guess, who-said-it, or hint-ladder",
     prompt="Prompt shown to players",
-    answer="Correct answer",
+    answer="Correct answer. Use | to add aliases.",
     hint="Optional hint text",
+    media="Optional image, video, or audio for this challenge",
 )
 async def animechallenge(
     interaction,
@@ -7517,8 +7518,20 @@ async def animechallenge(
     prompt: str,
     answer: str,
     hint: Optional[str] = "",
+    media: Optional[discord.Attachment] = None,
 ):
     if not await require_admin(interaction):
+        return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    paused = emergency_pause_message(guild_config)
+    if paused:
+        await interaction.response.send_message(paused, ephemeral=True)
+        return
+    if not feature_enabled(guild_config, "guessing_games"):
+        await interaction.response.send_message(
+            "Guessing games are currently disabled for this server.",
+            ephemeral=True,
+        )
         return
     template = find_anime_activity(mode) or {
         "key": anime_activity_key(mode),
@@ -7526,45 +7539,121 @@ async def animechallenge(
         "category": "Anime Challenge",
         "summary": "Custom anime challenge.",
     }
-    now = utc_now_iso()
-    with database() as connection:
-        cursor = connection.execute("""
-            INSERT INTO guess_library_items (
-                guild_id, title, answer, answer_display, answer_aliases_json,
-                prompt_text, category, hint_text, auto_hint_minutes,
-                media_path, media_name, media_type, media_size,
-                media_metadata_json, status, times_used, tags_json,
-                pack_name, enabled, notes, created_by, created_at, updated_at
+    answer_aliases = parse_answer_aliases(answer)
+    if not answer_aliases:
+        await interaction.response.send_message(
+            "The answer cannot be empty.",
+            ephemeral=True,
+        )
+        return
+    answer_display = answer_aliases[0]["display"][:200]
+    normalized_answer = answer_aliases[0]["normalized"][:200]
+    if len(prompt) > config["limits"]["max_text_length"]:
+        await interaction.response.send_message(
+            f"Prompt is limited to {config['limits']['max_text_length']} characters.",
+            ephemeral=True,
+        )
+        return
+    if len(hint or "") > 500:
+        await interaction.response.send_message(
+            "Hints are limited to 500 characters.",
+            ephemeral=True,
+        )
+        return
+    if media is not None:
+        if not is_allowed_file(media.filename):
+            await interaction.response.send_message(
+                "Challenge media must be an image, video, or audio file.",
+                ephemeral=True,
             )
-            VALUES (?, ?, ?, ?, '[]', ?, ?, ?, 0, '', '', '', 0, '{}',
-                    'active', 0, ?, 'Experimental Anime Activities', 1, ?, ?, ?, ?)
-        """, (
-            str(interaction.guild_id),
-            template["name"][:120],
-            answer.strip()[:200],
-            answer.strip()[:200],
-            prompt.strip()[:1000],
-            template["key"][:120],
-            (hint or "").strip()[:500],
-            json.dumps(["anime", template["key"]], separators=(",", ":")),
-            ANIME_ACTIVITY_RETIREMENT_NOTE,
-            str(interaction.user.id),
-            now,
-            now,
-        ))
-        item_id = cursor.lastrowid
-    audit_interaction(
-        interaction,
-        "create_anime_challenge",
-        "guess_library_item",
-        item_id,
-        f"{template['key']} created from Discord.",
-    )
-    await interaction.response.send_message(
-        f"Created experimental anime challenge item `{item_id}` for `{template['key']}`.\n"
-        f"Experimental note: {ANIME_ACTIVITY_RETIREMENT_NOTE}",
-        ephemeral=True,
-    )
+            return
+        if media.size > guild_max_file_bytes(guild_config):
+            await interaction.response.send_message(
+                "Challenge media exceeds the per-file size limit.",
+                ephemeral=True,
+            )
+            return
+        storage_limit = guild_storage_limit(guild_config)
+        if storage_limit and guild_media_size(interaction.guild_id) + int(media.size or 0) > storage_limit:
+            await interaction.response.send_message(
+                "This server has reached its configured media storage limit.",
+                ephemeral=True,
+            )
+            return
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    media_path = ""
+    media_name = ""
+    media_type = "unknown"
+    media_size = 0
+    media_metadata = {}
+    try:
+        if media is not None:
+            library_folder = MEDIA_DIR / str(interaction.guild_id) / "guess_library"
+            library_folder.mkdir(parents=True, exist_ok=True)
+            safe_name = Path(media.filename).name.replace("\\", "_")
+            media_file_path = library_folder / f"{int(time.time())}_{interaction.id}_{safe_name}"
+            await media.save(media_file_path)
+            maybe_compress_image(media_file_path, media.filename)
+            media_metadata = attachment_metadata(media, media_file_path)
+            media_path = str(media_file_path)
+            media_name = media.filename
+            media_type = get_media_type(media.filename)
+            media_size = int(media_metadata.get("size") or media.size or 0)
+        status = "active" if media_path else "draft"
+        now = utc_now_iso()
+        with database() as connection:
+            cursor = connection.execute("""
+                INSERT INTO guess_library_items (
+                    guild_id, title, answer, answer_display, answer_aliases_json,
+                    prompt_text, category, hint_text, auto_hint_minutes,
+                    media_path, media_name, media_type, media_size,
+                    media_metadata_json, status, times_used, tags_json,
+                    pack_name, enabled, notes, created_by, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?,
+                        ?, 0, ?, 'Experimental Anime Activities', 1, ?, ?, ?, ?)
+            """, (
+                str(interaction.guild_id),
+                template["name"][:120],
+                normalized_answer,
+                answer_display,
+                json.dumps(answer_aliases, separators=(",", ":")),
+                prompt.strip()[:1000],
+                template["key"][:120],
+                (hint or "").strip()[:500],
+                media_path,
+                media_name,
+                media_type,
+                media_size,
+                json.dumps(media_metadata, separators=(",", ":")),
+                status,
+                json.dumps(["anime", template["key"]], separators=(",", ":")),
+                ANIME_ACTIVITY_RETIREMENT_NOTE,
+                str(interaction.user.id),
+                now,
+                now,
+            ))
+            item_id = cursor.lastrowid
+        audit_interaction(
+            interaction,
+            "create_anime_challenge",
+            "guess_library_item",
+            item_id,
+            f"{template['key']} created from Discord; media={bool(media_path)}.",
+        )
+        await interaction.followup.send(
+            f"Created experimental anime challenge item `{item_id}` for `{template['key']}` as `{status}`.\n"
+            f"Experimental note: {ANIME_ACTIVITY_RETIREMENT_NOTE}",
+            ephemeral=True,
+        )
+    except Exception:
+        if media_path:
+            try:
+                Path(media_path).unlink()
+            except OSError:
+                pass
+        raise
 
 
 @tree.command(name="admincommands", description="Show SDAC admin commands")

@@ -17,6 +17,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import zipfile
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -374,7 +375,8 @@ GUESS_BULK_IMPORT_EXAMPLE_ROWS = [
         "auto_hint_minutes": "10",
         "pack": "Anime Starter Pack",
         "tags": "anime,screenshot,easy",
-        "notes": "Attach screenshot media before activating.",
+        "notes": "Place skyline.png in media.zip and set media_filename to skyline.png.",
+        "media_filename": "skyline.png",
         "enabled": "1",
         "status": "draft",
     },
@@ -388,7 +390,8 @@ GUESS_BULK_IMPORT_EXAMPLE_ROWS = [
         "auto_hint_minutes": "5",
         "pack": "Anime Starter Pack",
         "tags": "anime,quote,medium",
-        "notes": "Replace the prompt and answer with a real quote.",
+        "notes": "Text-only rows can leave media_filename blank.",
+        "media_filename": "",
         "enabled": "1",
         "status": "draft",
     },
@@ -402,7 +405,8 @@ GUESS_BULK_IMPORT_EXAMPLE_ROWS = [
         "auto_hint_minutes": "0",
         "pack": "Anime Starter Pack",
         "tags": "anime,studio,hard",
-        "notes": "Use status disabled for incomplete drafts.",
+        "notes": "Place studio-clue.webp in media.zip or attach media later.",
+        "media_filename": "studio-clue.webp",
         "enabled": "1",
         "status": "disabled",
     },
@@ -420,6 +424,7 @@ GUESS_BULK_IMPORT_EXAMPLE_COLUMNS = [
     "pack",
     "tags",
     "notes",
+    "media_filename",
     "enabled",
     "status",
 ]
@@ -2486,17 +2491,21 @@ GAME_LIBRARY_HTML = """
     </section>
 
     <section class="panel">
-        <h2>Bulk Import Answer Drafts</h2>
+        <h2>Bulk Import Guess Items</h2>
         <p class="muted">
-            Upload a CSV to add many guess answers at once. Supported columns:
-            <code>title</code>, <code>answer</code>, <code>aliases</code>,
-            <code>category</code>, <code>hint</code>, <code>prompt_text</code>,
-            <code>auto_hint_minutes</code>, <code>pack</code>, <code>tags</code>,
-            <code>notes</code>, <code>enabled</code>, and optional
-            <code>status</code>.
-            Rows without valid media stay as drafts, so they will not be chosen
-            by <code>/startlibrarygame</code> until media is added through a normal item.
+            Upload a CSV to add many guess items at once. Add an optional media ZIP when
+            rows include <code>media_filename</code>. The importer matches the CSV value
+            to a file in the ZIP by full path or filename, stores the media in the normal
+            Game Library folder, and leaves rows without matching media as drafts.
+            Use <code>status=active</code> only for rows with media; text-only or missing-media
+            rows are kept as drafts until media is attached.
             <a href="{{ url_for('download_guess_bulk_import_example', key=admin_key) }}">Download an example CSV</a>.
+        </p>
+        <p class="muted">
+            Quick setup: put files such as <code>skyline.png</code> or
+            <code>anime/studio-clue.webp</code> in <code>media.zip</code>, then put the same
+            value in the CSV <code>media_filename</code> column. Leave
+            <code>media_filename</code> blank for quote/clue-only drafts.
         </p>
         <form method="post" enctype="multipart/form-data">
             <input type="hidden" name="key" value="{{ admin_key }}">
@@ -2512,6 +2521,9 @@ GAME_LIBRARY_HTML = """
                 </label>
                 <label>CSV file
                     <input name="csv_file" type="file" accept=".csv,text/csv" required>
+                </label>
+                <label>Media ZIP (optional)
+                    <input name="media_zip" type="file" accept=".zip,application/zip">
                 </label>
             </div>
             <p><button type="submit">Import Drafts</button></p>
@@ -8169,6 +8181,78 @@ def save_guess_library_upload(guild_id, upload, limits):
         path,
         getattr(upload, "mimetype", "") or "",
     )
+    return {
+        "path": str(path),
+        "name": filename,
+        "type": metadata["media_type"],
+        "size": size,
+        "metadata": metadata,
+    }
+
+
+def zip_media_lookup_key(filename):
+    value = str(filename or "").strip().replace("\\", "/").lstrip("/")
+    value = re.sub(r"/+", "/", value)
+    return value.casefold()
+
+
+def open_guess_media_zip(upload):
+    if upload is None or not upload.filename:
+        return None, {}
+    if Path(upload.filename).suffix.casefold() != ".zip":
+        raise ValueError("Media archive must be a .zip file.")
+    raw_content = upload.stream.read()
+    if not raw_content:
+        raise ValueError("Media ZIP file was empty.")
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(raw_content))
+    except zipfile.BadZipFile as archive_error:
+        raise ValueError("Media ZIP could not be opened.") from archive_error
+    lookup = {}
+    for info in archive.infolist():
+        if info.is_dir():
+            continue
+        normalized = zip_media_lookup_key(info.filename)
+        basename = zip_media_lookup_key(Path(info.filename).name)
+        if not normalized or any(part == ".." for part in normalized.split("/")):
+            continue
+        if not is_allowed_file(info.filename):
+            continue
+        lookup.setdefault(normalized, info)
+        lookup.setdefault(basename, info)
+    return archive, lookup
+
+
+def save_guess_library_zip_media(guild_id, archive, info, limits):
+    if archive is None or info is None:
+        return None
+    filename = safe_upload_filename(Path(info.filename).name)
+    if not is_allowed_file(filename):
+        raise ValueError(f"Media file {filename} is not an allowed type.")
+    max_file_bytes = int(limits.get("max_file_bytes", 25 * 1024 * 1024))
+    if max_file_bytes and int(info.file_size or 0) > max_file_bytes:
+        raise ValueError(f"Media file {filename} exceeds the per-file size limit.")
+    folder = MEDIA_DIR / str(guild_id) / "guess_library"
+    folder.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{int(time.time())}-{secrets.token_hex(4)}-{filename}"
+    path = folder / stored_name
+    with archive.open(info, "r") as source, path.open("wb") as destination:
+        shutil.copyfileobj(source, destination)
+    maybe_compress_image(path, filename)
+    size = path.stat().st_size if path.exists() else 0
+    if size <= 0:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        raise ValueError(f"Media file {filename} was empty.")
+    if max_file_bytes and size > max_file_bytes:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        raise ValueError(f"Media file {filename} exceeds the per-file size limit.")
+    metadata = guess_library_media_metadata(filename, path, "application/zip")
     return {
         "path": str(path),
         "name": filename,
@@ -14868,6 +14952,9 @@ def admin_game_library():
                 reader = csv.DictReader(io.StringIO(decoded))
                 if not reader.fieldnames:
                     raise ValueError("CSV must include a header row.")
+                media_archive, media_lookup = open_guess_media_zip(
+                    request.files.get("media_zip")
+                )
 
                 max_text_length = int(
                     config_data.get("limits", {}).get(
@@ -14876,101 +14963,156 @@ def admin_game_library():
                     )
                 )
                 imported = 0
+                imported_with_media = 0
+                missing_media = 0
                 skipped = 0
+                saved_media_paths = []
                 now = utc_now_iso()
-                with database() as connection:
-                    for raw_row in reader:
-                        row = {
-                            str(key or "").strip().lower(): str(value or "").strip()
-                            for key, value in raw_row.items()
-                        }
-                        answer_value = (
-                            row.get("answer")
-                            or row.get("answers")
-                            or row.get("answer_aliases")
-                            or ""
-                        )
-                        aliases_value = row.get("aliases") or ""
-                        alias_source = answer_value
-                        if aliases_value:
-                            alias_source = (
-                                alias_source
-                                + "|"
-                                + aliases_value.replace(",", "|")
+                storage_limit = guild_storage_limit(
+                    config_data.get("guilds", {}).get(guild_id, {})
+                )
+                try:
+                    with database() as connection:
+                        for raw_row in reader:
+                            row = {
+                                str(key or "").strip().lower(): str(value or "").strip()
+                                for key, value in raw_row.items()
+                            }
+                            answer_value = (
+                                row.get("answer")
+                                or row.get("answers")
+                                or row.get("answer_aliases")
+                                or ""
                             )
-                        answer_aliases = parse_answer_aliases(alias_source)
-                        if not answer_aliases:
-                            skipped += 1
-                            continue
-                        answer_display = answer_aliases[0]["display"]
-                        normalized_answer = answer_aliases[0]["normalized"]
-                        title = (row.get("title") or answer_display)[:120]
-                        prompt_text = (row.get("prompt_text") or row.get("prompt") or "")[:max_text_length]
-                        category = (row.get("category") or "")[:80]
-                        hint_text = (row.get("hint") or row.get("hint_text") or "")[:500]
-                        pack_name = (row.get("pack") or row.get("pack_name") or "")[:80]
-                        tags = parse_metadata_list(row.get("tags") or "")
-                        notes = (row.get("notes") or "")[:1000]
-                        enabled = parse_enabled_field(row.get("enabled"), True)
-                        try:
-                            auto_hint_minutes = int(
-                                row.get("auto_hint_minutes") or "0"
-                            )
-                        except ValueError:
-                            auto_hint_minutes = 0
-                        auto_hint_minutes = max(0, min(1440, auto_hint_minutes))
-                        requested_status = (row.get("status") or "draft").lower()
-                        status = (
-                            requested_status
-                            if requested_status in {"draft", "disabled"}
-                            else "draft"
-                        )
-                        cursor = connection.execute("""
-                            INSERT INTO guess_library_items (
-                                guild_id, title, answer, answer_display,
-                                answer_aliases_json, prompt_text, category,
-                                tags_json, pack_name, enabled, notes,
-                                hint_text, auto_hint_minutes, media_path,
-                                media_name, media_type, media_size,
-                                media_metadata_json, status, times_used,
-                                created_by, created_at, updated_at
-                            )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', 'unknown', 0, '{}', ?, 0, ?, ?, ?)
-                        """, (
+                            aliases_value = row.get("aliases") or ""
+                            alias_source = answer_value
+                            if aliases_value:
+                                alias_source = (
+                                    alias_source
+                                    + "|"
+                                    + aliases_value.replace(",", "|")
+                                )
+                            answer_aliases = parse_answer_aliases(alias_source)
+                            if not answer_aliases:
+                                skipped += 1
+                                continue
+                            answer_display = answer_aliases[0]["display"]
+                            normalized_answer = answer_aliases[0]["normalized"]
+                            title = (row.get("title") or answer_display)[:120]
+                            prompt_text = (
+                                row.get("prompt_text") or row.get("prompt") or ""
+                            )[:max_text_length]
+                            category = (row.get("category") or "")[:80]
+                            hint_text = (
+                                row.get("hint") or row.get("hint_text") or ""
+                            )[:500]
+                            pack_name = (
+                                row.get("pack") or row.get("pack_name") or ""
+                            )[:80]
+                            tags = parse_metadata_list(row.get("tags") or "")
+                            notes = (row.get("notes") or "")[:1000]
+                            enabled = parse_enabled_field(row.get("enabled"), True)
+                            try:
+                                auto_hint_minutes = int(
+                                    row.get("auto_hint_minutes") or "0"
+                                )
+                            except ValueError:
+                                auto_hint_minutes = 0
+                            auto_hint_minutes = max(0, min(1440, auto_hint_minutes))
+                            requested_status = (row.get("status") or "draft").lower()
+                            media_filename = row.get("media_filename") or row.get("media") or ""
+                            media_info = None
+                            if media_filename:
+                                media_key = zip_media_lookup_key(media_filename)
+                                media_entry = media_lookup.get(media_key) or media_lookup.get(
+                                    zip_media_lookup_key(Path(media_filename).name)
+                                )
+                                if media_entry:
+                                    if storage_limit and guild_media_size(guild_id) + int(media_entry.file_size or 0) > storage_limit:
+                                        raise ValueError(
+                                            "This server has reached its configured media storage limit."
+                                        )
+                                    media_info = save_guess_library_zip_media(
+                                        guild_id,
+                                        media_archive,
+                                        media_entry,
+                                        config_data.get("limits", {}),
+                                    )
+                                    saved_media_paths.append(media_info["path"])
+                                    imported_with_media += 1
+                                else:
+                                    missing_media += 1
+                            status = "draft"
+                            if requested_status == "disabled":
+                                status = "disabled"
+                            elif requested_status == "active" and media_info:
+                                status = "active"
+                            connection.execute("""
+                                INSERT INTO guess_library_items (
+                                    guild_id, title, answer, answer_display,
+                                    answer_aliases_json, prompt_text, category,
+                                    tags_json, pack_name, enabled, notes,
+                                    hint_text, auto_hint_minutes, media_path,
+                                    media_name, media_type, media_size,
+                                    media_metadata_json, status, times_used,
+                                    created_by, created_at, updated_at
+                                )
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+                            """, (
+                                guild_id,
+                                title,
+                                normalized_answer,
+                                answer_display,
+                                json.dumps(answer_aliases, separators=(",", ":")),
+                                prompt_text,
+                                category,
+                                json.dumps(tags, separators=(",", ":")),
+                                pack_name,
+                                enabled,
+                                notes,
+                                hint_text,
+                                auto_hint_minutes,
+                                media_info["path"] if media_info else "",
+                                media_info["name"] if media_info else "",
+                                media_info["type"] if media_info else "unknown",
+                                int(media_info["size"] or 0) if media_info else 0,
+                                json.dumps(
+                                    media_info["metadata"],
+                                    separators=(",", ":"),
+                                ) if media_info else "{}",
+                                status,
+                                actor_name,
+                                now,
+                                now,
+                            ))
+                            imported += 1
+                        add_admin_audit_log(
+                            connection,
                             guild_id,
-                            title,
-                            normalized_answer,
-                            answer_display,
-                            json.dumps(answer_aliases, separators=(",", ":")),
-                            prompt_text,
-                            category,
-                            json.dumps(tags, separators=(",", ":")),
-                            pack_name,
-                            enabled,
-                            notes,
-                            hint_text,
-                            auto_hint_minutes,
-                            status,
+                            "dashboard_bulk_import_guess_library",
+                            actor_id,
                             actor_name,
-                            now,
-                            now,
-                        ))
-                        imported += 1
-                    add_admin_audit_log(
-                        connection,
-                        guild_id,
-                        "dashboard_bulk_import_guess_library",
-                        actor_id,
-                        actor_name,
-                        "guess_library_item",
-                        "",
-                        (
-                            f"Imported {imported} draft/disabled library "
-                            f"item(s); skipped {skipped} row(s)."
-                        ),
-                    )
+                            "guess_library_item",
+                            "",
+                            (
+                                f"Imported {imported} library item(s); "
+                                f"attached media to {imported_with_media}; "
+                                f"missing media for {missing_media}; skipped {skipped}."
+                            ),
+                        )
+                except Exception:
+                    for saved_path in saved_media_paths:
+                        delete_guess_library_media(saved_path)
+                    raise
+                finally:
+                    if media_archive is not None:
+                        media_archive.close()
                 return game_library_redirect(
-                    f"Imported {imported} library draft(s); skipped {skipped} row(s).",
+                    (
+                        f"Imported {imported} library item(s); attached media to "
+                        f"{imported_with_media}; missing media for {missing_media}; "
+                        f"skipped {skipped}."
+                    ),
                     guild_id=guild_id,
                 )
 
