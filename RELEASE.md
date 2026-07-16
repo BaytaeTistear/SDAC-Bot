@@ -1,3 +1,17 @@
+# SDAC Bot Version 4.2.30 Experimental
+
+Version 4.2.30 is an experimental Google Play review account update.
+
+Update scope: Permanent low-access app review login
+
+Changes:
+- seeds a permanent low-access `Default` dashboard account for Google Play review
+- keeps the review account at the `Not Added` role with no server scope or admin access
+- adds a migration test to confirm the review account stays low-access and login-capable
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
+
 # SDAC Bot Version 4.2.29 Experimental
 
 Version 4.2.29 is an experimental dashboard account helper update for local testing.

@@ -2,7 +2,9 @@ from datetime import datetime, timezone
 import sqlite3
 
 
-DATABASE_SCHEMA_VERSION = 17
+
+DATABASE_SCHEMA_VERSION = 18
+GOOGLE_PLAY_REVIEW_PASSWORD_HASH = "scrypt:32768:8:1$tpr2C1Lx7O3szQ0T$0f9b5ee8f0d5caaecaf4d69667ea93aff95365decc7108fd955590df4ef07c17680a64610805821aef23fcb86171de70c4bc0f577501ca920bb6b5bb80a4426b"
 
 
 def utc_now_iso():
@@ -727,6 +729,20 @@ def migration_17_dashboard_auth_codes(connection):
     """)
 
 
+def migration_18_google_play_test_account(connection):
+    now = utc_now_iso()
+    connection.execute("""
+        INSERT OR IGNORE INTO dashboard_admin_users (
+            username, email, display_name, password_hash, role, disabled,
+            created_at, updated_at, guild_ids_json, approved_by, approved_at, notes
+        )
+        VALUES (
+            'default', '', 'Default', ?, 'not_added', 0,
+            ?, ?, '[]', 'google-play-review-seed', ?,
+            'Permanent low-access Google Play review account.'
+        )
+    """, (GOOGLE_PLAY_REVIEW_PASSWORD_HASH, now, now, now))
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -743,6 +759,7 @@ MIGRATIONS = (
     (15, migration_15_user_restrictions),
     (16, migration_16_dashboard_access_and_bot_owners),
     (17, migration_17_dashboard_auth_codes),
+    (18, migration_18_google_play_test_account),
 )
 
 

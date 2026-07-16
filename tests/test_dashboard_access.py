@@ -222,6 +222,24 @@ class DashboardAccessTests(unittest.TestCase):
             {"111": "moderator"},
         )
 
+    def test_google_play_review_account_is_low_access(self):
+        with self.dashboard.database() as connection:
+            import database_migrations
+            database_migrations.migration_18_google_play_test_account(connection)
+            row = connection.execute(
+                """
+                SELECT username, display_name, password_hash, role, disabled, guild_ids_json
+                FROM dashboard_admin_users
+                WHERE username = 'default'
+                """
+            ).fetchone()
+
+        self.assertIsNotNone(row)
+        self.assertEqual(row["display_name"], "Default")
+        self.assertEqual(row["role"], "not_added")
+        self.assertEqual(row["disabled"], 0)
+        self.assertEqual(row["guild_ids_json"], "[]")
+        self.assertTrue(self.dashboard.check_password_hash(row["password_hash"], "JohnDoe"))
 
 if __name__ == "__main__":
     unittest.main()
