@@ -41,40 +41,40 @@ Keep these on the Ubuntu server:
 Recommended one-command GitHub update path:
 
 ```bash
-sdac-update latest-official
+sana-update latest-official
 ```
 
 Stable Version 2 alias:
 
 ```bash
-sdac-update "Version 2"
+sana-update "Version 2"
 ```
 
-If `sdac-update` has not been installed yet:
+If `sana-update` has not been installed yet:
 
 ```bash
 cd /tmp
-rm -f SDAC-Bot-Ubuntu-Update.sh
+rm -f Sana-Chan-Ubuntu-Update.sh
 gh release download latest-official \
   --repo BaytaeTistear/SDAC-Bot \
-  --pattern SDAC-Bot-Ubuntu-Update.sh \
+  --pattern Sana-Chan-Ubuntu-Update.sh \
   --dir /tmp
-chmod +x SDAC-Bot-Ubuntu-Update.sh
+chmod +x Sana-Chan-Ubuntu-Update.sh
 
 SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot \
 SDAC_APP_USER=ubuntu \
 SDAC_ENV_FILE=/etc/sdac-bot/sdac.env \
 SDAC_DOMAIN=thelab.us.to \
-./SDAC-Bot-Ubuntu-Update.sh --install-command
+./Sana-Chan-Ubuntu-Update.sh --install-command
 
-sdac-update latest-official
+sana-update latest-official
 ```
 
-Use `sdac-update latest-experimental` for the experimental channel. Exact
+Use `sana-update latest-experimental` for the experimental channel. Exact
 version numbers also work:
 
 ```bash
-sdac-update 2.6
+sana-update 2.6
 ```
 
 The updater also accepts `latest-expirimental` as a typo-compatible alias.

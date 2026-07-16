@@ -88,8 +88,12 @@ def check_disk():
 
 
 def check_update_command():
-    update_path = shutil.which("sdac-update") or str(BASE_DIR / "scripts" / "update_from_github.sh")
-    status("Updater", Path(update_path).exists() or shutil.which("sdac-update"), update_path)
+    update_path = (
+        shutil.which("sana-update")
+        or shutil.which("sanachan-update")
+        or str(BASE_DIR / "scripts" / "update_from_github.sh")
+    )
+    status("Updater", Path(update_path).exists(), update_path)
 
 
 def check_dashboard_files():

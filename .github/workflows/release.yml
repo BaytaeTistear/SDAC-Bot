@@ -127,9 +127,10 @@ jobs:
           path: |
             dist/SDAC-Bot-Linux-Installer.sh
             dist/SDAC-Bot-Windows-Installer.exe
-            dist/SDAC-Bot-Ubuntu-Update.sh
+            dist/Sana-Chan-Ubuntu-Update.sh
             dist/SDAC-Bot-Windows-Update.ps1
-            dist/sdac-update
+            dist/sana-update
+            dist/sanachan-update
             dist/Sana-Chan-App-Source.zip
 
 
@@ -207,16 +208,21 @@ jobs:
             echo "Linux installer contains CRLF line endings."
             exit 1
           fi
-          if grep -q $'\r' artifacts/SDAC-Bot-Ubuntu-Update.sh; then
+          if grep -q $'\r' artifacts/Sana-Chan-Ubuntu-Update.sh; then
             echo "Ubuntu updater contains CRLF line endings."
             exit 1
           fi
-          if grep -q $'\r' artifacts/sdac-update; then
-            echo "sdac-update contains CRLF line endings."
+          if grep -q $'\r' artifacts/sana-update; then
+            echo "sana-update contains CRLF line endings."
             exit 1
           fi
-          bash -n artifacts/SDAC-Bot-Ubuntu-Update.sh
-          bash -n artifacts/sdac-update
+          if grep -q $'\r' artifacts/sanachan-update; then
+            echo "sanachan-update contains CRLF line endings."
+            exit 1
+          fi
+          bash -n artifacts/Sana-Chan-Ubuntu-Update.sh
+          bash -n artifacts/sana-update
+          bash -n artifacts/sanachan-update
           chmod +x artifacts/SDAC-Bot-Linux-Installer.sh
           export SDAC_APP_DIR="$RUNNER_TEMP/sdac-smoke"
           export SDAC_APP_USER="$(id -un)"

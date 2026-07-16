@@ -954,7 +954,13 @@ function Copy-ReleaseHelperScripts {
     $source = Join-Path $Root "scripts\update_from_github.sh"
     $content = [IO.File]::ReadAllText($source)
     $content = $content -replace "`r`n", "`n" -replace "`r", "`n"
-    foreach ($targetName in @("SDAC-Bot-Ubuntu-Update.sh", "sdac-update")) {
+    foreach ($legacyName in @("SDAC-Bot-Ubuntu-Update.sh", "sdac-update")) {
+        $legacyPath = Join-Path $Dist $legacyName
+        if (Test-Path -LiteralPath $legacyPath) {
+            Remove-Item -LiteralPath $legacyPath -Force
+        }
+    }
+    foreach ($targetName in @("Sana-Chan-Ubuntu-Update.sh", "sana-update", "sanachan-update")) {
         $target = Join-Path $Dist $targetName
         [IO.File]::WriteAllText(
             $target,

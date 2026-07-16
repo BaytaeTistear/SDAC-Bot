@@ -114,61 +114,61 @@ SDAC Bot is a Discord media submission and guessing-game system with a web dashb
 
 ### One-Time Updater Install
 
-Install the `sdac-update` command once. The latest official installer also installs
+Install the `sana-update` command once. The latest installer also installs
 this command automatically.
 
 ```bash
 cd /tmp
-rm -f SDAC-Bot-Ubuntu-Update.sh
+rm -f Sana-Chan-Ubuntu-Update.sh
 gh release download latest-official \
   --repo BaytaeTistear/SDAC-Bot \
-  --pattern SDAC-Bot-Ubuntu-Update.sh \
+  --pattern Sana-Chan-Ubuntu-Update.sh \
   --dir /tmp
-chmod +x SDAC-Bot-Ubuntu-Update.sh
+chmod +x Sana-Chan-Ubuntu-Update.sh
 
 SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot \
 SDAC_APP_USER=ubuntu \
 SDAC_ENV_FILE=/etc/sdac-bot/sdac.env \
 SDAC_DOMAIN=thelab.us.to \
-./SDAC-Bot-Ubuntu-Update.sh --install-command
+./Sana-Chan-Ubuntu-Update.sh --install-command
 ```
 
 ### One-Command Ubuntu Updates
 
-After `sdac-update` is installed, future updates are one command:
+After `sana-update` is installed, future updates are one command:
 
 ```bash
-sdac-update latest-official
+sana-update latest-official
 ```
 
 Stable Version 3 alias:
 
 ```bash
-sdac-update "Version 3"
+sana-update "Version 3"
 ```
 
 Stable Version 2 alias, pinned to the last Version 2 official release:
 
 ```bash
-sdac-update "Version 2"
+sana-update "Version 2"
 ```
 
 Experimental channel:
 
 ```bash
-sdac-update latest-experimental
+sana-update latest-experimental
 ```
 
 Explicit numbered release:
 
 ```bash
-sdac-update 3.0
+sana-update 3.0
 ```
 
 Optional checks:
 
 ```bash
-SDAC_RUN_RESTORE_TEST=1 SDAC_RUN_PRODUCTION_CHECK=1 sdac-update latest-official
+SDAC_RUN_RESTORE_TEST=1 SDAC_RUN_PRODUCTION_CHECK=1 sana-update latest-official
 ```
 
 The updater always restarts both SDAC services and runs a post-update health
@@ -480,7 +480,7 @@ bash scripts/release_checklist.sh
 ### Rollback
 
 ```bash
-sudo sdac-update rollback
+sudo sana-update rollback
 ```
 
 Specific deploy snapshot:

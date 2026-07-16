@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 CONFIG_FILE="${SDAC_UPDATE_CONFIG:-/etc/sdac-bot/update.env}"
-COMMAND_PATH="${SDAC_UPDATE_COMMAND_PATH:-/usr/local/bin/sdac-update}"
+COMMAND_PATH="${SANA_UPDATE_COMMAND_PATH:-${SDAC_UPDATE_COMMAND_PATH:-/usr/local/bin/sana-update}}"
 SCRIPT_PATH="$0"
 if command -v readlink >/dev/null 2>&1; then
     SCRIPT_PATH="$(readlink -f "$0" 2>/dev/null || printf '%s\n' "$0")"
@@ -62,17 +62,17 @@ Usage:
   $0 rollback [snapshot-path-or-name]
 
 Examples:
-  sdac-update "Version 3"
-  sdac-update 3
-  sdac-update 3.0
-  sdac-update "Version 2"
-  sdac-update 2
-  sdac-update 2.6
-  sdac-update latest-official
-  sdac-update latest-experimental
-  sdac-update latest-expirimental
-  sdac-update rollback
-  SDAC_RUN_RESTORE_TEST=1 sdac-update latest-official
+  sana-update "Version 3"
+  sana-update 3
+  sana-update 3.0
+  sana-update "Version 2"
+  sana-update 2
+  sana-update 2.6
+  sana-update latest-official
+  sana-update latest-experimental
+  sana-update latest-expirimental
+  sana-update rollback
+  SDAC_RUN_RESTORE_TEST=1 sana-update latest-official
 
 Environment:
   SDAC_GITHUB_REPO=$REPO
@@ -227,8 +227,10 @@ install_update_command() {
     need_command sudo
     need_command install
 
-    say "Installing sdac-update command"
+    say "Installing sana-update and sanachan-update commands"
     sudo install -m 755 "$SCRIPT_PATH" "$COMMAND_PATH"
+    sudo install -m 755 "$SCRIPT_PATH" "/usr/local/bin/sanachan-update"
+    sudo rm -f "/usr/local/bin/sdac-update"
     if [[ -f "$APP_DIR/scripts/sdac-doctor" ]]; then
         say "Installing sdac-doctor command"
         sudo install -m 755 "$APP_DIR/scripts/sdac-doctor" "/usr/local/bin/sdac-doctor"
@@ -277,8 +279,9 @@ DOCTOR
     echo "Config: $CONFIG_FILE"
     echo
     echo "Future updates can be one command:"
-    echo "  sdac-update latest-official"
-    echo "  sdac-update latest-experimental"
+    echo "  sana-update latest-official"
+    echo "  sana-update latest-experimental"
+    echo "  sanachan-update latest-experimental"
 }
 
 download_with_gh() {

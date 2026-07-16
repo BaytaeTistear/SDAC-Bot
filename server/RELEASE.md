@@ -1,3 +1,18 @@
+# SDAC Bot Version 4.2.34 Experimental
+
+Version 4.2.34 is an experimental Sana-Chan updater naming cleanup.
+
+Update scope: Ubuntu update command naming
+
+Changes:
+- replaces the public `sdac-update` command with `sana-update`
+- ships `sanachan-update` as a second readable alias for the same updater
+- renames the standalone Ubuntu updater artifact to `Sana-Chan-Ubuntu-Update.sh`
+- updates installer output, release workflow checks, doctor detection, helper release tooling, and docs to use the Sana-Chan updater names
+- removes the stale `/usr/local/bin/sdac-update` command during updater install so old servers stop showing the old command
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.33 Experimental
 
 Version 4.2.33 is an experimental dashboard visual polish update for the Sana-Chan site.

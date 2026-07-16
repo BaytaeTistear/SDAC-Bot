@@ -101,8 +101,10 @@ install_update_command() {
         return
     fi
 
-    echo "Installing sdac-update command"
-    sudo install -m 755 "$APP_DIR/scripts/update_from_github.sh" "/usr/local/bin/sdac-update"
+    echo "Installing sana-update and sanachan-update commands"
+    sudo install -m 755 "$APP_DIR/scripts/update_from_github.sh" "/usr/local/bin/sana-update"
+    sudo install -m 755 "$APP_DIR/scripts/update_from_github.sh" "/usr/local/bin/sanachan-update"
+    sudo rm -f "/usr/local/bin/sdac-update"
     if [[ -f "$APP_DIR/scripts/sdac-doctor" ]]; then
         echo "Installing sdac-doctor command"
         sudo install -m 755 "$APP_DIR/scripts/sdac-doctor" "/usr/local/bin/sdac-doctor"
@@ -317,9 +319,10 @@ echo "  sudo systemctl status sdac-bot --no-pager"
 echo "  sudo systemctl status sdac-dashboard --no-pager"
 echo
 echo "Future GitHub updates:"
-echo "  sdac-update \"Version 3\""
-echo "  sdac-update latest-experimental"
-echo "  sdac-update 2.6"
+echo "  sana-update \"Version 3\""
+echo "  sana-update latest-experimental"
+echo "  sanachan-update latest-experimental"
+echo "  sana-update 2.6"
 echo
 echo "View logs:"
 echo "  journalctl -u sdac-bot -n 80 --no-pager"

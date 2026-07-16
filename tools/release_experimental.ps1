@@ -29,8 +29,8 @@ $notes = @"
 Latest experimental build: Version $Version.
 
 Update with:
-- sdac-update latest-experimental
-- sdac-update $Version
+- sana-update latest-experimental
+- sana-update $Version
 "@
 
 Run-Step "Compile dashboard and bot" {
@@ -54,7 +54,7 @@ if (-not $SkipCommit) {
         $CommitMessage = "Release experimental $Version"
     }
     Run-Step "Commit changes" {
-        git add RELEASE.md README.md bot.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py server/RELEASE.md server/README.md server/bot.py server/dashboard.py server/dashboard_account_templates.py server/dashboard_admin_roles.py server/dashboard_shell_assets.py server/dashboard_sidebar.py scripts/release_readiness.py server/scripts/release_readiness.py dist/SDAC-Bot-Linux-Installer.sh dist/SDAC-Bot-Ubuntu-Update.sh dist/SDAC-Bot-Windows-Installer.exe dist/SDAC-Bot-Windows-Update.ps1 dist/sdac-update
+        git add RELEASE.md README.md bot.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py server/RELEASE.md server/README.md server/bot.py server/dashboard.py server/dashboard_account_templates.py server/dashboard_admin_roles.py server/dashboard_shell_assets.py server/dashboard_sidebar.py scripts/release_readiness.py server/scripts/release_readiness.py dist/SDAC-Bot-Linux-Installer.sh dist/Sana-Chan-Ubuntu-Update.sh dist/SDAC-Bot-Windows-Installer.exe dist/SDAC-Bot-Windows-Update.ps1 dist/sana-update dist/sanachan-update
         git commit -m $CommitMessage
     }
 }
@@ -73,12 +73,12 @@ Run-Step "Push branch and tags" {
 }
 
 Run-Step "Create version release" {
-    gh release create $tag dist/SDAC-Bot-Linux-Installer.sh dist/SDAC-Bot-Ubuntu-Update.sh dist/SDAC-Bot-Windows-Installer.exe dist/SDAC-Bot-Windows-Update.ps1 dist/sdac-update --repo $Repo --title "Version $Version Experimental" --notes $notes --prerelease
+    gh release create $tag dist/SDAC-Bot-Linux-Installer.sh dist/Sana-Chan-Ubuntu-Update.sh dist/SDAC-Bot-Windows-Installer.exe dist/SDAC-Bot-Windows-Update.ps1 dist/sana-update dist/sanachan-update --repo $Repo --title "Version $Version Experimental" --notes $notes --prerelease
 }
 
 Run-Step "Update latest-experimental release" {
     gh release edit latest-experimental --repo $Repo --title "Latest Experimental ($Version)" --notes $notes --prerelease
-    gh release upload latest-experimental dist/SDAC-Bot-Linux-Installer.sh dist/SDAC-Bot-Ubuntu-Update.sh dist/SDAC-Bot-Windows-Installer.exe dist/SDAC-Bot-Windows-Update.ps1 dist/sdac-update --repo $Repo --clobber
+    gh release upload latest-experimental dist/SDAC-Bot-Linux-Installer.sh dist/Sana-Chan-Ubuntu-Update.sh dist/SDAC-Bot-Windows-Installer.exe dist/SDAC-Bot-Windows-Update.ps1 dist/sana-update dist/sanachan-update --repo $Repo --clobber
 }
 
 Run-Step "Verify releases" {

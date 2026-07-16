@@ -116,7 +116,7 @@ function Resolve-ReleaseVersion {
 }
 
 $ResolvedVersion = Resolve-ReleaseVersion -Tag $ReleaseTag
-$tempDir = Join-Path ([IO.Path]::GetTempPath()) ("sdac-update-" + [Guid]::NewGuid().ToString("N"))
+$tempDir = Join-Path ([IO.Path]::GetTempPath()) ("sana-update-" + [Guid]::NewGuid().ToString("N"))
 $installerPath = Join-Path $tempDir $AssetName
 
 function Download-WithGitHubCli {
