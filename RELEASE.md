@@ -1,3 +1,16 @@
+# SDAC Bot Version 4.2.40 Experimental
+
+Version 4.2.40 is an experimental Sana-Chan dashboard formatting fix.
+
+Update scope: Dashboard attention card formatting
+
+Changes:
+- fixes the What Needs Attention cards so values, labels, and detail text stack cleanly instead of overlapping
+- adds shared grid card sizing and wrapping rules for dashboard stat cards
+- keeps the existing dashboard theme and page behavior unchanged
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.39 Experimental
 
 Version 4.2.39 is an experimental Sana-Chan dashboard and app polish update.

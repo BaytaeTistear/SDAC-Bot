@@ -292,6 +292,58 @@ body.sdac-theme .preview-card strong {
 .sdac-range-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .sdac-range-tabs a { border: 1px solid var(--sdac-border); border-radius: 7px; padding: 8px 10px; text-decoration: none; }
 .sdac-range-tabs a.active { background: var(--sdac-primary); color: #fff !important; }
+
+body.sdac-theme .grid {
+    align-items: stretch;
+    display: grid !important;
+    gap: var(--sdac-layout-gap);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13.5rem), 1fr)) !important;
+}
+body.sdac-theme .grid > .card {
+    align-items: flex-start;
+    border-radius: 12px !important;
+    display: flex !important;
+    flex-direction: column;
+    gap: .48rem;
+    justify-content: flex-start;
+    min-height: 7.4rem;
+    min-width: 0;
+    overflow: hidden;
+    padding: clamp(.85rem, 1.4vw, 1.1rem) !important;
+}
+body.sdac-theme .grid > .card.status {
+    border-left: .22rem solid var(--sdac-secondary) !important;
+}
+body.sdac-theme .grid > .card > strong {
+    display: block;
+    font-size: clamp(1.35rem, 1.8vw, 1.7rem) !important;
+    line-height: 1.08 !important;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+body.sdac-theme .grid > .card > span {
+    color: var(--sdac-muted) !important;
+    display: block;
+    font-size: .74rem !important;
+    font-weight: 900 !important;
+    letter-spacing: .02em !important;
+    line-height: 1.12 !important;
+    margin: 0 !important;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    text-transform: uppercase;
+    white-space: normal;
+}
+body.sdac-theme .grid > .card > p {
+    font-size: .84rem !important;
+    line-height: 1.28 !important;
+    margin: .1rem 0 0 !important;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
 body.sdac-theme main > h1:first-child {
     background: linear-gradient(100deg, #f8fbff 0%, #18d9ff 45%, #b45cff 88%);
     -webkit-background-clip: text;
