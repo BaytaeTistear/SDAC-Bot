@@ -129,7 +129,7 @@ chmod +x SDAC-Bot-Ubuntu-Update.sh
 SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot \
 SDAC_APP_USER=ubuntu \
 SDAC_ENV_FILE=/etc/sdac-bot/sdac.env \
-SDAC_DOMAIN=freethefishies.us.to \
+SDAC_DOMAIN=thelab.us.to \
 ./SDAC-Bot-Ubuntu-Update.sh --install-command
 ```
 
@@ -275,27 +275,27 @@ journalctl -u nginx -n 80 --no-pager
 
 ```bash
 curl http://127.0.0.1:5000/health
-curl -I https://freethefishies.us.to/health
+curl -I https://thelab.us.to/health
 ```
 
 Admin JSON health:
 
 ```text
-https://freethefishies.us.to/admin/health?key=ImTheBestAdmin
+https://thelab.us.to/admin/health?key=ImTheBestAdmin
 ```
 
 Human-friendly maintenance page:
 
 ```text
-https://freethefishies.us.to/admin/maintenance?key=ImTheBestAdmin
+https://thelab.us.to/admin/maintenance?key=ImTheBestAdmin
 ```
 
 ### Nginx And HTTPS
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=freethefishies.us.to bash scripts/install_nginx_site.sh
-sudo certbot --nginx -d freethefishies.us.to --cert-name freethefishies.us.to --key-type rsa
+SDAC_DOMAIN=thelab.us.to bash scripts/install_nginx_site.sh
+sudo certbot --nginx -d thelab.us.to --cert-name thelab.us.to --key-type rsa
 sudo certbot renew --dry-run
 ```
 
@@ -419,13 +419,13 @@ the app image separate from uploaded media, backups, and `sdac.db`.
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=freethefishies.us.to bash scripts/check_production.sh
+SDAC_DOMAIN=thelab.us.to bash scripts/check_production.sh
 ```
 
 Include Certbot dry-run:
 
 ```bash
-SDAC_DOMAIN=freethefishies.us.to SDAC_RUN_CERTBOT_DRY_RUN=1 bash scripts/check_production.sh
+SDAC_DOMAIN=thelab.us.to SDAC_RUN_CERTBOT_DRY_RUN=1 bash scripts/check_production.sh
 ```
 
 Create a one-command support bundle:
@@ -619,7 +619,7 @@ The app entry point is `/app`. It sends admins to the admin overview, signed-in 
 
 ## Official Native App Scaffold
 
-The first official app scaffold lives in `apps/sdac-official-app`. It uses Vite and Capacitor so the existing Flask dashboard remains the source of truth while mobile builds can wrap the hosted dashboard. The current app display name is `SDACCompanion`, and it defaults to `https://freethefishies.us.to`.
+The first official app scaffold lives in `apps/sdac-official-app`. It uses Vite and Capacitor so the existing Flask dashboard remains the source of truth while mobile builds can wrap the hosted dashboard. The current app display name is `Sana-Chan`, and it defaults to `https://thelab.us.to`.
 
 Recommended path:
 

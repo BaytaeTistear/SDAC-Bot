@@ -81,7 +81,7 @@ For the current domain:
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=freethefishies.us.to bash scripts/install_nginx_site.sh
+SDAC_DOMAIN=thelab.us.to bash scripts/install_nginx_site.sh
 ```
 
 This installs `/etc/nginx/sites-available/sdac-dashboard`, enables it, sets a
@@ -99,7 +99,7 @@ SDAC_DOMAIN=YOUR-DOMAIN bash scripts/install_nginx_site.sh
 For the current domain:
 
 ```bash
-sudo certbot --nginx -d freethefishies.us.to --cert-name freethefishies.us.to --key-type rsa
+sudo certbot --nginx -d thelab.us.to --cert-name thelab.us.to --key-type rsa
 ```
 
 If Certbot asks whether you are changing the key type, use the full command
@@ -135,14 +135,14 @@ bash scripts/install_journal_limits.sh
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=freethefishies.us.to bash scripts/check_production.sh
+SDAC_DOMAIN=thelab.us.to bash scripts/check_production.sh
 ```
 
 Include the Certbot dry-run check:
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=freethefishies.us.to SDAC_RUN_CERTBOT_DRY_RUN=1 bash scripts/check_production.sh
+SDAC_DOMAIN=thelab.us.to SDAC_RUN_CERTBOT_DRY_RUN=1 bash scripts/check_production.sh
 ```
 
 ## 8. Database Migrations And Restore Tests
@@ -197,7 +197,7 @@ sudo systemctl restart sdac-bot sdac-dashboard
 Public uptime check:
 
 ```text
-https://freethefishies.us.to/health
+https://thelab.us.to/health
 ```
 
 Local check from the server:
@@ -209,19 +209,19 @@ curl http://127.0.0.1:5000/health
 Admin-only detailed health check after logging in through the dashboard:
 
 ```text
-https://freethefishies.us.to/admin/health?key=ImTheBestAdmin
+https://thelab.us.to/admin/health?key=ImTheBestAdmin
 ```
 
 Human-friendly maintenance page:
 
 ```text
-https://freethefishies.us.to/admin/maintenance?key=ImTheBestAdmin
+https://thelab.us.to/admin/maintenance?key=ImTheBestAdmin
 ```
 
 Moderation queue and recent decisions:
 
 ```text
-https://freethefishies.us.to/admin/moderation?key=ImTheBestAdmin
+https://thelab.us.to/admin/moderation?key=ImTheBestAdmin
 ```
 
 ## 11. Future Updates
@@ -252,7 +252,7 @@ chmod +x SDAC-Bot-Ubuntu-Update.sh
 SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot \
 SDAC_APP_USER=ubuntu \
 SDAC_ENV_FILE=/etc/sdac-bot/sdac.env \
-SDAC_DOMAIN=freethefishies.us.to \
+SDAC_DOMAIN=thelab.us.to \
 ./SDAC-Bot-Ubuntu-Update.sh --install-command
 
 sdac-update latest-official
@@ -372,7 +372,7 @@ Set a private staff channel for bot error notices:
 Admins can check new-server setup progress at:
 
 ```text
-https://freethefishies.us.to/admin/onboarding?key=ImTheBestAdmin
+https://thelab.us.to/admin/onboarding?key=ImTheBestAdmin
 ```
 
 ## 14. Off-Server Backups

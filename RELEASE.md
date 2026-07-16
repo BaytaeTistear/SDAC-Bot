@@ -1,3 +1,17 @@
+# SDAC Bot Version 4.2.32 Experimental
+
+Version 4.2.32 is an experimental domain and store-listing update for the Sana-Chan dashboard and app.
+
+Update scope: Public dashboard URL and Google Play copy
+
+Changes:
+- updates source documentation and app defaults from `freethefishies.us.to` to `thelab.us.to`
+- updates hosted dashboard examples, production checks, certbot examples, and app setup docs to use `thelab.us.to`
+- adds reusable Google Play short and full descriptions for Sana-Chan
+- keeps `latest-official` unchanged while moving the experimental channel forward
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # SDAC Bot Version 4.2.31 Experimental
 
 Version 4.2.31 is an experimental guess-library bulk media import update.

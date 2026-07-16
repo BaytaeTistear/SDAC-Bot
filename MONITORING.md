@@ -7,7 +7,7 @@ Use this after the bot is running behind Nginx.
 Monitor the public health endpoint:
 
 ```text
-https://freethefishies.us.to/health
+https://thelab.us.to/health
 ```
 
 UptimeRobot, Better Stack, or any other HTTP monitor can check that URL every
@@ -25,14 +25,14 @@ Run this from the server:
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=freethefishies.us.to bash scripts/check_production.sh
+SDAC_DOMAIN=thelab.us.to bash scripts/check_production.sh
 ```
 
 Include a Let's Encrypt renewal test when you want the full check:
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=freethefishies.us.to SDAC_RUN_CERTBOT_DRY_RUN=1 bash scripts/check_production.sh
+SDAC_DOMAIN=thelab.us.to SDAC_RUN_CERTBOT_DRY_RUN=1 bash scripts/check_production.sh
 ```
 
 ## Discord Error Channel

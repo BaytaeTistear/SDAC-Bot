@@ -13,8 +13,8 @@ android {
         applicationId "com.baytae.sanachan"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 42027
-        versionName "4.2.27"
+        versionCode 42032
+        versionName "4.2.32"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

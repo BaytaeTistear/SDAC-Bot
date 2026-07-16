@@ -77,8 +77,8 @@ type UpdateChannelInfo = {
   sha256: string;
 };
 
-const APP_SHELL_VERSION = "4.2.27";
-const dashboardBase = (import.meta.env.VITE_SDAC_DASHBOARD_URL || "https://freethefishies.us.to").replace(/\/$/, "");
+const APP_SHELL_VERSION = "4.2.32";
+const dashboardBase = (import.meta.env.VITE_SDAC_DASHBOARD_URL || "https://thelab.us.to").replace(/\/$/, "");
 const nativePlatform = Capacitor.getPlatform();
 const isNative = Capacitor.isNativePlatform();
 const appRoot = document.querySelector<HTMLDivElement>("#app");
