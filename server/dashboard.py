@@ -5624,6 +5624,8 @@ THEME_HTML = """
         button { background: #4f46e5; color: white; cursor: pointer; font-weight: bold; margin-top: 16px; }
         .notice { border: 1px solid #30333b; border-radius: 8px; margin-bottom: 14px; padding: 12px; }
         .preview { min-height: 180px; border-radius: 8px; padding: 18px; background: var(--sdac-bg); background-image: var(--sdac-theme-image, linear-gradient(135deg, var(--sdac-primary), var(--sdac-secondary))); background-size: cover; }
+        .muted { color: #94a3b8; }
+        .layout-workbench { background: #020617; border: 1px solid #30333b; border-radius: 8px; box-sizing: border-box; display: block; height: min(78vh, 820px); margin-top: 12px; width: 100%; }
     </style>
 </head>
 <body>
@@ -5648,13 +5650,18 @@ THEME_HTML = """
         </form>
     </section>
     <section class="panel">
-        <h2>Preview</h2>
+        <h2>Live Theme Preview</h2>
         <div class="preview">
             <div class="sdac-dashboard-grid">
                 <div class="sdac-dashboard-card"><strong>128</strong><span>Submissions</span></div>
                 <div class="sdac-dashboard-card"><strong>42</strong><span>Users</span></div>
             </div>
         </div>
+    </section>
+    <section class="panel">
+        <h2>Full Layout Workbench</h2>
+        <p class="muted">Use the embedded layout editor below to manage object position, card sizing, sidebar width, spacing, background placement, and density while staying on the Theme page.</p>
+        <iframe class="layout-workbench" src="{{ url_for('admin_layout', key=admin_key) }}" title="Sana-Chan layout workbench"></iframe>
     </section>
 </main>
 </body>

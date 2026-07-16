@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.2.43 Experimental
+
+Version 4.2.43 is an experimental Theme page workbench update.
+
+Update scope: Dashboard theme and layout management
+
+Changes:
+- renames the Theme page preview area to Live Theme Preview for clearer owner workflow
+- embeds the full Layout editor inside the Theme page so owners can adjust object position, card sizing, sidebar width, spacing, background placement, and density from the same page
+- keeps the existing standalone Layout page available for direct access
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # Sana-Chan Version 4.2.42 Experimental
 
 Version 4.2.42 is an experimental dashboard dropdown readability fix.
