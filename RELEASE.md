@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.2.44 Experimental
+
+Version 4.2.44 is an experimental release smoke-test alignment update.
+
+Update scope: Release validation
+
+Changes:
+- updates the pre-release smoke test to expect the Sana-Chan web manifest short name
+- keeps the 4.2.43 Theme page workbench changes intact
+- verifies the release process against the current Sana-Chan branding instead of the legacy SDAC label
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # Sana-Chan Version 4.2.43 Experimental
 
 Version 4.2.43 is an experimental Theme page workbench update.
