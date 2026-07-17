@@ -1,0 +1,119 @@
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^\d+\.\d+\.0$')]
+    [string]$Version,
+
+    [string]$Repo = "BaytaeTistear/SDAC-Bot",
+    [string]$CommitMessage = "",
+    [switch]$SkipCommit
+)
+
+$ErrorActionPreference = "Stop"
+
+function Run-Step {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Label,
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Script
+    )
+    Write-Host "==> $Label" -ForegroundColor Cyan
+    & $Script
+}
+
+$root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+Set-Location $root
+
+$tag = "version-$Version"
+$releaseAssets = @(
+    "dist/Sana-Chan-Linux-Installer.sh",
+    "dist/Sana-Chan-Ubuntu-Update.sh",
+    "dist/Sana-Chan-Windows-Installer.exe",
+    "dist/Sana-Chan-Windows-Update.ps1",
+    "dist/sana-update",
+    "dist/sanachan-update",
+    "dist/Sana-Chan-Android-Debug.apk",
+    "dist/Sana-Chan-Android-Debug.apk.sha256",
+    "dist/Sana-Chan-Android-Release.aab",
+    "dist/Sana-Chan-Android-Release.aab.sha256",
+    "dist/Sana-Chan-App-Source.zip"
+)
+
+$notesPath = Join-Path $root "RELEASE.md"
+$releaseText = Get-Content $notesPath -Raw
+$marker = "`n# Sana-Chan Version "
+$markerIndex = $releaseText.IndexOf($marker)
+if ($markerIndex -ge 0) {
+    $notes = $releaseText.Substring(0, $markerIndex).Trim()
+} else {
+    $notes = $releaseText.Trim()
+}
+if (-not $notes) {
+    $notes = "Sana-Chan Version $Version official release."
+}
+
+Run-Step "Compile dashboard and bot" {
+    py -3.12 -m py_compile dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py server\dashboard.py server\dashboard_account_templates.py server\dashboard_admin_roles.py server\dashboard_shell_assets.py server\dashboard_sidebar.py bot.py scripts\pre_release_smoke.py scripts\release_readiness.py scripts\dashboard_layout_check.py
+}
+
+Run-Step "Run backend release readiness" {
+    py -3.12 scripts\release_readiness.py
+}
+
+Run-Step "Run release smoke tests" {
+    py -3.12 scripts\pre_release_smoke.py
+}
+
+Run-Step "Build installers" {
+    & "$root\tools\build_installers.ps1"
+}
+
+if (-not $SkipCommit) {
+    if (-not $CommitMessage) {
+        $CommitMessage = "Release official $Version"
+    }
+    Run-Step "Commit changes" {
+        git add RELEASE.md README.md bot.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py server/RELEASE.md server/README.md server/bot.py server/dashboard.py server/dashboard_account_templates.py server/dashboard_admin_roles.py server/dashboard_shell_assets.py server/dashboard_sidebar.py scripts/pre_release_smoke.py scripts/release_readiness.py scripts/dashboard_layout_check.py server/scripts/pre_release_smoke.py server/scripts/release_readiness.py server/scripts/dashboard_layout_check.py tools/release_experimental.ps1 tools/release_official.ps1 apps/sdac-official-app/package.json apps/sdac-official-app/package-lock.json apps/sdac-official-app/src/main.ts apps/sdac-official-app/android/app/build.gradle dist/Sana-Chan-Linux-Installer.sh dist/Sana-Chan-Ubuntu-Update.sh dist/Sana-Chan-Windows-Installer.exe dist/Sana-Chan-Windows-Update.ps1 dist/sana-update dist/sanachan-update
+        git commit -m $CommitMessage
+    }
+}
+
+$commit = (git rev-parse HEAD).Trim()
+
+Run-Step "Archive app source" {
+    git archive --format=zip --output=dist/Sana-Chan-App-Source.zip HEAD apps/sdac-official-app
+}
+
+
+Run-Step "Tag $tag, latest-experimental, and latest-official" {
+    git tag $tag $commit
+    git tag -f latest-experimental $commit
+    git tag -f latest-official $commit
+}
+
+Run-Step "Push branch and tags" {
+    git push origin main
+    git push origin $tag
+    git push origin latest-experimental --force
+    git push origin latest-official --force
+}
+
+Run-Step "Create official version release" {
+    gh release create $tag $releaseAssets --repo $Repo --title "Version $Version Official" --notes $notes
+}
+
+Run-Step "Update latest-experimental release" {
+    gh release edit latest-experimental --repo $Repo --title "Latest Experimental ($Version)" --notes $notes --prerelease
+    gh release upload latest-experimental $releaseAssets --repo $Repo --clobber
+}
+
+Run-Step "Update latest-official release" {
+    gh release edit latest-official --repo $Repo --title "Latest Official ($Version)" --notes $notes --latest
+    gh release upload latest-official $releaseAssets --repo $Repo --clobber
+}
+
+Run-Step "Verify releases" {
+    gh release view $tag --repo $Repo --json tagName,name,isPrerelease,isLatest,targetCommitish,assets,url
+    gh release view latest-experimental --repo $Repo --json tagName,name,isPrerelease,targetCommitish,assets,url
+    gh release view latest-official --repo $Repo --json tagName,name,isPrerelease,isLatest,targetCommitish,assets,url
+}

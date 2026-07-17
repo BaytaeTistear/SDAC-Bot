@@ -1,3 +1,26 @@
+# Sana-Chan Version 4.3.0 Official
+
+Version 4.3.0 is an official release-readiness polish update for public launch preparation.
+
+Update scope: Go-live confidence, dashboard polish, command auditing, app-store readiness, release notes safety, self-tests, and owner/admin guidance
+
+Changes:
+- adds a Bot Owner Go Live Control Room combining checklist readiness, notifications, release state, app-store readiness, operations counts, blockers, and manual launch steps
+- adds a Release Notes Preview page so only the current release notes are reviewed before publishing
+- adds Self Tests for Discord OAuth, bot heartbeat, upload path, vote/review flow, invite flow, release channel, and mobile layout checks
+- adds a Bot Command Cleanup Audit page for confirming the simplified public command surface and /sana-first workflow
+- adds an App Store Readiness page for package name, target SDK, Android version, version code, signed bundle, and Play listing status
+- adds a Mobile Dashboard Pass checklist for sidebar, selectors, action buttons, media previews, tables, cards, and app login/update flows
+- adds Guided Empty States guidance so empty tables/pages have clear user-facing next actions
+- adds a Role Permission Simulator hub that links directly into Preview As for user/server access checks
+- adds a First Install Success page for owner setup confirmation, invite status, server scores, next steps, and wiki access
+- adds an Admin Activity Digest for recent submissions, reports, moderation, audit events, and queued jobs
+- aligns the Android app shell/package/build metadata to version 4.3.0
+- adds official release tooling that promotes the validated commit to both latest-experimental and latest-official when requested
+
+Notes:
+- This is an official update. `latest-official` and `latest-experimental` should both point to this validated build after release.
+
 # Sana-Chan Version 4.2.50 Experimental
 
 Version 4.2.50 is an experimental full polish pass for release readiness and daily operations.

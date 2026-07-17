@@ -107,6 +107,16 @@ class PreReleaseSmokeTests(unittest.TestCase):
             "/admin/settings?key=ImTheBestAdmin&guild_id=111",
             "/admin/anime-activities?key=ImTheBestAdmin",
             "/admin/owner-portal?key=ImTheBestAdmin",
+            "/admin/go-live-control?key=ImTheBestAdmin",
+            "/admin/release-notes-preview?key=ImTheBestAdmin",
+            "/admin/self-tests?key=ImTheBestAdmin",
+            "/admin/command-audit?key=ImTheBestAdmin",
+            "/admin/app-store-readiness?key=ImTheBestAdmin",
+            "/admin/mobile-pass?key=ImTheBestAdmin",
+            "/admin/empty-states?key=ImTheBestAdmin",
+            "/admin/permission-simulator?key=ImTheBestAdmin",
+            "/admin/install-success?key=ImTheBestAdmin",
+            "/admin/activity-digest?key=ImTheBestAdmin",
         ]:
             response = client.get(path)
             self.assertLess(response.status_code, 500, path)

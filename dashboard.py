@@ -18583,6 +18583,99 @@ def maintenance_window_rows(config_data=None):
         rows.append({"guild_id": guild_id, "guild_name": "All servers" if guild_id == "all" else guild_names.get(guild_id, guild_id), "starts_at": window.get("starts_at") or "", "ends_at": window.get("ends_at") or "", "reason": window.get("reason") or ""})
     return rows[-20:]
 
+
+def top_release_notes_entry(limit=6000):
+    release_path = BASE_DIR / "RELEASE.md"
+    if not release_path.is_file():
+        return "No RELEASE.md file was found."
+    text = release_path.read_text(encoding="utf-8", errors="replace").strip()
+    if not text:
+        return "RELEASE.md is empty."
+    marker = "\n# Sana-Chan Version "
+    if marker in text:
+        text = text.split(marker, 1)[0].strip()
+    return text[:limit]
+
+
+def command_cleanup_audit_rows():
+    bot_path = BASE_DIR / "bot.py"
+    source = bot_path.read_text(encoding="utf-8", errors="replace") if bot_path.is_file() else ""
+    names = sorted(set(re.findall(r'@tree\.command\(name="([^"]+)"', source)))
+    core = {"sana", "submit", "guess", "hint"}
+    pruned_match = re.search(r'PRUNED_SLASH_COMMANDS\s*=\s*prune_simplified_slash_commands\(\)', source)
+    extra = sorted(set(names) - core)
+    rows = []
+    rows.append({"area": "Public command surface", "state": "Ready" if core.issubset(names) else "Missing", "detail": "Expected visible commands: " + ", ".join("/" + item for item in sorted(core))})
+    rows.append({"area": "Advanced commands", "state": "Hidden by simplified mode" if pruned_match else "Check manually", "detail": f"{len(extra)} advanced command declarations should be tucked behind /sana when simplified mode is on."})
+    rows.append({"area": "Legacy names", "state": "Needs cleanup" if any("sdac" in item for item in names) else "Clean", "detail": "Command names checked for sdac wording; descriptions may still mention legacy context for compatibility."})
+    rows.append({"area": "Custom alias", "state": "Supported", "detail": "Server owners can use the setup flow to choose a launcher alias while /sana remains the safe default."})
+    return rows, names, extra
+
+
+def app_store_readiness_rows():
+    app_root = BASE_DIR / "apps" / "sdac-official-app"
+    package_json = {}
+    try:
+        package_json = json.loads((app_root / "package.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        package_json = {}
+    variables_text = (app_root / "android" / "variables.gradle").read_text(encoding="utf-8", errors="replace") if (app_root / "android" / "variables.gradle").is_file() else ""
+    build_text = (app_root / "android" / "app" / "build.gradle").read_text(encoding="utf-8", errors="replace") if (app_root / "android" / "app" / "build.gradle").is_file() else ""
+    def match(pattern, text, default="unknown"):
+        found = re.search(pattern, text)
+        return found.group(1) if found else default
+    rows = [
+        {"area": "Package name", "value": match(r'applicationId\s+"([^"]+)"', build_text), "ok": "com.baytae.sanachan" in build_text, "detail": "Google Play package should stay stable once published."},
+        {"area": "App version", "value": package_json.get("version", "unknown"), "ok": bool(package_json.get("version")), "detail": "Package metadata used by app tooling."},
+        {"area": "Android version", "value": match(r'versionName\s+"([^"]+)"', build_text), "ok": match(r'versionName\s+"([^"]+)"', build_text) != "unknown", "detail": "Displayed to Android users and Play Console."},
+        {"area": "Version code", "value": match(r'versionCode\s+(\d+)', build_text), "ok": match(r'versionCode\s+(\d+)', build_text) != "unknown", "detail": "Must increase for every Play upload."},
+        {"area": "Target SDK", "value": match(r'targetSdkVersion\s*=\s*(\d+)', variables_text), "ok": int(match(r'targetSdkVersion\s*=\s*(\d+)', variables_text, "0")) >= 35, "detail": "Google Play currently requires API 35 or newer."},
+        {"area": "Signed bundle", "value": "Present" if (BASE_DIR / "dist" / "Sana-Chan-Android-Release.aab").is_file() else "Build needed", "ok": (BASE_DIR / "dist" / "Sana-Chan-Android-Release.aab").is_file(), "detail": "Upload the AAB to Play Console, not the debug APK."},
+        {"area": "Privacy listing", "value": "Present" if (app_root / "PLAY_STORE_LISTING.md").is_file() else "Missing", "ok": (app_root / "PLAY_STORE_LISTING.md").is_file(), "detail": "Short/full description and listing notes are tracked in the app folder."},
+    ]
+    return rows
+
+
+def admin_activity_digest_rows(days=7):
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    with closing(connect_db()) as connection:
+        rows = [
+            {"area": "Submissions", "value": connection.execute("SELECT COUNT(*) FROM submissions WHERE COALESCE(created_at, submitted_at, '') >= ?", (since,)).fetchone()[0], "detail": f"Created in the last {days} days."},
+            {"area": "Open reports", "value": connection.execute("SELECT COUNT(*) FROM submission_reports WHERE status = 'open'").fetchone()[0], "detail": "Currently waiting for moderation."},
+            {"area": "Moderation actions", "value": connection.execute("SELECT COUNT(*) FROM moderation_history WHERE created_at >= ?", (since,)).fetchone()[0], "detail": f"Actions recorded in the last {days} days."},
+            {"area": "Config/audit events", "value": connection.execute("SELECT COUNT(*) FROM admin_audit_log WHERE created_at >= ?", (since,)).fetchone()[0], "detail": f"Admin audit rows in the last {days} days."},
+            {"area": "Queued jobs", "value": connection.execute("SELECT COUNT(*) FROM background_jobs WHERE status IN ('queued', 'running')").fetchone()[0], "detail": "Maintenance/background jobs still active."},
+        ]
+        recent = connection.execute("SELECT created_at, action, actor_username, details FROM admin_audit_log ORDER BY datetime(created_at) DESC, id DESC LIMIT 10").fetchall()
+    return rows, recent
+
+
+def self_test_rows():
+    config_data = load_config()
+    release = release_status()
+    bot_status = read_bot_status()
+    app_info = public_app_metadata()
+    return [
+        {"test": "Discord OAuth", "state": "Ready" if oauth_enabled() else "Missing", "detail": "Checks that client ID/secret are configured.", "url": url_for("admin_ui_health", key=ADMIN_KEY)},
+        {"test": "Bot heartbeat", "state": "Fresh" if bot_status.get("fresh") else "Stale", "detail": bot_status.get("message") or "No heartbeat recorded.", "url": url_for("admin_install_doctor", key=ADMIN_KEY)},
+        {"test": "Upload path", "state": "Ready" if MEDIA_DIR.exists() else "Missing", "detail": str(MEDIA_DIR), "url": url_for("admin_media_cleanup", key=ADMIN_KEY)},
+        {"test": "Vote/review flow", "state": "Check", "detail": "Open public submissions, vote, report, then review from moderation.", "url": url_for("admin_moderation", key=ADMIN_KEY)},
+        {"test": "Invite flow", "state": "Ready" if app_info.get("invite_url") else "Missing", "detail": "OAuth URL and required scopes/permissions.", "url": url_for("bot_invite")},
+        {"test": "Release channel", "state": release.get("configured_tag") or "unknown", "detail": f"Official {release.get('official_version')}; experimental {release.get('experimental_version')}.", "url": url_for("admin_release_center", key=ADMIN_KEY)},
+        {"test": "Mobile layout", "state": "Script bundled" if (BASE_DIR / "scripts" / "dashboard_layout_check.py").is_file() else "Missing", "detail": "Run dashboard_layout_check.py against a local dashboard server.", "url": url_for("admin_mobile_dashboard_pass", key=ADMIN_KEY)},
+    ]
+
+
+def empty_state_rows():
+    return [
+        {"page": "Submissions", "message": "No matching submissions. Change filters or submit media.", "cta": "Open Submissions", "url": url_for("index", key=ADMIN_KEY)},
+        {"page": "Review Queue", "message": "No review items. Check reports or posted submissions next.", "cta": "Open Moderation", "url": url_for("admin_moderation", key=ADMIN_KEY)},
+        {"page": "Users", "message": "No users in this scope. Add a user to a server or refresh Discord servers.", "cta": "Open Users", "url": url_for("admin_users", key=ADMIN_KEY)},
+        {"page": "Game Library", "message": "No library items. Import CSV/media or seed anime activity drafts.", "cta": "Open Game Library", "url": url_for("admin_game_library", key=ADMIN_KEY)},
+        {"page": "Reports", "message": "No open reports. Review recent moderation history instead.", "cta": "Open Audit", "url": url_for("audit_log", key=ADMIN_KEY)},
+        {"page": "Backups", "message": "No backups found. Run backup now or configure offsite backups.", "cta": "Open Maintenance", "url": url_for("admin_maintenance", key=ADMIN_KEY)},
+    ]
+
 @app.route("/admin/release-center")
 def admin_release_center():
     login_response = require_admin_login("bot_owner")
@@ -18830,6 +18923,155 @@ def admin_post_update_wizard():
         {"label": "Report a problem", "state": "Ready", "class": "ok", "url": url_for("admin_report_problem", key=ADMIN_KEY)},
     ]
     return admin_tool_shell("Post-Update Wizard", "The checklist to run right after sana-update finishes.", POST_UPDATE_WIZARD_BODY, release=release, restart_warning=restart_warning, steps=steps)
+
+
+@app.route("/admin/go-live-control")
+def admin_go_live_control_room():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    checklist, manual_steps = go_live_checklist_rows()
+    notifications = dashboard_notifications(config_data)
+    release = release_status()
+    app_rows = app_store_readiness_rows()
+    with closing(connect_db()) as connection:
+        visible = current_admin_allowed_guild_ids(config_data) or set((config_data.get("guilds") or {}).keys())
+        summary = admin_dashboard_summary(connection, "", visible, "all")
+    ready_count = sum(1 for item in checklist if item["ok"])
+    blocker_count = sum(1 for item in checklist if not item["ok"] and item["severity"] != "warning")
+    body = """
+    <section class="panel"><h2>Go Live Control Room</h2><div class="grid"><div class="metric"><strong>{{ ready_count }} / {{ total_count }}</strong><span>Ready Checks</span></div><div class="metric"><strong>{{ blocker_count }}</strong><span>Blockers</span></div><div class="metric"><strong>{{ notifications|length }}</strong><span>Notifications</span></div><div class="metric"><strong>{{ release.experimental_version }}</strong><span>Candidate</span></div></div></section>
+    <section class="panel"><h2>Final Actions</h2><div class="action-list"><div class="action"><div><h3>Review Release Notes</h3><p class="muted">Preview the exact notes before publishing.</p></div><a class="button" href="{{ url_for('admin_release_notes_preview', key=admin_key) }}">Open</a></div><div class="action"><div><h3>Run Self Tests</h3><p class="muted">OAuth, heartbeat, upload, review, invite, release, and mobile checks.</p></div><a class="button secondary" href="{{ url_for('admin_self_tests', key=admin_key) }}">Open</a></div><div class="action"><div><h3>Check App Store</h3><p class="muted">Package name, target SDK, AAB/APK, listing, and version metadata.</p></div><a class="button secondary" href="{{ url_for('admin_app_store_readiness', key=admin_key) }}">Open</a></div></div></section>
+    <section class="panel"><h2>Operations Snapshot</h2><div class="grid"><div class="card"><strong>{{ summary.pending }}</strong><span>Pending Review</span></div><div class="card"><strong>{{ summary.open_reports }}</strong><span>Open Reports</span></div><div class="card"><strong>{{ summary.active_games }}</strong><span>Active Games</span></div><div class="card"><strong>{{ summary.media_size }}</strong><span>Media Storage</span></div></div></section>
+    <section class="panel"><h2>Blocking Checks</h2><table><thead><tr><th>Area</th><th>Status</th><th>Next Step</th></tr></thead><tbody>{% for item in checklist if not item.ok %}<tr><td>{{ item.label }}</td><td class="{{ 'warn' if item.severity == 'warning' else 'bad' }}">{{ item.state }}</td><td>{{ item.next_step }}</td></tr>{% else %}<tr><td colspan="3" class="ok">No blockers in the automated checklist.</td></tr>{% endfor %}</tbody></table></section>
+    <section class="panel"><h2>Manual Path</h2><ol>{% for step in manual_steps %}<li>{{ step }}</li>{% endfor %}</ol></section>
+    """
+    return admin_tool_shell("Go Live Control Room", "One final screen for official-release confidence.", body, app_rows=app_rows, blocker_count=blocker_count, checklist=checklist, manual_steps=manual_steps, notifications=notifications, ready_count=ready_count, release=release, summary=summary, total_count=len(checklist))
+
+
+@app.route("/admin/empty-states")
+def admin_empty_states():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    body = """
+    <section class="panel"><h2>Guided Empty States</h2><p class="muted">Use these as the standard wording and first action when a dashboard page has no rows.</p><table><thead><tr><th>Page</th><th>Message</th><th>Action</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.page }}</td><td>{{ row.message }}</td><td><a class="button secondary" href="{{ row.url }}">{{ row.cta }}</a></td></tr>{% endfor %}</tbody></table></section>
+    <section class="panel"><h2>Rules</h2><ul><li>Never leave an empty table without a next action.</li><li>Always mention the current server/filter when possible.</li><li>Prefer one clear button over a paragraph of instructions.</li></ul></section>
+    """
+    return admin_tool_shell("Guided Empty States", "Standard empty-page wording and CTAs for release polish.", body, rows=empty_state_rows())
+
+
+@app.route("/admin/mobile-pass")
+def admin_mobile_dashboard_pass():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    checks = ["Sidebar has no horizontal scroll.", "Menu and Home remain visible and side by side.", "Server selector text stays inside the control.", "Submission action buttons wrap into compact rows.", "Media previews stay above metadata/action links.", "Tables scroll horizontally inside their panel only.", "Cards/bubbles never overlap text.", "App login, diagnostics, updates, and invite links work in Android WebView/browser flows."]
+    body = """
+    <section class="panel"><h2>Mobile Dashboard Pass</h2><p class="muted">Run this before every official release and after theme/layout changes.</p><div class="grid">{% for check in checks %}<div class="card"><strong>Check</strong><p>{{ check }}</p></div>{% endfor %}</div></section>
+    <section class="panel"><h2>Automated Layout Command</h2><p><code>py -3.12 scripts/dashboard_layout_check.py --base-url http://127.0.0.1:5000</code></p><p class="muted">Start the dashboard locally first, then run this for desktop, tablet, and mobile overflow screenshots.</p></section>
+    """
+    return admin_tool_shell("Mobile Dashboard Pass", "Phone-width layout checks for dashboard and app polish.", body, checks=checks)
+
+
+@app.route("/admin/command-audit")
+def admin_command_cleanup_audit():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    rows, names, extra = command_cleanup_audit_rows()
+    body = """
+    <section class="panel"><h2>Bot Command Cleanup Audit</h2><table><thead><tr><th>Area</th><th>Status</th><th>Detail</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.area }}</td><td class="{{ 'ok' if row.state in ['Ready','Clean','Supported','Hidden by simplified mode'] else 'warn' }}">{{ row.state }}</td><td>{{ row.detail }}</td></tr>{% endfor %}</tbody></table></section>
+    <section class="panel"><h2>Declared Commands</h2><p class="muted">Core public commands should be visible; the rest should be reachable through /sana in simplified mode.</p><p>{% for name in names %}<code>/{{ name }}</code>{% if not loop.last %} {% endif %}{% endfor %}</p></section>
+    <section class="panel"><h2>Sync Reminder</h2><p>Use <code>/sana -> Setup -> Sync Commands</code> after restart if Discord still shows duplicate/stale commands.</p></section>
+    """
+    return admin_tool_shell("Bot Command Cleanup Audit", "Checks the slash command surface before public launch.", body, rows=rows, names=names, extra=extra)
+
+
+@app.route("/admin/permission-simulator")
+def admin_permission_simulator():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    users = dashboard_users()
+    options = guild_options(config_data)
+    username = request.args.get("username") or (users[0]["username"] if users else current_admin_username() or "Default")
+    guild_id = request.args.get("guild_id") or (options[0]["id"] if options else "")
+    preview_url = url_for("admin_preview_as", key=ADMIN_KEY, username=username, guild_id=guild_id)
+    body = """
+    <section class="panel"><h2>Role Permission Simulator</h2><form method="get" class="toolbar"><input type="hidden" name="key" value="{{ admin_key }}"><select name="username">{% for user in users %}<option value="{{ user.username }}" {% if user.username == username %}selected{% endif %}>{{ user.username }} - {{ user.role }}</option>{% endfor %}</select><select name="guild_id">{% for guild in guild_options %}<option value="{{ guild.id }}" {% if guild.id == guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}</select><button type="submit">Preview</button></form></section>
+    <section class="panel"><h2>Preview Result</h2><p>Open the detailed route visibility preview for this user/server combination.</p><p><a class="button" href="{{ preview_url }}">Open Preview As</a></p></section>
+    """
+    return admin_tool_shell("Role Permission Simulator", "Quickly preview access by user and server role.", body, users=users, guild_options=options, username=username, guild_id=guild_id, preview_url=preview_url)
+
+
+@app.route("/admin/install-success")
+def admin_install_success():
+    login_response = require_admin_login("owner")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    rows = build_onboarding_rows(config_data)
+    app_info = public_app_metadata()
+    body = """
+    <section class="panel"><h2>First Install Success Screen</h2><div class="grid"><div class="metric"><strong>{{ rows|length }}</strong><span>Configured Servers</span></div><div class="metric"><strong>{{ 'Ready' if app_info.invite_url else 'Missing' }}</strong><span>Invite Bot</span></div><div class="metric"><strong>/sana</strong><span>Default Command</span></div></div></section>
+    <section class="panel"><h2>Next Steps</h2><div class="action-list"><div class="action"><div><h3>Invite Sana-Chan</h3><p class="muted">Install with bot and applications.commands scopes.</p></div><a class="button" href="{{ url_for('bot_invite') }}">Open</a></div><div class="action"><div><h3>Run Setup Wizard</h3><p class="muted">Pick channels, categories, command name, and setup tests.</p></div><a class="button secondary" href="{{ url_for('admin_setup_wizard', key=admin_key) }}">Open</a></div><div class="action"><div><h3>Open Wiki</h3><p class="muted">Share docs with server owners and moderators.</p></div><a class="button secondary" href="{{ app_info.wiki_url }}">Open</a></div></div></section>
+    <section class="panel"><h2>Server Results</h2><table><thead><tr><th>Server</th><th>Score</th><th>Required</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.name }}</td><td>{{ row.health_score }}%</td><td>{{ row.complete_count }} / {{ row.total_count }}</td></tr>{% else %}<tr><td colspan="3" class="muted">No servers configured yet.</td></tr>{% endfor %}</tbody></table></section>
+    """
+    return admin_tool_shell("First Install Success", "A clean post-setup screen for server owners.", body, rows=rows, app_info=app_info)
+
+
+@app.route("/admin/release-notes-preview")
+def admin_release_notes_preview():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    notes = top_release_notes_entry()
+    body = """
+    <section class="panel"><h2>Release Notes Preview</h2><p class="muted">Only this top entry should be used for the next GitHub release notes.</p><pre>{{ notes }}</pre></section>
+    <section class="panel"><h2>Publish Commands</h2><p><code>tools\\release_official.ps1 -Version 4.3.0</code></p><p><code>sana-update latest-official</code></p></section>
+    """
+    return admin_tool_shell("Release Notes Preview", "Verify the next release notes before publishing.", body, notes=notes)
+
+
+@app.route("/admin/self-tests")
+def admin_self_tests():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    body = """
+    <section class="panel"><h2>Self-Test Buttons</h2><table><thead><tr><th>Test</th><th>Status</th><th>Detail</th><th>Action</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.test }}</td><td class="{{ 'ok' if row.state in ['Ready','Fresh','Script bundled'] else ('warn' if row.state in ['Check'] else 'bad') }}">{{ row.state }}</td><td>{{ row.detail }}</td><td><a class="button secondary" href="{{ row.url }}">Open</a></td></tr>{% endfor %}</tbody></table></section>
+    """
+    return admin_tool_shell("Self Tests", "Manual self-test buttons for OAuth, heartbeat, upload, vote/review, invite, release, and mobile layout.", body, rows=self_test_rows())
+
+
+@app.route("/admin/activity-digest")
+def admin_activity_digest():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    days = clamp_int(request.args.get("days"), 7, 1, 30)
+    rows, recent = admin_activity_digest_rows(days)
+    body = """
+    <section class="panel"><h2>Admin Activity Digest</h2><form method="get" class="toolbar"><input type="hidden" name="key" value="{{ admin_key }}"><input name="days" value="{{ days }}"><button type="submit">Refresh</button></form><div class="grid">{% for row in rows %}<div class="card"><strong>{{ row.value }}</strong><span>{{ row.area }}</span><p class="muted">{{ row.detail }}</p></div>{% endfor %}</div></section>
+    <section class="panel"><h2>Recent Audit</h2><table><thead><tr><th>When</th><th>Action</th><th>Actor</th><th>Details</th></tr></thead><tbody>{% for row in recent %}<tr><td>{{ row.created_at }}</td><td><code>{{ row.action }}</code></td><td>{{ row.actor_username }}</td><td>{{ row.details }}</td></tr>{% else %}<tr><td colspan="4" class="muted">No recent audit rows.</td></tr>{% endfor %}</tbody></table></section>
+    """
+    return admin_tool_shell("Admin Activity Digest", "Recent submissions, reports, moderation, config changes, and jobs.", body, days=days, rows=rows, recent=recent)
+
+
+@app.route("/admin/app-store-readiness")
+def admin_app_store_readiness():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    rows = app_store_readiness_rows()
+    body = """
+    <section class="panel"><h2>App Store Readiness</h2><table><thead><tr><th>Area</th><th>Value</th><th>Status</th><th>Detail</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.area }}</td><td><code>{{ row.value }}</code></td><td class="{{ 'ok' if row.ok else 'warn' }}">{{ 'Ready' if row.ok else 'Needs attention' }}</td><td>{{ row.detail }}</td></tr>{% endfor %}</tbody></table></section>
+    <section class="panel"><h2>Files To Upload</h2><p><code>dist/Sana-Chan-Android-Release.aab</code></p><p><code>dist/Sana-Chan-Android-Release.aab.sha256</code></p><p class="muted">Keep keystores and private signing files out of GitHub.</p></section>
+    """
+    return admin_tool_shell("App Store Readiness", "Google Play package, SDK, version, listing, and artifact checklist.", body, rows=rows)
 
 @app.route("/admin/go-live-checklist")
 def admin_go_live_checklist():
@@ -21726,6 +21968,16 @@ def api_app_bootstrap():
             "training_mode": url_for("admin_training_mode") if admin_logged_in else url_for("admin_login"),
             "maintenance_planner": url_for("admin_maintenance_planner") if admin_logged_in else url_for("admin_login"),
             "post_update_wizard": url_for("admin_post_update_wizard") if admin_logged_in else url_for("admin_login"),
+            "go_live_control": url_for("admin_go_live_control_room") if admin_logged_in else url_for("admin_login"),
+            "release_notes_preview": url_for("admin_release_notes_preview") if admin_logged_in else url_for("admin_login"),
+            "self_tests": url_for("admin_self_tests") if admin_logged_in else url_for("admin_login"),
+            "command_audit": url_for("admin_command_cleanup_audit") if admin_logged_in else url_for("admin_login"),
+            "app_store_readiness": url_for("admin_app_store_readiness") if admin_logged_in else url_for("admin_login"),
+            "mobile_pass": url_for("admin_mobile_dashboard_pass") if admin_logged_in else url_for("admin_login"),
+            "empty_states": url_for("admin_empty_states") if admin_logged_in else url_for("admin_login"),
+            "permission_simulator": url_for("admin_permission_simulator") if admin_logged_in else url_for("admin_login"),
+            "install_success": url_for("admin_install_success") if admin_logged_in else url_for("admin_login"),
+            "activity_digest": url_for("admin_activity_digest") if admin_logged_in else url_for("admin_login"),
             "admin_theme": url_for("admin_theme") if admin_logged_in else url_for("admin_login"),
             "admin_layout": url_for("admin_layout") if admin_logged_in else url_for("admin_login"),
         },

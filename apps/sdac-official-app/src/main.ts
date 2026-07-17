@@ -82,7 +82,7 @@ type UpdateChannelInfo = {
   sha256: string;
 };
 
-const APP_SHELL_VERSION = "4.2.50";
+const APP_SHELL_VERSION = "4.3.0";
 const dashboardBase = (import.meta.env.VITE_SANA_DASHBOARD_URL || import.meta.env.VITE_SDAC_DASHBOARD_URL || "https://freethefishies.us.to").replace(/\/$/, "");
 const nativePlatform = Capacitor.getPlatform();
 const isNative = Capacitor.isNativePlatform();

@@ -1,6 +1,6 @@
 {
   "name": "sana-chan",
-  "version": "4.2.50",
+  "version": "4.3.0",
   "private": true,
   "description": "Official Sana-Chan mobile/desktop app shell for the Flask dashboard.",
   "type": "module",
