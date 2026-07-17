@@ -73,7 +73,7 @@ if (-not $SkipCommit) {
         $CommitMessage = "Release official $Version"
     }
     Run-Step "Commit changes" {
-        git add RELEASE.md README.md bot.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py server/RELEASE.md server/README.md server/bot.py server/dashboard.py server/dashboard_account_templates.py server/dashboard_admin_roles.py server/dashboard_shell_assets.py server/dashboard_sidebar.py scripts/pre_release_smoke.py scripts/release_readiness.py scripts/dashboard_layout_check.py server/scripts/pre_release_smoke.py server/scripts/release_readiness.py server/scripts/dashboard_layout_check.py tools/release_experimental.ps1 tools/release_official.ps1 apps/sdac-official-app/package.json apps/sdac-official-app/package-lock.json apps/sdac-official-app/src/main.ts apps/sdac-official-app/android/app/build.gradle dist/Sana-Chan-Linux-Installer.sh dist/Sana-Chan-Ubuntu-Update.sh dist/Sana-Chan-Windows-Installer.exe dist/Sana-Chan-Windows-Update.ps1 dist/sana-update dist/sanachan-update
+        git add RELEASE.md README.md requirements.txt bot.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py server/RELEASE.md server/README.md server/requirements.txt server/bot.py server/dashboard.py server/dashboard_account_templates.py server/dashboard_admin_roles.py server/dashboard_shell_assets.py server/dashboard_sidebar.py scripts/pre_release_smoke.py scripts/release_readiness.py scripts/dashboard_layout_check.py server/scripts/pre_release_smoke.py server/scripts/release_readiness.py server/scripts/dashboard_layout_check.py tools/release_experimental.ps1 tools/release_official.ps1 apps/sdac-official-app/package.json apps/sdac-official-app/package-lock.json apps/sdac-official-app/src/main.ts apps/sdac-official-app/android/app/build.gradle dist/Sana-Chan-Linux-Installer.sh dist/Sana-Chan-Ubuntu-Update.sh dist/Sana-Chan-Windows-Installer.exe dist/Sana-Chan-Windows-Update.ps1 dist/sana-update dist/sanachan-update
         git commit -m $CommitMessage
     }
 }
@@ -113,7 +113,7 @@ Run-Step "Update latest-official release" {
 }
 
 Run-Step "Verify releases" {
-    gh release view $tag --repo $Repo --json tagName,name,isPrerelease,isLatest,targetCommitish,assets,url
+    gh release view $tag --repo $Repo --json tagName,name,isPrerelease,targetCommitish,assets,url
     gh release view latest-experimental --repo $Repo --json tagName,name,isPrerelease,targetCommitish,assets,url
-    gh release view latest-official --repo $Repo --json tagName,name,isPrerelease,isLatest,targetCommitish,assets,url
+    gh release view latest-official --repo $Repo --json tagName,name,isPrerelease,targetCommitish,assets,url
 }

@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.3.2 Experimental
+
+Version 4.3.2 is an experimental release packaging cleanup for the archive import update.
+
+Update scope: Release tooling and archive import coverage
+
+Changes:
+- includes the ZIP/TAR archive import test coverage in the experimental release commit
+- updates the experimental release helper so future test and official-helper changes are staged correctly
+- removes unsupported GitHub release metadata from the official release verification helper
+
+Notes:
+- This is an experimental update. Use `sana-update latest-experimental` to pull it.
 # Sana-Chan Version 4.3.1 Experimental
 
 Version 4.3.1 is an experimental media archive import update.

@@ -1,6 +1,7 @@
 import io
 import os
 import zipfile
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -242,12 +243,9 @@ class DashboardAccessTests(unittest.TestCase):
         self.assertEqual(row["disabled"], 0)
         self.assertEqual(row["guild_ids_json"], "[]")
         self.assertTrue(self.dashboard.check_password_hash(row["password_hash"], "JohnDoe"))
-    def test_guess_bulk_zip_media_helper_saves_matching_file(self):
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w") as archive:
-            archive.writestr("anime/skyline.png", b"not really a png, but non-empty")
+    def assert_guess_archive_media_saves_matching_file(self, filename, buffer):
         buffer.seek(0)
-        upload = type("Upload", (), {"filename": "media.zip", "stream": buffer})()
+        upload = type("Upload", (), {"filename": filename, "stream": buffer})()
         archive, lookup = self.dashboard.open_guess_media_zip(upload)
         try:
             self.assertIn("anime/skyline.png", lookup)
@@ -266,6 +264,21 @@ class DashboardAccessTests(unittest.TestCase):
                     self.assertTrue(Path(media_info["path"]).is_file())
         finally:
             archive.close()
+
+    def test_guess_bulk_zip_media_helper_saves_matching_file(self):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("anime/skyline.png", b"not really a png, but non-empty")
+        self.assert_guess_archive_media_saves_matching_file("media.zip", buffer)
+
+    def test_guess_bulk_tar_media_helper_saves_matching_file(self):
+        buffer = io.BytesIO()
+        payload = b"not really a png, but non-empty"
+        info = tarfile.TarInfo("anime/skyline.png")
+        info.size = len(payload)
+        with tarfile.open(fileobj=buffer, mode="w") as archive:
+            archive.addfile(info, io.BytesIO(payload))
+        self.assert_guess_archive_media_saves_matching_file("media.tar", buffer)
 
 if __name__ == "__main__":
     unittest.main()
