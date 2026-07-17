@@ -30,6 +30,7 @@ ADMIN_SECTIONS = [
             ("Audit", "audit_log", {}),
             ("Anime Activities", "admin_anime_activities", {}),
             ("Metrics", "admin_overview", {}),
+            ("Game Library", "admin_game_library", {}),
         ],
     },
     {
@@ -42,7 +43,6 @@ ADMIN_SECTIONS = [
             ("Settings", "admin_settings", {}),
             ("Server Health", "admin_server_health_cards", {}),
             ("Media", "admin_media_cleanup", {}),
-            ("Game Library", "admin_game_library", {}),
             ("Seasons", "admin_seasons", {}),
             ("Theme", "admin_theme", {}),
             ("Layout", "admin_layout", {}),
@@ -66,6 +66,7 @@ ADMIN_SECTIONS = [
             ("Production", "admin_production_health", {}),
             ("Install Doctor", "admin_install_doctor", {}),
             ("UI Health", "admin_ui_health", {}),
+            ("UI Preview", "admin_ui_preview", {}),
             ("Approvals", "admin_approvals", {}),
             ("Jobs", "admin_jobs", {}),
             ("Analytics", "admin_analytics", {}),

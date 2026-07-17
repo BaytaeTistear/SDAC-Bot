@@ -56,11 +56,16 @@ type BootstrapPayload = {
   };
   diagnostics: {
     dashboard_url: string;
+    backend_reachable: boolean;
     native: boolean;
     platform: string;
+    session_cookie_name: string;
     session_cookie_seen: boolean;
     account_session_seen: boolean;
     admin_session_seen: boolean;
+    discord_login_url: string;
+    invite_url: string;
+    release_changed: boolean;
   };
 };
 
@@ -77,7 +82,7 @@ type UpdateChannelInfo = {
   sha256: string;
 };
 
-const APP_SHELL_VERSION = "4.2.41";
+const APP_SHELL_VERSION = "4.2.49";
 const dashboardBase = (import.meta.env.VITE_SANA_DASHBOARD_URL || import.meta.env.VITE_SDAC_DASHBOARD_URL || "https://freethefishies.us.to").replace(/\/$/, "");
 const nativePlatform = Capacitor.getPlatform();
 const isNative = Capacitor.isNativePlatform();
@@ -275,14 +280,21 @@ function diagnosticsPanel(payload: BootstrapPayload): string {
         <dt>App shell</dt><dd>${escapeHtml(APP_SHELL_VERSION)}</dd>
         <dt>Backend version</dt><dd>${escapeHtml(payload.app.version || payload.release.installed || "development")}</dd>
         <dt>Platform</dt><dd>${escapeHtml(payload.diagnostics.platform || nativePlatform)}</dd>
+        <dt>Backend reachable</dt><dd>${payload.diagnostics.backend_reachable ? "Yes" : "No"}</dd>
         <dt>Login</dt><dd>${loggedIn ? "Signed in" : "Signed out"}</dd>
+        <dt>Cookie name</dt><dd>${escapeHtml(payload.diagnostics.session_cookie_name || "session")}</dd>
         <dt>Cookie seen</dt><dd>${payload.diagnostics.session_cookie_seen ? "Yes" : "No"}</dd>
         <dt>Account session</dt><dd>${payload.diagnostics.account_session_seen ? "Yes" : "No"}</dd>
         <dt>Admin session</dt><dd>${payload.diagnostics.admin_session_seen ? "Yes" : "No"}</dd>
+        <dt>Release changed</dt><dd>${payload.diagnostics.release_changed || payload.release.update_available ? "Yes" : "No"}</dd>
+        <dt>Discord login URL</dt><dd>${escapeHtml(payload.diagnostics.discord_login_url || payload.routes.discord_login || "")}</dd>
+        <dt>Invite URL</dt><dd>${escapeHtml(payload.diagnostics.invite_url || payload.app.invite_url || "")}</dd>
       </dl>
       <div class="button-row">
         ${appButton("Refresh Status", "refresh", "secondary")}
         ${appButton("Reset App Login", "reset-login", "danger")}
+        ${payload.diagnostics.discord_login_url || payload.routes.discord_login ? browserButton("Open Discord Login", payload.diagnostics.discord_login_url || payload.routes.discord_login) : ""}
+        ${payload.diagnostics.invite_url || payload.app.invite_url ? appButton("Invite Bot", "invite", "secondary") : ""}
       </div>
     </details>
   `;

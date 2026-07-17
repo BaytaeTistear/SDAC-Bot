@@ -34,7 +34,7 @@ Update with:
 "@
 
 Run-Step "Compile dashboard and bot" {
-    py -3.12 -m py_compile dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py server\dashboard.py server\dashboard_account_templates.py server\dashboard_admin_roles.py server\dashboard_shell_assets.py server\dashboard_sidebar.py bot.py scripts\pre_release_smoke.py scripts\release_readiness.py
+    py -3.12 -m py_compile dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py server\dashboard.py server\dashboard_account_templates.py server\dashboard_admin_roles.py server\dashboard_shell_assets.py server\dashboard_sidebar.py bot.py scripts\pre_release_smoke.py scripts\release_readiness.py scripts\dashboard_layout_check.py
 }
 
 Run-Step "Run backend release readiness" {
@@ -54,7 +54,7 @@ if (-not $SkipCommit) {
         $CommitMessage = "Release experimental $Version"
     }
     Run-Step "Commit changes" {
-        git add RELEASE.md README.md bot.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py server/RELEASE.md server/README.md server/bot.py server/dashboard.py server/dashboard_account_templates.py server/dashboard_admin_roles.py server/dashboard_shell_assets.py server/dashboard_sidebar.py scripts/pre_release_smoke.py scripts/release_readiness.py server/scripts/pre_release_smoke.py server/scripts/release_readiness.py dist/Sana-Chan-Linux-Installer.sh dist/Sana-Chan-Ubuntu-Update.sh dist/Sana-Chan-Windows-Installer.exe dist/Sana-Chan-Windows-Update.ps1 dist/sana-update dist/sanachan-update
+        git add RELEASE.md README.md bot.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py server/RELEASE.md server/README.md server/bot.py server/dashboard.py server/dashboard_account_templates.py server/dashboard_admin_roles.py server/dashboard_shell_assets.py server/dashboard_sidebar.py scripts/pre_release_smoke.py scripts/release_readiness.py scripts/dashboard_layout_check.py server/scripts/pre_release_smoke.py server/scripts/release_readiness.py server/scripts/dashboard_layout_check.py tools/release_experimental.ps1 apps/sdac-official-app/src/main.ts dist/Sana-Chan-Linux-Installer.sh dist/Sana-Chan-Ubuntu-Update.sh dist/Sana-Chan-Windows-Installer.exe dist/Sana-Chan-Windows-Update.ps1 dist/sana-update dist/sanachan-update
         git commit -m $CommitMessage
     }
 }

@@ -620,6 +620,41 @@ body.sdac-theme .toolbar > *,
 body.sdac-theme form.inline > * {
     flex: 0 1 auto;
 }
+
+body.sdac-theme .post,
+body.sdac-theme .submission-card {
+    max-width: 100%;
+    overflow: hidden;
+}
+body.sdac-theme .post img,
+body.sdac-theme .post video,
+body.sdac-theme .submission-card img,
+body.sdac-theme .submission-card video {
+    display: block;
+    height: auto;
+    max-width: 100%;
+    object-fit: contain;
+}
+body.sdac-theme .post .actions,
+body.sdac-theme .post form,
+body.sdac-theme .submission-card .button-row {
+    min-width: 0;
+}
+@media (max-width: 760px) {
+    body.sdac-theme .post .actions,
+    body.sdac-theme .submission-card .button-row,
+    body.sdac-theme .toolbar,
+    body.sdac-theme .controls {
+        align-items: stretch;
+    }
+    body.sdac-theme .post .actions > *,
+    body.sdac-theme .submission-card .button-row > *,
+    body.sdac-theme .toolbar > *,
+    body.sdac-theme .controls > * {
+        flex: 1 1 min(100%, 9rem);
+    }
+}
+
 body.sdac-theme button:focus-visible,
 body.sdac-theme a:focus-visible,
 body.sdac-theme input:focus-visible,

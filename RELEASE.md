@@ -1,3 +1,21 @@
+# Sana-Chan Version 4.2.49 Experimental
+
+Version 4.2.49 is an experimental dashboard and app polish pass.
+
+Update scope: Dashboard polish, app diagnostics, release checks, and navigation
+
+Changes:
+- moves Game Library from Server Owner to Moderator access and sidebar navigation
+- adds a Bot Owner UI Preview page with shared controls, badges, bubbles, moderation cards, tables, and empty states for visual QA
+- expands UI Health with automated layout check guidance and a direct UI Preview link
+- adds a Playwright-backed dashboard layout checker for desktop, tablet, and mobile overflow screenshots
+- improves the Invite Bot page with OAuth, permission, setup, and public-doc readiness cards
+- expands app diagnostics with backend reachability, cookie name, Discord login URL, invite URL, and release-change status
+- adds mobile moderation/card CSS so media previews and action buttons wrap more reliably on small screens
+- updates release tooling so the new layout checker and app diagnostics source are staged with future experimental releases
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # Sana-Chan Version 4.2.48 Experimental
 
 Version 4.2.48 is an experimental dashboard metric bubble layout fix.

@@ -30,6 +30,7 @@ CORE_PYTHON_FILES = [
     "scripts/export_sqlite_to_postgres.py",
     "scripts/migrate_database.py",
     "scripts/pre_release_smoke.py",
+    "scripts/dashboard_layout_check.py",
     "scripts/reset_admin_login.py",
     "scripts/sdac_doctor.py",
 ]
@@ -49,6 +50,7 @@ MIRRORED_FILES = [
     "scripts/backup_guild_offsite.sh",
     "scripts/backup_offsite.sh",
     "scripts/check_production.sh",
+    "scripts/dashboard_layout_check.py",
     "scripts/export_sqlite_to_postgres.py",
     "scripts/install_backup_prereqs.sh",
     "scripts/install_nginx_site.sh",
@@ -205,6 +207,7 @@ def check_release_metadata(runner: CheckRunner) -> None:
 def check_support_tools(runner: CheckRunner) -> None:
     required = [
         "scripts/check_production.sh",
+        "scripts/dashboard_layout_check.py",
         "scripts/release_checklist.sh",
         "scripts/sdac_doctor.py",
         "scripts/support_bundle.sh",

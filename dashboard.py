@@ -543,7 +543,7 @@ ADMIN_ENDPOINT_GUILD_ROLE_REQUIREMENTS = {
     "set_submission_status": "moderator",
     "delete_submission": "moderator",
     "admin_settings": "admin",
-    "admin_game_library": "admin",
+    "admin_game_library": "moderator",
     "admin_seasons": "admin",
     "admin_analytics": "admin",
     "admin_monthly_report": "admin",
@@ -7035,6 +7035,19 @@ BOT_INVITE_HTML = """
         {% else %}
             <p class="muted">The public invite link is not configured yet. Set <code>SDAC_BOT_CLIENT_ID</code> or <code>DISCORD_CLIENT_ID</code> on the host.</p>
         {% endif %}
+    </section>
+
+    <section class="panel">
+        <h2>Readiness Flow</h2>
+        <div class="grid">
+            {% for item in invite_readiness %}
+                <div class="panel">
+                    <strong>{{ item.state }}</strong>
+                    <p>{{ item.label }}</p>
+                    <p class="muted">{{ item.detail }}</p>
+                </div>
+            {% endfor %}
+        </div>
     </section>
 
     <section class="grid">
@@ -20153,9 +20166,40 @@ def about():
 
 @app.route("/invite")
 def bot_invite():
+    app_info = public_app_metadata()
+    config_data = load_config()
+    guild_count = len(config_data.get("guilds") or {})
+    invite_readiness = [
+        {
+            "label": "OAuth link",
+            "state": "Ready" if app_info.get("invite_url") else "Needs setup",
+            "detail": "Discord invite URL is available." if app_info.get("invite_url") else "Set SANA_BOT_CLIENT_ID, SDAC_BOT_CLIENT_ID, or DISCORD_CLIENT_ID.",
+        },
+        {
+            "label": "Discord login",
+            "state": "Ready" if oauth_enabled() else "Needs setup",
+            "detail": "Dashboard and app login can use Discord OAuth." if oauth_enabled() else "Set Discord client ID and secret before public launch.",
+        },
+        {
+            "label": "Required permissions",
+            "state": "Ready" if app_info.get("permissions") else "Default",
+            "detail": f"Permissions integer: {app_info.get('permissions') or '274878221376'}.",
+        },
+        {
+            "label": "Setup status",
+            "state": "Configured" if guild_count else "Waiting",
+            "detail": f"{guild_count} server(s) are currently configured. New owners should finish Setup Checklist after invite.",
+        },
+        {
+            "label": "Public docs",
+            "state": "Ready" if app_info.get("github_url") and app_info.get("wiki_url") else "Needs links",
+            "detail": "GitHub and wiki links are shown below for users and server owners.",
+        },
+    ]
     return render_template_string(
         BOT_INVITE_HTML,
-        app_info=public_app_metadata(),
+        app_info=app_info,
+        invite_readiness=invite_readiness,
     )
 
 
@@ -21148,11 +21192,16 @@ def api_app_bootstrap():
         },
         "diagnostics": {
             "dashboard_url": request.host_url.rstrip("/"),
+            "backend_reachable": True,
             "native": request.headers.get("X-Requested-With", "").startswith("app."),
             "platform": request.headers.get("Sec-CH-UA-Platform", "web").strip('"') or "web",
+            "session_cookie_name": session_cookie_name,
             "session_cookie_seen": bool(request.cookies.get(session_cookie_name)),
             "account_session_seen": account_logged_in,
             "admin_session_seen": admin_logged_in,
+            "discord_login_url": url_for("account_oauth_start", next=url_for("app_login_complete"), app="1", _external=True),
+            "invite_url": app_info["invite_url"],
+            "release_changed": update_available,
         },
     }
     return app_json_response(payload)
@@ -21348,6 +21397,94 @@ def health():
 
 
 
+
+@app.route("/admin/ui-preview")
+def admin_ui_preview():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    sample_servers = sidebar_server_options(load_config())[:3]
+    return render_template_string("""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sana-Chan UI Preview</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { background: #030713; color: #f8fbff; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
+        main { margin: 0 auto; width: min(100%, 1180px); }
+        a { color: #18d9ff; }
+        .panel { background: #080f20; border: 1px solid rgba(126,151,255,.24); border-radius: 12px; margin: 16px 0; padding: 16px; }
+        .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+        .card { background: #050a17; border: 1px solid rgba(126,151,255,.24); border-radius: 10px; min-width: 0; padding: 14px; }
+        .bubble-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); }
+        .bubble-card { background: #081126; border: 1px solid rgba(24,217,255,.24); border-radius: 14px; padding: 12px; }
+        .bubble-value { display: block; font-size: 1.25rem; font-weight: 850; }
+        .muted { color: #a6b0ca; }
+        .toolbar, .button-row { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
+        button, .button, input, select, textarea { border: 1px solid rgba(126,151,255,.24); border-radius: 8px; box-sizing: border-box; color: #f8fbff; font: inherit; padding: 10px 12px; }
+        button, .button { background: linear-gradient(100deg, #7c5cff, #18d9ff); color: #fff; font-weight: 850; text-decoration: none; }
+        .secondary { background: #111827 !important; }
+        .danger { background: #be123c !important; }
+        input, select, textarea { background: #071022; width: 100%; }
+        option { background: #071022; color: #f8fbff; }
+        table { border-collapse: separate; border-spacing: 0 .35rem; display: block; max-width: 100%; overflow-x: auto; width: 100%; }
+        th, td { background: #050a17; padding: 10px; text-align: left; vertical-align: top; }
+        .badge, .pill, .status { background: #071022; border: 1px solid rgba(24,217,255,.28); border-radius: 999px; display: inline-flex; gap: 6px; margin: 2px; padding: 5px 9px; }
+        .empty-state { border: 1px dashed rgba(24,217,255,.28); border-radius: 10px; color: #a6b0ca; padding: 14px; text-align: center; }
+        .submission-card { background: #050a17; border: 1px solid rgba(126,151,255,.24); border-radius: 12px; overflow: hidden; }
+        .submission-media { aspect-ratio: 16 / 9; background: linear-gradient(135deg, rgba(124,92,255,.25), rgba(24,217,255,.18)); display: grid; place-items: center; }
+        @media (max-width: 720px) { .toolbar > *, .button-row > * { flex: 1 1 9rem; } }
+    </style>
+</head>
+<body>
+<main>
+    <p><a href="{{ url_for('admin_ui_health') }}">Back to UI Health</a></p>
+    <h1>Sana-Chan UI Preview</h1>
+    <p class="muted">Shared components in one place so layout, colors, wrapping, and mobile behavior can be checked before a release.</p>
+    <section class="panel">
+        <h2>Controls</h2>
+        <div class="toolbar">
+            <button type="button">Primary</button>
+            <button class="secondary" type="button">Secondary</button>
+            <button class="danger" type="button">Danger</button>
+            <a class="button" href="{{ url_for('bot_invite') }}">Invite Bot</a>
+        </div>
+        <div class="grid" style="margin-top:12px">
+            <label>Server<select><option>All Allowed Servers</option>{% for server in sample_servers %}<option>{{ server.name }}</option>{% endfor %}</select></label>
+            <label>Reason<input value="Spam or unsafe media"></label>
+            <label>Notes<textarea>Moderator note wraps without breaking the panel.</textarea></label>
+        </div>
+    </section>
+    <section class="panel">
+        <h2>Badges And Bubbles</h2>
+        <p><span class="pill">posted</span><span class="status">needs_review</span><span class="badge">image/webp</span></p>
+        <div class="bubble-grid">
+            <div class="bubble-card"><strong>Storage</strong><span class="bubble-value">136.5 KB</span><span class="muted">Growing about 5.9 MB per month.</span></div>
+            <div class="bubble-card"><strong>Release</strong><span class="bubble-value">Current</span><span class="muted">Bot heartbeat release matches installed dashboard release.</span></div>
+            <div class="bubble-card"><strong>Background Jobs</strong><span class="bubble-value">0</span><span class="muted">Queued or running maintenance work.</span></div>
+        </div>
+    </section>
+    <section class="panel">
+        <h2>Moderation Card</h2>
+        <article class="submission-card">
+            <div style="padding:14px"><strong>ID 16 · Sana Test · screenshots · 0 votes</strong></div>
+            <div class="button-row" style="padding:0 14px 14px"><button>Vote</button><select><option>Remove because</option></select><input value="Audit note"><button>Remove</button><button>Needs Review</button><button>Quarantine</button></div>
+            <div class="submission-media">Media preview area</div>
+        </article>
+    </section>
+    <section class="panel">
+        <h2>Tables And Empty States</h2>
+        <table><thead><tr><th>User</th><th>Role</th><th>Server Access</th><th>Action</th></tr></thead><tbody><tr><td>Default</td><td>Not Added</td><td>All Allowed Servers</td><td><button>Save</button></td></tr></tbody></table>
+        <p class="empty-state">No items match this view. Check the selected server and role scope.</p>
+    </section>
+</main>
+</body>
+</html>
+""", sample_servers=sample_servers)
+
 @app.route("/admin/ui-health")
 def admin_ui_health():
     login_response = require_admin_login("bot_owner")
@@ -21411,6 +21548,12 @@ def admin_ui_health():
             "detail": f"Cookie name: {session_cookie_name}. Useful when debugging app/browser login state.",
             "ok": bool(request.cookies.get(session_cookie_name)),
         },
+        {
+            "label": "Automated Layout Checks",
+            "value": "Bundled" if (BASE_DIR / "scripts" / "dashboard_layout_check.py").is_file() else "Missing",
+            "detail": "Run py -3.12 scripts/dashboard_layout_check.py --base-url http://127.0.0.1:5000 after starting the dashboard.",
+            "ok": (BASE_DIR / "scripts" / "dashboard_layout_check.py").is_file(),
+        },
     ]
     layout_checks = [
         "Open /admin, /admin/moderation, /admin/users, /admin/setup-checklist, /admin/releases, and / in desktop and mobile widths.",
@@ -21418,6 +21561,7 @@ def admin_ui_health():
         "Confirm server selector text fits and action buttons wrap into rows instead of single full-width stacks.",
         "Confirm empty states and status badges are readable on mobile.",
         "Confirm app login, reset login, diagnostics, update notice, and Invite Bot actions work inside the Android app.",
+        "Run py -3.12 scripts/dashboard_layout_check.py --base-url http://127.0.0.1:5000 for automated desktop/tablet/mobile overflow checks.",
     ]
     return render_template_string("""
 <!DOCTYPE html>
@@ -21468,6 +21612,7 @@ def admin_ui_health():
         <div class="toolbar">
             <a class="button" href="{{ url_for('admin_health') }}">JSON Health</a>
             <a class="button" href="{{ url_for('admin_release_checklist') }}">Release Checklist</a>
+            <a class="button" href="{{ url_for('admin_ui_preview') }}">UI Preview</a>
             <a class="button" href="{{ url_for('bot_invite') }}">Invite Bot</a>
         </div>
     </section>
