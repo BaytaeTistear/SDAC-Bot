@@ -12951,6 +12951,11 @@ def has_admin_role(required_role, guild_id=None):
     return ROLE_LEVELS[normalize_role(role)] >= ROLE_LEVELS[normalize_role(required_role)]
 
 
+def has_sidebar_admin_role(required_role):
+    role = current_admin_max_scoped_role()
+    return ROLE_LEVELS[normalize_role(role)] >= ROLE_LEVELS[normalize_role(required_role)]
+
+
 def can_assign_dashboard_role(role):
     role = normalize_role(role)
     if role == "bot_owner":
@@ -13938,7 +13943,7 @@ def admin_url(endpoint, **values):
 
 
 def admin_sidebar_sections():
-    return build_admin_sidebar_sections(has_admin_role, admin_url)
+    return build_admin_sidebar_sections(has_sidebar_admin_role, admin_url)
 
 
 def public_sidebar_sections():
@@ -13946,7 +13951,7 @@ def public_sidebar_sections():
 
 
 def sidebar_sections():
-    return build_sidebar_sections(is_admin_logged_in, has_admin_role, admin_url)
+    return build_sidebar_sections(is_admin_logged_in, has_sidebar_admin_role, admin_url)
 
 
 def should_render_public_sidebar():
@@ -13954,7 +13959,7 @@ def should_render_public_sidebar():
 
 
 def admin_sidebar_links():
-    return build_admin_sidebar_links(has_admin_role, admin_url)
+    return build_admin_sidebar_links(has_sidebar_admin_role, admin_url)
 
 
 def should_render_admin_sidebar():

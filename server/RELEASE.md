@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.3.6 Experimental
+
+Version 4.3.6 is an experimental sidebar consistency update.
+
+Update scope: Dashboard sidebar role display
+
+Changes:
+- makes the admin sidebar use the logged-in user's maximum scoped role for menu visibility
+- keeps page access checks per-server so users still only access servers/actions they are allowed to use
+- fixes Moderator menu links disappearing on pages where the selected server role is lower
+- adds a regression test for the full Moderator menu staying visible across selected-server contexts
+
+Notes:
+- This is an experimental update. If the browser still shows old sidebar content, hard-refresh once after updating.
 # Sana-Chan Version 4.3.5 Experimental
 
 Version 4.3.5 is an experimental public gallery media display fix.
