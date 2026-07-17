@@ -15,6 +15,7 @@ import sqlite3
 import secrets
 import subprocess
 import tempfile
+import tarfile
 import threading
 import time
 import zipfile
@@ -2529,7 +2530,7 @@ GAME_LIBRARY_HTML = """
                     <input name="csv_file" type="file" accept=".csv,text/csv" required>
                 </label>
                 <label>Media ZIP (optional)
-                    <input name="media_zip" type="file" accept=".zip,application/zip">
+                    <input name="media_zip" type="file" accept=".zip,.7z,.tar,.tgz,.tar.gz,.rar,application/zip,application/x-7z-compressed,application/x-tar,application/vnd.rar">
                 </label>
             </div>
             <p><button type="submit">Import Drafts</button></p>
@@ -8502,31 +8503,140 @@ def zip_media_lookup_key(filename):
     return value.casefold()
 
 
+class GuessMediaArchiveEntry:
+    def __init__(self, filename, file_size=0, member=None, extracted_path=None):
+        self.filename = str(filename or "")
+        self.file_size = int(file_size or 0)
+        self.member = member
+        self.extracted_path = Path(extracted_path) if extracted_path else None
+
+
+class GuessMediaArchive:
+    def __init__(self, archive_type, archive=None, temp_dir=None):
+        self.archive_type = archive_type
+        self.archive = archive
+        self.temp_dir = temp_dir
+
+    def open(self, entry, mode="r"):
+        if entry.extracted_path:
+            return entry.extracted_path.open("rb")
+        if self.archive_type in {"zip", "rar"}:
+            return self.archive.open(entry.member, "r")
+        if self.archive_type == "tar":
+            handle = self.archive.extractfile(entry.member)
+            if handle is None:
+                raise ValueError(f"Media file {entry.filename} could not be opened.")
+            return handle
+        raise ValueError("Unsupported media archive type.")
+
+    def close(self):
+        if self.archive is not None:
+            self.archive.close()
+        if self.temp_dir is not None:
+            self.temp_dir.cleanup()
+
+
+def guess_archive_extension(filename):
+    name = str(filename or "").casefold()
+    for suffix in (".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".tbz2", ".txz"):
+        if name.endswith(suffix):
+            return suffix
+    return Path(name).suffix
+
+
+def safe_archive_member_name(filename):
+    normalized = zip_media_lookup_key(filename)
+    if not normalized or normalized.startswith("/") or any(part in {"", ".", ".."} for part in normalized.split("/")):
+        return ""
+    return normalized
+
+
+def add_guess_archive_entry(lookup, entry):
+    normalized = safe_archive_member_name(entry.filename)
+    if not normalized:
+        return
+    if not is_allowed_file(entry.filename):
+        return
+    basename = zip_media_lookup_key(Path(normalized).name)
+    lookup.setdefault(normalized, entry)
+    lookup.setdefault(basename, entry)
+
+
 def open_guess_media_zip(upload):
     if upload is None or not upload.filename:
         return None, {}
-    if Path(upload.filename).suffix.casefold() != ".zip":
-        raise ValueError("Media archive must be a .zip file.")
+    extension = guess_archive_extension(upload.filename)
+    allowed_extensions = {".zip", ".7z", ".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".tbz2", ".txz", ".rar"}
+    if extension not in allowed_extensions:
+        raise ValueError("Media archive must be a .zip, .7z, .tar, .tar.gz, .tgz, or .rar file.")
     raw_content = upload.stream.read()
     if not raw_content:
-        raise ValueError("Media ZIP file was empty.")
-    try:
-        archive = zipfile.ZipFile(io.BytesIO(raw_content))
-    except zipfile.BadZipFile as archive_error:
-        raise ValueError("Media ZIP could not be opened.") from archive_error
+        raise ValueError("Media archive file was empty.")
     lookup = {}
-    for info in archive.infolist():
-        if info.is_dir():
-            continue
-        normalized = zip_media_lookup_key(info.filename)
-        basename = zip_media_lookup_key(Path(info.filename).name)
-        if not normalized or any(part == ".." for part in normalized.split("/")):
-            continue
-        if not is_allowed_file(info.filename):
-            continue
-        lookup.setdefault(normalized, info)
-        lookup.setdefault(basename, info)
-    return archive, lookup
+
+    if extension == ".zip":
+        try:
+            zip_archive = zipfile.ZipFile(io.BytesIO(raw_content))
+        except zipfile.BadZipFile as archive_error:
+            raise ValueError("Media ZIP could not be opened.") from archive_error
+        archive = GuessMediaArchive("zip", zip_archive)
+        for info in zip_archive.infolist():
+            if info.is_dir():
+                continue
+            add_guess_archive_entry(lookup, GuessMediaArchiveEntry(info.filename, info.file_size, info))
+        return archive, lookup
+
+    if extension in {".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".tbz2", ".txz"}:
+        try:
+            tar_archive = tarfile.open(fileobj=io.BytesIO(raw_content), mode="r:*")
+        except tarfile.TarError as archive_error:
+            raise ValueError("Media TAR archive could not be opened.") from archive_error
+        archive = GuessMediaArchive("tar", tar_archive)
+        for member in tar_archive.getmembers():
+            if not member.isfile():
+                continue
+            add_guess_archive_entry(lookup, GuessMediaArchiveEntry(member.name, member.size, member))
+        return archive, lookup
+
+    if extension == ".7z":
+        try:
+            import py7zr
+        except ImportError as import_error:
+            raise ValueError("7z media imports require the py7zr package. Install requirements.txt on the server.") from import_error
+        temp_dir = tempfile.TemporaryDirectory(prefix="sana-7z-media-")
+        try:
+            with py7zr.SevenZipFile(io.BytesIO(raw_content), mode="r") as seven_archive:
+                safe_names = [name for name in seven_archive.getnames() if safe_archive_member_name(name) and is_allowed_file(name)]
+                if safe_names:
+                    seven_archive.extract(path=temp_dir.name, targets=safe_names)
+        except Exception as archive_error:
+            temp_dir.cleanup()
+            raise ValueError("Media 7z archive could not be opened.") from archive_error
+        archive = GuessMediaArchive("7z", None, temp_dir)
+        for extracted in Path(temp_dir.name).rglob("*"):
+            if not extracted.is_file():
+                continue
+            relative_name = extracted.relative_to(temp_dir.name).as_posix()
+            add_guess_archive_entry(lookup, GuessMediaArchiveEntry(relative_name, extracted.stat().st_size, extracted_path=extracted))
+        return archive, lookup
+
+    if extension == ".rar":
+        try:
+            import rarfile
+        except ImportError as import_error:
+            raise ValueError("RAR media imports require the rarfile package and a server RAR backend such as unar, unrar, or bsdtar.") from import_error
+        try:
+            rar_archive = rarfile.RarFile(io.BytesIO(raw_content))
+        except rarfile.Error as archive_error:
+            raise ValueError("Media RAR archive could not be opened.") from archive_error
+        archive = GuessMediaArchive("rar", rar_archive)
+        for info in rar_archive.infolist():
+            if info.isdir():
+                continue
+            add_guess_archive_entry(lookup, GuessMediaArchiveEntry(info.filename, info.file_size, info))
+        return archive, lookup
+
+    raise ValueError("Unsupported media archive type.")
 
 
 def save_guess_library_zip_media(guild_id, archive, info, limits):
@@ -8558,7 +8668,7 @@ def save_guess_library_zip_media(guild_id, archive, info, limits):
         except OSError:
             pass
         raise ValueError(f"Media file {filename} exceeds the per-file size limit.")
-    metadata = guess_library_media_metadata(filename, path, "application/zip")
+    metadata = guess_library_media_metadata(filename, path, f"application/x-{archive.archive_type}")
     return {
         "path": str(path),
         "name": filename,

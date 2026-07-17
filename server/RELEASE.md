@@ -1,3 +1,22 @@
+# Sana-Chan Version 4.3.1 Experimental
+
+Version 4.3.1 is an experimental media archive import update.
+
+Update scope: Guess Game Library bulk media imports
+
+Changes:
+- allows Game Library bulk media archives to use `.zip`, `.7z`, `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz`, and `.rar`
+- keeps existing CSV `media_filename` matching behavior for nested paths and basenames
+- adds safe archive member filtering so path traversal entries are ignored
+- adds optional `py7zr` and `rarfile` dependencies for 7z/RAR support
+- updates the dashboard upload picker to advertise the new archive formats
+- adds coverage for TAR media archive imports alongside the existing ZIP import test
+- updates release tooling so requirements changes are staged with future releases
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
+- RAR imports may require an extraction backend on the server, such as `unar`, `unrar`, or `bsdtar`, in addition to the Python `rarfile` package.
+
 # Sana-Chan Version 4.3.0 Official
 
 Version 4.3.0 is an official release-readiness polish update for public launch preparation.
