@@ -5523,6 +5523,7 @@ STAFF_HOME_HTML = """
                     <strong>{{ item.state }}</strong>
                     <span>{{ item.label }}</span>
                     <p class="muted">{{ item.detail }}</p>
+                    {% if item.url %}<a class="button secondary" href="{{ item.url }}">{{ item.cta or 'Fix' }}</a>{% endif %}
                 </div>
             {% endfor %}
         </div>
@@ -5659,6 +5660,54 @@ SUPPORT_REPORT_BODY = """
         <a class="button" href="{{ url_for('admin_install_doctor', key=admin_key) }}">Install Doctor</a>
     </div>
 </section>
+"""
+
+
+COMMAND_CENTER_BODY = """
+<section class="panel"><h2>Command Center Search</h2><p class="muted">Search common admin jobs by name, role, or problem.</p><input id="commandSearch" placeholder="Search setup, release, moderation, theme, users, backups..." autocomplete="off"></section>
+<section class="panel"><h2>Actions</h2><div class="action-list" id="commandResults">{% for action in actions %}<div class="action command-result" data-search="{{ (action.label ~ ' ' ~ action.role ~ ' ' ~ action.detail ~ ' ' ~ action.tags)|lower }}"><div><h3>{{ action.label }}</h3><p class="muted">{{ action.role }} - {{ action.detail }}</p></div><a class="button {{ action.style }}" href="{{ action.url }}">Open</a></div>{% endfor %}</div></section>
+<script>(function(){const input=document.getElementById('commandSearch');const rows=Array.from(document.querySelectorAll('.command-result'));if(!input)return;input.addEventListener('input',function(){const q=input.value.trim().toLowerCase();rows.forEach(r=>r.style.display=!q||r.dataset.search.includes(q)?'':'none');});})();</script>
+"""
+
+NOTIFICATION_CENTER_BODY = """
+<section class="panel"><h2>Notification Center</h2><div class="grid"><div class="metric"><strong>{{ totals.critical }}</strong><span>Critical</span></div><div class="metric"><strong>{{ totals.warning }}</strong><span>Warnings</span></div><div class="metric"><strong>{{ totals.info }}</strong><span>Info</span></div><div class="metric"><strong>{{ totals.total }}</strong><span>Total</span></div></div></section>
+<section class="panel"><h2>Alerts</h2><table><thead><tr><th>Severity</th><th>Area</th><th>Message</th><th>Action</th></tr></thead><tbody>{% for item in notifications %}<tr><td class="{{ item.class }}">{{ item.severity }}</td><td>{{ item.area }}</td><td>{{ item.message }}</td><td><a class="button secondary" href="{{ item.url }}">Open</a></td></tr>{% else %}<tr><td colspan="4" class="muted">No dashboard notifications are active.</td></tr>{% endfor %}</tbody></table></section>
+"""
+
+LAUNCH_SCORES_BODY = """
+<section class="panel"><h2>Per-Server Launch Score</h2><p class="muted">Scores reuse the setup checklist weighting: required items count twice, optional polish counts once.</p><table><thead><tr><th>Server</th><th>Score</th><th>Required</th><th>Optional</th><th>Next Fixes</th><th>Action</th></tr></thead><tbody>{% for row in rows %}<tr><td><strong>{{ row.name }}</strong><br><code>{{ row.id }}</code></td><td class="{{ 'ok' if row.health_score >= 80 else ('warn' if row.health_score >= 55 else 'bad') }}">{{ row.health_score }}%</td><td>{{ row.complete_count }} / {{ row.total_count }}</td><td>{{ row.optional_complete_count }} / {{ row.optional_total_count }}</td><td>{% for item in row.next_items %}<div>{{ item.label }} <code>{{ item.command }}</code></div>{% else %}<span class="ok">Ready</span>{% endfor %}</td><td><a class="button secondary" href="{{ url_for('admin_setup_wizard', key=admin_key, guild_id=row.id) }}">Fix</a></td></tr>{% else %}<tr><td colspan="6" class="muted">No visible servers.</td></tr>{% endfor %}</tbody></table></section>
+"""
+
+DISCORD_PANELS_BODY = """
+<section class="panel"><h2>Guided Discord Panels</h2><p class="muted">Mobile-friendly message blueprints for server channels.</p><div class="grid">{% for panel in panels %}<div class="card"><strong>{{ panel.title }}</strong><p>{{ panel.body }}</p><p class="muted">Buttons: {{ panel.buttons|join(', ') }}</p><code>{{ panel.command }}</code></div>{% endfor %}</div></section>
+<section class="panel"><h2>Recommended Flow</h2><table><tbody><tr><th>Welcome</th><td>Invite users to submit, vote, play games, and check their profile.</td></tr><tr><th>Moderator</th><td>Pin review, quarantine, reports, and reason presets for quick mobile actions.</td></tr><tr><th>Server Owner</th><td>Pin setup, permissions, categories, launch score, and invite link.</td></tr></tbody></table></section>
+"""
+
+UNDO_CENTER_BODY = """
+<section class="panel"><h2>Undo Center</h2><p class="muted">Quick recovery for common dashboard changes. Config snapshots remain available in Config History and the backups folder.</p><div class="toolbar"><a class="button secondary" href="{{ url_for('admin_config_history', key=admin_key) }}">Config History</a><a class="button secondary" href="{{ url_for('admin_release_center', key=admin_key) }}">Safe Mode</a><a class="button secondary" href="{{ url_for('admin_ui_health', key=admin_key) }}">UI Health</a></div></section>
+<section class="panel"><h2>Fast Reset</h2><form method="post" class="toolbar"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button name="action" value="theme_defaults" type="submit">Reset Theme</button><button name="action" value="layout_defaults" type="submit">Reset Layout</button><button name="action" value="safe_mode" type="submit">Enable Safe Mode</button></form></section>
+<section class="panel"><h2>Recent Audit Trail</h2><table><thead><tr><th>When</th><th>Action</th><th>Actor</th><th>Details</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.created_at }}</td><td><code>{{ row.action }}</code></td><td>{{ row.actor_username }}</td><td>{{ row.details }}</td></tr>{% else %}<tr><td colspan="4" class="muted">No recent audit rows.</td></tr>{% endfor %}</tbody></table></section>
+"""
+
+
+THEME_PRESETS_BODY = """
+<section class="panel"><h2>Theme Presets</h2><p class="muted">Apply a known-good visual baseline when a server theme gets messy or when you want a quick mood change.</p><div class="grid">{% for preset in presets %}<form class="card" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="preset" value="{{ preset.id }}"><strong>{{ preset.name }}</strong><p class="muted">{{ preset.detail }}</p><button type="submit">Apply Preset</button></form>{% endfor %}</div></section>
+"""
+
+TRAINING_MODE_BODY = """
+<section class="panel"><h2>Owner Training Mode</h2><p class="muted">Training mode marks the dashboard as a guided practice environment for owners. It keeps the reminder visible without changing bot behavior behind your back.</p><div class="metric"><strong>{{ 'On' if training.enabled else 'Off' }}</strong><span>Status</span></div><form method="post" class="toolbar"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><select name="enabled"><option value="0" {% if not training.enabled %}selected{% endif %}>Off</option><option value="1" {% if training.enabled %}selected{% endif %}>On</option></select><input name="note" value="{{ training.note }}" placeholder="Training note shown to owners"><button type="submit">Save</button></form></section>
+<section class="panel"><h2>Practice Path</h2><ol><li>Open Setup Wizard.</li><li>Review Launch Scores.</li><li>Check Discord Panels.</li><li>Run Permission Health.</li><li>Turn training mode off before public launch.</li></ol></section>
+"""
+
+MAINTENANCE_PLANNER_BODY = """
+<section class="panel"><h2>Scheduled Maintenance Planner</h2><p class="muted">Plan maintenance windows before using Maintenance Mode. These are reminders for owners; the live pause still happens on the Maintenance Mode page.</p><form method="post" class="toolbar"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><select name="guild_id"><option value="all">All servers</option>{% for guild in guild_options %}<option value="{{ guild.id }}">{{ guild.name }}</option>{% endfor %}</select><input name="starts_at" placeholder="Start UTC, e.g. 2026-07-17 22:00"><input name="ends_at" placeholder="End UTC"><input name="reason" placeholder="Reason shown to owners"><button type="submit">Add Window</button></form></section>
+<section class="panel"><h2>Upcoming Windows</h2><table><thead><tr><th>Server</th><th>Start</th><th>End</th><th>Reason</th><th>Action</th></tr></thead><tbody>{% for window in windows %}<tr><td>{{ window.guild_name }}</td><td>{{ window.starts_at }}</td><td>{{ window.ends_at }}</td><td>{{ window.reason }}</td><td><a class="button secondary" href="{{ url_for('admin_maintenance_mode', key=admin_key, guild_id=window.guild_id) }}">Open</a></td></tr>{% else %}<tr><td colspan="5" class="muted">No scheduled windows.</td></tr>{% endfor %}</tbody></table></section>
+"""
+
+POST_UPDATE_WIZARD_BODY = """
+<section class="panel"><h2>Post-Update Wizard</h2><div class="grid"><div class="metric"><strong>{{ release.installed_version or release.installed or 'development' }}</strong><span>Installed</span></div><div class="metric"><strong>{{ release.experimental_version or 'unknown' }}</strong><span>Experimental</span></div><div class="metric"><strong>{{ release.official_version or 'unknown' }}</strong><span>Official</span></div><div class="metric"><strong>{{ 'Needed' if restart_warning else 'Current' }}</strong><span>Bot Restart</span></div></div></section>
+<section class="panel"><h2>Checks</h2><table><thead><tr><th>Step</th><th>Status</th><th>Action</th></tr></thead><tbody>{% for step in steps %}<tr><td>{{ step.label }}</td><td class="{{ step.class }}">{{ step.state }}</td><td><a class="button secondary" href="{{ step.url }}">Open</a></td></tr>{% endfor %}</tbody></table></section>
+<section class="panel"><h2>Update Command</h2><p><code>sana-update latest-experimental</code></p></section>
 """
 
 ADMIN_SIMPLE_TOOLS_HTML = """
@@ -18441,6 +18490,99 @@ def release_checklist_rows():
 
 
 
+
+def admin_command_actions():
+    actions = [
+        ("Review Queue", "Moderator", "Pending submissions, reports, quarantine decisions, and removal reasons.", "admin_moderation", "review queue moderation reports remove", ""),
+        ("Moderator Workspace", "Moderator", "Daily moderation dashboard for reports, quarantine, audit, and game library.", "admin_moderator_workspace", "moderator workspace daily", "secondary"),
+        ("Setup Wizard", "Server Owner", "Guided first-run setup with direct fix buttons.", "admin_setup_wizard", "setup wizard first run channels categories", "secondary"),
+        ("Launch Scores", "Server Owner", "Per-server readiness score and next missing steps.", "admin_launch_scores", "launch score checklist readiness", "secondary"),
+        ("Discord Panels", "Server Owner", "Mobile-friendly server panel message blueprints.", "admin_discord_panels", "discord panels mobile messages buttons", "secondary"),
+        ("Theme Presets", "Server Owner", "Known-good dashboard theme and layout presets.", "admin_theme_presets", "theme preset layout colors", "secondary"),
+        ("Training Mode", "Server Owner", "Guided practice reminder for onboarding owners.", "admin_training_mode", "training practice owner", "secondary"),
+        ("Release Center", "Bot Owner", "Release status, safe mode, go-live checks, and support links.", "admin_release_center", "release safe mode latest experimental official", ""),
+        ("Notification Center", "Bot Owner", "Important bot, release, backup, security, and queue alerts.", "admin_notification_center", "notifications alerts security backup", "secondary"),
+        ("Post-Update Wizard", "Bot Owner", "Checklist after applying a release on the server.", "admin_post_update_wizard", "post update restart checks", "secondary"),
+        ("Undo Center", "Bot Owner", "Reset theme/layout, enable safe mode, and view recent audit rows.", "admin_undo_center", "undo restore reset config history", "secondary"),
+        ("Maintenance Planner", "Bot Owner", "Schedule maintenance windows and jump to live maintenance mode.", "admin_maintenance_planner", "maintenance schedule planner pause", "secondary"),
+        ("Install Doctor", "Bot Owner", "Server install, service, permission, and runtime checks.", "admin_install_doctor", "install doctor service nginx", "secondary"),
+    ]
+    visible = []
+    for label, role, detail, endpoint, tags, style in actions:
+        required = "bot_owner" if role == "Bot Owner" else ("owner" if role == "Server Owner" else "moderator")
+        if has_admin_role(required):
+            visible.append({"label": label, "role": role, "detail": detail, "tags": tags, "style": style, "url": url_for(endpoint, key=ADMIN_KEY)})
+    return visible
+
+
+def dashboard_notifications(config_data=None):
+    config_data = config_data or load_config()
+    notifications = []
+    def add(severity, area, message, endpoint, css=None):
+        notifications.append({"severity": severity, "area": area, "message": message, "class": css or ("bad" if severity == "Critical" else "warn" if severity == "Warning" else "ok"), "url": url_for(endpoint, key=ADMIN_KEY)})
+    release = release_status()
+    restart_warning = bot_restart_warning(read_bot_status(), release)
+    if restart_warning:
+        add("Warning", "Bot Restart", restart_warning, "admin_post_update_wizard")
+    bot_status = read_bot_status()
+    if not bot_status.get("event"):
+        add("Warning", "Bot Heartbeat", bot_status.get("message") or "No bot heartbeat has been recorded.", "admin_install_doctor")
+    if not recent_database_backups():
+        add("Critical", "Backups", "No local database backup was found.", "admin_maintenance")
+    for warning in security_warnings():
+        add("Critical", "Security", warning, "admin_production_health")
+    for warning in storage_warnings(config_data):
+        add("Warning", "Storage", warning, "admin_media_cleanup")
+    with closing(connect_db()) as connection:
+        visible = current_admin_allowed_guild_ids(config_data) or set((config_data.get("guilds") or {}).keys())
+        pending = count_scoped_rows(connection, "submissions", "", visible, " AND status IN (?, ?)", ["pending", "needs_review"])
+        reports = count_scoped_rows(connection, "submission_reports", "", visible, " AND status = ?", ["open"])
+    if pending:
+        add("Warning", "Review Queue", f"{pending} submissions need review.", "admin_moderation")
+    if reports:
+        add("Warning", "Reports", f"{reports} public reports are open.", "admin_moderation")
+    if not notifications:
+        add("Info", "Dashboard", "Everything currently visible to this account looks calm.", "admin_staff_home", "ok")
+    return notifications
+
+
+def theme_preset_rows():
+    return [
+        {"id": "sana_default", "name": "Sana Default", "detail": "Balanced cyan/purple launch style with the standard layout."},
+        {"id": "high_contrast", "name": "High Contrast", "detail": "Brighter text, stronger surface contrast, and compact cards."},
+        {"id": "mobile_first", "name": "Mobile First", "detail": "Narrower cards, larger tap targets, and comfortable spacing."},
+        {"id": "moderation_dense", "name": "Moderation Dense", "detail": "Compact operational layout for review-heavy screens."},
+        {"id": "event_mode", "name": "Event Mode", "detail": "Warmer accent colors for contests, showcases, and seasonal events."},
+    ]
+
+
+def apply_theme_preset(preset_id):
+    presets = {
+        "sana_default": ({**DEFAULT_DASHBOARD_THEME}, {**DEFAULT_DASHBOARD_LAYOUT}),
+        "high_contrast": ({**DEFAULT_DASHBOARD_THEME, "background": "#050814", "surface": "#0b1220", "sidebar": "#050814", "text": "#ffffff", "muted": "#dbeafe", "primary": "#6d5dfc", "secondary": "#22d3ee", "accent": "#f472b6"}, {**DEFAULT_DASHBOARD_LAYOUT, "card_radius": "6", "panel_padding": "18", "grid_min_width": "180"}),
+        "mobile_first": ({**DEFAULT_DASHBOARD_THEME, "primary": "#7c5cff", "secondary": "#28d8ff", "accent": "#67e8f9"}, {**DEFAULT_DASHBOARD_LAYOUT, "content_width": "1120", "sidebar_width": "280", "panel_padding": "20", "grid_min_width": "220", "density": "spacious"}),
+        "moderation_dense": ({**DEFAULT_DASHBOARD_THEME, "primary": "#5568ff", "secondary": "#06b6d4", "accent": "#fb7185"}, {**DEFAULT_DASHBOARD_LAYOUT, "content_width": "1280", "sidebar_width": "260", "panel_padding": "12", "grid_min_width": "170", "density": "compact"}),
+        "event_mode": ({**DEFAULT_DASHBOARD_THEME, "primary": "#8b5cf6", "secondary": "#38bdf8", "accent": "#f59e0b"}, {**DEFAULT_DASHBOARD_LAYOUT, "content_width": "1220", "panel_padding": "18", "background_opacity": "24"}),
+    }
+    if preset_id not in presets:
+        raise ValueError("Unknown theme preset.")
+    config_data = load_config()
+    theme, layout = presets[preset_id]
+    config_data["dashboard_theme"] = theme
+    config_data["dashboard_layout"] = layout
+    save_config(config_data)
+    return preset_id
+
+
+def maintenance_window_rows(config_data=None):
+    config_data = config_data or load_config()
+    guild_names = guild_name_map(config_data)
+    rows = []
+    for window in config_data.get("maintenance_windows") or []:
+        guild_id = str(window.get("guild_id") or "all")
+        rows.append({"guild_id": guild_id, "guild_name": "All servers" if guild_id == "all" else guild_names.get(guild_id, guild_id), "starts_at": window.get("starts_at") or "", "ends_at": window.get("ends_at") or "", "reason": window.get("reason") or ""})
+    return rows[-20:]
+
 @app.route("/admin/release-center")
 def admin_release_center():
     login_response = require_admin_login("bot_owner")
@@ -18549,6 +18691,145 @@ def admin_report_problem():
         "Steps to reproduce:",
     ])
     return admin_tool_shell("Report A Problem", "Support-ready page, role, release, and browser state.", SUPPORT_REPORT_BODY, support_text=support_text)
+
+
+@app.route("/admin/command-center")
+def admin_command_center():
+    login_response = require_admin_login("moderator")
+    if login_response:
+        return login_response
+    return admin_tool_shell("Command Center", "Searchable map of the most-used Sana-Chan admin tools.", COMMAND_CENTER_BODY, actions=admin_command_actions())
+
+
+@app.route("/admin/notification-center")
+def admin_notification_center():
+    login_response = require_admin_login("moderator")
+    if login_response:
+        return login_response
+    notifications = dashboard_notifications()
+    totals = {"critical": sum(1 for item in notifications if item["severity"] == "Critical"), "warning": sum(1 for item in notifications if item["severity"] == "Warning"), "info": sum(1 for item in notifications if item["severity"] == "Info"), "total": len(notifications)}
+    return admin_tool_shell("Notification Center", "Actionable alerts for review queues, releases, backups, security, and bot health.", NOTIFICATION_CENTER_BODY, notifications=notifications, totals=totals)
+
+
+@app.route("/admin/launch-scores")
+def admin_launch_scores():
+    login_response = require_admin_login("owner")
+    if login_response:
+        return login_response
+    rows = build_onboarding_rows(load_config())
+    for row in rows:
+        row["next_items"] = [item for item in row.get("items", []) if not item.get("ok")][:4]
+    return admin_tool_shell("Per-Server Launch Scores", "Readiness scoring for every server this account can manage.", LAUNCH_SCORES_BODY, rows=rows)
+
+
+@app.route("/admin/discord-panels")
+def admin_discord_panels():
+    login_response = require_admin_login("owner")
+    if login_response:
+        return login_response
+    panels = [
+        {"title": "Community Start", "body": "What do you want to do in this community?", "buttons": ["Submit", "Vote", "Games", "Profile"], "command": "/sana panel community"},
+        {"title": "Submit Media", "body": "Start a guided submission from mobile or desktop.", "buttons": ["Submit Image", "Submit Video", "My Submissions"], "command": "/sana panel submit"},
+        {"title": "Moderator Quick Actions", "body": "Open review, quarantine, reports, and audit history.", "buttons": ["Review", "Reports", "Quarantine", "Reasons"], "command": "/sana panel moderation"},
+        {"title": "Guessing Games", "body": "Join an active guessing game or import anime profile data.", "buttons": ["Play", "Leaderboard", "Anime Profile", "Import MAL"], "command": "/sana panel games"},
+        {"title": "Server Owner Setup", "body": "Invite, configure channels, run permissions, and check launch score.", "buttons": ["Invite Bot", "Setup", "Permissions", "Launch Score"], "command": "/sana panel owner"},
+    ]
+    return admin_tool_shell("Guided Discord Panels", "Mobile-friendly message plans for users, moderators, and owners.", DISCORD_PANELS_BODY, panels=panels)
+
+
+@app.route("/admin/undo-center", methods=["GET", "POST"])
+def admin_undo_center():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    if request.method == "POST":
+        require_csrf_token()
+        action = request.form.get("action")
+        config_data = load_config()
+        if action == "theme_defaults":
+            config_data["dashboard_theme"] = dict(DEFAULT_DASHBOARD_THEME)
+            notice = "Theme reset to defaults."
+        elif action == "layout_defaults":
+            config_data["dashboard_layout"] = dict(DEFAULT_DASHBOARD_LAYOUT)
+            notice = "Layout reset to defaults."
+        elif action == "safe_mode":
+            set_dashboard_safe_mode(True, "Enabled from Undo Center")
+            return redirect(url_for("admin_undo_center", key=ADMIN_KEY, notice="Safe mode enabled."))
+        else:
+            return redirect(url_for("admin_undo_center", key=ADMIN_KEY, notice="Choose an undo action.", error=1))
+        save_config(config_data)
+        return redirect(url_for("admin_undo_center", key=ADMIN_KEY, notice=notice))
+    with closing(connect_db()) as connection:
+        rows = connection.execute("SELECT created_at, action, actor_username, details FROM admin_audit_log ORDER BY datetime(created_at) DESC, id DESC LIMIT 20").fetchall()
+    return admin_tool_shell("Undo Center", "Recovery shortcuts and recent audit history.", UNDO_CENTER_BODY, rows=rows)
+
+
+@app.route("/admin/theme-presets", methods=["GET", "POST"])
+def admin_theme_presets():
+    login_response = require_admin_login("owner")
+    if login_response:
+        return login_response
+    if request.method == "POST":
+        require_csrf_token()
+        try:
+            preset = apply_theme_preset(request.form.get("preset", ""))
+            return redirect(url_for("admin_theme_presets", key=ADMIN_KEY, notice=f"Applied {preset} preset."))
+        except ValueError as exc:
+            return redirect(url_for("admin_theme_presets", key=ADMIN_KEY, notice=str(exc), error=1))
+    return admin_tool_shell("Theme Presets", "Known-good visual baselines for the dashboard.", THEME_PRESETS_BODY, presets=theme_preset_rows())
+
+
+@app.route("/admin/training-mode", methods=["GET", "POST"])
+def admin_training_mode():
+    login_response = require_admin_login("owner")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    if request.method == "POST":
+        require_csrf_token()
+        config_data["owner_training_mode"] = {"enabled": request.form.get("enabled") == "1", "note": request.form.get("note", "").strip()[:300], "updated_at": utc_now_iso(), "updated_by": current_admin_username() or "dashboard"}
+        save_config(config_data)
+        return redirect(url_for("admin_training_mode", key=ADMIN_KEY, notice="Training mode updated."))
+    training = {"enabled": False, "note": ""}
+    training.update(config_data.get("owner_training_mode") or {})
+    return admin_tool_shell("Owner Training Mode", "A guided practice marker for server owners preparing a launch.", TRAINING_MODE_BODY, training=training)
+
+
+@app.route("/admin/maintenance-planner", methods=["GET", "POST"])
+def admin_maintenance_planner():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    options = guild_options(config_data)
+    allowed_ids = {option["id"] for option in options}
+    if request.method == "POST":
+        require_csrf_token()
+        guild_id = request.form.get("guild_id", "all").strip() or "all"
+        if guild_id != "all" and guild_id not in allowed_ids:
+            abort(403)
+        config_data.setdefault("maintenance_windows", []).append({"guild_id": guild_id, "starts_at": request.form.get("starts_at", "").strip()[:80], "ends_at": request.form.get("ends_at", "").strip()[:80], "reason": request.form.get("reason", "").strip()[:300], "created_at": utc_now_iso(), "created_by": current_admin_username() or "dashboard"})
+        save_config(config_data)
+        return redirect(url_for("admin_maintenance_planner", key=ADMIN_KEY, notice="Maintenance window added."))
+    return admin_tool_shell("Maintenance Planner", "Schedule owner-visible maintenance windows before pausing submissions.", MAINTENANCE_PLANNER_BODY, guild_options=options, windows=maintenance_window_rows(config_data))
+
+
+@app.route("/admin/post-update-wizard")
+def admin_post_update_wizard():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    release = release_status()
+    restart_warning = bot_restart_warning(read_bot_status(), release)
+    steps = [
+        {"label": "Review release state", "state": "Open", "class": "ok", "url": url_for("admin_release_center", key=ADMIN_KEY)},
+        {"label": "Restart bot if needed", "state": "Needed" if restart_warning else "Current", "class": "warn" if restart_warning else "ok", "url": url_for("admin_install_doctor", key=ADMIN_KEY)},
+        {"label": "Run UI health", "state": "Check", "class": "warn", "url": url_for("admin_ui_health", key=ADMIN_KEY)},
+        {"label": "Check notifications", "state": "Check", "class": "warn", "url": url_for("admin_notification_center", key=ADMIN_KEY)},
+        {"label": "Verify launch scores", "state": "Check", "class": "warn", "url": url_for("admin_launch_scores", key=ADMIN_KEY)},
+        {"label": "Report a problem", "state": "Ready", "class": "ok", "url": url_for("admin_report_problem", key=ADMIN_KEY)},
+    ]
+    return admin_tool_shell("Post-Update Wizard", "The checklist to run right after sana-update finishes.", POST_UPDATE_WIZARD_BODY, release=release, restart_warning=restart_warning, steps=steps)
 
 @app.route("/admin/go-live-checklist")
 def admin_go_live_checklist():
@@ -19580,6 +19861,8 @@ def staff_home_setup_status(config_data, selected_server_id, visible_guild_ids):
                 "state": "Choose",
                 "detail": "Pick a server from the selector to review setup and owner tools.",
                 "severity": "warn",
+                "url": staff_home_link("admin_server_switcher", selected_server_id),
+                "cta": "Choose",
             }
         ]
     missing_submit = sum(1 for item in configs if not item.get("submit_channel"))
@@ -19600,24 +19883,32 @@ def staff_home_setup_status(config_data, selected_server_id, visible_guild_ids):
             "state": "Ready" if not missing_submit else str(missing_submit),
             "detail": "Every selected server has a submit channel." if not missing_submit else "Servers still need a submit channel.",
             "severity": "" if not missing_submit else "warn",
+            "url": staff_home_link("admin_settings", selected_server_id),
+            "cta": "Set Channel",
         },
         {
             "label": "Categories",
             "state": "Ready" if not missing_categories else str(missing_categories),
             "detail": "Categories are configured." if not missing_categories else "Servers still need at least one category.",
             "severity": "" if not missing_categories else "warn",
+            "url": staff_home_link("admin_category_manager", selected_server_id),
+            "cta": "Add Category",
         },
         {
             "label": "Approval Channel",
             "state": "Ready" if not approval_without_channel else str(approval_without_channel),
             "detail": "Approval queues have channels where enabled." if not approval_without_channel else "Approval is enabled without a review channel.",
             "severity": "" if not approval_without_channel else "danger",
+            "url": staff_home_link("admin_settings", selected_server_id),
+            "cta": "Set Review",
         },
         {
             "label": "Server Backups",
             "state": "Ready" if not backup_unconfigured else str(backup_unconfigured),
             "detail": "External backup targets are configured." if not backup_unconfigured else "Some servers do not have an external backup target.",
             "severity": "" if not backup_unconfigured else "warn",
+            "url": staff_home_link("admin_maintenance", selected_server_id),
+            "cta": "Open Backups",
         },
     ]
 
@@ -21426,6 +21717,15 @@ def api_app_bootstrap():
             "setup_wizard": url_for("admin_setup_wizard") if admin_logged_in else url_for("admin_login"),
             "moderator_workspace": url_for("admin_moderator_workspace") if admin_logged_in else url_for("admin_login"),
             "report_problem": url_for("admin_report_problem") if admin_logged_in else url_for("admin_login"),
+            "command_center": url_for("admin_command_center") if admin_logged_in else url_for("admin_login"),
+            "notification_center": url_for("admin_notification_center") if admin_logged_in else url_for("admin_login"),
+            "launch_scores": url_for("admin_launch_scores") if admin_logged_in else url_for("admin_login"),
+            "discord_panels": url_for("admin_discord_panels") if admin_logged_in else url_for("admin_login"),
+            "undo_center": url_for("admin_undo_center") if admin_logged_in else url_for("admin_login"),
+            "theme_presets": url_for("admin_theme_presets") if admin_logged_in else url_for("admin_login"),
+            "training_mode": url_for("admin_training_mode") if admin_logged_in else url_for("admin_login"),
+            "maintenance_planner": url_for("admin_maintenance_planner") if admin_logged_in else url_for("admin_login"),
+            "post_update_wizard": url_for("admin_post_update_wizard") if admin_logged_in else url_for("admin_login"),
             "admin_theme": url_for("admin_theme") if admin_logged_in else url_for("admin_login"),
             "admin_layout": url_for("admin_layout") if admin_logged_in else url_for("admin_login"),
         },
