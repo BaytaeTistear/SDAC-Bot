@@ -1062,6 +1062,7 @@ HTML = """
             width: 100%;
         }
 
+        .media-grid img.is-broken { min-height: 120px; padding: 18px; }
         .media-grid audio { width: 100%; }
         .media-caption {
             color: var(--muted);
@@ -1387,15 +1388,15 @@ HTML = """
                                 {% for item in post.media %}
                                     <div>
                                         {% if item.type == "image" %}
-                                            <a href="{{ item.url }}" target="_blank" rel="noopener">
-                                                <img src="{{ item.thumbnail_url or item.url }}" alt="{{ item.name }}" loading="lazy">
+                                            <a href="{{ item.display_url or item.url }}" target="_blank" rel="noopener">
+                                                <img src="{{ item.display_thumbnail_url or item.display_url or item.url }}" alt="{{ item.name }}" loading="lazy" onerror="if (!this.dataset.fallbackApplied) { this.dataset.fallbackApplied = '1'; this.src = this.closest('a').href; } else { this.classList.add('is-broken'); }">
                                             </a>
                                         {% elif item.type == "video" %}
-                                            <video src="{{ item.url }}" controls preload="metadata"></video>
+                                            <video src="{{ item.display_url or item.url }}" controls preload="metadata"></video>
                                         {% elif item.type == "audio" %}
-                                            <audio src="{{ item.url }}" controls preload="metadata"></audio>
+                                            <audio src="{{ item.display_url or item.url }}" controls preload="metadata"></audio>
                                         {% else %}
-                                            <a class="download" href="{{ item.url }}" download>{{ item.name }}</a>
+                                            <a class="download" href="{{ item.display_url or item.url }}" download>{{ item.name }}</a>
                                         {% endif %}
                                         <div class="media-caption">
                                             <strong>{{ item.name }}</strong><br>
@@ -1426,7 +1427,7 @@ HTML = """
             </section>
         {% endfor %}
     {% else %}
-        <div class="empty">No matching SDAC submissions.</div>
+        <div class="empty">No matching Sana-Chan submissions.</div>
     {% endif %}
 
     <nav class="pagination">
@@ -11340,11 +11341,16 @@ def prepare_post(row):
         except (TypeError, ValueError):
             size = 0
         original_path = (MEDIA_DIR / relative_path).resolve()
+        local_original_available = original_path.is_file()
+        original_url = media_url(relative_path, post.get("guild_id"))
+        local_original_url = local_media_url(relative_path)
         thumbnail_url = thumbnail_url_from_metadata(
             metadata,
             original_path,
             names[index] if index < len(names) else Path(relative_path).name,
         )
+        display_url = local_original_url if local_original_available else original_url
+        display_thumbnail_url = thumbnail_url or display_url
         media.append({
             "name": (
                 names[index]
@@ -11355,9 +11361,12 @@ def prepare_post(row):
                 metadata.get("media_type")
                 or (types[index] if index < len(types) else "unknown")
             ),
-            "url": media_url(relative_path, post.get("guild_id")),
+            "url": original_url,
+            "local_url": local_original_url,
+            "display_url": display_url,
             "thumbnail_url": thumbnail_url,
-            "local_original_available": original_path.is_file(),
+            "display_thumbnail_url": display_thumbnail_url,
+            "local_original_available": local_original_available,
             "size": size,
             "size_label": format_bytes(size) if size else "",
             "content_type": metadata.get("content_type") or "",
@@ -23296,7 +23305,7 @@ def pwa_icon():
 @app.route("/sw.js")
 def pwa_service_worker():
     script = """
-const SDAC_CACHE = 'sdac-app-v2';
+const SDAC_CACHE = 'sana-app-v435';
 const SDAC_CORE = ['/', '/app', '/manifest.webmanifest', '/app-icon.svg'];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(SDAC_CACHE).then((cache) => cache.addAll(SDAC_CORE)).catch(() => undefined));

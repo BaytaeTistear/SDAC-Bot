@@ -1,3 +1,19 @@
+# Sana-Chan Version 4.3.5 Experimental
+
+Version 4.3.5 is an experimental public gallery media display fix.
+
+Update scope: Public dashboard gallery and cached page recovery
+
+Changes:
+- prefers local `/media/` URLs for gallery display when originals exist on the server
+- keeps external/public media URLs as secondary links instead of letting stale external links break previews
+- falls image previews back from thumbnail to original media when a thumbnail fails
+- adds a visible broken-image fallback style instead of a collapsed black strip
+- bumps the service worker cache version so browsers refresh stale public dashboard markup
+- updates the public no-results label from SDAC to Sana-Chan
+
+Notes:
+- This is an experimental update. After updating, hard-refresh the browser once if it still shows cached SDAC branding or broken image markup.
 # Sana-Chan Version 4.3.4 Experimental
 
 Version 4.3.4 is an experimental dashboard recovery and background import update.
