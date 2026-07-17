@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.3.4 Experimental
+
+Version 4.3.4 is an experimental dashboard recovery and background import update.
+
+Update scope: Dashboard loading and Game Library archive imports
+
+Changes:
+- fixes a dashboard syntax issue that could stop pages, login, and media routes from loading
+- queues Game Library CSV imports with media archives as background jobs instead of extracting inside the web request
+- adds import job progress snapshots for reading CSV, opening archives, indexing archive media, importing rows, and completion
+- cleans up staged CSV/archive files after successful or failed import jobs
+
+Notes:
+- This is an experimental update. Use the Jobs page to watch archive import progress after submitting a CSV with media archive.
 # Sana-Chan Version 4.3.3 Experimental
 
 Version 4.3.3 is an experimental upload limit fix for dashboard submissions.

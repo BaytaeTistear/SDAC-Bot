@@ -153,6 +153,7 @@ MEDIA_QUARANTINE_DIR = Path(
     os.getenv("SDAC_MEDIA_QUARANTINE_DIR", BASE_DIR / "media_quarantine")
 ).resolve()
 BACKUP_DIR = Path(os.getenv("SDAC_BACKUP_DIR", BASE_DIR / "backups"))
+IMPORT_JOB_DIR = Path(os.getenv("SDAC_IMPORT_JOB_DIR", BASE_DIR / "import_jobs"))
 BOT_STATUS_FILE = Path(os.getenv("SDAC_BOT_STATUS_FILE", BASE_DIR / "bot_status.json"))
 BACKUP_KEEP_COUNT = 30
 CONFIG_BACKUP_KEEP_COUNT = 30
@@ -8704,6 +8705,269 @@ def save_guess_library_zip_media(guild_id, archive, info, limits):
     }
 
 
+
+class LocalStoredUpload:
+    def __init__(self, filename, path):
+        self.filename = filename
+        self.stream = Path(path).open("rb")
+
+    def close(self):
+        try:
+            self.stream.close()
+        except OSError:
+            pass
+
+
+def update_guess_import_progress(job_id, **progress):
+    if not job_id:
+        return
+    snapshot = {
+        "stage": progress.pop("stage", "running"),
+        **progress,
+        "updated_at": utc_now_iso(),
+    }
+    update_background_job(
+        job_id,
+        result_json=json.dumps(snapshot, separators=(",", ":")),
+    )
+
+
+def stage_guess_library_bulk_import_uploads(csv_upload, media_upload=None):
+    if csv_upload is None or not csv_upload.filename:
+        raise ValueError("Choose a CSV file to import.")
+    token = f"{int(time.time())}-{secrets.token_hex(8)}"
+    folder = IMPORT_JOB_DIR / token
+    folder.mkdir(parents=True, exist_ok=False)
+    csv_path = folder / "import.csv"
+    csv_upload.save(csv_path)
+    if not csv_path.exists() or csv_path.stat().st_size <= 0:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise ValueError("CSV file was empty.")
+    payload = {
+        "csv_path": str(csv_path),
+        "staging_dir": str(folder),
+        "csv_filename": safe_upload_filename(csv_upload.filename),
+    }
+    if media_upload is not None and media_upload.filename:
+        archive_name = safe_upload_filename(media_upload.filename)
+        archive_path = folder / f"media-{archive_name}"
+        media_upload.save(archive_path)
+        if not archive_path.exists() or archive_path.stat().st_size <= 0:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise ValueError("Media archive file was empty.")
+        payload.update({
+            "archive_path": str(archive_path),
+            "archive_filename": archive_name,
+            "archive_size": archive_path.stat().st_size,
+        })
+    return payload
+
+
+def run_guess_library_bulk_import(
+    guild_id,
+    csv_path,
+    media_archive_path="",
+    media_archive_filename="",
+    actor_id="",
+    actor_name="",
+    job_id=None,
+):
+    config_data = load_config()
+    if guild_id not in set(config_data.get("guilds", {}).keys()):
+        raise ValueError("Choose a valid Discord server.")
+    update_guess_import_progress(job_id, stage="reading_csv", guild_id=guild_id)
+    raw_content = Path(csv_path).read_bytes()
+    if not raw_content:
+        raise ValueError("CSV file was empty.")
+    try:
+        decoded = raw_content.decode("utf-8-sig")
+    except UnicodeDecodeError as decode_error:
+        raise ValueError("CSV must be UTF-8 encoded.") from decode_error
+    reader = csv.DictReader(io.StringIO(decoded))
+    if not reader.fieldnames:
+        raise ValueError("CSV must include a header row.")
+
+    media_archive = None
+    media_lookup = {}
+    stored_upload = None
+    if media_archive_path:
+        update_guess_import_progress(
+            job_id,
+            stage="opening_archive",
+            guild_id=guild_id,
+            archive=media_archive_filename or Path(media_archive_path).name,
+            archive_size=Path(media_archive_path).stat().st_size if Path(media_archive_path).exists() else 0,
+        )
+        stored_upload = LocalStoredUpload(
+            media_archive_filename or Path(media_archive_path).name,
+            media_archive_path,
+        )
+        try:
+            media_archive, media_lookup = open_guess_media_zip(stored_upload)
+        finally:
+            stored_upload.close()
+        update_guess_import_progress(
+            job_id,
+            stage="archive_indexed",
+            guild_id=guild_id,
+            media_entries=len(media_lookup),
+        )
+
+    max_text_length = int(
+        config_data.get("limits", {}).get(
+            "max_text_length",
+            DEFAULT_LIMITS["max_text_length"],
+        )
+    )
+    imported = 0
+    imported_with_media = 0
+    missing_media = 0
+    skipped = 0
+    saved_media_paths = []
+    now = utc_now_iso()
+    storage_limit = guild_storage_limit(
+        config_data.get("guilds", {}).get(guild_id, {})
+    )
+    try:
+        with database() as connection:
+            for row_number, raw_row in enumerate(reader, start=1):
+                row = {
+                    str(key or "").strip().lower(): str(value or "").strip()
+                    for key, value in raw_row.items()
+                }
+                answer_value = (
+                    row.get("answer")
+                    or row.get("answers")
+                    or row.get("answer_aliases")
+                    or ""
+                )
+                aliases_value = row.get("aliases") or ""
+                alias_source = answer_value
+                if aliases_value:
+                    alias_source = alias_source + "|" + aliases_value.replace(",", "|")
+                answer_aliases = parse_answer_aliases(alias_source)
+                if not answer_aliases:
+                    skipped += 1
+                    continue
+                answer_display = answer_aliases[0]["display"]
+                normalized_answer = answer_aliases[0]["normalized"]
+                title = (row.get("title") or answer_display)[:120]
+                prompt_text = (row.get("prompt_text") or row.get("prompt") or "")[:max_text_length]
+                category = (row.get("category") or "")[:80]
+                hint_text = (row.get("hint") or row.get("hint_text") or "")[:500]
+                pack_name = (row.get("pack") or row.get("pack_name") or "")[:80]
+                tags = parse_metadata_list(row.get("tags") or "")
+                notes = (row.get("notes") or "")[:1000]
+                enabled = parse_enabled_field(row.get("enabled"), True)
+                try:
+                    auto_hint_minutes = int(row.get("auto_hint_minutes") or "0")
+                except ValueError:
+                    auto_hint_minutes = 0
+                auto_hint_minutes = max(0, min(1440, auto_hint_minutes))
+                requested_status = (row.get("status") or "draft").lower()
+                media_filename = row.get("media_filename") or row.get("media") or ""
+                media_info = None
+                if media_filename:
+                    media_key = zip_media_lookup_key(media_filename)
+                    media_entry = media_lookup.get(media_key) or media_lookup.get(
+                        zip_media_lookup_key(Path(media_filename).name)
+                    )
+                    if media_entry:
+                        if storage_limit and guild_media_size(guild_id) + int(media_entry.file_size or 0) > storage_limit:
+                            raise ValueError("This server has reached its configured media storage limit.")
+                        media_info = save_guess_library_zip_media(
+                            guild_id,
+                            media_archive,
+                            media_entry,
+                            config_data.get("limits", {}),
+                        )
+                        saved_media_paths.append(media_info["path"])
+                        imported_with_media += 1
+                    else:
+                        missing_media += 1
+                status = "draft"
+                if requested_status == "disabled":
+                    status = "disabled"
+                elif requested_status == "active" and media_info:
+                    status = "active"
+                connection.execute("""
+                    INSERT INTO guess_library_items (
+                        guild_id, title, answer, answer_display,
+                        answer_aliases_json, prompt_text, category,
+                        tags_json, pack_name, enabled, notes,
+                        hint_text, auto_hint_minutes, media_path,
+                        media_name, media_type, media_size,
+                        media_metadata_json, status, times_used,
+                        created_by, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+                """, (
+                    guild_id,
+                    title,
+                    normalized_answer,
+                    answer_display,
+                    json.dumps(answer_aliases, separators=(",", ":")),
+                    prompt_text,
+                    category,
+                    json.dumps(tags, separators=(",", ":")),
+                    pack_name,
+                    enabled,
+                    notes,
+                    hint_text,
+                    auto_hint_minutes,
+                    media_info["path"] if media_info else "",
+                    media_info["name"] if media_info else "",
+                    media_info["type"] if media_info else "unknown",
+                    int(media_info["size"] or 0) if media_info else 0,
+                    json.dumps(media_info["metadata"], separators=(",", ":")) if media_info else "{}",
+                    status,
+                    actor_name,
+                    now,
+                    now,
+                ))
+                imported += 1
+                if job_id and (row_number == 1 or row_number % 10 == 0):
+                    update_guess_import_progress(
+                        job_id,
+                        stage="importing_rows",
+                        guild_id=guild_id,
+                        rows_seen=row_number,
+                        imported=imported,
+                        attached_media=imported_with_media,
+                        missing_media=missing_media,
+                        skipped=skipped,
+                    )
+            add_admin_audit_log(
+                connection,
+                guild_id,
+                "dashboard_bulk_import_guess_library",
+                actor_id,
+                actor_name,
+                "guess_library_item",
+                "",
+                (
+                    f"Imported {imported} library item(s); "
+                    f"attached media to {imported_with_media}; "
+                    f"missing media for {missing_media}; skipped {skipped}."
+                ),
+            )
+    except Exception:
+        for saved_path in saved_media_paths:
+            delete_guess_library_media(saved_path)
+        raise
+    finally:
+        if media_archive is not None:
+            media_archive.close()
+    result = {
+        "stage": "complete",
+        "guild_id": guild_id,
+        "imported": imported,
+        "attached_media": imported_with_media,
+        "missing_media": missing_media,
+        "skipped": skipped,
+    }
+    update_guess_import_progress(job_id, **result)
+    return result
 def delete_guess_library_media(stored_path):
     relative_path = media_relative_path(stored_path)
     if not relative_path:
@@ -11342,6 +11606,7 @@ def background_job_label(job_type):
         "rollback_latest_snapshot": "Rollback latest deploy snapshot",
         "optimize_database": "Optimize SQLite database",
         "optimization_suite": "Optimization suite",
+        "guess_library_bulk_import": "Guess library bulk import",
     }
     return labels.get(job_type, str(job_type or "").replace("_", " ").title())
 
@@ -11480,6 +11745,19 @@ def process_background_job(job_id):
                     "fingerprints": fingerprints,
                     "database": message,
                 }
+            elif job["job_type"] == "guess_library_bulk_import":
+                result = run_guess_library_bulk_import(
+                    payload.get("guild_id") or job["guild_id"],
+                    payload.get("csv_path") or "",
+                    payload.get("archive_path") or "",
+                    payload.get("archive_filename") or "",
+                    actor_id=job["requested_by"] or "",
+                    actor_name=job["requested_by_name"] or "",
+                    job_id=job_id,
+                )
+                staging_dir = payload.get("staging_dir") or ""
+                if staging_dir:
+                    shutil.rmtree(staging_dir, ignore_errors=True)
             else:
                 raise ValueError(f"Unknown background job type: {job['job_type']}")
             update_background_job(
@@ -11495,6 +11773,13 @@ def process_background_job(job_id):
                 error=str(error),
                 finished_at=utc_now_iso(),
             )
+            if job["job_type"] == "guess_library_bulk_import":
+                try:
+                    staging_dir = payload.get("staging_dir") or ""
+                    if staging_dir:
+                        shutil.rmtree(staging_dir, ignore_errors=True)
+                except Exception:
+                    pass
             send_admin_notification(
                 "system_errors",
                 f"Background job `{job_id}` failed: `{error}`",
@@ -15424,6 +15709,21 @@ def admin_game_library():
                 upload = request.files.get("csv_file")
                 if upload is None or not upload.filename:
                     raise ValueError("Choose a CSV file to import.")
+                media_upload = request.files.get("media_zip")
+                if media_upload is not None and media_upload.filename:
+                    payload = stage_guess_library_bulk_import_uploads(upload, media_upload)
+                    payload["guild_id"] = guild_id
+                    job_id = queue_background_job(
+                        "guess_library_bulk_import",
+                        guild_id=guild_id,
+                        payload=payload,
+                        actor_id=actor_id,
+                        actor_name=actor_name,
+                    )
+                    return game_library_redirect(
+                        f"Queued media archive import as background job #{job_id}. Open Jobs to watch extraction progress.",
+                        guild_id=guild_id,
+                    )
                 raw_content = upload.stream.read()
                 if not raw_content:
                     raise ValueError("CSV file was empty.")
