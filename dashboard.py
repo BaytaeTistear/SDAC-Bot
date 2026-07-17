@@ -114,12 +114,38 @@ def load_dashboard_secret_key(base_dir=BASE_DIR):
         return secrets.token_urlsafe(48)
 
 
+def env_int(name, default):
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return int(default)
+
+
+DASHBOARD_MAX_CONTENT_LENGTH_BYTES = env_int(
+    "SDAC_DASHBOARD_MAX_CONTENT_BYTES",
+    env_int("SDAC_DASHBOARD_MAX_CONTENT_MB", 250) * 1024 * 1024,
+)
+
+
 app.secret_key = load_dashboard_secret_key()
 app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=int(os.getenv("SDAC_SESSION_DAYS", "30"))),
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
+    MAX_CONTENT_LENGTH=DASHBOARD_MAX_CONTENT_LENGTH_BYTES,
 )
+
+
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    size_mb = max(1, DASHBOARD_MAX_CONTENT_LENGTH_BYTES // (1024 * 1024))
+    return Response(
+        f"Upload is too large. The dashboard accepts requests up to {size_mb} MB. "
+        "If this is below your server policy, update SDAC_DASHBOARD_MAX_CONTENT_MB "
+        "and the nginx SDAC_CLIENT_MAX_BODY_SIZE setting, then restart/reload services.",
+        status=413,
+        mimetype="text/plain",
+    )
 DB_FILE = Path(os.getenv("SDAC_DB_FILE", BASE_DIR / "sdac.db"))
 CONFIG_FILE = Path(os.getenv("SDAC_CONFIG_FILE", BASE_DIR / "config.json"))
 MEDIA_DIR = Path(os.getenv("SDAC_MEDIA_DIR", BASE_DIR / "media")).resolve()

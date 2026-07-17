@@ -85,7 +85,7 @@ SDAC_DOMAIN=freethefishies.us.to bash scripts/install_nginx_site.sh
 ```
 
 This installs `/etc/nginx/sites-available/sdac-dashboard`, enables it, sets a
-`100M` upload limit, applies basic security headers, tests Nginx, and reloads
+`250M` upload limit, applies basic security headers, tests Nginx, and reloads
 it.
 
 If you use a different domain:

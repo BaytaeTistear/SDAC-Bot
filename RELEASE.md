@@ -1,4 +1,17 @@
-# Sana-Chan Version 4.3.2 Experimental
+# Sana-Chan Version 4.3.3 Experimental
+
+Version 4.3.3 is an experimental upload limit fix for dashboard submissions.
+
+Update scope: Dashboard and nginx upload handling
+
+Changes:
+- raises the packaged nginx dashboard upload limit default from `100M` to `250M`
+- adds a dashboard-side request cap controlled by `SDAC_DASHBOARD_MAX_CONTENT_MB` or `SDAC_DASHBOARD_MAX_CONTENT_BYTES`
+- returns a clearer 413 message when an upload is too large
+- updates release tooling so nginx installer/template changes are staged with future releases
+
+Notes:
+- This is an experimental update. After installing, rerun the nginx site installer or set `client_max_body_size 250M;` in the live nginx site and reload nginx.`r`n`r`n# Sana-Chan Version 4.3.2 Experimental
 
 Version 4.3.2 is an experimental release packaging cleanup for the archive import update.
 
