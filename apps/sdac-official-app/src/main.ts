@@ -82,7 +82,7 @@ type UpdateChannelInfo = {
   sha256: string;
 };
 
-const APP_SHELL_VERSION = "4.2.49";
+const APP_SHELL_VERSION = "4.2.50";
 const dashboardBase = (import.meta.env.VITE_SANA_DASHBOARD_URL || import.meta.env.VITE_SDAC_DASHBOARD_URL || "https://freethefishies.us.to").replace(/\/$/, "");
 const nativePlatform = Capacitor.getPlatform();
 const isNative = Capacitor.isNativePlatform();
@@ -248,6 +248,34 @@ function releaseNotice(payload: BootstrapPayload): string {
         <li>Open the downloaded APK and approve the Android installer prompt.</li>
         <li>After install, reopen Sana-Chan and check this panel again.</li>
       </ol>
+    </section>
+  `;
+}
+
+
+function updatesScreen(payload: BootstrapPayload): string {
+  const release = payload.release || {};
+  const recommendedChannel: UpdateChannel = release.recommended_channel === "latest-official" ? "official" : "experimental";
+  const official = channelInfo(payload, "official");
+  const experimental = channelInfo(payload, "experimental");
+  return `
+    <section class="panel update-card" id="updates">
+      <div class="update-heading">
+        <div>
+          <strong>Updates</strong>
+          <span>Current app ${escapeHtml(APP_SHELL_VERSION)} · backend ${escapeHtml(payload.app.version || release.installed || "development")}</span>
+        </div>
+        <button class="action secondary" type="button" data-app-action="refresh">Refresh</button>
+      </div>
+      <p class="muted">Recommended channel: ${escapeHtml(recommendedChannel === "official" ? "Official" : "Experimental")}. Download APK, verify SHA, then install.</p>
+      <div class="update-grid">
+        ${updateChannelCard(experimental, recommendedChannel === "experimental")}
+        ${updateChannelCard(official, recommendedChannel === "official")}
+      </div>
+      <div class="button-row compact">
+        ${externalButton("Release Center", absoluteUrl(payload.routes.release_center || payload.routes.admin_releases || "/admin/releases"), "secondary")}
+        ${externalButton("Report Problem", absoluteUrl(payload.routes.report_problem || "/admin/report-problem"), "secondary")}
+      </div>
     </section>
   `;
 }
@@ -487,9 +515,11 @@ function render(payload: BootstrapPayload): void {
         ${routeButton("Submissions", routes.submissions)}
         ${routeButton("Guessing", routes.guessing)}
         ${routeButton("Servers", routes.servers)}
-        ${routeButton("Releases", routes.admin_releases)}
+        ${routeButton("Updates", "#updates")}
+        ${routeButton("Release Center", routes.release_center || routes.admin_releases)}
       </section>
       ${releaseNotice(payload)}
+      ${updatesScreen(payload)}
       ${diagnosticsPanel(payload)}
       <iframe title="Sana-Chan Dashboard" src="${escapeHtml(appFrameUrl(payload.app.entry_url))}"></iframe>
       ${bottomNav(payload)}

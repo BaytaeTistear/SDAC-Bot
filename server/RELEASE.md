@@ -1,3 +1,22 @@
+# Sana-Chan Version 4.2.50 Experimental
+
+Version 4.2.50 is an experimental full polish pass for release readiness and daily operations.
+
+Update scope: Dashboard hubs, setup workflow, moderator workflow, safe mode, public pages, app updates, and support reporting
+
+Changes:
+- adds a Bot Owner Release Center that combines release status, launch checks, safe mode, install/UI tools, and support reporting links
+- adds Dashboard Safe Mode so Bot Owners can temporarily force default theme/layout if custom UI settings break pages
+- adds a first-run Setup Wizard for server owners with direct fix buttons for invite, command name, channels, categories, moderation defaults, setup test, and finish
+- adds a Moderator Workspace focused on needs-review items, reports, quarantine, recent removals, reason presets, audit log, and Game Library access
+- adds a Report A Problem page that generates a support-ready page/server/role/release/browser bundle without secrets
+- polishes public About and Setup Guide language around Sana-Chan, /sana, and the guided setup path
+- adds a dedicated in-app Updates panel with current version, recommended channel, APK links, checksums, release notes, and report-problem links
+- exposes Release Center, Setup Wizard, Moderator Workspace, and Report A Problem in dashboard navigation and app bootstrap routes
+- fixes the Go Live checklist limits lookup so Release Center and Go Live pages render reliably
+
+Notes:
+- This is an experimental update. `latest-experimental` should point here after release, while `latest-official` stays unchanged unless promoted later.
 # Sana-Chan Version 4.2.49 Experimental
 
 Version 4.2.49 is an experimental dashboard and app polish pass.

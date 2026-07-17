@@ -5547,6 +5547,120 @@ STAFF_HOME_HTML = """
 </html>
 """
 
+
+RELEASE_CENTER_BODY = """
+<section class="panel">
+    <h2>Release Center</h2>
+    <div class="grid">
+        <div class="metric"><strong>{{ release.installed_version or release.installed or 'development' }}</strong><span>Installed</span></div>
+        <div class="metric"><strong>{{ release.experimental_version or 'unknown' }}</strong><span>Latest Experimental</span></div>
+        <div class="metric"><strong>{{ release.official_version or 'unknown' }}</strong><span>Latest Official</span></div>
+        <div class="metric"><strong>{{ ready_count }} / {{ total_count }}</strong><span>Ready Checks</span></div>
+    </div>
+</section>
+<section class="panel">
+    <h2>Dashboard Safe Mode</h2>
+    <p class="muted">Safe mode ignores custom dashboard theme/layout settings and uses defaults until turned off.</p>
+    <p>Status: <strong class="{{ 'bad' if safe_mode.enabled else 'ok' }}">{{ 'Enabled' if safe_mode.enabled else 'Off' }}</strong></p>
+    {% if safe_mode.reason %}<p>Reason: {{ safe_mode.reason }}</p>{% endif %}
+    <form method="post" action="{{ url_for('admin_dashboard_safe_mode', key=admin_key) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="enabled" value="{{ '0' if safe_mode.enabled else '1' }}">
+        <label>Reason<input name="reason" value="{{ safe_mode.reason }}" placeholder="Optional note for audit/support"></label>
+        <button type="submit">{{ 'Turn Safe Mode Off' if safe_mode.enabled else 'Turn Safe Mode On' }}</button>
+    </form>
+</section>
+<section class="panel">
+    <h2>Release Tools</h2>
+    <div class="action-list">
+        {% for tool in tools %}
+            <div class="action"><div><h3>{{ tool.label }}</h3><p class="muted">{{ tool.detail }}</p></div><a class="button {{ tool.style }}" href="{{ tool.url }}">Open</a></div>
+        {% endfor %}
+    </div>
+</section>
+<section class="panel">
+    <h2>Launch Checks</h2>
+    <table>
+        <thead><tr><th>Area</th><th>Status</th><th>Detail</th></tr></thead>
+        <tbody>
+            {% for item in checklist %}
+                <tr><td>{{ item.label }}</td><td class="{{ 'ok' if item.ok else ('warn' if item.severity == 'warning' else 'bad') }}">{{ item.state }}</td><td>{{ item.detail }}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+<section class="panel">
+    <h2>Update Commands</h2>
+    <p><code>sana-update latest-experimental</code></p>
+    <p><code>sana-update latest-official</code></p>
+    <p><code>sana-update {{ release.experimental_version or '4.x.x' }}</code></p>
+</section>
+"""
+
+SETUP_WIZARD_BODY = """
+<section class="panel">
+    <h2>Guided Setup Wizard</h2>
+    <p class="muted">Use this as the first-run path for a server owner. Each step points to the page that fixes the missing piece.</p>
+    <form method="get" class="toolbar">
+        <input type="hidden" name="key" value="{{ admin_key }}">
+        <select name="guild_id">
+            {% for guild in guild_options %}<option value="{{ guild.id }}" {% if selected_guild_id == guild.id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}
+        </select>
+        <button type="submit">Open Server</button>
+    </form>
+</section>
+<section class="panel">
+    <h2>Steps</h2>
+    <div class="action-list">
+        {% for step in steps %}
+            <div class="action"><div><h3>{{ step.label }}</h3><p class="muted">{{ step.detail }}</p><p>Status: <strong class="{{ 'ok' if step.ok else 'warn' }}">{{ 'Ready' if step.ok else 'Needs setup' }}</strong></p></div><a class="button {{ step.style }}" href="{{ step.url }}">{{ step.cta }}</a></div>
+        {% endfor %}
+    </div>
+</section>
+"""
+
+MODERATOR_WORKSPACE_BODY = """
+<section class="panel">
+    <h2>Moderator Workspace</h2>
+    <div class="grid">
+        <div class="metric"><strong>{{ summary.pending }}</strong><span>Needs Review</span></div>
+        <div class="metric"><strong>{{ summary.open_reports }}</strong><span>Reports</span></div>
+        <div class="metric"><strong>{{ quarantine_count }}</strong><span>Quarantine</span></div>
+        <div class="metric"><strong>{{ removals }}</strong><span>Recent Removals</span></div>
+    </div>
+</section>
+<section class="panel">
+    <h2>Next Actions</h2>
+    <div class="action-list">
+        {% for action in actions %}
+            <div class="action"><div><h3>{{ action.label }}</h3><p class="muted">{{ action.detail }}</p></div><a class="button {{ action.style }}" href="{{ action.url }}">Open</a></div>
+        {% endfor %}
+    </div>
+</section>
+<section class="panel">
+    <h2>Removal Reasons</h2>
+    <div class="grid">
+        {% for key, label in removal_reasons %}<div class="card"><strong>{{ label }}</strong><span>{{ key }}</span></div>{% endfor %}
+    </div>
+</section>
+"""
+
+SUPPORT_REPORT_BODY = """
+<section class="panel">
+    <h2>Report A Problem</h2>
+    <p class="muted">Copy this support bundle into GitHub, Discord support, or a bug report. It avoids secrets and focuses on page/app state.</p>
+    <pre>{{ support_text }}</pre>
+</section>
+<section class="panel">
+    <h2>Useful Actions</h2>
+    <div class="toolbar">
+        <a class="button" href="{{ url_for('admin_ui_health', key=admin_key) }}">UI Health</a>
+        <a class="button" href="{{ url_for('admin_release_center', key=admin_key) }}">Release Center</a>
+        <a class="button" href="{{ url_for('admin_install_doctor', key=admin_key) }}">Install Doctor</a>
+    </div>
+</section>
+"""
+
 ADMIN_SIMPLE_TOOLS_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -7130,7 +7244,7 @@ SETUP_GUIDE_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Setup Guide</title>
+    <title>Sana-Chan Setup Guide</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -7162,7 +7276,7 @@ SETUP_GUIDE_HTML = """
         {% endif %}
         <ol>
             <li>Invite the bot with <code>bot</code> and <code>applications.commands</code> scopes.</li>
-            <li>In Discord, run <code>/setup</code> and walk through the buttons.</li>
+            <li>In Discord, run <code>/sana</code> and choose Setup.</li>
             <li>Run <code>/repairpermissions</code> if any channel is missing bot access.</li>
             <li>Run <code>/setuptest</code> to confirm the database, folders, channels, and slash commands are healthy.</li>
             <li>Use <code>/submit category</code> for submissions and <code>/startgame</code> / <code>/guess</code> for guessing games.</li>
@@ -7199,7 +7313,7 @@ SEASONS_HTML = """
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SDAC Game Seasons</title>
+    <title>Sana-Chan Game Seasons</title>
     <style>
         :root { color-scheme: dark; }
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
@@ -13048,9 +13162,41 @@ def layout_items_for_editor(layout):
     return rows
 
 
+
+def dashboard_safe_mode_enabled(config_data=None):
+    config_data = config_data or load_config()
+    return bool((config_data.get("dashboard_safe_mode") or {}).get("enabled"))
+
+
+def dashboard_safe_mode_context(config_data=None):
+    config_data = config_data or load_config()
+    raw = config_data.get("dashboard_safe_mode") or {}
+    return {
+        "enabled": bool(raw.get("enabled")),
+        "reason": str(raw.get("reason") or "").strip(),
+        "updated_at": str(raw.get("updated_at") or "").strip(),
+        "updated_by": str(raw.get("updated_by") or "").strip(),
+    }
+
+
+def set_dashboard_safe_mode(enabled, reason=""):
+    config_data = load_config()
+    config_data["dashboard_safe_mode"] = {
+        "enabled": bool(enabled),
+        "reason": str(reason or "").strip()[:500],
+        "updated_at": utc_now_iso(),
+        "updated_by": current_admin_username() or current_account_username() or "dashboard",
+    }
+    save_config(config_data)
+    clear_runtime_caches()
+    return config_data["dashboard_safe_mode"]
+
 def dashboard_layout(config_data=None):
     config_data = config_data or load_config()
-    raw = config_data.get("dashboard_layout") or {}
+    if dashboard_safe_mode_enabled(config_data):
+        raw = {}
+    else:
+        raw = config_data.get("dashboard_layout") or {}
     layout = dict(DEFAULT_DASHBOARD_LAYOUT)
     layout.update({key: raw.get(key, layout[key]) for key in layout})
     layout["content_width"] = str(clamp_int(layout.get("content_width"), DEFAULT_DASHBOARD_LAYOUT["content_width"], 840, 1600))
@@ -13072,7 +13218,10 @@ def dashboard_layout(config_data=None):
 
 def dashboard_theme(config_data=None):
     config_data = config_data or load_config()
-    raw = config_data.get("dashboard_theme") or {}
+    if dashboard_safe_mode_enabled(config_data):
+        raw = {}
+    else:
+        raw = config_data.get("dashboard_theme") or {}
     theme = dict(DEFAULT_DASHBOARD_THEME)
     theme.update({key: raw.get(key, theme[key]) for key in theme})
     for key in ("primary", "secondary", "accent", "background", "surface", "sidebar", "text", "muted"):
@@ -18108,7 +18257,7 @@ def go_live_checklist_rows():
     backups = recent_database_backups()
     warnings = security_warnings() + storage_warnings(config_data)
     update_config = read_update_config()
-    limits = normalized_limits(config_data)
+    limits = config_data.get("limits") or {}
     guilds = config_data.get("guilds") or {}
     official_version = release.get("official_version") or "unknown"
     experimental_version = release.get("experimental_version") or "unknown"
@@ -18290,6 +18439,116 @@ def release_checklist_rows():
     return checklist
 
 
+
+
+@app.route("/admin/release-center")
+def admin_release_center():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    checklist, _manual_steps = go_live_checklist_rows()
+    ready_count = sum(1 for item in checklist if item["ok"])
+    tools = [
+        {"label": "Releases", "detail": "Installed, official, experimental, patch notes, rollback, and release notification test.", "url": url_for("admin_releases", key=ADMIN_KEY), "style": ""},
+        {"label": "Release Checklist", "detail": "Promotion checks before official/full releases.", "url": url_for("admin_release_checklist", key=ADMIN_KEY), "style": "secondary"},
+        {"label": "Go Live Checklist", "detail": "Public-launch blockers, warnings, and manual test path.", "url": url_for("admin_go_live_checklist", key=ADMIN_KEY), "style": "secondary"},
+        {"label": "Install Doctor", "detail": "Server install, service, permission, and runtime checks.", "url": url_for("admin_install_doctor", key=ADMIN_KEY), "style": "secondary"},
+        {"label": "UI Health", "detail": "Dashboard/app/layout health and visual QA links.", "url": url_for("admin_ui_health", key=ADMIN_KEY), "style": "secondary"},
+        {"label": "Report A Problem", "detail": "Generate a support-ready page/app state bundle.", "url": url_for("admin_report_problem", key=ADMIN_KEY), "style": "secondary"},
+    ]
+    return admin_tool_shell(
+        "Release Center",
+        "One place for release status, go-live readiness, UI checks, install health, safe mode, and support bundles.",
+        RELEASE_CENTER_BODY,
+        checklist=checklist,
+        csrf_token=get_csrf_token(),
+        ready_count=ready_count,
+        release=release_status(),
+        safe_mode=dashboard_safe_mode_context(),
+        tools=tools,
+        total_count=len(checklist),
+    )
+
+
+@app.post("/admin/dashboard-safe-mode")
+def admin_dashboard_safe_mode():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    require_csrf_token()
+    enabled = request.form.get("enabled") == "1"
+    set_dashboard_safe_mode(enabled, request.form.get("reason", ""))
+    return redirect(url_for("admin_release_center", key=ADMIN_KEY, notice="Dashboard safe mode updated."))
+
+
+@app.route("/admin/setup-wizard")
+def admin_setup_wizard():
+    login_response = require_admin_login("owner")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    guild_options_rows = guild_options(config_data, minimum_role="owner")
+    selected = selected_guild_id(guild_options_rows)
+    guild = (config_data.get("guilds") or {}).get(selected, {}) if selected else {}
+    categories = guild.get("categories") or {}
+    steps = [
+        {"label": "Invite Bot", "detail": "Confirm Sana-Chan is installed with bot and application command scopes.", "ok": bool(bot_invite_url()), "url": url_for("bot_invite"), "cta": "Invite", "style": "secondary"},
+        {"label": "Pick Command Name", "detail": "Choose /sana, /sanachan, or a custom server command label during setup.", "ok": bool(guild.get("command_name") or guild.get("custom_command_name")), "url": url_for("admin_onboarding", key=ADMIN_KEY, guild_id=selected or "all"), "cta": "Open Setup", "style": "secondary"},
+        {"label": "Channels", "detail": "Set submit, approval/review, repost/category, game, and error channels.", "ok": bool(guild.get("submit_channel")), "url": url_for("admin_settings", key=ADMIN_KEY, guild_id=selected or "all"), "cta": "Set Channels", "style": ""},
+        {"label": "Categories", "detail": "Create at least one category mapped to a Discord channel.", "ok": bool(categories), "url": url_for("admin_category_manager", key=ADMIN_KEY, guild_id=selected or "all"), "cta": "Add Categories", "style": "secondary"},
+        {"label": "Moderation Defaults", "detail": "Choose approval mode, removal reasons, spam limits, and review defaults.", "ok": True, "url": url_for("admin_moderation", key=ADMIN_KEY, guild_id=selected or "all"), "cta": "Review", "style": "secondary"},
+        {"label": "Test Setup", "detail": "Run setup health checks and repair missing permissions before launch.", "ok": bool(guild.get("last_setup_test")), "url": url_for("admin_setup_checklist", key=ADMIN_KEY, guild_id=selected or "all"), "cta": "Check", "style": "secondary"},
+        {"label": "Finish", "detail": "Open Server Owner Home after all required pieces are ready.", "ok": bool(guild.get("submit_channel") and categories), "url": url_for("admin_staff_home", key=ADMIN_KEY, guild_id=selected or "all"), "cta": "Finish", "style": "secondary"},
+    ]
+    return admin_tool_shell("First-Run Setup Wizard", "Guided server-owner setup with direct fix buttons.", SETUP_WIZARD_BODY, guild_options=guild_options_rows, selected_guild_id=selected, steps=steps)
+
+
+@app.route("/admin/moderator-workspace")
+def admin_moderator_workspace():
+    login_response = require_admin_login("moderator")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    visible = current_admin_allowed_guild_ids(config_data, "moderator") or set((config_data.get("guilds") or {}).keys())
+    selected = request.args.get("guild_id", "").strip()
+    with closing(connect_db()) as connection:
+        summary = admin_dashboard_summary(connection, selected, visible, request.args.get("metric_range", "all"))
+        quarantine_count = count_scoped_rows(connection, "media_quarantine", selected, visible, " AND status = ?", ["quarantined"])
+        removals = connection.execute("SELECT COUNT(*) FROM moderation_history WHERE action IN ('remove','quarantine','status')").fetchone()[0]
+    actions = [
+        {"label": "Next Review Item", "detail": "Open pending submissions and reports.", "url": url_for("admin_moderation", key=ADMIN_KEY, guild_id=selected or "all"), "style": ""},
+        {"label": "Quarantine", "detail": "Inspect quarantined files and cleanup decisions.", "url": url_for("admin_media_cleanup", key=ADMIN_KEY, guild_id=selected or "all"), "style": "secondary"},
+        {"label": "Reason Presets", "detail": "Use consistent reasons for removals and audit logs.", "url": url_for("admin_removal_reasons", key=ADMIN_KEY), "style": "secondary"},
+        {"label": "Audit Log", "detail": "Review recent moderator/admin actions.", "url": url_for("audit_log", key=ADMIN_KEY, guild_id=selected or "all"), "style": "secondary"},
+        {"label": "Game Library", "detail": "Moderators can manage guessing-game media and drafts.", "url": url_for("admin_game_library", key=ADMIN_KEY, guild_id=selected or "all"), "style": "secondary"},
+    ]
+    return admin_tool_shell("Moderator Workspace", "A queue-first workspace for daily moderation.", MODERATOR_WORKSPACE_BODY, actions=actions, quarantine_count=quarantine_count, removals=removals, removal_reasons=MODERATION_REMOVAL_REASONS, summary=summary)
+
+
+@app.route("/admin/report-problem")
+def admin_report_problem():
+    login_response = require_admin_login("moderator")
+    if login_response:
+        return login_response
+    release = release_status()
+    selected_server = session.get("sdac_guild_id") or request.args.get("guild_id") or "all"
+    support_text = "\n".join([
+        "Sana-Chan Support Bundle",
+        f"Generated: {utc_now_iso()}",
+        f"Page: {request.args.get('page') or request.referrer or request.path}",
+        f"Dashboard: {request.host_url.rstrip('/')}",
+        f"Selected server: {selected_server}",
+        f"Admin user: {current_admin_username() or 'unknown'}",
+        f"Admin role: {current_admin_role() or 'unknown'}",
+        f"Installed release: {release.get('installed_version') or release.get('installed') or 'development'}",
+        f"Latest official: {release.get('official_version') or 'unknown'}",
+        f"Latest experimental: {release.get('experimental_version') or 'unknown'}",
+        f"Safe mode: {'on' if dashboard_safe_mode_enabled() else 'off'}",
+        f"User agent: {request.headers.get('User-Agent', 'unknown')}",
+        "What looked wrong:",
+        "Steps to reproduce:",
+    ])
+    return admin_tool_shell("Report A Problem", "Support-ready page, role, release, and browser state.", SUPPORT_REPORT_BODY, support_text=support_text)
 
 @app.route("/admin/go-live-checklist")
 def admin_go_live_checklist():
@@ -21162,7 +21421,11 @@ def api_app_bootstrap():
             "terms": url_for("public_terms"),
             "admin": url_for("admin_staff_home") if admin_logged_in else url_for("admin_login"),
             "admin_releases": url_for("admin_releases") if admin_logged_in else url_for("admin_login"),
+            "release_center": url_for("admin_release_center") if admin_logged_in else url_for("admin_login"),
             "release_checklist": url_for("admin_release_checklist") if admin_logged_in else url_for("admin_login"),
+            "setup_wizard": url_for("admin_setup_wizard") if admin_logged_in else url_for("admin_login"),
+            "moderator_workspace": url_for("admin_moderator_workspace") if admin_logged_in else url_for("admin_login"),
+            "report_problem": url_for("admin_report_problem") if admin_logged_in else url_for("admin_login"),
             "admin_theme": url_for("admin_theme") if admin_logged_in else url_for("admin_login"),
             "admin_layout": url_for("admin_layout") if admin_logged_in else url_for("admin_login"),
         },

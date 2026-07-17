@@ -23,6 +23,7 @@ ADMIN_SECTIONS = [
         "label": "Moderator",
         "required_role": "moderator",
         "links": [
+            ("Moderator Workspace", "admin_moderator_workspace", {}),
             ("Review Queue", "admin_moderation", {}),
             ("Removal Reasons", "admin_removal_reasons", {}),
             ("Users", "admin_users", {}),
@@ -37,6 +38,7 @@ ADMIN_SECTIONS = [
         "label": "Server Owner",
         "required_role": "owner",
         "links": [
+            ("Setup Wizard", "admin_setup_wizard", {}),
             ("Setup Checklist", "admin_setup_checklist", {}),
             ("Categories", "admin_category_manager", {}),
             ("Permissions", "admin_permission_health", {}),
@@ -55,6 +57,7 @@ ADMIN_SECTIONS = [
         "label": "Bot Owner",
         "required_role": "bot_owner",
         "links": [
+            ("Release Center", "admin_release_center", {}),
             ("Global Control", "admin_global_control", {}),
             ("Maintenance Mode", "admin_maintenance_mode", {}),
             ("Config History", "admin_config_history", {}),
@@ -67,6 +70,7 @@ ADMIN_SECTIONS = [
             ("Install Doctor", "admin_install_doctor", {}),
             ("UI Health", "admin_ui_health", {}),
             ("UI Preview", "admin_ui_preview", {}),
+            ("Report A Problem", "admin_report_problem", {}),
             ("Approvals", "admin_approvals", {}),
             ("Jobs", "admin_jobs", {}),
             ("Analytics", "admin_analytics", {}),
