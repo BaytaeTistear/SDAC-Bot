@@ -1,3 +1,15 @@
+# Sana-Chan Version 4.3.7 Experimental
+
+Version 4.3.7 is an experimental release packaging cleanup for the sidebar consistency update.
+
+Update scope: Sidebar regression coverage and release tooling
+
+Changes:
+- includes the Moderator sidebar consistency regression test in the released commit
+- updates release tooling so sidebar layout tests are staged with future releases
+
+Notes:
+- This is an experimental update. The user-facing sidebar fix was introduced in 4.3.6; this keeps the test and release tooling in sync.
 # Sana-Chan Version 4.3.6 Experimental
 
 Version 4.3.6 is an experimental sidebar consistency update.

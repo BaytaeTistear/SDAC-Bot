@@ -95,5 +95,33 @@ class DashboardSidebarLayoutTests(unittest.TestCase):
         self.assertIn("text-overflow: ellipsis", body)
         self.assertIn(".sdac-sidebar .sdac-server-switcher select, .sdac-sidebar .sdac-server-switcher button", body)
 
+
+    def test_moderator_sidebar_keeps_full_menu_when_selected_server_role_is_lower(self):
+        original_max_role = dashboard.current_admin_max_scoped_role
+        original_guild_role = dashboard.current_admin_role_for_guild
+        try:
+            dashboard.current_admin_max_scoped_role = lambda config_data=None: "moderator"
+            dashboard.current_admin_role_for_guild = lambda guild_id, config_data=None: "user"
+            with dashboard.app.test_request_context(f"/admin/moderation?key={dashboard.ADMIN_KEY}&guild_id=server-with-user-role"):
+                sections = dashboard.admin_sidebar_sections()
+            moderator = next(section for section in sections if section["label"] == "Moderator")
+            labels = [link["label"] for link in moderator["links"]]
+            for expected in (
+                "Command Center",
+                "Notifications",
+                "Moderator Workspace",
+                "Review Queue",
+                "Removal Reasons",
+                "Users",
+                "Polls",
+                "Audit",
+                "Anime Activities",
+                "Metrics",
+                "Game Library",
+            ):
+                self.assertIn(expected, labels)
+        finally:
+            dashboard.current_admin_max_scoped_role = original_max_role
+            dashboard.current_admin_role_for_guild = original_guild_role
 if __name__ == "__main__":
     unittest.main()
