@@ -1,3 +1,18 @@
+# Sana-Chan Version 4.3.21 Experimental
+
+Version 4.3.21 is an experimental scheduled-game cancellation update.
+
+Update scope: Guided cancellation for future scheduled guessing games
+
+Changes:
+- adds Cancel Scheduled to the /sana admin Games menu
+- adds a confirmation screen before cancelling queued or starting scheduled games
+- cancels all future queued/starting scheduled games for the current server while leaving live games alone
+- records an admin audit entry when all scheduled games are cancelled from Discord
+- adds startup coverage for the new menu item, confirmation view, and cancellation helpers
+
+Notes:
+- This is an experimental update. Use Cancel Game for the current live channel game and Cancel Scheduled for the future schedule queue.
 # Sana-Chan Version 4.3.20 Experimental
 
 Version 4.3.20 is an experimental guided guessing-game scheduling and scoring update.

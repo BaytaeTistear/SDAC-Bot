@@ -856,6 +856,7 @@ SDAC_SUBMENUS = {
             ("games_bulk_schedule", "Bulk Schedule", "Ask a new saved-library question on a repeating cadence."),
             ("games_timeout", "Guess Timeout", "Change the wrong-guess cooldown."),
             ("games_active", "Active Game", "Show the active game in this channel."),
+            ("games_cancel_scheduled", "Cancel Scheduled", "Cancel all queued scheduled games."),
             ("games_cancel", "Cancel Game", "Cancel the active game in this channel."),
         ],
     },
@@ -889,6 +890,7 @@ SDAC_SUBMENU_DETAILS = {
     "games_bulk_schedule": "**Bulk Schedule**\nChoose a game channel, pick minutes, hours, or days, then enter how often Sana-Chan should ask a new saved-library question.",
     "games_timeout": "**Guess Timeout**\nSet how many minutes a user waits after a wrong guess before they can guess again.",
     "games_active": "**Active Game**\nRun `/activegame` to see the current guessing game in this channel.",
+    "games_cancel_scheduled": "**Cancel Scheduled Games**\nCancel all queued or starting scheduled games for this server. Current live games are handled by Cancel Game.",
     "games_cancel": "**Cancel Game**\nRun `/cancelgame` to stop the active guessing game in this channel.",
 }
 
@@ -1145,6 +1147,20 @@ class SDACSubmenuSelect(discord.ui.Select):
                 view=BulkScheduleGameWizardView(self.is_admin, interaction.user.id),
             )
             return
+        if action == "games_cancel_scheduled":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can cancel scheduled games.", ephemeral=True)
+                return
+            pending_count = count_cancellable_scheduled_games(interaction.guild_id)
+            await interaction.response.edit_message(
+                content=(
+                    "**Cancel Scheduled Games**\n"
+                    f"This will cancel `{pending_count}` queued or starting scheduled game(s) for this server. "
+                    "Current live games will not be closed."
+                ),
+                view=CancelScheduledGamesView(self.is_admin, self.section_key, interaction.user.id),
+            )
+            return
         if action == "games_timeout":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can change guessing-game timeout.", ephemeral=True)
@@ -1364,6 +1380,20 @@ class SDACSubmenuButton(discord.ui.Button):
                 view=BulkScheduleGameWizardView(self.is_admin, interaction.user.id),
             )
             return
+        if action == "games_cancel_scheduled":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can cancel scheduled games.", ephemeral=True)
+                return
+            pending_count = count_cancellable_scheduled_games(interaction.guild_id)
+            await interaction.response.edit_message(
+                content=(
+                    "**Cancel Scheduled Games**\n"
+                    f"This will cancel `{pending_count}` queued or starting scheduled game(s) for this server. "
+                    "Current live games will not be closed."
+                ),
+                view=CancelScheduledGamesView(self.is_admin, self.section_key, interaction.user.id),
+            )
+            return
         if action == "games_timeout":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can change guessing-game timeout.", ephemeral=True)
@@ -1400,6 +1430,34 @@ class SDACSubmenuView(discord.ui.View):
             self.add_item(SDACSubmenuButton(is_admin, section_key, value, label, index // 2, style))
         self.add_item(SDACBackButton(is_admin))
 
+
+class ConfirmCancelScheduledGamesButton(discord.ui.Button):
+    def __init__(self, owner_id):
+        super().__init__(label="Cancel Scheduled", style=discord.ButtonStyle.danger, row=0)
+        self.owner_id = int(owner_id)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can cancel scheduled games.", ephemeral=True)
+            return
+        cancelled = cancel_all_scheduled_games(interaction)
+        await interaction.response.edit_message(
+            content=(
+                "**Cancel Scheduled Games**\n"
+                f"Cancelled `{cancelled}` queued or starting scheduled game(s). Current live games were left alone."
+            ),
+            view=SDACSubmenuView(True, "games"),
+        )
+
+
+class CancelScheduledGamesView(discord.ui.View):
+    def __init__(self, is_admin, section_key, owner_id):
+        super().__init__(timeout=300)
+        self.add_item(ConfirmCancelScheduledGamesButton(owner_id))
+        self.add_item(SDACBackButton(is_admin))
 
 class GuessTimeoutModal(discord.ui.Modal):
     def __init__(self, owner_id):
@@ -10901,6 +10959,44 @@ async def schedulegame(
         ephemeral=True,
     )
 
+
+def count_cancellable_scheduled_games(guild_id):
+    with database() as connection:
+        return int(connection.execute("""
+            SELECT COUNT(*)
+            FROM scheduled_games
+            WHERE guild_id = ?
+              AND status IN ('queued', 'starting')
+        """, (str(guild_id),)).fetchone()[0] or 0)
+
+
+def cancel_all_scheduled_games(interaction):
+    with database() as connection:
+        rows = connection.execute("""
+            SELECT id
+            FROM scheduled_games
+            WHERE guild_id = ?
+              AND status IN ('queued', 'starting')
+            ORDER BY starts_at ASC, id ASC
+        """, (str(interaction.guild_id),)).fetchall()
+        ids = [int(row["id"]) for row in rows]
+        if ids:
+            connection.executemany("""
+                UPDATE scheduled_games
+                SET status = 'cancelled', updated_at = ?
+                WHERE id = ?
+            """, [(utc_now_iso(), scheduled_id) for scheduled_id in ids])
+            add_admin_audit_log(
+                connection,
+                interaction.guild_id,
+                "cancel_all_scheduled_games",
+                interaction.user.id,
+                interaction.user,
+                "scheduled_game",
+                "all",
+                f"Cancelled {len(ids)} queued/starting scheduled game(s): {', '.join(str(scheduled_id) for scheduled_id in ids[:20])}.",
+            )
+    return len(ids)
 
 @tree.command(name="scheduledgames", description="List queued and running scheduled games")
 @app_commands.guild_only()
