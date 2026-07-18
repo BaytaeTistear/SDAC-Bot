@@ -123,11 +123,20 @@ class BotStartupTests(unittest.TestCase):
             "hint_level": 1,
             "hint_revealed_at": "2026-07-10T00:00:00+00:00",
         }))
-        self.assertFalse(bot.guess_points_allowed({
+        exhausted_game = {
             "hints_json": '["First letter: A", "Word count: 2"]',
             "hint_level": 2,
             "hint_revealed_at": "2026-07-10T00:00:00+00:00",
-        }))
+        }
+        self.assertFalse(bot.guess_points_allowed(exhausted_game))
+        active_game = {
+            "hints_json": '["First letter: A", "Word count: 2"]',
+            "hint_level": 1,
+            "hint_revealed_at": "2026-07-10T00:00:00+00:00",
+        }
+        self.assertEqual(bot.guess_points_for_correct_answer(active_game, 0), 2)
+        self.assertEqual(bot.guess_points_for_correct_answer(active_game, 1), 1)
+        self.assertEqual(bot.guess_points_for_correct_answer(exhausted_game, 0), 0)
 
 
     def test_sana_hub_admin_menu_includes_games(self):
@@ -143,11 +152,13 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("Guess Timeout", game_labels)
         self.assertIn("Create Guessing Game", bot.SDAC_SUBMENU_DETAILS["games_create"])
         self.assertNotIn("/startlibrarygame", bot.SDAC_SUBMENU_DETAILS["games_start_library"])
-        self.assertIn("multiple start times", bot.SDAC_SUBMENU_DETAILS["games_bulk_schedule"])
+        self.assertIn("minutes, hours, or days", bot.SDAC_SUBMENU_DETAILS["games_bulk_schedule"])
         self.assertIn("wrong guess", bot.SDAC_SUBMENU_DETAILS["games_timeout"])
         self.assertTrue(hasattr(bot, "StartLibraryGameWizardView"))
         self.assertTrue(hasattr(bot, "BulkScheduleGameWizardView"))
         self.assertTrue(hasattr(bot, "BulkScheduleGameModal"))
+        self.assertTrue(hasattr(bot, "BulkScheduleUnitView"))
+        self.assertTrue(hasattr(bot, "BulkScheduleUnitSelect"))
         self.assertTrue(hasattr(bot, "GuessTimeoutModal"))
         self.assertTrue(hasattr(bot, "start_library_game_from_interaction"))
         self.assertTrue(hasattr(bot, "schedule_library_game_record"))

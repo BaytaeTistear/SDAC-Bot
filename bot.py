@@ -853,7 +853,7 @@ SDAC_SUBMENUS = {
             ("games_create", "Create Game", "Create a saved guessing-game item from the dashboard."),
             ("games_start_library", "Start Library Game", "Start a saved Game Library item."),
             ("games_schedule", "Schedule Game", "Schedule a saved library game."),
-            ("games_bulk_schedule", "Bulk Schedule", "Schedule several saved library games at once."),
+            ("games_bulk_schedule", "Bulk Schedule", "Ask a new saved-library question on a repeating cadence."),
             ("games_timeout", "Guess Timeout", "Change the wrong-guess cooldown."),
             ("games_active", "Active Game", "Show the active game in this channel."),
             ("games_cancel", "Cancel Game", "Cancel the active game in this channel."),
@@ -885,8 +885,8 @@ SDAC_SUBMENU_DETAILS = {
     "moderation_permissions": "**Permission Check**\nRun `/checkpermissions` to inspect access or `/repairpermissions` to get a repair invite.",
     "games_create": "**Create Guessing Game**\nOpen the dashboard Game Library to create a reusable game item with answer aliases, hints, media, category, pack, and tags.",
     "games_start_library": "**Start Library Game**\nChoose this action to pick a channel, optionally set a library item ID or category, and start the game directly from `/sana`.",
-    "games_schedule": "**Schedule Game**\nUse this action for one saved library game, or choose Bulk Schedule to queue several start times at once.",
-    "games_bulk_schedule": "**Bulk Schedule**\nChoose a game channel, then enter multiple start times. Sana-Chan will queue one saved library game for each time.",
+    "games_schedule": "**Schedule Game**\nUse this action for one saved library game, or choose Bulk Schedule to queue a repeating run.",
+    "games_bulk_schedule": "**Bulk Schedule**\nChoose a game channel, pick minutes, hours, or days, then enter how often Sana-Chan should ask a new saved-library question.",
     "games_timeout": "**Guess Timeout**\nSet how many minutes a user waits after a wrong guess before they can guess again.",
     "games_active": "**Active Game**\nRun `/activegame` to see the current guessing game in this channel.",
     "games_cancel": "**Cancel Game**\nRun `/cancelgame` to stop the active guessing game in this channel.",
@@ -1140,7 +1140,7 @@ class SDACSubmenuSelect(discord.ui.Select):
                 content=(
                     "**Bulk Schedule Games**\n"
                     "Choose the channel where scheduled games should start. After that, Sana-Chan "
-                    "will ask for one or more start times and optional library filters."
+                    "will ask how often to post new questions and optional library filters."
                 ),
                 view=BulkScheduleGameWizardView(self.is_admin, interaction.user.id),
             )
@@ -1359,7 +1359,7 @@ class SDACSubmenuButton(discord.ui.Button):
                 content=(
                     "**Bulk Schedule Games**\n"
                     "Choose the channel where scheduled games should start. After that, Sana-Chan "
-                    "will ask for one or more start times and optional library filters."
+                    "will ask how often to post new questions and optional library filters."
                 ),
                 view=BulkScheduleGameWizardView(self.is_admin, interaction.user.id),
             )
@@ -1437,17 +1437,25 @@ class GuessTimeoutModal(discord.ui.Modal):
 
 
 class BulkScheduleGameModal(discord.ui.Modal):
-    def __init__(self, owner_id, channel_id, channel_mention):
-        super().__init__(title="Bulk Schedule Games")
+    def __init__(self, owner_id, channel_id, channel_mention, interval_unit):
+        super().__init__(title=f"Bulk Schedule: {interval_unit.title()}")
         self.owner_id = int(owner_id)
         self.channel_id = int(channel_id)
         self.channel_mention = channel_mention
-        self.start_times_input = discord.ui.TextInput(
-            label="Start times, one per line",
-            placeholder="2026-07-20 18:00\n2026-07-21 18:00",
-            style=discord.TextStyle.paragraph,
+        self.interval_unit = interval_unit
+        self.interval_amount_input = discord.ui.TextInput(
+            label=f"How often? ({interval_unit})",
+            placeholder="Examples: 30 minutes, 3 hours, or 7 days",
+            default="30" if interval_unit == "minutes" else "3" if interval_unit == "hours" else "7",
             required=True,
-            max_length=900,
+            max_length=6,
+        )
+        self.question_count_input = discord.ui.TextInput(
+            label="How many questions should be queued?",
+            placeholder="1 to 100",
+            default="10",
+            required=True,
+            max_length=6,
         )
         self.item_id_input = discord.ui.TextInput(
             label="Library item ID",
@@ -1462,13 +1470,6 @@ class BulkScheduleGameModal(discord.ui.Modal):
             required=False,
             max_length=80,
         )
-        self.random_input = discord.ui.TextInput(
-            label="Random item?",
-            placeholder="yes or no",
-            default="yes",
-            required=False,
-            max_length=8,
-        )
         self.close_after_input = discord.ui.TextInput(
             label="Auto-close minutes",
             placeholder="0 disables auto-close",
@@ -1476,10 +1477,10 @@ class BulkScheduleGameModal(discord.ui.Modal):
             required=False,
             max_length=8,
         )
-        self.add_item(self.start_times_input)
+        self.add_item(self.interval_amount_input)
+        self.add_item(self.question_count_input)
         self.add_item(self.item_id_input)
         self.add_item(self.category_input)
-        self.add_item(self.random_input)
         self.add_item(self.close_after_input)
 
     async def on_submit(self, interaction):
@@ -1492,6 +1493,30 @@ class BulkScheduleGameModal(discord.ui.Modal):
         channel = interaction.guild.get_channel(self.channel_id) if interaction.guild else None
         if not isinstance(channel, discord.TextChannel):
             await interaction.response.send_message("That channel is no longer available.", ephemeral=True)
+            return
+        try:
+            interval_amount = int(str(self.interval_amount_input.value or "").strip())
+        except ValueError:
+            await interaction.response.send_message("The schedule interval must be a whole number.", ephemeral=True)
+            return
+        if interval_amount < 1:
+            await interaction.response.send_message("The schedule interval must be at least 1.", ephemeral=True)
+            return
+        unit_minutes = {"minutes": 1, "hours": 60, "days": 1440}.get(self.interval_unit)
+        if unit_minutes is None:
+            await interaction.response.send_message("Choose minutes, hours, or days for the schedule interval.", ephemeral=True)
+            return
+        interval_minutes = interval_amount * unit_minutes
+        if interval_minutes < 1 or interval_minutes > 525600:
+            await interaction.response.send_message("The schedule interval must be between 1 minute and 365 days.", ephemeral=True)
+            return
+        try:
+            question_count = int(str(self.question_count_input.value or "").strip())
+        except ValueError:
+            await interaction.response.send_message("Question count must be a whole number.", ephemeral=True)
+            return
+        if question_count < 1 or question_count > 100:
+            await interaction.response.send_message("Question count must be between 1 and 100.", ephemeral=True)
             return
         try:
             item_id = int(str(self.item_id_input.value or "0").strip() or "0")
@@ -1509,57 +1534,86 @@ class BulkScheduleGameModal(discord.ui.Modal):
         if close_after_minutes < 0 or close_after_minutes > 10080:
             await interaction.response.send_message("Auto-close minutes must be between 0 and 10080.", ephemeral=True)
             return
-        random_value = str(self.random_input.value or "yes").strip().casefold()
-        random_item = random_value in {"1", "y", "yes", "true", "random"}
-        raw_times = [
-            line.strip()
-            for line in str(self.start_times_input.value or "").replace(";", "\n").splitlines()
-            if line.strip()
-        ]
-        if not raw_times:
-            await interaction.response.send_message("Enter at least one start time.", ephemeral=True)
-            return
-        if len(raw_times) > 20:
-            await interaction.response.send_message("Bulk schedule is limited to 20 start times at once.", ephemeral=True)
-            return
         await interaction.response.defer(ephemeral=True, thinking=True)
-        guild_config = get_guild_config(interaction.guild_id, create=False)
-        timezone_info = get_guild_timezone(guild_config)
         category = str(self.category_input.value or "").strip()
         created = []
         errors = []
-        for raw_time in raw_times:
+        now = datetime.now(timezone.utc)
+        guild_config = get_guild_config(interaction.guild_id, create=False)
+        timezone_info = get_guild_timezone(guild_config)
+        for index in range(question_count):
+            starts_at = now + timedelta(minutes=interval_minutes * (index + 1))
             try:
-                starts_at = parse_scheduled_start_time(raw_time, guild_config)
                 scheduled_id, selected_item = schedule_library_game_record(
                     interaction,
                     channel,
                     starts_at,
                     item_id=item_id,
                     category=category,
-                    random_item=random_item,
+                    random_item=True,
                     close_after_minutes=close_after_minutes,
                 )
                 local_time = starts_at.astimezone(timezone_info).strftime("%Y-%m-%d %H:%M %Z")
                 created.append(f"#{scheduled_id} `{local_time}` item `{selected_item['id']}`")
             except ValueError as error:
-                errors.append(f"`{raw_time}`: {error}")
-        lines = [f"**Bulk Schedule Games**", f"Channel: {channel.mention}"]
+                errors.append(str(error))
+                break
+        lines = [
+            "**Bulk Schedule Games**",
+            f"Channel: {channel.mention}",
+            f"Cadence: every `{interval_amount}` {self.interval_unit}",
+            "When each scheduled question starts, any older active game in that channel is closed first.",
+        ]
         if created:
             lines.extend(["", "Queued:", *created[:15]])
             if len(created) > 15:
                 lines.append(f"...and {len(created) - 15} more.")
         if errors:
-            lines.extend(["", "Skipped:", *errors[:8]])
-            if len(errors) > 8:
-                lines.append(f"...and {len(errors) - 8} more error(s).")
+            lines.extend(["", "Stopped:", *errors[:4]])
         await interaction.edit_original_response(content="\n".join(lines)[:1900])
 
 
+class BulkScheduleUnitSelect(discord.ui.Select):
+    def __init__(self, owner_id, channel_id, channel_mention):
+        self.owner_id = int(owner_id)
+        self.channel_id = int(channel_id)
+        self.channel_mention = channel_mention
+        options = [
+            discord.SelectOption(label="Minutes", value="minutes", description="Ask every N minutes, such as 30 minutes."),
+            discord.SelectOption(label="Hours", value="hours", description="Ask every N hours, such as 3 hours."),
+            discord.SelectOption(label="Days", value="days", description="Ask every N days, such as 7 days."),
+        ]
+        super().__init__(placeholder="How often should Sana-Chan ask?", min_values=1, max_values=1, options=options, row=0)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can bulk schedule games.", ephemeral=True)
+            return
+        await interaction.response.send_modal(
+            BulkScheduleGameModal(
+                interaction.user.id,
+                self.channel_id,
+                self.channel_mention,
+                str(self.values[0]),
+            )
+        )
+
+
+class BulkScheduleUnitView(discord.ui.View):
+    def __init__(self, is_admin, owner_id, channel_id, channel_mention):
+        super().__init__(timeout=300)
+        self.add_item(BulkScheduleUnitSelect(owner_id, channel_id, channel_mention))
+        self.add_item(SDACBackButton(is_admin))
+
+
 class BulkScheduleGameChannelSelect(discord.ui.ChannelSelect):
-    def __init__(self, owner_id):
+    def __init__(self, owner_id, is_admin):
         super().__init__(placeholder="Choose the schedule channel", min_values=1, max_values=1, channel_types=[discord.ChannelType.text], row=0)
         self.owner_id = int(owner_id)
+        self.is_admin = bool(is_admin)
 
     async def callback(self, interaction):
         if interaction.user.id != self.owner_id:
@@ -1575,15 +1629,22 @@ class BulkScheduleGameChannelSelect(discord.ui.ChannelSelect):
                 ephemeral=True,
             )
             return
-        await interaction.response.send_modal(BulkScheduleGameModal(interaction.user.id, channel.id, channel.mention))
+        await interaction.response.edit_message(
+            content=(
+                "**Bulk Schedule Games**\n"
+                f"Channel: {channel.mention}\n"
+                "Pick whether Sana-Chan should ask new questions every N minutes, hours, or days. "
+                "Each new scheduled question will close any older active game in that channel."
+            ),
+            view=BulkScheduleUnitView(self.is_admin, interaction.user.id, channel.id, channel.mention),
+        )
 
 
 class BulkScheduleGameWizardView(discord.ui.View):
     def __init__(self, is_admin, owner_id):
         super().__init__(timeout=300)
-        self.add_item(BulkScheduleGameChannelSelect(owner_id))
+        self.add_item(BulkScheduleGameChannelSelect(owner_id, is_admin))
         self.add_item(SDACBackButton(is_admin))
-
 
 class StartLibraryGameModal(discord.ui.Modal):
     def __init__(self, owner_id, channel_id, channel_mention):
@@ -3126,6 +3187,16 @@ def game_hint_counts(game):
 def guess_points_allowed(game):
     revealed_count, total_count = game_hint_counts(game)
     return not (total_count > 0 and revealed_count >= total_count)
+
+
+def guess_points_for_correct_answer(game, prior_correct_count):
+    if not guess_points_allowed(game):
+        return 0
+    try:
+        prior_correct_count = int(prior_correct_count or 0)
+    except (TypeError, ValueError):
+        prior_correct_count = 0
+    return 2 if prior_correct_count <= 0 else 1
 
 
 def reveal_next_hint_for_game(connection, game):
@@ -12084,7 +12155,6 @@ async def guess(interaction, guess: str):
             return
 
         month = current_month_key(guild_config)
-        points_awarded = 1 if guess_points_allowed(game) else 0
         existing_correct = connection.execute("""
             SELECT 1
             FROM guess_correct_guesses
@@ -12096,6 +12166,12 @@ async def guess(interaction, guess: str):
                 ephemeral=True,
             )
             return
+        prior_correct_count = connection.execute("""
+            SELECT COUNT(*)
+            FROM guess_correct_guesses
+            WHERE game_id = ?
+        """, (game["id"],)).fetchone()[0]
+        points_awarded = guess_points_for_correct_answer(game, prior_correct_count)
 
         connection.execute("""
             INSERT INTO guess_correct_guesses (
@@ -12161,7 +12237,8 @@ async def guess(interaction, guess: str):
         )
 
     if points_awarded:
-        response_text = f"Correct. You gained {points_awarded} point for `{month}`."
+        point_word = "point" if points_awarded == 1 else "points"
+        response_text = f"Correct. You gained {points_awarded} {point_word} for `{month}`."
     else:
         response_text = (
             "Correct. All generated hints were already revealed, so no "

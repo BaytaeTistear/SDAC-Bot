@@ -1,3 +1,19 @@
+# Sana-Chan Version 4.3.20 Experimental
+
+Version 4.3.20 is an experimental guided guessing-game scheduling and scoring update.
+
+Update scope: Cadence-based bulk scheduling and first-correct scoring
+
+Changes:
+- changes /sana Bulk Schedule from exact start-time entry to a guided cadence flow
+- lets admins pick minutes, hours, or days, then enter the interval amount and number of questions to queue
+- queues each scheduled question on that cadence and notes that new questions replace older active games in the same channel
+- changes guessing-game scoring so the first correct answer before the hint limit earns 2 points
+- keeps later correct answers worth 1 point until all generated hints are revealed
+- adds regression coverage for the new cadence menu controls and point calculation helper
+
+Notes:
+- This is an experimental update. Bulk scheduled games still use the existing scheduled-game worker and same-channel replacement behavior.
 # Sana-Chan Version 4.3.19 Experimental
 
 Version 4.3.19 is an experimental /sana guessing-game menu update.
