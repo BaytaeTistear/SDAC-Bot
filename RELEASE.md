@@ -1,3 +1,18 @@
+# Sana-Chan Version 4.3.22 Experimental
+
+Version 4.3.22 is an experimental scheduled-game auto-hint timing update.
+
+Update scope: Proportional auto-hints between scheduled questions
+
+Changes:
+- scales auto-hint timing for scheduled library games when the next scheduled question is sooner than the configured hint interval
+- divides the available time into one no-hint phase plus one phase for each generated hint
+- keeps direct/manual games on their configured auto-hint interval
+- passes the next queued scheduled start time through the scheduled-game worker
+- adds regression coverage for the 30-minute, 2-hint schedule example
+
+Notes:
+- This is an experimental update. Example: with 2 hints and 30 minutes until the next question, Sana-Chan uses 10-minute hint spacing.
 # Sana-Chan Version 4.3.21 Experimental
 
 Version 4.3.21 is an experimental scheduled-game cancellation update.

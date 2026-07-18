@@ -3222,6 +3222,32 @@ def next_hint_time(minutes):
     return (datetime.now(timezone.utc) + timedelta(minutes=minutes)).isoformat()
 
 
+def scaled_auto_hint_minutes(auto_hint_minutes, hints, next_question_at=None, now=None):
+    try:
+        auto_hint_minutes = int(auto_hint_minutes or 0)
+    except (TypeError, ValueError):
+        auto_hint_minutes = 0
+    if auto_hint_minutes <= 0:
+        return 0
+    hint_count = len([hint for hint in (hints or []) if str(hint).strip()])
+    if hint_count <= 0 or next_question_at is None:
+        return auto_hint_minutes
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if isinstance(next_question_at, datetime):
+        next_time = next_question_at
+    else:
+        next_time = parse_database_datetime(next_question_at)
+    if next_time is None:
+        return auto_hint_minutes
+    available_seconds = int((next_time - now).total_seconds())
+    if available_seconds <= 0:
+        return auto_hint_minutes
+    phases = hint_count + 1
+    scaled_minutes = max(1, available_seconds // 60 // phases)
+    return min(auto_hint_minutes, int(scaled_minutes))
+
+
 def append_hint_text(existing_text, hint):
     existing_text = (existing_text or "").strip()
     if not existing_text:
@@ -4801,6 +4827,7 @@ async def start_library_game_item(
     starter_username,
     source="library",
     scheduled_id=None,
+    next_scheduled_start_at=None,
 ):
     guild_config = get_guild_config(guild.id, create=False)
     if emergency_pause_message(guild_config):
@@ -4905,6 +4932,17 @@ async def start_library_game_item(
             auto_hint_minutes = int(
                 game_settings.get("default_auto_hint_minutes") or 0
             )
+        generated_hints = build_game_hints(
+            answer_display,
+            item["category"] or "",
+            item["hint_text"] or "",
+        )
+        original_auto_hint_minutes = auto_hint_minutes
+        auto_hint_minutes = scaled_auto_hint_minutes(
+            auto_hint_minutes,
+            generated_hints,
+            next_question_at=next_scheduled_start_at,
+        )
         game_lines = ["**Guessing Game Started**"]
         prompt_text = (item["prompt_text"] or "").strip()
         if prompt_text:
@@ -4915,12 +4953,11 @@ async def start_library_game_item(
             game_lines.append(
                 f"Automatic hints are enabled every {auto_hint_minutes} minute(s)."
             )
+            if next_scheduled_start_at is not None and auto_hint_minutes < original_auto_hint_minutes:
+                game_lines.append(
+                    "Hint timing was shortened to fit before the next scheduled question."
+                )
         game_lines.append("Use `/guess <guess>` in this channel.")
-        generated_hints = build_game_hints(
-            answer_display,
-            item["category"] or "",
-            item["hint_text"] or "",
-        )
         game_message = await channel.send(
             content="\n\n".join(game_lines),
             file=discord_file,
@@ -11717,12 +11754,8 @@ async def startlibrarygame(
             game_lines.append(
                 f"Automatic hints are enabled every {auto_hint_minutes} minute(s)."
             )
+
         game_lines.append("Use `/guess <guess>` in this channel.")
-        generated_hints = build_game_hints(
-            answer_display,
-            item["category"] or "",
-            item["hint_text"] or "",
-        )
         game_message = await channel.send(
             content="\n\n".join(game_lines),
             file=discord_file,
@@ -13200,6 +13233,21 @@ async def start_due_scheduled_games():
                         game_settings.get("reuse_cooldown_days") or 0
                     ),
                 )
+                next_scheduled = connection.execute("""
+                    SELECT starts_at
+                    FROM scheduled_games
+                    WHERE guild_id = ?
+                      AND channel_id = ?
+                      AND status = 'queued'
+                      AND starts_at > ?
+                    ORDER BY starts_at ASC, id ASC
+                    LIMIT 1
+                """, (
+                    str(guild.id),
+                    str(channel.id),
+                    scheduled["starts_at"] or datetime.now(timezone.utc).isoformat(),
+                )).fetchone()
+                next_scheduled_start_at = next_scheduled["starts_at"] if next_scheduled else None
             if item is None:
                 raise RuntimeError("No active matching library item was found.")
             game_id, _replaced = await start_library_game_item(
@@ -13210,6 +13258,7 @@ async def start_due_scheduled_games():
                 scheduled["created_by_name"] or "SDAC scheduler",
                 source="scheduled",
                 scheduled_id=scheduled["id"],
+                next_scheduled_start_at=next_scheduled_start_at,
             )
             new_status = (
                 "running"

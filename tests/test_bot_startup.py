@@ -110,6 +110,18 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("Watching One", watching)
         self.assertIn("Completed One", watching)
 
+    def test_scheduled_auto_hint_time_scales_to_question_window(self):
+        from datetime import datetime, timedelta, timezone
+        import bot
+
+        now = datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc)
+        next_question = now + timedelta(minutes=30)
+        hints = ["Hint 1", "Hint 2"]
+        self.assertEqual(bot.scaled_auto_hint_minutes(60, hints, next_question, now=now), 10)
+        self.assertEqual(bot.scaled_auto_hint_minutes(5, hints, next_question, now=now), 5)
+        self.assertEqual(bot.scaled_auto_hint_minutes(60, [], next_question, now=now), 60)
+
+
     def test_guess_points_are_blocked_only_after_all_generated_hints(self):
         import bot
 
@@ -167,6 +179,7 @@ class BotStartupTests(unittest.TestCase):
         self.assertTrue(hasattr(bot, "start_library_game_from_interaction"))
         self.assertTrue(hasattr(bot, "schedule_library_game_record"))
         self.assertTrue(hasattr(bot, "set_wrong_guess_timeout"))
+        self.assertTrue(hasattr(bot, "scaled_auto_hint_minutes"))
         self.assertTrue(hasattr(bot, "count_cancellable_scheduled_games"))
         self.assertTrue(hasattr(bot, "cancel_all_scheduled_games"))
         self.assertTrue(hasattr(bot, "resolve_selected_text_channel"))
