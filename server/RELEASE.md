@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.3.15 Experimental
+
+Version 4.3.15 is an experimental `/sana` Start Library Game channel selection fix.
+
+Update scope: Discord guided Game Library start flow
+
+Changes:
+- fixes `/sana` > Games > Start Library Game rejecting selected text channels after the channel picker
+- resolves Discord's selected channel object back to the real server text channel before opening the setup modal
+- replaces the confusing second prompt with a clear access error only when Sana-Chan cannot resolve the selected channel
+- adds regression coverage for the channel resolver used by the guided game flow
+
+Notes:
+- This is an experimental update. After updating and restarting the bot, picking a channel should open the item/category/random modal instead of sending a second "choose a text channel" message.
 # Sana-Chan Version 4.3.14 Experimental
 
 Version 4.3.14 is an experimental `/sana` guided library game update.

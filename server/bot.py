@@ -1393,6 +1393,29 @@ class StartLibraryGameModal(discord.ui.Modal):
         await start_library_game_from_interaction(interaction, channel, item_id=item_id, category=str(self.category_input.value or "").strip(), random_item=random_item)
 
 
+
+async def resolve_selected_text_channel(guild, selected_channel):
+    if guild is None or selected_channel is None:
+        return None
+    try:
+        channel_id = int(getattr(selected_channel, "id", 0) or 0)
+    except (TypeError, ValueError):
+        channel_id = 0
+    if channel_id:
+        cached_channel = guild.get_channel(channel_id)
+        if isinstance(cached_channel, discord.TextChannel):
+            return cached_channel
+    if isinstance(selected_channel, discord.TextChannel):
+        return selected_channel
+    if channel_id:
+        try:
+            fetched_channel = await guild.fetch_channel(channel_id)
+        except discord.HTTPException:
+            return None
+        if isinstance(fetched_channel, discord.TextChannel):
+            return fetched_channel
+    return None
+
 class StartLibraryGameChannelSelect(discord.ui.ChannelSelect):
     def __init__(self, owner_id):
         super().__init__(placeholder="Choose the guessing-game channel", min_values=1, max_values=1, channel_types=[discord.ChannelType.text], row=0)
@@ -1405,9 +1428,12 @@ class StartLibraryGameChannelSelect(discord.ui.ChannelSelect):
         if not admin_only(interaction):
             await interaction.response.send_message("Only admins can start library games.", ephemeral=True)
             return
-        channel = self.values[0]
-        if not isinstance(channel, discord.TextChannel):
-            await interaction.response.send_message("Choose a text channel for the game.", ephemeral=True)
+        channel = await resolve_selected_text_channel(interaction.guild, self.values[0])
+        if channel is None:
+            await interaction.response.send_message(
+                "I could not access that text channel. Choose a normal server text channel that Sana-Chan can view.",
+                ephemeral=True,
+            )
             return
         await interaction.response.send_modal(StartLibraryGameModal(interaction.user.id, channel.id, channel.mention))
 

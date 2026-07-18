@@ -143,6 +143,7 @@ class BotStartupTests(unittest.TestCase):
         self.assertNotIn("/startlibrarygame", bot.SDAC_SUBMENU_DETAILS["games_start_library"])
         self.assertTrue(hasattr(bot, "StartLibraryGameWizardView"))
         self.assertTrue(hasattr(bot, "start_library_game_from_interaction"))
+        self.assertTrue(hasattr(bot, "resolve_selected_text_channel"))
 
 if __name__ == "__main__":
     unittest.main()
