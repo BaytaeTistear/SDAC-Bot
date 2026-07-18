@@ -8806,6 +8806,26 @@ class LocalStoredUpload:
             pass
 
 
+def sqlite_error_is_locked(error):
+    return "database is locked" in str(error).lower() or "database table is locked" in str(error).lower()
+
+
+def run_sqlite_write_with_retry(operation, attempts=6, initial_delay=0.35):
+    delay = float(initial_delay)
+    last_error = None
+    for attempt in range(1, int(attempts) + 1):
+        try:
+            with database() as connection:
+                return operation(connection)
+        except sqlite3.OperationalError as error:
+            if not sqlite_error_is_locked(error) or attempt >= int(attempts):
+                raise
+            last_error = error
+            time.sleep(delay)
+            delay = min(delay * 1.8, 4.0)
+    if last_error:
+        raise last_error
+    return None
 def update_guess_import_progress(job_id, **progress):
     if not job_id:
         return
@@ -8914,70 +8934,97 @@ def run_guess_library_bulk_import(
     saved_media_paths = []
     now = utc_now_iso()
     storage_limit = guild_storage_limit(
-        config_data.get("guilds", {}).get(guild_id, {})
+        config_data.get("guilds", {}).get(guild_id, {}),
+        config_data,
     )
     try:
-        with database() as connection:
-            for row_number, raw_row in enumerate(reader, start=1):
-                row = {
-                    str(key or "").strip().lower(): str(value or "").strip()
-                    for key, value in raw_row.items()
-                }
-                answer_value = (
-                    row.get("answer")
-                    or row.get("answers")
-                    or row.get("answer_aliases")
-                    or ""
+        for row_number, raw_row in enumerate(reader, start=1):
+            row = {
+                str(key or "").strip().lower(): str(value or "").strip()
+                for key, value in raw_row.items()
+            }
+            answer_value = (
+                row.get("answer")
+                or row.get("answers")
+                or row.get("answer_aliases")
+                or ""
+            )
+            aliases_value = row.get("aliases") or ""
+            alias_source = answer_value
+            if aliases_value:
+                alias_source = alias_source + "|" + aliases_value.replace(",", "|")
+            answer_aliases = parse_answer_aliases(alias_source)
+            if not answer_aliases:
+                skipped += 1
+                continue
+            answer_display = answer_aliases[0]["display"]
+            normalized_answer = answer_aliases[0]["normalized"]
+            title = (row.get("title") or answer_display)[:120]
+            prompt_text = (row.get("prompt_text") or row.get("prompt") or "")[:max_text_length]
+            category = (row.get("category") or "")[:80]
+            hint_text = (row.get("hint") or row.get("hint_text") or "")[:500]
+            pack_name = (row.get("pack") or row.get("pack_name") or "")[:80]
+            tags = parse_metadata_list(row.get("tags") or "")
+            notes = (row.get("notes") or "")[:1000]
+            enabled = parse_enabled_field(row.get("enabled"), True)
+            try:
+                auto_hint_minutes = int(row.get("auto_hint_minutes") or "0")
+            except ValueError:
+                auto_hint_minutes = 0
+            auto_hint_minutes = max(0, min(1440, auto_hint_minutes))
+            requested_status = (row.get("status") or "draft").lower()
+            media_filename = row.get("media_filename") or row.get("media") or ""
+            media_info = None
+            if media_filename:
+                media_key = zip_media_lookup_key(media_filename)
+                media_entry = media_lookup.get(media_key) or media_lookup.get(
+                    zip_media_lookup_key(Path(media_filename).name)
                 )
-                aliases_value = row.get("aliases") or ""
-                alias_source = answer_value
-                if aliases_value:
-                    alias_source = alias_source + "|" + aliases_value.replace(",", "|")
-                answer_aliases = parse_answer_aliases(alias_source)
-                if not answer_aliases:
-                    skipped += 1
-                    continue
-                answer_display = answer_aliases[0]["display"]
-                normalized_answer = answer_aliases[0]["normalized"]
-                title = (row.get("title") or answer_display)[:120]
-                prompt_text = (row.get("prompt_text") or row.get("prompt") or "")[:max_text_length]
-                category = (row.get("category") or "")[:80]
-                hint_text = (row.get("hint") or row.get("hint_text") or "")[:500]
-                pack_name = (row.get("pack") or row.get("pack_name") or "")[:80]
-                tags = parse_metadata_list(row.get("tags") or "")
-                notes = (row.get("notes") or "")[:1000]
-                enabled = parse_enabled_field(row.get("enabled"), True)
-                try:
-                    auto_hint_minutes = int(row.get("auto_hint_minutes") or "0")
-                except ValueError:
-                    auto_hint_minutes = 0
-                auto_hint_minutes = max(0, min(1440, auto_hint_minutes))
-                requested_status = (row.get("status") or "draft").lower()
-                media_filename = row.get("media_filename") or row.get("media") or ""
-                media_info = None
-                if media_filename:
-                    media_key = zip_media_lookup_key(media_filename)
-                    media_entry = media_lookup.get(media_key) or media_lookup.get(
-                        zip_media_lookup_key(Path(media_filename).name)
+                if media_entry:
+                    if storage_limit and guild_media_size(guild_id) + int(media_entry.file_size or 0) > storage_limit:
+                        raise ValueError("This server has reached its configured media storage limit.")
+                    media_info = save_guess_library_zip_media(
+                        guild_id,
+                        media_archive,
+                        media_entry,
+                        config_data.get("limits", {}),
                     )
-                    if media_entry:
-                        if storage_limit and guild_media_size(guild_id) + int(media_entry.file_size or 0) > storage_limit:
-                            raise ValueError("This server has reached its configured media storage limit.")
-                        media_info = save_guess_library_zip_media(
-                            guild_id,
-                            media_archive,
-                            media_entry,
-                            config_data.get("limits", {}),
-                        )
-                        saved_media_paths.append(media_info["path"])
-                        imported_with_media += 1
-                    else:
-                        missing_media += 1
-                status = "draft"
-                if requested_status == "disabled":
-                    status = "disabled"
-                elif requested_status == "active" and media_info:
-                    status = "active"
+                    saved_media_paths.append(media_info["path"])
+                    imported_with_media += 1
+                else:
+                    missing_media += 1
+            status = "draft"
+            if requested_status == "disabled":
+                status = "disabled"
+            elif requested_status == "active" and media_info:
+                status = "active"
+
+            row_values = (
+                guild_id,
+                title,
+                normalized_answer,
+                answer_display,
+                json.dumps(answer_aliases, separators=(",", ":")),
+                prompt_text,
+                category,
+                json.dumps(tags, separators=(",", ":")),
+                pack_name,
+                enabled,
+                notes,
+                hint_text,
+                auto_hint_minutes,
+                media_info["path"] if media_info else "",
+                media_info["name"] if media_info else "",
+                media_info["type"] if media_info else "unknown",
+                int(media_info["size"] or 0) if media_info else 0,
+                json.dumps(media_info["metadata"], separators=(",", ":")) if media_info else "{}",
+                status,
+                actor_name,
+                now,
+                now,
+            )
+
+            def write_import_row(connection, values=row_values):
                 connection.execute("""
                     INSERT INTO guess_library_items (
                         guild_id, title, answer, answer_display,
@@ -8989,42 +9036,23 @@ def run_guess_library_bulk_import(
                         created_by, created_at, updated_at
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
-                """, (
-                    guild_id,
-                    title,
-                    normalized_answer,
-                    answer_display,
-                    json.dumps(answer_aliases, separators=(",", ":")),
-                    prompt_text,
-                    category,
-                    json.dumps(tags, separators=(",", ":")),
-                    pack_name,
-                    enabled,
-                    notes,
-                    hint_text,
-                    auto_hint_minutes,
-                    media_info["path"] if media_info else "",
-                    media_info["name"] if media_info else "",
-                    media_info["type"] if media_info else "unknown",
-                    int(media_info["size"] or 0) if media_info else 0,
-                    json.dumps(media_info["metadata"], separators=(",", ":")) if media_info else "{}",
-                    status,
-                    actor_name,
-                    now,
-                    now,
-                ))
-                imported += 1
-                if job_id and (row_number == 1 or row_number % 10 == 0):
-                    update_guess_import_progress(
-                        job_id,
-                        stage="importing_rows",
-                        guild_id=guild_id,
-                        rows_seen=row_number,
-                        imported=imported,
-                        attached_media=imported_with_media,
-                        missing_media=missing_media,
-                        skipped=skipped,
-                    )
+                """, values)
+
+            run_sqlite_write_with_retry(write_import_row)
+            imported += 1
+            if job_id and (row_number == 1 or row_number % 10 == 0):
+                update_guess_import_progress(
+                    job_id,
+                    stage="importing_rows",
+                    guild_id=guild_id,
+                    rows_seen=row_number,
+                    imported=imported,
+                    attached_media=imported_with_media,
+                    missing_media=missing_media,
+                    skipped=skipped,
+                )
+
+        def write_import_audit(connection):
             add_admin_audit_log(
                 connection,
                 guild_id,
@@ -9039,6 +9067,7 @@ def run_guess_library_bulk_import(
                     f"missing media for {missing_media}; skipped {skipped}."
                 ),
             )
+        run_sqlite_write_with_retry(write_import_audit)
     except Exception:
         for saved_path in saved_media_paths:
             delete_guess_library_media(saved_path)
@@ -11820,13 +11849,14 @@ def update_background_job(job_id, **fields):
         assignments.append(f"{key} = ?")
         params.append(value)
     if not assignments:
-        return
-    params.append(job_id)
-    with database() as connection:
+        return    params.append(job_id)
+
+    def write_job_update(connection):
         connection.execute(
             f"UPDATE background_jobs SET {', '.join(assignments)} WHERE id = ?",
             params,
         )
+    run_sqlite_write_with_retry(write_job_update)
 
 
 def load_background_job(job_id):
@@ -15917,7 +15947,8 @@ def admin_game_library():
                 saved_media_paths = []
                 now = utc_now_iso()
                 storage_limit = guild_storage_limit(
-                    config_data.get("guilds", {}).get(guild_id, {})
+                    config_data.get("guilds", {}).get(guild_id, {}),
+                    config_data,
                 )
                 try:
                     with database() as connection:

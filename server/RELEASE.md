@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.3.11 Experimental
+
+Version 4.3.11 is an experimental Game Library import lock-resilience update.
+
+Update scope: SQLite lock handling for CSV/media archive imports
+
+Changes:
+- saves Game Library archive import rows in short retried write transactions instead of one long transaction
+- retries temporary SQLite `database is locked` errors for import rows, import audit logs, and background job status/progress updates
+- updates import progress only after row write transactions close
+- adds regression coverage for temporary SQLite lock retries
+
+Notes:
+- This is an experimental update. Failed jobs from earlier versions can be retried by re-uploading the CSV and archive after updating.
 # Sana-Chan Version 4.3.10 Experimental
 
 Version 4.3.10 is an experimental Game Library import reliability update.

@@ -483,5 +483,35 @@ class DashboardAccessTests(unittest.TestCase):
                 except OSError:
                     pass
 
+    def test_sqlite_write_retry_handles_temporary_lock(self):
+        attempts = {"count": 0}
+
+        def flaky_write(connection):
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise self.dashboard.sqlite3.OperationalError("database is locked")
+            connection.execute(
+                """
+                INSERT INTO background_jobs (
+                    job_type, guild_id, status, requested_by,
+                    requested_by_name, payload_json, created_at
+                )
+                VALUES ('retry_test', '111', 'complete', '', '', '{}', '')
+                """
+            )
+
+        self.dashboard.run_sqlite_write_with_retry(
+            flaky_write,
+            attempts=2,
+            initial_delay=0,
+        )
+
+        with self.dashboard.database() as connection:
+            total = connection.execute(
+                "SELECT COUNT(*) FROM background_jobs WHERE job_type = 'retry_test'"
+            ).fetchone()[0]
+        self.assertEqual(attempts["count"], 2)
+        self.assertEqual(total, 1)
+
 if __name__ == "__main__":
     unittest.main()
