@@ -210,5 +210,15 @@ class BotStartupTests(unittest.TestCase):
         self.assertNotIn("Hint timing was shortened to fit before the next scheduled question.", source)
         self.assertIn("Automatic hints are enabled every", source)
 
+    def test_hint_display_replaces_pipe_separators(self):
+        import bot
+
+        raw_hint = "Admin hint: Anime category: Drama / Romance / Supernatural|Title word count: 8|First letter: R"
+        formatted = bot.format_hint_text_for_display(raw_hint)
+        self.assertNotIn("|", formatted)
+        self.assertIn("Supernatural Title word count", formatted)
+        self.assertIn("8 First letter", formatted)
+        self.assertEqual(bot.append_hint_text("First letter: R", "Extra|Detail"), "First letter: R\nExtra Detail")
+
 if __name__ == "__main__":
     unittest.main()

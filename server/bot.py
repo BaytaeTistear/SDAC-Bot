@@ -1072,7 +1072,7 @@ def active_guess_game_content(interaction, include_answer=False):
             f"Answer: `{game['answer_display']}`",
             f"Aliases: {alias_display}",
             f"Hint category: {game['hint_category'] or '(none)'}",
-            f"Hint: {game['hint_text'] or '(none)'}",
+            f"Hint: {format_hint_text_for_display(game['hint_text']) or '(none)'}",
             f"Media: `{game['media_name']}` ({game['media_type']})",
             f"Library item: `{game['library_item_id'] or 'none'}`",
         ])
@@ -1097,7 +1097,7 @@ def current_hint_content(interaction):
         return "There is no active guessing game in this channel."
     if not game["hint_revealed_at"] or not game["hint_text"]:
         return "No hint has been revealed yet."
-    return f"**Hint:** {game['hint_text']}"
+    return f"**Hint:** {format_hint_text_for_display(game['hint_text'])}"
 
 
 async def handle_sana_instant_action(interaction, action, is_admin, section_key):
@@ -3612,12 +3612,24 @@ def scaled_auto_hint_minutes(auto_hint_minutes, hints, next_question_at=None, no
     return min(auto_hint_minutes, int(scaled_minutes))
 
 
+def format_hint_text_for_display(hint):
+    lines = []
+    for line in str(hint or "").splitlines():
+        line = re.sub(r"\s*\|\s*", " ", line).strip()
+        line = re.sub(r"[ \t]{2,}", " ", line)
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
+
+
 def append_hint_text(existing_text, hint):
-    existing_text = (existing_text or "").strip()
+    existing_text = format_hint_text_for_display(existing_text)
+    hint = format_hint_text_for_display(hint)
     if not existing_text:
         return hint
+    if not hint:
+        return existing_text
     return existing_text + "\n" + hint
-
 
 def game_hint_counts(game):
     try:
@@ -12291,7 +12303,7 @@ async def activegame(interaction):
             f"Aliases: {alias_display}",
             f"Prompt: {game['prompt_text'] or '(none)'}",
             f"Hint category: {game['hint_category'] or '(none)'}",
-            f"Hint: {game['hint_text'] or '(none)'}",
+            f"Hint: {format_hint_text_for_display(game['hint_text']) or '(none)'}",
             f"Hints revealed: `{hint_level}` of `{len(hints)}`",
             f"Next auto hint: `{game['next_hint_at'] or 'disabled'}`",
             f"Media: `{game['media_name']}` ({game['media_type']})",
@@ -12408,7 +12420,7 @@ async def sethint(interaction, hint: str):
         ephemeral=True,
     )
     await interaction.channel.send(
-        f"**Guessing Game Hint**\n{hint}\n\n"
+        f"**Guessing Game Hint**\n{format_hint_text_for_display(hint)}\n\n"
         "Correct guesses still earn points until all generated hints are revealed."
     )
 
@@ -12462,7 +12474,7 @@ async def revealhint(interaction):
 
     await interaction.response.send_message("Generated hint revealed.", ephemeral=True)
     await interaction.channel.send(
-        f"**Guessing Game Hint**\n{hint_text}\n\n"
+        f"**Guessing Game Hint**\n{format_hint_text_for_display(hint_text)}\n\n"
         "Correct guesses still earn points until all generated hints are revealed."
     )
 
@@ -12501,7 +12513,7 @@ async def hint(interaction):
         )
         return
     await interaction.response.send_message(
-        f"**Hint:** {game['hint_text']}",
+        f"**Hint:** {format_hint_text_for_display(game['hint_text'])}",
         ephemeral=True,
     )
 
@@ -13405,7 +13417,7 @@ async def post_due_guess_hints():
                 channel = None
         if channel is not None:
             await channel.send(
-                f"**Guessing Game Hint**\n{hint_text}\n\n"
+                f"**Guessing Game Hint**\n{format_hint_text_for_display(hint_text)}\n\n"
                 "Correct guesses still earn points until all generated hints are revealed."
             )
 

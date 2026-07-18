@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.3.26 Experimental
+
+Version 4.3.26 is an experimental guessing hint formatting fix.
+
+Update scope: Clean imported/admin hint separators in Discord hint posts
+
+Changes:
+- replaces pipe separators in displayed guessing hints with spaces
+- applies the same cleanup to stored revealed hint text, /hint output, /sana Show Hint, and admin active-game details
+- adds startup coverage for imported/admin hints that use pipe-separated fields
+
+Notes:
+- This is an experimental update. Final generated hints should no longer show raw CSV-style separators in Discord.
 # Sana-Chan Version 4.3.25 Experimental
 
 Version 4.3.25 is an experimental scheduled game message polish.
