@@ -564,6 +564,65 @@ class DashboardAccessTests(unittest.TestCase):
                 except OSError:
                     pass
 
+    def test_guess_bulk_import_accepts_requested_media_formats(self):
+        csv_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", mode="w", encoding="utf-8")
+        archive_file = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+        media_rows = [
+            ("PNG Clue", "PNG Answer", "clues/image.png", "image"),
+            ("GIF Clue", "GIF Answer", "clues/animation.gif", "image"),
+            ("MP3 Clue", "MP3 Answer", "audio/theme.mp3", "audio"),
+            ("MP4 Clue", "MP4 Answer", "video/opening.mp4", "video"),
+            ("WAV Clue", "WAV Answer", "audio/voice.wav", "audio"),
+        ]
+        try:
+            csv_file.write("title,answer,media_filename,status\n")
+            for title, answer, media_filename, _media_type in media_rows:
+                csv_file.write(f"{title},{answer},{media_filename},active\n")
+            csv_file.close()
+            archive_file.close()
+            with zipfile.ZipFile(archive_file.name, "w") as archive:
+                for _title, _answer, media_filename, _media_type in media_rows:
+                    archive.writestr(media_filename, b"non-empty imported media")
+
+            with tempfile.TemporaryDirectory() as media_dir:
+                config = {
+                    "guilds": {"111": {"guild_name": "Alpha"}},
+                    "limits": {"max_file_bytes": 1024 * 1024},
+                }
+                with mock.patch.object(self.dashboard, "MEDIA_DIR", Path(media_dir)):
+                    with mock.patch.object(self.dashboard, "load_config", return_value=config):
+                        result = self.dashboard.run_guess_library_bulk_import(
+                            "111",
+                            csv_file.name,
+                            archive_file.name,
+                            "multi-format.zip",
+                            actor_name="test",
+                        )
+
+                    with self.dashboard.database() as connection:
+                        stored_rows = connection.execute(
+                            """
+                            SELECT media_name, media_type, status
+                            FROM guess_library_items
+                            WHERE guild_id = ?
+                            ORDER BY id ASC
+                            """,
+                            ("111",),
+                        ).fetchall()
+
+            self.assertEqual(result["imported"], len(media_rows))
+            self.assertEqual(result["attached_media"], len(media_rows))
+            self.assertEqual(result["missing_media"], 0)
+            self.assertEqual(
+                [(row["media_name"], row["media_type"], row["status"]) for row in stored_rows],
+                [(Path(filename).name, media_type, "active") for _title, _answer, filename, media_type in media_rows],
+            )
+        finally:
+            for filename in (csv_file.name, archive_file.name):
+                try:
+                    os.unlink(filename)
+                except OSError:
+                    pass
     def test_recent_imports_restarts_queued_guess_import_jobs(self):
         job_id = self.dashboard.create_background_job(
             "guess_library_bulk_import",

@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.3.16 Experimental
+
+Version 4.3.16 is an experimental Game Library importer media-format update.
+
+Update scope: Bulk media archive imports for guessing games
+
+Changes:
+- confirms Game Library bulk imports accept PNG, GIF, MP3, MP4, and WAV media from archives
+- adds regression coverage that imports those requested formats as active library items with the correct media type
+- updates the Game Library bulk import help text to say media archive instead of ZIP-only wording
+- documents the supported media examples directly on the dashboard importer form
+
+Notes:
+- This is an experimental update. The importer already shares Sana-Chan's normal media allowlist; this release locks in the requested PNG, GIF, MP3, MP4, and WAV behavior with tests and clearer dashboard guidance.
 # Sana-Chan Version 4.3.15 Experimental
 
 Version 4.3.15 is an experimental `/sana` Start Library Game channel selection fix.

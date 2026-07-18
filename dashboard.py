@@ -2533,17 +2533,18 @@ GAME_LIBRARY_HTML = """
     <section class="panel">
         <h2>Bulk Import Guess Items</h2>
         <p class="muted">
-            Upload a CSV to add many guess items at once. Add an optional media ZIP when
-            rows include <code>media_filename</code>. The importer matches the CSV value
-            to a file in the ZIP by full path or filename, stores the media in the normal
+            Upload a CSV to add many guess items at once. Add an optional media archive when
+            rows include <code>media_filename</code>. Supported media includes PNG, GIF,
+            MP3, MP4, WAV, and the other normal Sana-Chan media formats. The importer matches
+            the CSV value to a file in the archive by full path or filename, stores the media in the normal
             Game Library folder, and leaves rows without matching media as drafts.
             Use <code>status=active</code> only for rows with media; text-only or missing-media
             rows are kept as drafts until media is attached.
             <a href="{{ url_for('download_guess_bulk_import_example', key=admin_key) }}">Download an example CSV</a>.
         </p>
         <p class="muted">
-            Quick setup: put files such as <code>skyline.png</code> or
-            <code>anime/studio-clue.webp</code> in <code>media.zip</code>, then put the same
+            Quick setup: put files such as <code>skyline.png</code>, <code>anime/clip.mp4</code>,
+            <code>audio/theme.mp3</code>, or <code>audio/line.wav</code> in a media archive, then put the same
             value in the CSV <code>media_filename</code> column. Leave
             <code>media_filename</code> blank for quote/clue-only drafts.
         </p>
@@ -2562,7 +2563,7 @@ GAME_LIBRARY_HTML = """
                 <label>CSV file
                     <input name="csv_file" type="file" accept=".csv,text/csv" required>
                 </label>
-                <label>Media ZIP (optional)
+                <label>Media archive (optional)
                     <input name="media_zip" type="file" accept=".zip,.7z,.tar,.tgz,.tar.gz,.rar,application/zip,application/x-7z-compressed,application/x-tar,application/vnd.rar">
                 </label>
             </div>
