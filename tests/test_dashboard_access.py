@@ -440,5 +440,48 @@ class DashboardAccessTests(unittest.TestCase):
         self.assertIn("Media attached: 5", body)
         self.assertIn("Missing media: 1", body)
 
+    def test_guess_bulk_import_with_media_uses_storage_helpers(self):
+        csv_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", mode="w", encoding="utf-8")
+        archive_file = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+        try:
+            csv_file.write(
+                "title,answer,media_filename,status\n"
+                "Skyline,Anime Skyline,anime/skyline.png,active\n"
+            )
+            csv_file.close()
+            archive_file.close()
+            with zipfile.ZipFile(archive_file.name, "w") as archive:
+                archive.writestr("anime/skyline.png", b"not really a png, but non-empty")
+
+            with tempfile.TemporaryDirectory() as media_dir:
+                config = {
+                    "guilds": {
+                        "111": {
+                            "guild_name": "Alpha",
+                            "limits": {"storage_limit_bytes": 1024 * 1024},
+                        }
+                    },
+                    "limits": {"max_file_bytes": 1024 * 1024},
+                }
+                with mock.patch.object(self.dashboard, "MEDIA_DIR", Path(media_dir)):
+                    with mock.patch.object(self.dashboard, "load_config", return_value=config):
+                        result = self.dashboard.run_guess_library_bulk_import(
+                            "111",
+                            csv_file.name,
+                            archive_file.name,
+                            "anime.zip",
+                            actor_name="test",
+                        )
+
+            self.assertEqual(result["imported"], 1)
+            self.assertEqual(result["attached_media"], 1)
+            self.assertEqual(result["missing_media"], 0)
+        finally:
+            for filename in (csv_file.name, archive_file.name):
+                try:
+                    os.unlink(filename)
+                except OSError:
+                    pass
+
 if __name__ == "__main__":
     unittest.main()

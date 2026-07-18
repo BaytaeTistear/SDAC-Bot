@@ -8542,6 +8542,33 @@ def guess_library_media_metadata(filename, path, content_type=""):
     }
 
 
+def guild_media_size(guild_id):
+    folder = MEDIA_DIR / str(guild_id)
+    if not folder.exists():
+        return 0
+    total = 0
+    for path in folder.rglob("*"):
+        if path.is_file():
+            try:
+                total += path.stat().st_size
+            except OSError:
+                pass
+    return int(total or 0)
+
+
+def guild_storage_limit(guild_config, config_data=None):
+    guild_config = guild_config or {}
+    config_data = config_data or {}
+    limits = guild_config.get("limits") or {}
+    global_limits = config_data.get("limits") or {}
+    raw_limit = limits.get("storage_limit_bytes")
+    if raw_limit in (None, "", 0, "0"):
+        raw_limit = global_limits.get("guild_storage_limit_bytes")
+    try:
+        limit = int(raw_limit or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, limit)
 def save_guess_library_upload(guild_id, upload, limits):
     if upload is None or not upload.filename:
         raise ValueError("Game media is required.")

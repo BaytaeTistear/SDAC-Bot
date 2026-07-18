@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.3.10 Experimental
+
+Version 4.3.10 is an experimental Game Library import reliability update.
+
+Update scope: CSV/media archive background importer
+
+Changes:
+- fixes media archive imports failing with `guild_storage_limit` is not defined
+- adds the missing guild media size helper used by storage-limit checks
+- applies server-level and global guild storage limits during CSV/media archive imports
+- adds regression coverage for importing a CSV row with matching media through the background importer path
+
+Notes:
+- This is an experimental update. Failed jobs from earlier versions can be retried by uploading the CSV and archive again after updating.
 # Sana-Chan Version 4.3.9 Experimental
 
 Version 4.3.9 is an experimental Game Library import visibility update.
