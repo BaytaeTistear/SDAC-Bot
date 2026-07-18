@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.3.9 Experimental
+
+Version 4.3.9 is an experimental Game Library import visibility update.
+
+Update scope: Bulk CSV/media archive import feedback
+
+Changes:
+- adds a Recent Imports panel to the Game Library page
+- shows accepted CSV filename, media archive filename, archive size, extraction stage, indexed media count, rows seen, imported items, attached media, missing media, skipped rows, timestamps, and failures
+- updates the media archive queue notice so admins know to watch Recent Imports after submitting a CSV plus archive
+- adds regression coverage proving `.csv` and `.7z` import job progress appears on the Game Library page
+
+Notes:
+- This is an experimental update. CSV-only imports still finish immediately; archive-backed imports run as background jobs and update when the page is refreshed.
 # Sana-Chan Version 4.3.8 Experimental
 
 Version 4.3.8 is an experimental Game Library route stability update.

@@ -2438,6 +2438,11 @@ GAME_LIBRARY_HTML = """
             margin: 0 6px 6px 0;
         }
         .actions button { padding: 7px 9px; }
+                .queued { color: #ffd75e; }
+        .running { color: #7c9cff; }
+        .complete { color: #63c174; }
+        .failed { color: #e45d68; }
+        .import-hint { margin-top: 0; text-align: center; }
         .muted { color: #a8adb8; }
         code { color: #cdd7ff; }
     </style>
@@ -2563,6 +2568,61 @@ GAME_LIBRARY_HTML = """
             </div>
             <p><button type="submit">Import Drafts</button></p>
         </form>
+    </section>
+
+        <section class="panel">
+        <h2>Recent Imports</h2>
+        <p class="muted import-hint">
+            CSV-only imports finish during the upload request. Imports with a media archive run as background jobs;
+            refresh this page to see extraction progress or open <a href="{{ url_for('admin_jobs', key=admin_key, guild_id=selected_guild_id or 'all') }}">Jobs</a> for the full log.
+        </p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Job</th>
+                    <th>Files Accepted</th>
+                    <th>Status</th>
+                    <th>Extraction</th>
+                    <th>Imported</th>
+                    <th>When</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in import_jobs %}
+                    <tr>
+                        <td><code>#{{ job.id }}</code></td>
+                        <td>
+                            CSV: <code>{{ job.csv_filename or "unknown" }}</code><br>
+                            Archive: {% if job.archive_filename %}<code>{{ job.archive_filename }}</code>{% else %}<span class="muted">none</span>{% endif %}
+                            {% if job.archive_size_label %}<br><span class="muted">{{ job.archive_size_label }}</span>{% endif %}
+                        </td>
+                        <td class="{{ job.status }}">
+                            {{ job.status }}<br>
+                            <span class="muted">{{ job.stage_label }}</span>
+                            {% if job.error %}<br><span class="failed">{{ job.error }}</span>{% endif %}
+                        </td>
+                        <td>
+                            Stage: <code>{{ job.stage }}</code><br>
+                            Media entries indexed: {{ job.media_entries }}<br>
+                            Rows seen: {{ job.rows_seen }}
+                        </td>
+                        <td>
+                            Items: {{ job.imported }}<br>
+                            Media attached: {{ job.attached_media }}<br>
+                            Missing media: {{ job.missing_media }}<br>
+                            Skipped rows: {{ job.skipped }}
+                        </td>
+                        <td>
+                            Created: {{ job.created_at or "" }}<br>
+                            Started: {{ job.started_at or "" }}<br>
+                            Finished: {{ job.finished_at or "" }}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="6" class="muted">No recent CSV or media archive imports yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </section>
 
     <section class="panel">
@@ -8991,6 +9051,69 @@ def delete_guess_library_media(stored_path):
             pass
 
 
+def guess_library_import_stage_label(status, stage):
+    stage = str(stage or "").strip() or str(status or "queued")
+    labels = {
+        "queued": "Waiting for the dashboard worker to start.",
+        "running": "Worker is active.",
+        "reading_csv": "CSV accepted; reading rows now.",
+        "opening_archive": "Media archive accepted; opening/extracting index now.",
+        "archive_indexed": "Archive opened; matching CSV rows to media files.",
+        "importing_rows": "Rows are being saved into the Game Library.",
+        "complete": "Import finished.",
+        "failed": "Import failed. Check the error on this row.",
+    }
+    return labels.get(stage, stage.replace("_", " ").title())
+
+
+def recent_guess_library_import_jobs(limit=8, guild_id=None):
+    where = ["job_type = ?"]
+    params = ["guess_library_bulk_import"]
+    if guild_id:
+        where.append("guild_id = ?")
+        params.append(str(guild_id))
+    with closing(connect_db()) as connection:
+        rows = connection.execute(f"""
+            SELECT *
+            FROM background_jobs
+            WHERE {' AND '.join(where)}
+            ORDER BY id DESC
+            LIMIT ?
+        """, params + [int(limit)]).fetchall()
+    jobs = []
+    for row in rows:
+        job = dict(row)
+        try:
+            payload = json.loads(job.get("payload_json") or "{}")
+        except (TypeError, ValueError):
+            payload = {}
+        try:
+            result = json.loads(job.get("result_json") or "{}")
+        except (TypeError, ValueError):
+            result = {}
+        stage = result.get("stage") or job.get("status") or "queued"
+        archive_size = result.get("archive_size") or payload.get("archive_size") or 0
+        try:
+            archive_size = int(archive_size or 0)
+        except (TypeError, ValueError):
+            archive_size = 0
+        job.update({
+            "payload": payload,
+            "result": result,
+            "csv_filename": payload.get("csv_filename") or Path(payload.get("csv_path") or "").name,
+            "archive_filename": payload.get("archive_filename") or result.get("archive") or "",
+            "archive_size_label": format_bytes(archive_size) if archive_size else "",
+            "stage": stage,
+            "stage_label": guess_library_import_stage_label(job.get("status"), stage),
+            "media_entries": int(result.get("media_entries") or 0),
+            "rows_seen": int(result.get("rows_seen") or 0),
+            "imported": int(result.get("imported") or 0),
+            "attached_media": int(result.get("attached_media") or 0),
+            "missing_media": int(result.get("missing_media") or 0),
+            "skipped": int(result.get("skipped") or 0),
+        })
+        jobs.append(job)
+    return jobs
 def validate_time(value):
     value = str(value or "").strip()
     if not re.match(r"^\d{2}:\d{2}$", value):
@@ -15735,7 +15858,7 @@ def admin_game_library():
                         actor_name=actor_name,
                     )
                     return game_library_redirect(
-                        f"Queued media archive import as background job #{job_id}. Open Jobs to watch extraction progress.",
+                        f"Accepted CSV and media archive. Queued extraction as background job #{job_id}; watch Recent Imports below for progress.",
                         guild_id=guild_id,
                     )
                 raw_content = upload.stream.read()
@@ -16209,6 +16332,7 @@ def admin_game_library():
         csrf_token=get_csrf_token(),
         error=error,
         guild_options=options,
+        import_jobs=recent_guess_library_import_jobs(guild_id=selected_server_id or None),
         items=items,
         max_file_label=format_bytes(max_file_bytes),
         max_text_length=max_text_length,

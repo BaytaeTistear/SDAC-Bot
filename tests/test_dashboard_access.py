@@ -35,6 +35,7 @@ class DashboardAccessTests(unittest.TestCase):
         with self.dashboard.database() as connection:
             connection.execute("DELETE FROM dashboard_user_server_access")
             connection.execute("DELETE FROM guess_library_items")
+            connection.execute("DELETE FROM background_jobs")
             connection.execute("DELETE FROM dashboard_admin_users")
             connection.execute("""
                 INSERT INTO dashboard_admin_users (
@@ -390,6 +391,54 @@ class DashboardAccessTests(unittest.TestCase):
                 (item_id,),
             ).fetchone()
         self.assertIsNone(row)
+
+    def test_game_library_shows_recent_import_job_progress(self):
+        with self.dashboard.database() as connection:
+            connection.execute(
+                """
+                INSERT INTO background_jobs (
+                    job_type, guild_id, status, requested_by,
+                    requested_by_name, payload_json, result_json,
+                    error, created_at, started_at, finished_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "guess_library_bulk_import",
+                    "111",
+                    "running",
+                    "admin-id",
+                    "Admin",
+                    '{"csv_filename":"anime.csv","archive_filename":"anime.7z","archive_size":7340032}',
+                    '{"stage":"archive_indexed","media_entries":42,"rows_seen":10,"imported":6,"attached_media":5,"missing_media":1,"skipped":2}',
+                    "",
+                    "2026-07-18T00:00:00+00:00",
+                    "2026-07-18T00:00:01+00:00",
+                    "",
+                ),
+            )
+
+        with self.dashboard.app.test_client() as client:
+            with client.session_transaction() as session:
+                session["sdac_admin"] = True
+                session["sdac_admin_username"] = "baytae"
+                session["sdac_admin_role"] = "bot_owner"
+                session["csrf_token"] = "library-token"
+            with mock.patch.object(self.dashboard, "load_config", return_value=self.config):
+                response = client.get(
+                    f"/admin/game-library?key={self.dashboard.ADMIN_KEY}&guild_id=111"
+                )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("Recent Imports", body)
+        self.assertIn("anime.csv", body)
+        self.assertIn("anime.7z", body)
+        self.assertIn("archive_indexed", body)
+        self.assertIn("Media entries indexed: 42", body)
+        self.assertIn("Rows seen: 10", body)
+        self.assertIn("Media attached: 5", body)
+        self.assertIn("Missing media: 1", body)
 
 if __name__ == "__main__":
     unittest.main()
