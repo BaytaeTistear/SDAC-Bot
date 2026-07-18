@@ -139,10 +139,19 @@ class BotStartupTests(unittest.TestCase):
         game_labels = [label for _value, label, _description in bot.SDAC_SUBMENUS["games"]["options"]]
         self.assertIn("Create Game", game_labels)
         self.assertIn("Start Library Game", game_labels)
+        self.assertIn("Bulk Schedule", game_labels)
+        self.assertIn("Guess Timeout", game_labels)
         self.assertIn("Create Guessing Game", bot.SDAC_SUBMENU_DETAILS["games_create"])
         self.assertNotIn("/startlibrarygame", bot.SDAC_SUBMENU_DETAILS["games_start_library"])
+        self.assertIn("multiple start times", bot.SDAC_SUBMENU_DETAILS["games_bulk_schedule"])
+        self.assertIn("wrong guess", bot.SDAC_SUBMENU_DETAILS["games_timeout"])
         self.assertTrue(hasattr(bot, "StartLibraryGameWizardView"))
+        self.assertTrue(hasattr(bot, "BulkScheduleGameWizardView"))
+        self.assertTrue(hasattr(bot, "BulkScheduleGameModal"))
+        self.assertTrue(hasattr(bot, "GuessTimeoutModal"))
         self.assertTrue(hasattr(bot, "start_library_game_from_interaction"))
+        self.assertTrue(hasattr(bot, "schedule_library_game_record"))
+        self.assertTrue(hasattr(bot, "set_wrong_guess_timeout"))
         self.assertTrue(hasattr(bot, "resolve_selected_text_channel"))
 
 if __name__ == "__main__":

@@ -853,6 +853,8 @@ SDAC_SUBMENUS = {
             ("games_create", "Create Game", "Create a saved guessing-game item from the dashboard."),
             ("games_start_library", "Start Library Game", "Start a saved Game Library item."),
             ("games_schedule", "Schedule Game", "Schedule a saved library game."),
+            ("games_bulk_schedule", "Bulk Schedule", "Schedule several saved library games at once."),
+            ("games_timeout", "Guess Timeout", "Change the wrong-guess cooldown."),
             ("games_active", "Active Game", "Show the active game in this channel."),
             ("games_cancel", "Cancel Game", "Cancel the active game in this channel."),
         ],
@@ -883,7 +885,9 @@ SDAC_SUBMENU_DETAILS = {
     "moderation_permissions": "**Permission Check**\nRun `/checkpermissions` to inspect access or `/repairpermissions` to get a repair invite.",
     "games_create": "**Create Guessing Game**\nOpen the dashboard Game Library to create a reusable game item with answer aliases, hints, media, category, pack, and tags.",
     "games_start_library": "**Start Library Game**\nChoose this action to pick a channel, optionally set a library item ID or category, and start the game directly from `/sana`.",
-    "games_schedule": "**Schedule Game**\nUse `/schedulegame #channel item_id start_time category recurring` when advanced commands are visible, or manage saved game content from the dashboard first.",
+    "games_schedule": "**Schedule Game**\nUse this action for one saved library game, or choose Bulk Schedule to queue several start times at once.",
+    "games_bulk_schedule": "**Bulk Schedule**\nChoose a game channel, then enter multiple start times. Sana-Chan will queue one saved library game for each time.",
+    "games_timeout": "**Guess Timeout**\nSet how many minutes a user waits after a wrong guess before they can guess again.",
     "games_active": "**Active Game**\nRun `/activegame` to see the current guessing game in this channel.",
     "games_cancel": "**Cancel Game**\nRun `/cancelgame` to stop the active guessing game in this channel.",
 }
@@ -1128,6 +1132,25 @@ class SDACSubmenuSelect(discord.ui.Select):
                 view=StartLibraryGameWizardView(self.is_admin, self.section_key, interaction.user.id),
             )
             return
+        if action == "games_bulk_schedule":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can bulk schedule games.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                content=(
+                    "**Bulk Schedule Games**\n"
+                    "Choose the channel where scheduled games should start. After that, Sana-Chan "
+                    "will ask for one or more start times and optional library filters."
+                ),
+                view=BulkScheduleGameWizardView(self.is_admin, interaction.user.id),
+            )
+            return
+        if action == "games_timeout":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can change guessing-game timeout.", ephemeral=True)
+                return
+            await interaction.response.send_modal(GuessTimeoutModal(interaction.user.id))
+            return
         await interaction.response.edit_message(
             content=sdac_submenu_content(self.section_key, SDAC_SUBMENU_DETAILS.get(action, "Action selected.")),
             view=SDACSubmenuView(self.is_admin, self.section_key),
@@ -1328,6 +1351,25 @@ class SDACSubmenuButton(discord.ui.Button):
                 view=StartLibraryGameWizardView(self.is_admin, self.section_key, interaction.user.id),
             )
             return
+        if action == "games_bulk_schedule":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can bulk schedule games.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                content=(
+                    "**Bulk Schedule Games**\n"
+                    "Choose the channel where scheduled games should start. After that, Sana-Chan "
+                    "will ask for one or more start times and optional library filters."
+                ),
+                view=BulkScheduleGameWizardView(self.is_admin, interaction.user.id),
+            )
+            return
+        if action == "games_timeout":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can change guessing-game timeout.", ephemeral=True)
+                return
+            await interaction.response.send_modal(GuessTimeoutModal(interaction.user.id))
+            return
         await interaction.response.edit_message(
             content=sdac_submenu_content(self.section_key, SDAC_SUBMENU_DETAILS.get(action, "Action selected.")),
             view=SDACSubmenuView(self.is_admin, self.section_key),
@@ -1357,6 +1399,192 @@ class SDACSubmenuView(discord.ui.View):
             style = discord.ButtonStyle.primary if index == 0 else discord.ButtonStyle.secondary
             self.add_item(SDACSubmenuButton(is_admin, section_key, value, label, index // 2, style))
         self.add_item(SDACBackButton(is_admin))
+
+
+class GuessTimeoutModal(discord.ui.Modal):
+    def __init__(self, owner_id):
+        super().__init__(title="Guess Timeout")
+        self.owner_id = int(owner_id)
+        self.minutes_input = discord.ui.TextInput(
+            label="Wrong-guess cooldown minutes",
+            placeholder="1 to 1440",
+            default="5",
+            required=True,
+            max_length=6,
+        )
+        self.add_item(self.minutes_input)
+
+    async def on_submit(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can change guessing-game timeout.", ephemeral=True)
+            return
+        try:
+            minutes = int(str(self.minutes_input.value or "").strip())
+        except ValueError:
+            await interaction.response.send_message("Timeout must be a whole number of minutes.", ephemeral=True)
+            return
+        if minutes < 1 or minutes > 1440:
+            await interaction.response.send_message("Timeout must be between 1 and 1440 minutes.", ephemeral=True)
+            return
+        set_wrong_guess_timeout(interaction, minutes)
+        await interaction.response.send_message(
+            f"Wrong-guess cooldown set to `{minutes}` minute(s).",
+            ephemeral=True,
+        )
+
+
+class BulkScheduleGameModal(discord.ui.Modal):
+    def __init__(self, owner_id, channel_id, channel_mention):
+        super().__init__(title="Bulk Schedule Games")
+        self.owner_id = int(owner_id)
+        self.channel_id = int(channel_id)
+        self.channel_mention = channel_mention
+        self.start_times_input = discord.ui.TextInput(
+            label="Start times, one per line",
+            placeholder="2026-07-20 18:00\n2026-07-21 18:00",
+            style=discord.TextStyle.paragraph,
+            required=True,
+            max_length=900,
+        )
+        self.item_id_input = discord.ui.TextInput(
+            label="Library item ID",
+            placeholder="0 chooses by category/reuse rules",
+            default="0",
+            required=False,
+            max_length=20,
+        )
+        self.category_input = discord.ui.TextInput(
+            label="Category filter",
+            placeholder="Optional, for example animeguess",
+            required=False,
+            max_length=80,
+        )
+        self.random_input = discord.ui.TextInput(
+            label="Random item?",
+            placeholder="yes or no",
+            default="yes",
+            required=False,
+            max_length=8,
+        )
+        self.close_after_input = discord.ui.TextInput(
+            label="Auto-close minutes",
+            placeholder="0 disables auto-close",
+            default="0",
+            required=False,
+            max_length=8,
+        )
+        self.add_item(self.start_times_input)
+        self.add_item(self.item_id_input)
+        self.add_item(self.category_input)
+        self.add_item(self.random_input)
+        self.add_item(self.close_after_input)
+
+    async def on_submit(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can bulk schedule games.", ephemeral=True)
+            return
+        channel = interaction.guild.get_channel(self.channel_id) if interaction.guild else None
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message("That channel is no longer available.", ephemeral=True)
+            return
+        try:
+            item_id = int(str(self.item_id_input.value or "0").strip() or "0")
+        except ValueError:
+            await interaction.response.send_message("Library item ID must be 0 or a positive number.", ephemeral=True)
+            return
+        if item_id < 0:
+            await interaction.response.send_message("Library item ID must be 0 or a positive number.", ephemeral=True)
+            return
+        try:
+            close_after_minutes = int(str(self.close_after_input.value or "0").strip() or "0")
+        except ValueError:
+            await interaction.response.send_message("Auto-close minutes must be a whole number.", ephemeral=True)
+            return
+        if close_after_minutes < 0 or close_after_minutes > 10080:
+            await interaction.response.send_message("Auto-close minutes must be between 0 and 10080.", ephemeral=True)
+            return
+        random_value = str(self.random_input.value or "yes").strip().casefold()
+        random_item = random_value in {"1", "y", "yes", "true", "random"}
+        raw_times = [
+            line.strip()
+            for line in str(self.start_times_input.value or "").replace(";", "\n").splitlines()
+            if line.strip()
+        ]
+        if not raw_times:
+            await interaction.response.send_message("Enter at least one start time.", ephemeral=True)
+            return
+        if len(raw_times) > 20:
+            await interaction.response.send_message("Bulk schedule is limited to 20 start times at once.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        guild_config = get_guild_config(interaction.guild_id, create=False)
+        timezone_info = get_guild_timezone(guild_config)
+        category = str(self.category_input.value or "").strip()
+        created = []
+        errors = []
+        for raw_time in raw_times:
+            try:
+                starts_at = parse_scheduled_start_time(raw_time, guild_config)
+                scheduled_id, selected_item = schedule_library_game_record(
+                    interaction,
+                    channel,
+                    starts_at,
+                    item_id=item_id,
+                    category=category,
+                    random_item=random_item,
+                    close_after_minutes=close_after_minutes,
+                )
+                local_time = starts_at.astimezone(timezone_info).strftime("%Y-%m-%d %H:%M %Z")
+                created.append(f"#{scheduled_id} `{local_time}` item `{selected_item['id']}`")
+            except ValueError as error:
+                errors.append(f"`{raw_time}`: {error}")
+        lines = [f"**Bulk Schedule Games**", f"Channel: {channel.mention}"]
+        if created:
+            lines.extend(["", "Queued:", *created[:15]])
+            if len(created) > 15:
+                lines.append(f"...and {len(created) - 15} more.")
+        if errors:
+            lines.extend(["", "Skipped:", *errors[:8]])
+            if len(errors) > 8:
+                lines.append(f"...and {len(errors) - 8} more error(s).")
+        await interaction.edit_original_response(content="\n".join(lines)[:1900])
+
+
+class BulkScheduleGameChannelSelect(discord.ui.ChannelSelect):
+    def __init__(self, owner_id):
+        super().__init__(placeholder="Choose the schedule channel", min_values=1, max_values=1, channel_types=[discord.ChannelType.text], row=0)
+        self.owner_id = int(owner_id)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can bulk schedule games.", ephemeral=True)
+            return
+        channel = await resolve_selected_text_channel(interaction.guild, self.values[0])
+        if channel is None:
+            await interaction.response.send_message(
+                "I could not access that text channel. Choose a normal server text channel that Sana-Chan can view.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_modal(BulkScheduleGameModal(interaction.user.id, channel.id, channel.mention))
+
+
+class BulkScheduleGameWizardView(discord.ui.View):
+    def __init__(self, is_admin, owner_id):
+        super().__init__(timeout=300)
+        self.add_item(BulkScheduleGameChannelSelect(owner_id))
+        self.add_item(SDACBackButton(is_admin))
+
+
 class StartLibraryGameModal(discord.ui.Modal):
     def __init__(self, owner_id, channel_id, channel_mention):
         super().__init__(title="Start Library Game")
@@ -8708,6 +8936,18 @@ async def settimezone(interaction, timezone_name: str):
     )
 
 
+def set_wrong_guess_timeout(interaction, minutes):
+    seconds = int(minutes) * 60
+    config.setdefault("limits", {})["wrong_guess_timeout_seconds"] = seconds
+    save_config(config)
+    audit_interaction(
+        interaction,
+        "set_guess_timeout",
+        "limit",
+        "wrong_guess_timeout_seconds",
+        f"Set to {minutes} minute(s).",
+    )
+
 @tree.command(name="setguesstimeout", description="Set wrong-guess cooldown")
 @app_commands.guild_only()
 @app_commands.describe(minutes="Cooldown minutes after a wrong guess")
@@ -8717,16 +8957,7 @@ async def setguesstimeout(
 ):
     if not await require_admin(interaction):
         return
-    seconds = int(minutes) * 60
-    config["limits"]["wrong_guess_timeout_seconds"] = seconds
-    save_config(config)
-    audit_interaction(
-        interaction,
-        "set_guess_timeout",
-        "limit",
-        "wrong_guess_timeout_seconds",
-        f"Set to {minutes} minute(s).",
-    )
+    set_wrong_guess_timeout(interaction, minutes)
     await interaction.response.send_message(
         f"Wrong-guess cooldown set to `{minutes}` minute(s).",
         ephemeral=True,
@@ -10487,51 +10718,22 @@ async def submit(interaction):
         view.message = None
 
 
-@tree.command(name="schedulegame", description="Schedule a saved library guessing game")
-@app_commands.guild_only()
-@app_commands.describe(
-    channel="Channel where the scheduled game should start",
-    start_time="YYYY-MM-DD HH:MM in server timezone, or ISO time",
-    item_id="Library item ID. Use 0 to choose by category/reuse rules.",
-    category="Optional library category filter when item_id is 0",
-    random_item="Pick a random matching library item",
-    close_after_minutes="Automatically close the game after this many minutes",
-)
-async def schedulegame(
+def schedule_library_game_record(
     interaction,
-    channel: discord.TextChannel,
-    start_time: str,
-    item_id: int = 0,
-    category: str = "",
-    random_item: bool = True,
-    close_after_minutes: int = 0,
+    channel,
+    starts_at,
+    item_id=0,
+    category="",
+    random_item=True,
+    close_after_minutes=0,
 ):
-    if not await require_admin(interaction):
-        return
     guild_config = get_guild_config(interaction.guild_id, create=False)
     if not feature_enabled(guild_config, "guessing_games"):
-        await interaction.response.send_message(
-            "Guessing games are currently disabled for this server.",
-            ephemeral=True,
-        )
-        return
-    try:
-        starts_at = parse_scheduled_start_time(start_time, guild_config)
-    except ValueError as error:
-        await interaction.response.send_message(str(error), ephemeral=True)
-        return
+        raise ValueError("Guessing games are currently disabled for this server.")
     if starts_at <= datetime.now(timezone.utc):
-        await interaction.response.send_message(
-            "Scheduled game time must be in the future.",
-            ephemeral=True,
-        )
-        return
+        raise ValueError("Scheduled game time must be in the future.")
     if close_after_minutes < 0 or close_after_minutes > 10080:
-        await interaction.response.send_message(
-            "Auto-close minutes must be between 0 and 10080.",
-            ephemeral=True,
-        )
-        return
+        raise ValueError("Auto-close minutes must be between 0 and 10080.")
     game_settings = guild_game_settings(guild_config)
     with database() as connection:
         item = select_library_item_for_game(
@@ -10543,11 +10745,7 @@ async def schedulegame(
             reuse_cooldown_days=int(game_settings.get("reuse_cooldown_days") or 0),
         )
         if item is None:
-            await interaction.response.send_message(
-                "No active game-library item matched that schedule request.",
-                ephemeral=True,
-            )
-            return
+            raise ValueError("No active game-library item matched that schedule request.")
         cursor = connection.execute("""
             INSERT INTO scheduled_games (
                 guild_id, channel_id, library_item_id, category, random_item,
@@ -10579,6 +10777,44 @@ async def schedulegame(
             scheduled_id,
             f"Channel {channel.id}; starts {starts_at.isoformat()}; item {item['id']}.",
         )
+    return scheduled_id, item
+
+@tree.command(name="schedulegame", description="Schedule a saved library guessing game")
+@app_commands.guild_only()
+@app_commands.describe(
+    channel="Channel where the scheduled game should start",
+    start_time="YYYY-MM-DD HH:MM in server timezone, or ISO time",
+    item_id="Library item ID. Use 0 to choose by category/reuse rules.",
+    category="Optional library category filter when item_id is 0",
+    random_item="Pick a random matching library item",
+    close_after_minutes="Automatically close the game after this many minutes",
+)
+async def schedulegame(
+    interaction,
+    channel: discord.TextChannel,
+    start_time: str,
+    item_id: int = 0,
+    category: str = "",
+    random_item: bool = True,
+    close_after_minutes: int = 0,
+):
+    if not await require_admin(interaction):
+        return
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    try:
+        starts_at = parse_scheduled_start_time(start_time, guild_config)
+        scheduled_id, item = schedule_library_game_record(
+            interaction,
+            channel,
+            starts_at,
+            item_id=item_id,
+            category=category,
+            random_item=random_item,
+            close_after_minutes=close_after_minutes,
+        )
+    except ValueError as error:
+        await interaction.response.send_message(str(error), ephemeral=True)
+        return
     local_time = starts_at.astimezone(get_guild_timezone(guild_config))
     await interaction.response.send_message(
         "\n".join([

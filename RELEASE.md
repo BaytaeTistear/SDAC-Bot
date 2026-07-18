@@ -1,3 +1,18 @@
+# Sana-Chan Version 4.3.19 Experimental
+
+Version 4.3.19 is an experimental /sana guessing-game menu update.
+
+Update scope: Guided timeout and bulk scheduling controls in /sana
+
+Changes:
+- adds Guess Timeout to the /sana admin Games menu
+- adds Bulk Schedule to queue multiple saved library game start times from a guided Discord flow
+- adds shared timeout and scheduling helpers so direct commands and /sana flows use the same validation
+- keeps bulk scheduling scoped to admins and existing Game Library item validation
+- updates startup coverage for the new menu actions and modal/view classes
+
+Notes:
+- This is an experimental update. Bulk Schedule accepts up to 20 start times in one modal and skips invalid rows while queuing valid ones.
 # Sana-Chan Version 4.3.18 Experimental
 
 Version 4.3.18 is an experimental Game Library activation clarity update.
