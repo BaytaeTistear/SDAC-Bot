@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.3.12 Experimental
+
+Version 4.3.12 is an experimental Game Library queue recovery update.
+
+Update scope: Background import worker startup and queued import recovery
+
+Changes:
+- fixes background jobs staying stuck in `queued` because status updates were missing the job id parameter
+- lets Recent Imports restart queued Game Library archive imports after an update or worker crash
+- adds regression coverage for marking queued jobs as running
+- adds regression coverage for Recent Imports restarting queued Game Library import jobs
+
+Notes:
+- This is an experimental update. After updating, open the Game Library page again to let Recent Imports kick any still-queued import jobs forward.
 # Sana-Chan Version 4.3.11 Experimental
 
 Version 4.3.11 is an experimental Game Library import lock-resilience update.

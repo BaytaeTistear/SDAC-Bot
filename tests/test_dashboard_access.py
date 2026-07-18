@@ -483,6 +483,43 @@ class DashboardAccessTests(unittest.TestCase):
                 except OSError:
                     pass
 
+    def test_recent_imports_restarts_queued_guess_import_jobs(self):
+        job_id = self.dashboard.create_background_job(
+            "guess_library_bulk_import",
+            guild_id="111",
+            payload={"guild_id": "111"},
+            actor_id="tester",
+            actor_name="Tester",
+        )
+
+        with mock.patch.object(self.dashboard, "start_background_job") as starter:
+            self.dashboard.recent_guess_library_import_jobs(limit=3, guild_id="111")
+
+        starter.assert_called_with(job_id)
+    def test_update_background_job_marks_queued_job_running(self):
+        job_id = self.dashboard.create_background_job(
+            "guess_library_bulk_import",
+            guild_id="111",
+            payload={"guild_id": "111"},
+            actor_id="tester",
+            actor_name="Tester",
+        )
+
+        self.dashboard.update_background_job(
+            job_id,
+            status="running",
+            started_at="2026-07-18T18:30:00+00:00",
+            error="",
+        )
+
+        with self.dashboard.database() as connection:
+            job = connection.execute(
+                "SELECT status, started_at, error FROM background_jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+        self.assertEqual(job["status"], "running")
+        self.assertEqual(job["started_at"], "2026-07-18T18:30:00+00:00")
+        self.assertEqual(job["error"], "")
     def test_sqlite_write_retry_handles_temporary_lock(self):
         attempts = {"count": 0}
 

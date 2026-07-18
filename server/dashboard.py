@@ -9122,7 +9122,25 @@ def guess_library_import_stage_label(status, stage):
     return labels.get(stage, stage.replace("_", " ").title())
 
 
+def kick_queued_background_jobs(job_type=None, limit=5):
+    where = ["status = 'queued'"]
+    params = []
+    if job_type:
+        where.append("job_type = ?")
+        params.append(str(job_type))
+    with closing(connect_db()) as connection:
+        rows = connection.execute(f"""
+            SELECT id
+            FROM background_jobs
+            WHERE {' AND '.join(where)}
+            ORDER BY id ASC
+            LIMIT ?
+        """, params + [int(limit)]).fetchall()
+    for row in rows:
+        start_background_job(int(row["id"]))
+
 def recent_guess_library_import_jobs(limit=8, guild_id=None):
+    kick_queued_background_jobs("guess_library_bulk_import", limit=3)
     where = ["job_type = ?"]
     params = ["guess_library_bulk_import"]
     if guild_id:
@@ -11849,7 +11867,8 @@ def update_background_job(job_id, **fields):
         assignments.append(f"{key} = ?")
         params.append(value)
     if not assignments:
-        return    params.append(job_id)
+        return
+    params.append(job_id)
 
     def write_job_update(connection):
         connection.execute(
