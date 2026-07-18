@@ -1,3 +1,19 @@
+# Sana-Chan Version 4.3.24 Experimental
+
+Version 4.3.24 is an experimental /sana menu action sweep.
+
+Update scope: Make Games menu buttons perform real actions
+
+Changes:
+- wires /sana Active Game to show the current channel's active game details instead of pointing at /activegame
+- wires /sana Schedule Game to a guided channel picker and scheduling modal
+- wires /sana Create Game to an Open Game Library dashboard link
+- makes View Categories, Show Hint, and user Active Game show live information from /sana
+- updates menu text so fixed buttons no longer point users at hidden commands
+- adds startup coverage for guided schedule classes and hidden-command regressions in the Games menu
+
+Notes:
+- This is an experimental update. Admin Games menu actions should now either run directly, open a guided flow, or open the dashboard page they need.
 # Sana-Chan Version 4.3.23 Experimental
 
 Version 4.3.23 is an experimental /sana Cancel Game fix.

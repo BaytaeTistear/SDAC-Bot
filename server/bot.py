@@ -50,6 +50,7 @@ SIMPLIFIED_SLASH_COMMANDS = os.getenv("SANA_SIMPLIFIED_COMMANDS", os.getenv("SDA
 CORE_SLASH_COMMANDS = {"sana", "submit", "guess", "hint"}
 PROJECT_GITHUB_URL = f"https://github.com/{ORIGINAL_REPO}"
 PROJECT_WIKI_URL = f"{PROJECT_GITHUB_URL}/wiki"
+DASHBOARD_BASE_URL = os.getenv("SANA_DASHBOARD_URL", os.getenv("SDAC_DASHBOARD_URL", "https://freethefishies.us.to")).rstrip("/")
 COMMAND_ALIAS_PATTERN = re.compile(r"^[a-z0-9_-]{1,32}$")
 COMMAND_ALIAS_RESERVED = CORE_SLASH_COMMANDS | {"commands", "admincommands", "setup"}
 
@@ -790,7 +791,7 @@ SDAC_SUBMENUS = {
         "placeholder": "Choose a submission action",
         "options": [
             ("submit_start", "Start Submission", "Run /submit for the guided upload flow."),
-            ("submit_categories", "View Categories", "Run /categories to see available destinations."),
+            ("submit_categories", "View Categories", "Show available destinations."),
         ],
     },
     "guess": {
@@ -798,8 +799,8 @@ SDAC_SUBMENUS = {
         "placeholder": "Choose a guessing-game action",
         "options": [
             ("guess_answer", "Guess Answer", "Run /guess answer in the active game channel."),
-            ("guess_hint", "Show Hint", "Run /hint for the current game hint."),
-            ("guess_active", "Active Game", "Run /activegame to see the current game."),
+            ("guess_hint", "Show Hint", "Show the current game hint."),
+            ("guess_active", "Active Game", "Show the current game status."),
         ],
     },
     "anime": {
@@ -852,7 +853,7 @@ SDAC_SUBMENUS = {
         "options": [
             ("games_create", "Create Game", "Create a saved guessing-game item from the dashboard."),
             ("games_start_library", "Start Library Game", "Start a saved Game Library item."),
-            ("games_schedule", "Schedule Game", "Schedule a saved library game."),
+            ("games_schedule", "Schedule Game", "Schedule one saved library game."),
             ("games_bulk_schedule", "Bulk Schedule", "Ask a new saved-library question on a repeating cadence."),
             ("games_timeout", "Guess Timeout", "Change the wrong-guess cooldown."),
             ("games_active", "Active Game", "Show the active game in this channel."),
@@ -864,10 +865,10 @@ SDAC_SUBMENUS = {
 
 SDAC_SUBMENU_DETAILS = {
     "submit_start": "**Start Submission**\nRun `/submit` to open the guided 3-step upload flow.",
-    "submit_categories": "**View Categories**\nRun `/categories` to see the configured submission categories for this server.",
+    "submit_categories": "**View Categories**\nShow this server configuration and submission category destinations.",
     "guess_answer": "**Guess Answer**\nRun `/guess answer` in the channel where a guessing game is active.",
-    "guess_hint": "**Show Hint**\nRun `/hint` in the active game channel to see the current hint.",
-    "guess_active": "**Active Game**\nRun `/activegame` to see what game is currently running in this channel.",
+    "guess_hint": "**Show Hint**\nShow the currently revealed hint for the active game in this channel.",
+    "guess_active": "**Active Game**\nShow the active guessing game status in this channel.",
     "anime_save": "**Save Anime Profile**\nRun `/animeprofile favorites watching` to save favorites and currently watching notes.",
     "anime_import": "**Import MyAnimeList**\nRun `/animeprofileimport username` to import public MyAnimeList favorites and watching data.",
     "anime_view": "**View Anime Profile**\nRun `/animeprofileview @member` to view a saved anime profile.",
@@ -889,7 +890,7 @@ SDAC_SUBMENU_DETAILS = {
     "games_schedule": "**Schedule Game**\nUse this action for one saved library game, or choose Bulk Schedule to queue a repeating run.",
     "games_bulk_schedule": "**Bulk Schedule**\nChoose a game channel, pick minutes, hours, or days, then enter how often Sana-Chan should ask a new saved-library question.",
     "games_timeout": "**Guess Timeout**\nSet how many minutes a user waits after a wrong guess before they can guess again.",
-    "games_active": "**Active Game**\nRun `/activegame` to see the current guessing game in this channel.",
+    "games_active": "**Active Game**\nShow admin details for the active guessing game in this channel.",
     "games_cancel_scheduled": "**Cancel Scheduled Games**\nCancel all queued or starting scheduled games for this server. Current live games are handled by Cancel Game.",
     "games_cancel": "**Cancel Game**\nCancel the active guessing game in this channel without using a hidden command.",
 }
@@ -951,6 +952,8 @@ class SDACHubSelect(discord.ui.Select):
 
     async def callback(self, interaction):
         action = self.values[0]
+        if await handle_sana_instant_action(interaction, action, self.is_admin, self.section_key):
+            return
         if action == "public_help":
             await interaction.response.edit_message(
                 content=(
@@ -985,6 +988,148 @@ class SDACHubSelect(discord.ui.Select):
         )
 
 
+def sana_categories_content(guild_id):
+    guild_config = get_guild_config(guild_id, create=False)
+    submit_channel_id = guild_config.get("submit_channel")
+    submit_channel = bot.get_channel(submit_channel_id) if submit_channel_id else None
+    timezone_name = guild_config.get("timezone", DEFAULT_GUILD_CONFIG["timezone"])
+    lines = [
+        "**Sana-Chan Configuration**",
+        f"Submit channel: {submit_channel.mention if submit_channel else 'Not set'}",
+        f"Timezone: `{timezone_name}`",
+        f"Weekly day: {guild_config.get('weekly_top_day', 'sunday').title()}",
+        f"Weekly time: {guild_config['daily_top_time_utc']} {timezone_name}",
+        f"Approval: {'Enabled' if guild_config['approval_enabled'] else 'Disabled'}",
+        "",
+    ]
+    if not guild_config["categories"]:
+        lines.append("No categories are set.")
+    else:
+        lines.append("**Categories:**")
+        for category, channel_id in sorted(guild_config["categories"].items()):
+            channel = bot.get_channel(channel_id)
+            destination = channel.mention if channel else f"Unknown channel `{channel_id}`"
+            lines.append(f"- `{category}` -> {destination}")
+    return "\n".join(lines)[:1900]
+
+
+def active_guess_game_content(interaction, include_answer=False):
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    if not feature_enabled(guild_config, "guessing_games"):
+        return "Guessing games are currently disabled for this server."
+    timezone_info = get_guild_timezone(guild_config)
+    with database() as connection:
+        game = connection.execute("""
+            SELECT *
+            FROM guess_games
+            WHERE guild_id = ?
+              AND channel_id = ?
+              AND status = 'active'
+            ORDER BY started_at DESC, id DESC
+            LIMIT 1
+        """, (str(interaction.guild_id), str(interaction.channel_id))).fetchone()
+        correct_rows = []
+        if game:
+            correct_rows = connection.execute("""
+                SELECT username, guessed_at
+                FROM guess_correct_guesses
+                WHERE game_id = ?
+                ORDER BY guessed_at ASC
+            """, (game["id"],)).fetchall()
+    if not game:
+        return "There is no active guessing game in this channel."
+    started_at = parse_database_datetime(game["started_at"])
+    started_display = (
+        started_at.astimezone(timezone_info).strftime("%Y-%m-%d %H:%M")
+        if started_at else (game["started_at"] or "unknown")
+    )
+    try:
+        hints = json.loads(game["hints_json"] or "[]")
+    except (TypeError, json.JSONDecodeError):
+        hints = []
+    hint_level = int(game["hint_level"] or 0)
+    correct_names = [row["username"] for row in correct_rows]
+    correct_display = ", ".join(correct_names[:20]) if correct_names else "Nobody"
+    if len(correct_names) > 20:
+        correct_display += f" and {len(correct_names) - 20} more"
+    lines = [
+        f"**Active Guessing Game {game['id']}**",
+        f"Channel: {channel_display(game['channel_id'])}",
+        f"Started by: {game['starter_username']}",
+        f"Started: `{started_display}` `{guild_config.get('timezone', 'UTC')}`",
+        f"Prompt: {game['prompt_text'] or '(none)'}",
+        f"Hints revealed: `{hint_level}` of `{len(hints)}`",
+        f"Next auto hint: `{game['next_hint_at'] or 'disabled'}`",
+        f"Correct guessers: {correct_display}",
+    ]
+    if include_answer:
+        try:
+            aliases = json.loads(game["answer_aliases_json"] or "[]")
+        except (TypeError, json.JSONDecodeError):
+            aliases = []
+        alias_display = ", ".join(alias.get("display", "") for alias in aliases[1:] if alias.get("display")) or "(none)"
+        lines.extend([
+            f"Answer: `{game['answer_display']}`",
+            f"Aliases: {alias_display}",
+            f"Hint category: {game['hint_category'] or '(none)'}",
+            f"Hint: {game['hint_text'] or '(none)'}",
+            f"Media: `{game['media_name']}` ({game['media_type']})",
+            f"Library item: `{game['library_item_id'] or 'none'}`",
+        ])
+    return "\n".join(lines)[:1900]
+
+
+def current_hint_content(interaction):
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    if not feature_enabled(guild_config, "guessing_games"):
+        return "Guessing games are currently disabled for this server."
+    with database() as connection:
+        game = connection.execute("""
+            SELECT hint_text, hint_revealed_at
+            FROM guess_games
+            WHERE guild_id = ?
+              AND channel_id = ?
+              AND status = 'active'
+            ORDER BY started_at DESC, id DESC
+            LIMIT 1
+        """, (str(interaction.guild_id), str(interaction.channel_id))).fetchone()
+    if not game:
+        return "There is no active guessing game in this channel."
+    if not game["hint_revealed_at"] or not game["hint_text"]:
+        return "No hint has been revealed yet."
+    return f"**Hint:** {game['hint_text']}"
+
+
+async def handle_sana_instant_action(interaction, action, is_admin, section_key):
+    if action == "submit_categories":
+        await interaction.response.edit_message(
+            content=sana_categories_content(interaction.guild_id),
+            view=SDACSubmenuView(is_admin, section_key),
+        )
+        return True
+    if action == "guess_hint":
+        await interaction.response.edit_message(
+            content=current_hint_content(interaction),
+            view=SDACSubmenuView(is_admin, section_key),
+        )
+        return True
+    if action == "guess_active":
+        await interaction.response.edit_message(
+            content=active_guess_game_content(interaction, include_answer=False),
+            view=SDACSubmenuView(is_admin, section_key),
+        )
+        return True
+    if action == "games_active":
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can inspect active game details.", ephemeral=True)
+            return True
+        await interaction.response.edit_message(
+            content=active_guess_game_content(interaction, include_answer=True),
+            view=SDACSubmenuView(is_admin, section_key),
+        )
+        return True
+    return False
+
 class SDACSubmenuSelect(discord.ui.Select):
     def __init__(self, is_admin, section_key):
         self.is_admin = bool(is_admin)
@@ -1003,6 +1148,8 @@ class SDACSubmenuSelect(discord.ui.Select):
 
     async def callback(self, interaction):
         action = self.values[0]
+        if await handle_sana_instant_action(interaction, action, self.is_admin, self.section_key):
+            return
         if action == "setup_wizard":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
@@ -1132,6 +1279,19 @@ class SDACSubmenuSelect(discord.ui.Select):
                     "will ask for an optional library item ID, category filter, and random mode."
                 ),
                 view=StartLibraryGameWizardView(self.is_admin, self.section_key, interaction.user.id),
+            )
+            return
+        if action == "games_schedule":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can schedule games.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                content=(
+                    "**Schedule Game**\n"
+                    "Choose the channel where the scheduled game should start. After that, Sana-Chan "
+                    "will ask for the start time and optional library filters."
+                ),
+                view=ScheduleGameWizardView(self.is_admin, interaction.user.id),
             )
             return
         if action == "games_bulk_schedule":
@@ -1248,6 +1408,8 @@ class SDACSubmenuButton(discord.ui.Button):
 
     async def callback(self, interaction):
         action = self.value
+        if await handle_sana_instant_action(interaction, action, self.is_admin, self.section_key):
+            return
         if action == "setup_wizard":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
@@ -1377,6 +1539,19 @@ class SDACSubmenuButton(discord.ui.Button):
                     "will ask for an optional library item ID, category filter, and random mode."
                 ),
                 view=StartLibraryGameWizardView(self.is_admin, self.section_key, interaction.user.id),
+            )
+            return
+        if action == "games_schedule":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can schedule games.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                content=(
+                    "**Schedule Game**\n"
+                    "Choose the channel where the scheduled game should start. After that, Sana-Chan "
+                    "will ask for the start time and optional library filters."
+                ),
+                view=ScheduleGameWizardView(self.is_admin, interaction.user.id),
             )
             return
         if action == "games_bulk_schedule":
@@ -1557,6 +1732,131 @@ class GuessTimeoutModal(discord.ui.Modal):
             ephemeral=True,
         )
 
+
+class ScheduleGameModal(discord.ui.Modal):
+    def __init__(self, owner_id, channel_id, channel_mention):
+        super().__init__(title="Schedule Game")
+        self.owner_id = int(owner_id)
+        self.channel_id = int(channel_id)
+        self.channel_mention = channel_mention
+        self.start_time_input = discord.ui.TextInput(
+            label="Start time",
+            placeholder="YYYY-MM-DD HH:MM in server timezone, or ISO time",
+            required=True,
+            max_length=80,
+        )
+        self.item_id_input = discord.ui.TextInput(
+            label="Library item ID",
+            placeholder="0 chooses by category/reuse rules",
+            default="0",
+            required=False,
+            max_length=20,
+        )
+        self.category_input = discord.ui.TextInput(
+            label="Category filter",
+            placeholder="Optional, for example animeguess",
+            required=False,
+            max_length=80,
+        )
+        self.random_input = discord.ui.TextInput(
+            label="Random item?",
+            placeholder="yes or no",
+            default="yes",
+            required=False,
+            max_length=8,
+        )
+        self.close_after_input = discord.ui.TextInput(
+            label="Auto-close minutes",
+            placeholder="0 disables auto-close",
+            default="0",
+            required=False,
+            max_length=8,
+        )
+        self.add_item(self.start_time_input)
+        self.add_item(self.item_id_input)
+        self.add_item(self.category_input)
+        self.add_item(self.random_input)
+        self.add_item(self.close_after_input)
+
+    async def on_submit(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can schedule games.", ephemeral=True)
+            return
+        channel = interaction.guild.get_channel(self.channel_id) if interaction.guild else None
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message("That channel is no longer available.", ephemeral=True)
+            return
+        try:
+            item_id = int(str(self.item_id_input.value or "0").strip() or "0")
+        except ValueError:
+            await interaction.response.send_message("Library item ID must be 0 or a positive number.", ephemeral=True)
+            return
+        if item_id < 0:
+            await interaction.response.send_message("Library item ID must be 0 or a positive number.", ephemeral=True)
+            return
+        try:
+            close_after_minutes = int(str(self.close_after_input.value or "0").strip() or "0")
+        except ValueError:
+            await interaction.response.send_message("Auto-close minutes must be a whole number.", ephemeral=True)
+            return
+        random_value = str(self.random_input.value or "yes").strip().casefold()
+        random_item = random_value in {"1", "y", "yes", "true", "random"}
+        guild_config = get_guild_config(interaction.guild_id, create=False)
+        try:
+            starts_at = parse_scheduled_start_time(str(self.start_time_input.value or "").strip(), guild_config)
+            scheduled_id, item = schedule_library_game_record(
+                interaction,
+                channel,
+                starts_at,
+                item_id=item_id,
+                category=str(self.category_input.value or "").strip(),
+                random_item=random_item,
+                close_after_minutes=close_after_minutes,
+            )
+        except ValueError as error:
+            await interaction.response.send_message(str(error), ephemeral=True)
+            return
+        local_time = starts_at.astimezone(get_guild_timezone(guild_config)).strftime("%Y-%m-%d %H:%M %Z")
+        await interaction.response.send_message(
+            "\n".join([
+                f"Scheduled game `{scheduled_id}` for {channel.mention}.",
+                f"Starts: `{local_time}`",
+                f"Selected item now: `{item['id']}` - `{item['title'] or item['answer_display']}`",
+            ])[:1900],
+            ephemeral=True,
+        )
+
+
+class ScheduleGameChannelSelect(discord.ui.ChannelSelect):
+    def __init__(self, owner_id):
+        super().__init__(placeholder="Choose the schedule channel", min_values=1, max_values=1, channel_types=[discord.ChannelType.text], row=0)
+        self.owner_id = int(owner_id)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can schedule games.", ephemeral=True)
+            return
+        channel = await resolve_selected_text_channel(interaction.guild, self.values[0])
+        if channel is None:
+            await interaction.response.send_message(
+                "I could not access that text channel. Choose a normal server text channel that Sana-Chan can view.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_modal(ScheduleGameModal(interaction.user.id, channel.id, channel.mention))
+
+
+class ScheduleGameWizardView(discord.ui.View):
+    def __init__(self, is_admin, owner_id):
+        super().__init__(timeout=300)
+        self.add_item(ScheduleGameChannelSelect(owner_id))
+        self.add_item(SDACBackButton(is_admin))
 
 class BulkScheduleGameModal(discord.ui.Modal):
     def __init__(self, owner_id, channel_id, channel_mention, interval_unit):
