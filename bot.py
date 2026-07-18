@@ -882,7 +882,7 @@ SDAC_SUBMENU_DETAILS = {
     "moderation_reasons": "**Reason Presets**\nRun `/reasonpresets` to see standard admin action reasons.",
     "moderation_permissions": "**Permission Check**\nRun `/checkpermissions` to inspect access or `/repairpermissions` to get a repair invite.",
     "games_create": "**Create Guessing Game**\nOpen the dashboard Game Library to create a reusable game item with answer aliases, hints, media, category, pack, and tags.",
-    "games_start_library": "**Start Library Game**\nUse `/startlibrarygame #channel item_id category random_item` when advanced commands are visible, or start from a saved Game Library item in the dashboard.",
+    "games_start_library": "**Start Library Game**\nChoose this action to pick a channel, optionally set a library item ID or category, and start the game directly from `/sana`.",
     "games_schedule": "**Schedule Game**\nUse `/schedulegame #channel item_id start_time category recurring` when advanced commands are visible, or manage saved game content from the dashboard first.",
     "games_active": "**Active Game**\nRun `/activegame` to see the current guessing game in this channel.",
     "games_cancel": "**Cancel Game**\nRun `/cancelgame` to stop the active guessing game in this channel.",
@@ -1115,6 +1115,19 @@ class SDACSubmenuSelect(discord.ui.Select):
                 view=SDACSubmenuView(self.is_admin, self.section_key),
             )
             return
+        if action == "games_start_library":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can start library games.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                content=(
+                    "**Start Library Game**\n"
+                    "Choose the channel where players should guess. After that, Sana-Chan "
+                    "will ask for an optional library item ID, category filter, and random mode."
+                ),
+                view=StartLibraryGameWizardView(self.is_admin, self.section_key, interaction.user.id),
+            )
+            return
         await interaction.response.edit_message(
             content=sdac_submenu_content(self.section_key, SDAC_SUBMENU_DETAILS.get(action, "Action selected.")),
             view=SDACSubmenuView(self.is_admin, self.section_key),
@@ -1302,6 +1315,19 @@ class SDACSubmenuButton(discord.ui.Button):
                 view=SDACSubmenuView(self.is_admin, self.section_key),
             )
             return
+        if action == "games_start_library":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can start library games.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                content=(
+                    "**Start Library Game**\n"
+                    "Choose the channel where players should guess. After that, Sana-Chan "
+                    "will ask for an optional library item ID, category filter, and random mode."
+                ),
+                view=StartLibraryGameWizardView(self.is_admin, self.section_key, interaction.user.id),
+            )
+            return
         await interaction.response.edit_message(
             content=sdac_submenu_content(self.section_key, SDAC_SUBMENU_DETAILS.get(action, "Action selected.")),
             view=SDACSubmenuView(self.is_admin, self.section_key),
@@ -1330,6 +1356,66 @@ class SDACSubmenuView(discord.ui.View):
         for index, (value, label, _description) in enumerate(submenu["options"][:20]):
             style = discord.ButtonStyle.primary if index == 0 else discord.ButtonStyle.secondary
             self.add_item(SDACSubmenuButton(is_admin, section_key, value, label, index // 2, style))
+        self.add_item(SDACBackButton(is_admin))
+class StartLibraryGameModal(discord.ui.Modal):
+    def __init__(self, owner_id, channel_id, channel_mention):
+        super().__init__(title="Start Library Game")
+        self.owner_id = int(owner_id)
+        self.channel_id = int(channel_id)
+        self.channel_mention = channel_mention
+        self.item_id_input = discord.ui.TextInput(label="Library item ID", placeholder="0 starts the next unused matching item", default="0", required=False, max_length=20)
+        self.category_input = discord.ui.TextInput(label="Category filter", placeholder="Optional, for example animeguess", required=False, max_length=80)
+        self.random_input = discord.ui.TextInput(label="Random item?", placeholder="yes or no", default="no", required=False, max_length=8)
+        self.add_item(self.item_id_input)
+        self.add_item(self.category_input)
+        self.add_item(self.random_input)
+
+    async def on_submit(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can start library games.", ephemeral=True)
+            return
+        try:
+            item_id = int(str(self.item_id_input.value or "0").strip() or "0")
+            if item_id < 0:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message("Library item ID must be 0 or a positive number.", ephemeral=True)
+            return
+        random_value = str(self.random_input.value or "no").strip().casefold()
+        random_item = random_value in {"1", "y", "yes", "true", "random"}
+        channel = interaction.guild.get_channel(self.channel_id) if interaction.guild else None
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message("That channel is no longer available.", ephemeral=True)
+            return
+        await start_library_game_from_interaction(interaction, channel, item_id=item_id, category=str(self.category_input.value or "").strip(), random_item=random_item)
+
+
+class StartLibraryGameChannelSelect(discord.ui.ChannelSelect):
+    def __init__(self, owner_id):
+        super().__init__(placeholder="Choose the guessing-game channel", min_values=1, max_values=1, channel_types=[discord.ChannelType.text], row=0)
+        self.owner_id = int(owner_id)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can start library games.", ephemeral=True)
+            return
+        channel = self.values[0]
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message("Choose a text channel for the game.", ephemeral=True)
+            return
+        await interaction.response.send_modal(StartLibraryGameModal(interaction.user.id, channel.id, channel.mention))
+
+
+class StartLibraryGameWizardView(discord.ui.View):
+    def __init__(self, is_admin, section_key, owner_id):
+        super().__init__(timeout=300)
+        self.add_item(StartLibraryGameChannelSelect(owner_id))
         self.add_item(SDACBackButton(is_admin))
 
 def fill_nested_defaults(target, defaults):
@@ -10847,6 +10933,82 @@ async def startgame(
         if discord_file is not None:
             discord_file.close()
 
+
+
+async def start_library_game_from_interaction(
+    interaction,
+    channel,
+    item_id=0,
+    category="",
+    random_item=False,
+):
+    if not interaction.guild:
+        await interaction.response.send_message("This action must be used inside a server.", ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    paused = emergency_pause_message(guild_config)
+    if paused:
+        await interaction.followup.send(paused, ephemeral=True)
+        return
+    if not feature_enabled(guild_config, "guessing_games"):
+        await interaction.followup.send("Guessing games are currently disabled for this server.", ephemeral=True)
+        return
+
+    try:
+        item_id = int(item_id or 0)
+    except (TypeError, ValueError):
+        item_id = 0
+    category_filter = (category or "").strip()
+    game_settings = guild_game_settings(guild_config)
+    try:
+        reuse_cooldown_days = int(game_settings.get("reuse_cooldown_days") or 0)
+    except (TypeError, ValueError):
+        reuse_cooldown_days = 0
+
+    with database() as connection:
+        item = select_library_item_for_game(
+            connection,
+            interaction.guild_id,
+            item_id=item_id,
+            category=category_filter,
+            random_item=bool(random_item),
+            reuse_cooldown_days=reuse_cooldown_days,
+        )
+
+    if not item:
+        filter_text = f" in category `{category_filter}`" if category_filter else ""
+        message = (
+            "No active Game Library item with media was found "
+            f"for this server{filter_text}."
+            if item_id <= 0
+            else f"Active Game Library item `{item_id}` was not found for this server."
+        )
+        await interaction.followup.send(message, ephemeral=True)
+        return
+
+    try:
+        game_id, replaced_game = await start_library_game_item(
+            interaction.guild,
+            channel,
+            item,
+            interaction.user.id,
+            interaction.user,
+            source="library",
+        )
+    except Exception as error:
+        capture_exception(error)
+        await interaction.followup.send(f"Library game start failed: `{error}`", ephemeral=True)
+        return
+
+    await interaction.followup.send(
+        (
+            f"Guessing game `{game_id}` started in {channel.mention} "
+            f"from library item `{item['id']}`."
+            + (" Previous active game was removed." if replaced_game else "")
+        ),
+        ephemeral=True,
+    )
 
 @tree.command(
     name="startlibrarygame",

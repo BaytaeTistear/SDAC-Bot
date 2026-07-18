@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.3.14 Experimental
+
+Version 4.3.14 is an experimental `/sana` guided library game update.
+
+Update scope: Start Library Game from the mobile-friendly `/sana` menu
+
+Changes:
+- changes `/sana` > Games > Start Library Game from command instructions into an interactive flow
+- adds a channel picker followed by a modal for optional library item ID, category filter, and random item mode
+- starts the selected Game Library item directly through the existing game starter so permissions, cooldowns, media checks, and audit logs stay consistent
+- updates regression coverage so the `/sana` Games menu no longer points users at the hidden `/startlibrarygame` command
+
+Notes:
+- This is an experimental update. The legacy `/startlibrarygame` command remains hidden while simplified commands are enabled, but the `/sana` guided flow can now start library games directly.
 # Sana-Chan Version 4.3.13 Experimental
 
 Version 4.3.13 is an experimental import control and /sana games menu update.

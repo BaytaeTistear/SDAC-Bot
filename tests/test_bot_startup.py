@@ -138,7 +138,11 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("games", bot.SDAC_SUBMENUS)
         game_labels = [label for _value, label, _description in bot.SDAC_SUBMENUS["games"]["options"]]
         self.assertIn("Create Game", game_labels)
+        self.assertIn("Start Library Game", game_labels)
         self.assertIn("Create Guessing Game", bot.SDAC_SUBMENU_DETAILS["games_create"])
+        self.assertNotIn("/startlibrarygame", bot.SDAC_SUBMENU_DETAILS["games_start_library"])
+        self.assertTrue(hasattr(bot, "StartLibraryGameWizardView"))
+        self.assertTrue(hasattr(bot, "start_library_game_from_interaction"))
 
 if __name__ == "__main__":
     unittest.main()
