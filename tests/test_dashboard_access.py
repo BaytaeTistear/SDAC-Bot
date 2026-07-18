@@ -392,6 +392,106 @@ class DashboardAccessTests(unittest.TestCase):
             ).fetchone()
         self.assertIsNone(row)
 
+    def test_game_library_bulk_actions_enable_disable_and_delete_items(self):
+        with self.dashboard.database() as connection:
+            item_ids = []
+            for index, enabled in enumerate((1, 1, 0), start=1):
+                cursor = connection.execute(
+                    """
+                    INSERT INTO guess_library_items (
+                        guild_id, title, answer, answer_display,
+                        answer_aliases_json, prompt_text, category, hint_text,
+                        auto_hint_minutes, media_path, media_name, media_type,
+                        media_size, media_metadata_json, status, times_used,
+                        tags_json, pack_name, enabled, notes,
+                        created_by, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, '', 'anime', '', 0, '', '', 'unknown',
+                        0, '{}', 'draft', 0, '[]', 'Bulk', ?, '', 'test',
+                        '2026-07-18T00:00:00+00:00', '2026-07-18T00:00:00+00:00')
+                    """,
+                    (
+                        "111",
+                        f"Bulk Library {index}",
+                        f"bulklibrary{index}",
+                        f"Bulk Library {index}",
+                        '[{"normalized":"bulklibrary%s","display":"Bulk Library %s"}]' % (index, index),
+                        enabled,
+                    ),
+                )
+                item_ids.append(cursor.lastrowid)
+
+        with self.dashboard.app.test_client() as client:
+            with client.session_transaction() as session:
+                session["sdac_admin"] = True
+                session["sdac_admin_username"] = "baytae"
+                session["sdac_admin_role"] = "bot_owner"
+                session["csrf_token"] = "library-token"
+            with mock.patch.object(self.dashboard, "load_config", return_value=self.config):
+                response = client.post(
+                    "/admin/game-library",
+                    data={
+                        "key": self.dashboard.ADMIN_KEY,
+                        "csrf_token": "library-token",
+                        "action": "bulk_item_action",
+                        "guild_id": "111",
+                        "bulk_action": "disable",
+                        "item_ids": ",".join(str(item_id) for item_id in item_ids[:2]),
+                    },
+                    follow_redirects=False,
+                )
+                self.assertEqual(response.status_code, 302)
+                self.assertIn("/admin/game-library", response.location)
+
+                response = client.post(
+                    "/admin/game-library",
+                    data={
+                        "key": self.dashboard.ADMIN_KEY,
+                        "csrf_token": "library-token",
+                        "action": "bulk_item_action",
+                        "guild_id": "111",
+                        "bulk_action": "enable",
+                        "item_ids": str(item_ids[2]),
+                    },
+                    follow_redirects=False,
+                )
+                self.assertEqual(response.status_code, 302)
+                self.assertIn("/admin/game-library", response.location)
+
+                with self.dashboard.database() as connection:
+                    state_rows = connection.execute(
+                        """
+                        SELECT id, enabled
+                        FROM guess_library_items
+                        WHERE id IN (?, ?, ?)
+                        ORDER BY id ASC
+                        """,
+                        item_ids,
+                    ).fetchall()
+                self.assertEqual([row["enabled"] for row in state_rows], [0, 0, 1])
+
+                response = client.post(
+                    "/admin/game-library",
+                    data={
+                        "key": self.dashboard.ADMIN_KEY,
+                        "csrf_token": "library-token",
+                        "action": "bulk_item_action",
+                        "guild_id": "111",
+                        "bulk_action": "delete",
+                        "item_ids": ",".join(str(item_id) for item_id in item_ids),
+                    },
+                    follow_redirects=False,
+                )
+                self.assertEqual(response.status_code, 302)
+                self.assertIn("/admin/game-library", response.location)
+
+        with self.dashboard.database() as connection:
+            remaining = connection.execute(
+                "SELECT COUNT(*) FROM guess_library_items WHERE id IN (?, ?, ?)",
+                item_ids,
+            ).fetchone()[0]
+        self.assertEqual(remaining, 0)
+
     def test_game_library_shows_recent_import_job_progress(self):
         with self.dashboard.database() as connection:
             connection.execute(

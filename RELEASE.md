@@ -1,3 +1,19 @@
+# Sana-Chan Version 4.3.17 Experimental
+
+Version 4.3.17 is an experimental Game Library bulk saved-item management update.
+
+Update scope: Bulk enable, disable, and delete for saved Game Library items
+
+Changes:
+- adds Saved Items checkboxes on the Game Library dashboard page
+- adds bulk Enable Selected, Disable Selected, and Delete Selected actions
+- validates selected item IDs server-side with the current admin's existing server access rules
+- keeps bulk actions on the stable `/admin/game-library` dashboard route with CSRF protection
+- deletes attached Game Library media during bulk delete using the existing media cleanup helper
+- adds regression coverage for bulk enable, disable, and delete behavior
+
+Notes:
+- This is an experimental update. Bulk delete is permanent for the selected saved items, so filter to the intended server before selecting a large group.
 # Sana-Chan Version 4.3.16 Experimental
 
 Version 4.3.16 is an experimental Game Library importer media-format update.

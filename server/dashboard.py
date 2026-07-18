@@ -2653,9 +2653,22 @@ GAME_LIBRARY_HTML = """
             </select>
             <button type="submit">Filter</button>
         </form>
+        <form method="post" action="{{ url_for('admin_game_library') }}" onsubmit="return prepareBulkLibraryAction(this);">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="bulk_item_action">
+            <input type="hidden" name="guild_id" value="{{ selected_guild_id or 'all' }}">
+            <input type="hidden" name="item_ids" value="">
+            <div class="actions">
+                <button type="submit" name="bulk_action" value="enable">Enable Selected</button>
+                <button type="submit" name="bulk_action" value="disable">Disable Selected</button>
+                <button class="danger" type="submit" name="bulk_action" value="delete">Delete Selected</button>
+            </div>
+        </form>
         <table>
             <thead>
                 <tr>
+                    <th><input type="checkbox" aria-label="Select all saved items" onclick="toggleLibraryItems(this)"></th>
                     <th>ID</th>
                     <th>Server</th>
                     <th>Title / Answer</th>
@@ -2668,6 +2681,7 @@ GAME_LIBRARY_HTML = """
             <tbody>
                 {% for item in items %}
                     <tr>
+                        <td><input class="library-item-selector" type="checkbox" value="{{ item.id }}" aria-label="Select saved item {{ item.id }}"></td>
                         <td><code>{{ item.id }}</code></td>
                         <td>{{ item.guild_name }}</td>
                         <td>
@@ -2753,12 +2767,40 @@ GAME_LIBRARY_HTML = """
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="7" class="muted">No game library items yet.</td></tr>
+                    <tr><td colspan="8" class="muted">No game library items yet.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
     </section>
 </main>
+<script>
+function selectedLibraryItemIds() {
+    return Array.from(document.querySelectorAll(".library-item-selector:checked"))
+        .map((item) => item.value)
+        .filter(Boolean);
+}
+function toggleLibraryItems(source) {
+    document.querySelectorAll(".library-item-selector").forEach((item) => {
+        item.checked = source.checked;
+    });
+}
+function prepareBulkLibraryAction(form) {
+    const ids = selectedLibraryItemIds();
+    if (!ids.length) {
+        alert("Select at least one saved item.");
+        return false;
+    }
+    const submitter = document.activeElement;
+    const action = submitter && submitter.name === "bulk_action" ? submitter.value : "update";
+    const labels = {enable: "enable", disable: "disable", delete: "delete"};
+    const label = labels[action] || "update";
+    if (!confirm(`Bulk ${label} ${ids.length} saved item(s)?`)) {
+        return false;
+    }
+    form.querySelector('input[name="item_ids"]').value = ids.join(",");
+    return true;
+}
+</script>
 </body>
 </html>
 """
@@ -15910,6 +15952,84 @@ def admin_game_library():
                 cancel_background_job(job_id, actor_id=actor_id, actor_name=actor_name)
                 return game_library_redirect(
                     f"Import job #{job_id} canceled.",
+                    guild_id=redirect_guild_id,
+                )
+
+            if action == "bulk_item_action":
+                bulk_action = request.form.get("bulk_action", "").strip().lower()
+                if bulk_action not in {"enable", "disable", "delete"}:
+                    raise ValueError("Choose a valid bulk action.")
+                raw_item_ids = []
+                for raw_value in request.form.getlist("item_ids"):
+                    raw_item_ids.extend(str(raw_value or "").replace("\n", ",").split(","))
+                item_ids = []
+                seen_item_ids = set()
+                for raw_item_id in raw_item_ids:
+                    try:
+                        item_id = int(str(raw_item_id).strip())
+                    except (TypeError, ValueError):
+                        continue
+                    if item_id > 0 and item_id not in seen_item_ids:
+                        seen_item_ids.add(item_id)
+                        item_ids.append(item_id)
+                if not item_ids:
+                    raise ValueError("Select at least one saved item.")
+
+                placeholders = ",".join("?" for _ in item_ids)
+                now = utc_now_iso()
+                with database() as connection:
+                    items = connection.execute(f"""
+                        SELECT id, guild_id, title, media_path
+                        FROM guess_library_items
+                        WHERE id IN ({placeholders})
+                    """, item_ids).fetchall()
+                    found_ids = {int(item["id"]) for item in items}
+                    missing_ids = [str(item_id) for item_id in item_ids if item_id not in found_ids]
+                    if missing_ids:
+                        raise ValueError(
+                            "Saved item(s) not found: " + ", ".join(missing_ids)
+                        )
+                    for item in items:
+                        if not can_admin_access_guild(item["guild_id"], config_data):
+                            abort(403)
+                    if bulk_action == "delete":
+                        connection.execute(
+                            f"DELETE FROM guess_library_items WHERE id IN ({placeholders})",
+                            item_ids,
+                        )
+                    else:
+                        enabled_value = 1 if bulk_action == "enable" else 0
+                        connection.execute(
+                            f"""
+                            UPDATE guess_library_items
+                            SET enabled = ?,
+                                updated_at = ?
+                            WHERE id IN ({placeholders})
+                            """,
+                            [enabled_value, now, *item_ids],
+                        )
+                    affected_guild_ids = sorted({str(item["guild_id"] or "") for item in items})
+                    audit_guild_id = affected_guild_ids[0] if len(affected_guild_ids) == 1 else None
+                    add_admin_audit_log(
+                        connection,
+                        audit_guild_id,
+                        f"dashboard_bulk_{bulk_action}_guess_library_items",
+                        actor_id,
+                        actor_name,
+                        "guess_library_item",
+                        ",".join(str(item_id) for item_id in item_ids),
+                        f"Bulk {bulk_action}d {len(items)} website game-library item(s).",
+                    )
+                if bulk_action == "delete":
+                    for item in items:
+                        delete_guess_library_media(item["media_path"])
+                label = {
+                    "enable": "Enabled",
+                    "disable": "Disabled",
+                    "delete": "Deleted",
+                }[bulk_action]
+                return game_library_redirect(
+                    f"{label} {len(items)} saved item(s).",
                     guild_id=redirect_guild_id,
                 )
 
