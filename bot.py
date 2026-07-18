@@ -11121,6 +11121,15 @@ async def startlibrarygame(
                   AND status = 'active'
                 LIMIT 1
             """, (item_id, str(interaction.guild_id))).fetchone()
+            inactive_item = None
+            if item is None:
+                inactive_item = connection.execute("""
+                    SELECT id, status, media_path
+                    FROM guess_library_items
+                    WHERE id = ?
+                      AND guild_id = ?
+                    LIMIT 1
+                """, (item_id, str(interaction.guild_id))).fetchone()
         else:
             where = [
                 "guild_id = ?",
@@ -11159,15 +11168,26 @@ async def startlibrarygame(
 
     if not item:
         filter_text = f" in category `{category_filter}`" if category_filter else ""
-        await interaction.response.send_message(
-            (
+        if item_id > 0 and inactive_item is not None:
+            inactive_status = inactive_item["status"] or "draft"
+            if not str(inactive_item["media_path"] or "").strip():
+                message = (
+                    f"Game Library item `{item_id}` exists for this server, "
+                    "but it needs media attached before it can start."
+                )
+            else:
+                message = (
+                    f"Game Library item `{item_id}` exists for this server, "
+                    f"but it is `{inactive_status}`. Enable/activate it in the Game Library first."
+                )
+        else:
+            message = (
                 "No active website game-library item with media was found "
                 f"for this server{filter_text}."
                 if item_id <= 0
                 else f"Active website game-library item `{item_id}` was not found for this server."
-            ),
-            ephemeral=True,
-        )
+            )
+        await interaction.response.send_message(message, ephemeral=True)
         return
 
     try:

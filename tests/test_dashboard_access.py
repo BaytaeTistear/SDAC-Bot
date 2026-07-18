@@ -406,7 +406,7 @@ class DashboardAccessTests(unittest.TestCase):
                         tags_json, pack_name, enabled, notes,
                         created_by, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, '', 'anime', '', 0, '', '', 'unknown',
+                    VALUES (?, ?, ?, ?, ?, '', 'anime', '', 0, ?, ?, 'image',
                         0, '{}', 'draft', 0, '[]', 'Bulk', ?, '', 'test',
                         '2026-07-18T00:00:00+00:00', '2026-07-18T00:00:00+00:00')
                     """,
@@ -416,6 +416,8 @@ class DashboardAccessTests(unittest.TestCase):
                         f"bulklibrary{index}",
                         f"Bulk Library {index}",
                         '[{"normalized":"bulklibrary%s","display":"Bulk Library %s"}]' % (index, index),
+                        f"game_library/bulk-library-{index}.png",
+                        f"bulk-library-{index}.png",
                         enabled,
                     ),
                 )
@@ -461,7 +463,7 @@ class DashboardAccessTests(unittest.TestCase):
                 with self.dashboard.database() as connection:
                     state_rows = connection.execute(
                         """
-                        SELECT id, enabled
+                        SELECT id, enabled, status
                         FROM guess_library_items
                         WHERE id IN (?, ?, ?)
                         ORDER BY id ASC
@@ -469,6 +471,10 @@ class DashboardAccessTests(unittest.TestCase):
                         item_ids,
                     ).fetchall()
                 self.assertEqual([row["enabled"] for row in state_rows], [0, 0, 1])
+                self.assertEqual(
+                    [row["status"] for row in state_rows],
+                    ["disabled", "disabled", "active"],
+                )
 
                 response = client.post(
                     "/admin/game-library",

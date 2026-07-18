@@ -1,3 +1,18 @@
+# Sana-Chan Version 4.3.18 Experimental
+
+Version 4.3.18 is an experimental Game Library activation clarity update.
+
+Update scope: Bulk Enable now activates saved Game Library items for direct play
+
+Changes:
+- changes bulk Enable on saved Game Library items to set media-backed items to active and enabled
+- changes bulk Disable to set selected saved items to disabled and not picker-enabled
+- blocks bulk activation for selected saved items that do not have media attached yet
+- improves the Discord Start Library Game error when an item exists but is draft, disabled, or missing media
+- updates regression coverage so bulk actions verify both enabled flags and item status
+
+Notes:
+- This is an experimental update. Item #29 was not starting because it was still `draft`; direct library starts require `active` items.
 # Sana-Chan Version 4.3.17 Experimental
 
 Version 4.3.17 is an experimental Game Library bulk saved-item management update.

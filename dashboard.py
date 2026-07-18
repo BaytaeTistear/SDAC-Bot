@@ -15998,15 +15998,31 @@ def admin_game_library():
                             item_ids,
                         )
                     else:
-                        enabled_value = 1 if bulk_action == "enable" else 0
+                        if bulk_action == "enable":
+                            missing_media_ids = [
+                                str(item["id"])
+                                for item in items
+                                if not str(item["media_path"] or "").strip()
+                            ]
+                            if missing_media_ids:
+                                raise ValueError(
+                                    "Saved item(s) need media before they can be activated: "
+                                    + ", ".join(missing_media_ids)
+                                )
+                            enabled_value = 1
+                            status_value = "active"
+                        else:
+                            enabled_value = 0
+                            status_value = "disabled"
                         connection.execute(
                             f"""
                             UPDATE guess_library_items
                             SET enabled = ?,
+                                status = ?,
                                 updated_at = ?
                             WHERE id IN ({placeholders})
                             """,
-                            [enabled_value, now, *item_ids],
+                            [enabled_value, status_value, now, *item_ids],
                         )
                     affected_guild_ids = sorted({str(item["guild_id"] or "") for item in items})
                     audit_guild_id = affected_guild_ids[0] if len(affected_guild_ids) == 1 else None
