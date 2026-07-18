@@ -2472,7 +2472,7 @@ GAME_LIBRARY_HTML = """
             between alternate answers, for example <code>Jack Black|Jables</code>.
             Matching ignores capitalization and special characters.
         </p>
-        <form method="post" enctype="multipart/form-data">
+        <form method="post" enctype="multipart/form-data" action="{{ url_for('admin_game_library') }}">
             <input type="hidden" name="key" value="{{ admin_key }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="action" value="create_item">
@@ -2542,7 +2542,7 @@ GAME_LIBRARY_HTML = """
             value in the CSV <code>media_filename</code> column. Leave
             <code>media_filename</code> blank for quote/clue-only drafts.
         </p>
-        <form method="post" enctype="multipart/form-data">
+        <form method="post" enctype="multipart/form-data" action="{{ url_for('admin_game_library') }}">
             <input type="hidden" name="key" value="{{ admin_key }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="action" value="bulk_import">
@@ -2567,7 +2567,7 @@ GAME_LIBRARY_HTML = """
 
     <section class="panel">
         <h2>Saved Items</h2>
-        <form method="get">
+        <form method="get" action="{{ url_for('admin_game_library') }}">
             <input type="hidden" name="key" value="{{ admin_key }}">
             <select name="guild_id">
                 <option value="all">All Discord Servers</option>
@@ -2624,7 +2624,7 @@ GAME_LIBRARY_HTML = """
                         <td class="actions">
                             <details>
                                 <summary>Edit / attach media</summary>
-                                <form method="post" enctype="multipart/form-data">
+                                <form method="post" enctype="multipart/form-data" action="{{ url_for('admin_game_library') }}">
                                     <input type="hidden" name="key" value="{{ admin_key }}">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <input type="hidden" name="action" value="update_item">
@@ -2654,7 +2654,7 @@ GAME_LIBRARY_HTML = """
                                 </form>
                             </details>
                             {% if item.media_url %}
-                                <form method="post">
+                                <form method="post" action="{{ url_for('admin_game_library') }}">
                                     <input type="hidden" name="key" value="{{ admin_key }}">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <input type="hidden" name="action" value="set_status">
@@ -2666,7 +2666,7 @@ GAME_LIBRARY_HTML = """
                             {% else %}
                                 <span class="muted">Create a media item to activate.</span>
                             {% endif %}
-                            <form method="post">
+                            <form method="post" action="{{ url_for('admin_game_library') }}">
                                 <input type="hidden" name="key" value="{{ admin_key }}">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <input type="hidden" name="action" value="delete_item">

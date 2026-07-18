@@ -34,6 +34,7 @@ class DashboardAccessTests(unittest.TestCase):
         }
         with self.dashboard.database() as connection:
             connection.execute("DELETE FROM dashboard_user_server_access")
+            connection.execute("DELETE FROM guess_library_items")
             connection.execute("DELETE FROM dashboard_admin_users")
             connection.execute("""
                 INSERT INTO dashboard_admin_users (
@@ -279,6 +280,116 @@ class DashboardAccessTests(unittest.TestCase):
         with tarfile.open(fileobj=buffer, mode="w") as archive:
             archive.addfile(info, io.BytesIO(payload))
         self.assert_guess_archive_media_saves_matching_file("media.tar", buffer)
+
+    def test_game_library_filter_uses_stable_dashboard_action(self):
+        with self.dashboard.app.test_client() as client:
+            with client.session_transaction() as session:
+                session["sdac_admin"] = True
+                session["sdac_admin_username"] = "baytae"
+                session["sdac_admin_role"] = "bot_owner"
+                session["csrf_token"] = "library-token"
+            with mock.patch.object(self.dashboard, "load_config", return_value=self.config):
+                response = client.get(
+                    f"/admin/game-library?key={self.dashboard.ADMIN_KEY}&guild_id=111"
+                )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('method="get" action="/admin/game-library"', body)
+        self.assertIn('method="post" enctype="multipart/form-data" action="/admin/game-library"', body)
+        self.assertNotIn("localhost", body.lower())
+        self.assertNotIn("127.0.0.1", body)
+
+    def test_game_library_buttons_stay_on_dashboard_route(self):
+        with self.dashboard.database() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO guess_library_items (
+                    guild_id, title, answer, answer_display,
+                    answer_aliases_json, prompt_text, category, hint_text,
+                    auto_hint_minutes, media_path, media_name, media_type,
+                    media_size, media_metadata_json, status, times_used,
+                    tags_json, pack_name, enabled, notes,
+                    created_by, created_at, updated_at
+                )
+                VALUES (
+                    '111', 'Library Test', 'librarytest', 'Library Test',
+                    '[{"normalized":"librarytest","display":"Library Test"}]', '',
+                    'anime', '', 0, '', '', 'unknown', 0, '{}', 'draft', 0,
+                    '[]', 'Regression', 1, '', 'test', '2026-07-18T00:00:00+00:00',
+                    '2026-07-18T00:00:00+00:00'
+                )
+                """
+            )
+            item_id = cursor.lastrowid
+
+        with self.dashboard.app.test_client() as client:
+            with client.session_transaction() as session:
+                session["sdac_admin"] = True
+                session["sdac_admin_username"] = "baytae"
+                session["sdac_admin_role"] = "bot_owner"
+                session["csrf_token"] = "library-token"
+            with mock.patch.object(self.dashboard, "load_config", return_value=self.config):
+                response = client.post(
+                    "/admin/game-library",
+                    data={
+                        "key": self.dashboard.ADMIN_KEY,
+                        "csrf_token": "library-token",
+                        "action": "set_status",
+                        "guild_id": "111",
+                        "item_id": str(item_id),
+                        "status": "disabled",
+                    },
+                    follow_redirects=False,
+                )
+                self.assertEqual(response.status_code, 302)
+                self.assertIn("/admin/game-library", response.location)
+
+                response = client.post(
+                    "/admin/game-library",
+                    data={
+                        "key": self.dashboard.ADMIN_KEY,
+                        "csrf_token": "library-token",
+                        "action": "update_item",
+                        "guild_id": "111",
+                        "item_id": str(item_id),
+                        "title": "Library Test Updated",
+                        "answer": "Library Test|Library Alias",
+                        "category": "anime",
+                        "pack_name": "Regression",
+                        "tags": "stable, route",
+                        "auto_hint_minutes": "0",
+                        "prompt_text": "",
+                        "hint_text": "",
+                        "notes": "",
+                        "status": "draft",
+                        "enabled": "1",
+                    },
+                    follow_redirects=False,
+                )
+                self.assertEqual(response.status_code, 302)
+                self.assertIn("/admin/game-library", response.location)
+
+                response = client.post(
+                    "/admin/game-library",
+                    data={
+                        "key": self.dashboard.ADMIN_KEY,
+                        "csrf_token": "library-token",
+                        "action": "delete_item",
+                        "guild_id": "111",
+                        "item_id": str(item_id),
+                    },
+                    follow_redirects=False,
+                )
+                self.assertEqual(response.status_code, 302)
+                self.assertIn("/admin/game-library", response.location)
+
+        with self.dashboard.database() as connection:
+            row = connection.execute(
+                "SELECT id FROM guess_library_items WHERE id = ?",
+                (item_id,),
+            ).fetchone()
+        self.assertIsNone(row)
 
 if __name__ == "__main__":
     unittest.main()

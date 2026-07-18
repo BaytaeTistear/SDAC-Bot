@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.3.8 Experimental
+
+Version 4.3.8 is an experimental Game Library route stability update.
+
+Update scope: Dashboard Game Library filter and action buttons
+
+Changes:
+- makes the Game Library filter, add, import, edit, status, and delete forms submit explicitly to the dashboard Game Library route
+- keeps the admin key and selected server context attached to Game Library actions
+- adds regression coverage for Game Library filter, status, edit, and delete requests staying on the dashboard route
+
+Notes:
+- This is an experimental update. If a Game Library button still shows ERR_CONNECTION_REFUSED after updating, restart the dashboard service and check the dashboard journal for the request that triggered it.
 # Sana-Chan Version 4.3.7 Experimental
 
 Version 4.3.7 is an experimental release packaging cleanup for the sidebar consistency update.
