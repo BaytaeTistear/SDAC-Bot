@@ -1,3 +1,18 @@
+# Sana-Chan Version 4.3.23 Experimental
+
+Version 4.3.23 is an experimental /sana Cancel Game fix.
+
+Update scope: Guided current-game cancellation from /sana
+
+Changes:
+- changes /sana Cancel Game from hidden command instructions into a real confirmation flow
+- cancels the active guessing game in the channel where the /sana flow was opened
+- reuses the same active-game cancellation helper for /sana and the legacy direct command
+- keeps Cancel Scheduled separate for future queued/starting scheduled games
+- adds startup coverage so Cancel Game no longer references /cancelgame
+
+Notes:
+- This is an experimental update. Admins can now use /sana to cancel the current game even when simplified commands hide /cancelgame.
 # Sana-Chan Version 4.3.22 Experimental
 
 Version 4.3.22 is an experimental scheduled-game auto-hint timing update.

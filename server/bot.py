@@ -891,7 +891,7 @@ SDAC_SUBMENU_DETAILS = {
     "games_timeout": "**Guess Timeout**\nSet how many minutes a user waits after a wrong guess before they can guess again.",
     "games_active": "**Active Game**\nRun `/activegame` to see the current guessing game in this channel.",
     "games_cancel_scheduled": "**Cancel Scheduled Games**\nCancel all queued or starting scheduled games for this server. Current live games are handled by Cancel Game.",
-    "games_cancel": "**Cancel Game**\nRun `/cancelgame` to stop the active guessing game in this channel.",
+    "games_cancel": "**Cancel Game**\nCancel the active guessing game in this channel without using a hidden command.",
 }
 
 
@@ -1161,6 +1161,18 @@ class SDACSubmenuSelect(discord.ui.Select):
                 view=CancelScheduledGamesView(self.is_admin, self.section_key, interaction.user.id),
             )
             return
+        if action == "games_cancel":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can cancel guessing games.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                content=(
+                    "**Cancel Game**\n"
+                    "This will cancel the active guessing game in this channel without revealing the answer."
+                ),
+                view=CancelActiveGameView(self.is_admin, self.section_key, interaction.user.id, interaction.channel_id),
+            )
+            return
         if action == "games_timeout":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can change guessing-game timeout.", ephemeral=True)
@@ -1394,6 +1406,18 @@ class SDACSubmenuButton(discord.ui.Button):
                 view=CancelScheduledGamesView(self.is_admin, self.section_key, interaction.user.id),
             )
             return
+        if action == "games_cancel":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can cancel guessing games.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                content=(
+                    "**Cancel Game**\n"
+                    "This will cancel the active guessing game in this channel without revealing the answer."
+                ),
+                view=CancelActiveGameView(self.is_admin, self.section_key, interaction.user.id, interaction.channel_id),
+            )
+            return
         if action == "games_timeout":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can change guessing-game timeout.", ephemeral=True)
@@ -1430,6 +1454,46 @@ class SDACSubmenuView(discord.ui.View):
             self.add_item(SDACSubmenuButton(is_admin, section_key, value, label, index // 2, style))
         self.add_item(SDACBackButton(is_admin))
 
+
+class ConfirmCancelActiveGameButton(discord.ui.Button):
+    def __init__(self, owner_id, channel_id):
+        super().__init__(label="Cancel Game", style=discord.ButtonStyle.danger, row=0)
+        self.owner_id = int(owner_id)
+        self.channel_id = int(channel_id)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can cancel guessing games.", ephemeral=True)
+            return
+        if int(interaction.channel_id or 0) != self.channel_id:
+            await interaction.response.send_message("Open this cancel flow in the channel with the active game.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            game = await cancel_active_game_from_interaction(interaction)
+        except RuntimeError as error:
+            await interaction.edit_original_response(content=str(error), view=SDACSubmenuView(True, "games"))
+            return
+        if not game:
+            await interaction.edit_original_response(
+                content="There is no active guessing game in this channel.",
+                view=SDACSubmenuView(True, "games"),
+            )
+            return
+        await interaction.edit_original_response(
+            content=f"Cancelled guessing game `{game['id']}` without revealing the answer.",
+            view=SDACSubmenuView(True, "games"),
+        )
+
+
+class CancelActiveGameView(discord.ui.View):
+    def __init__(self, is_admin, section_key, owner_id, channel_id):
+        super().__init__(timeout=300)
+        self.add_item(ConfirmCancelActiveGameButton(owner_id, channel_id))
+        self.add_item(SDACBackButton(is_admin))
 
 class ConfirmCancelScheduledGamesButton(discord.ui.Button):
     def __init__(self, owner_id):
@@ -11945,25 +12009,39 @@ async def activegame(interaction):
     )
 
 
-@tree.command(name="cancelgame", description="Cancel this channel's active guessing game")
-@app_commands.guild_only()
-async def cancelgame(interaction):
-    if not await require_admin(interaction):
-        return
+async def cancel_active_game_from_interaction(interaction):
     guild_config = get_guild_config(interaction.guild_id, create=False)
     if not feature_enabled(guild_config, "guessing_games"):
-        await interaction.response.send_message(
-            "Guessing games are currently disabled for this server.",
-            ephemeral=True,
-        )
-        return
-
-    await interaction.response.defer(ephemeral=True, thinking=True)
+        raise RuntimeError("Guessing games are currently disabled for this server.")
     game = await close_active_guess_game(
         interaction.guild_id,
         interaction.channel_id,
         "cancelled",
     )
+    if game:
+        audit_interaction(
+            interaction,
+            "cancel_guess_game",
+            "game",
+            game["id"],
+            f"Cancelled in channel {interaction.channel_id}.",
+        )
+        if interaction.channel is not None:
+            await interaction.channel.send("The current guessing game was cancelled.")
+    return game
+
+@tree.command(name="cancelgame", description="Cancel this channel's active guessing game")
+@app_commands.guild_only()
+async def cancelgame(interaction):
+    if not await require_admin(interaction):
+        return
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    try:
+        game = await cancel_active_game_from_interaction(interaction)
+    except RuntimeError as error:
+        await interaction.followup.send(str(error), ephemeral=True)
+        return
+
     if not game:
         await interaction.followup.send(
             "There is no active guessing game in this channel.",
@@ -11971,19 +12049,10 @@ async def cancelgame(interaction):
         )
         return
 
-    audit_interaction(
-        interaction,
-        "cancel_guess_game",
-        "game",
-        game["id"],
-        f"Cancelled in channel {interaction.channel_id}.",
-    )
     await interaction.followup.send(
         f"Cancelled guessing game `{game['id']}` without revealing the answer.",
         ephemeral=True,
     )
-    if interaction.channel is not None:
-        await interaction.channel.send("The current guessing game was cancelled.")
 
 
 @tree.command(name="sethint", description="Reveal a hint for this channel's game")
