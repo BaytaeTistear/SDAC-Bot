@@ -5301,7 +5301,6 @@ async def start_library_game_item(
             item["category"] or "",
             item["hint_text"] or "",
         )
-        original_auto_hint_minutes = auto_hint_minutes
         auto_hint_minutes = scaled_auto_hint_minutes(
             auto_hint_minutes,
             generated_hints,
@@ -5311,16 +5310,10 @@ async def start_library_game_item(
         prompt_text = (item["prompt_text"] or "").strip()
         if prompt_text:
             game_lines.append(prompt_text)
-        if scheduled_id:
-            game_lines.append(f"Scheduled game `{scheduled_id}` is now live.")
         if auto_hint_minutes > 0:
             game_lines.append(
                 f"Automatic hints are enabled every {auto_hint_minutes} minute(s)."
             )
-            if next_scheduled_start_at is not None and auto_hint_minutes < original_auto_hint_minutes:
-                game_lines.append(
-                    "Hint timing was shortened to fit before the next scheduled question."
-                )
         game_lines.append("Use `/guess <guess>` in this channel.")
         game_message = await channel.send(
             content="\n\n".join(game_lines),

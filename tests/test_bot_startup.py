@@ -201,5 +201,14 @@ class BotStartupTests(unittest.TestCase):
         self.assertTrue(hasattr(bot, "sana_categories_content"))
         self.assertTrue(hasattr(bot, "resolve_selected_text_channel"))
 
+    def test_scheduled_game_start_message_hides_internal_status(self):
+        import inspect
+        import bot
+
+        source = inspect.getsource(bot.start_library_game_item)
+        self.assertNotIn("Scheduled game `{scheduled_id}` is now live.", source)
+        self.assertNotIn("Hint timing was shortened to fit before the next scheduled question.", source)
+        self.assertIn("Automatic hints are enabled every", source)
+
 if __name__ == "__main__":
     unittest.main()

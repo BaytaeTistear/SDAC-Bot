@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.3.25 Experimental
+
+Version 4.3.25 is an experimental scheduled game message polish.
+
+Update scope: Hide scheduler bookkeeping in public game posts
+
+Changes:
+- removes the public "Scheduled game is now live" line from scheduled library games
+- removes the public hint-timing-shortened notice while keeping the scaled hint timing behavior
+- keeps the useful automatic hint interval and guessing instructions visible to players
+- adds startup coverage so the internal scheduler status text does not return to game-start messages
+
+Notes:
+- This is an experimental update. Scheduled games should now read like normal player-facing guessing games.
 # Sana-Chan Version 4.3.24 Experimental
 
 Version 4.3.24 is an experimental /sana menu action sweep.
@@ -3361,10 +3375,3 @@ Not included:
 - `media/` uploads
 - `backups/`
 - `venv/` or Python cache files
-
-
-
-
-
-
-
