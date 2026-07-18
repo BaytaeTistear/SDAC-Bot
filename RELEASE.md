@@ -1,3 +1,19 @@
+# Sana-Chan Version 4.3.13 Experimental
+
+Version 4.3.13 is an experimental import control and /sana games menu update.
+
+Update scope: Game Library import cancellation and guided guessing-game access
+
+Changes:
+- adds a Cancel button to active Game Library CSV/media archive import jobs in Recent Imports
+- lets queued imports cancel immediately and running imports stop cooperatively between archive, index, and row-save steps
+- records canceled imports with a canceled status and audit entry instead of leaving them queued or running
+- restores an admin Games section inside `/sana` so guessing-game creation and management stay discoverable while simplified slash commands are enabled
+- adds regression coverage for import cancellation and the `/sana` Games menu
+- stages bot startup regression coverage in experimental releases
+
+Notes:
+- This is an experimental update. Canceling a running import stops at the next safe checkpoint; rows already imported before cancellation remain as draft/library items.
 # Sana-Chan Version 4.3.12 Experimental
 
 Version 4.3.12 is an experimental Game Library queue recovery update.

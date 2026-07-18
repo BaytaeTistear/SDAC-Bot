@@ -780,6 +780,7 @@ SDAC_HUB_ADMIN_OPTIONS = [
     ("setup", "Setup", "Open setup, status, tests, and diagnostics."),
     ("backup", "Backups", "See the short backup setup path."),
     ("moderation", "Moderation", "See approval and moderation setup shortcuts."),
+    ("games", "Games", "Create, schedule, inspect, or cancel guessing games."),
     ("admin_help", "Admin Help", "Browse advanced admin commands by category."),
 ]
 
@@ -845,6 +846,17 @@ SDAC_SUBMENUS = {
             ("moderation_permissions", "Permission Check", "Run /checkpermissions or /repairpermissions."),
         ],
     },
+    "games": {
+        "title": "Admin Guessing Games",
+        "placeholder": "Choose a game action",
+        "options": [
+            ("games_create", "Create Game", "Create a saved guessing-game item from the dashboard."),
+            ("games_start_library", "Start Library Game", "Start a saved Game Library item."),
+            ("games_schedule", "Schedule Game", "Schedule a saved library game."),
+            ("games_active", "Active Game", "Show the active game in this channel."),
+            ("games_cancel", "Cancel Game", "Cancel the active game in this channel."),
+        ],
+    },
 }
 
 SDAC_SUBMENU_DETAILS = {
@@ -869,6 +881,11 @@ SDAC_SUBMENU_DETAILS = {
     "moderation_filters": "**Moderation Filters**\nRun `/setmoderation blocked_words media_types quarantine retention_days enabled` for filter controls.",
     "moderation_reasons": "**Reason Presets**\nRun `/reasonpresets` to see standard admin action reasons.",
     "moderation_permissions": "**Permission Check**\nRun `/checkpermissions` to inspect access or `/repairpermissions` to get a repair invite.",
+    "games_create": "**Create Guessing Game**\nOpen the dashboard Game Library to create a reusable game item with answer aliases, hints, media, category, pack, and tags.",
+    "games_start_library": "**Start Library Game**\nUse `/startlibrarygame #channel item_id category random_item` when advanced commands are visible, or start from a saved Game Library item in the dashboard.",
+    "games_schedule": "**Schedule Game**\nUse `/schedulegame #channel item_id start_time category recurring` when advanced commands are visible, or manage saved game content from the dashboard first.",
+    "games_active": "**Active Game**\nRun `/activegame` to see the current guessing game in this channel.",
+    "games_cancel": "**Cancel Game**\nRun `/cancelgame` to stop the active guessing game in this channel.",
 }
 
 
@@ -893,6 +910,7 @@ def sdac_hub_content(is_admin=False, notice=""):
             "- Setup: wizard, status, tests, and diagnostics.",
             "- Backups: provider guide, target setup, test backup, and status.",
             "- Moderation: approval, filters, reasons, and permission checks.",
+            "- Games: create, start, schedule, inspect, and cancel guessing games.",
         ])
     return "\n".join(lines)[:1900]
 
@@ -952,7 +970,7 @@ class SDACHubSelect(discord.ui.Select):
                 view=self.view,
             )
             return
-        if action in {"setup", "backup", "moderation"} and not admin_only(interaction):
+        if action in {"setup", "backup", "moderation", "games"} and not admin_only(interaction):
             await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
             return
         await interaction.response.edit_message(
@@ -1148,7 +1166,7 @@ class SDACHubButton(discord.ui.Button):
                 view=self.view,
             )
             return
-        if action in {"setup", "backup", "moderation"} and not admin_only(interaction):
+        if action in {"setup", "backup", "moderation", "games"} and not admin_only(interaction):
             await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
             return
         await interaction.response.edit_message(
@@ -1297,7 +1315,7 @@ class SDACHubView(discord.ui.View):
             style = discord.ButtonStyle.primary if value == "submit" else discord.ButtonStyle.secondary
             self.add_item(SDACHubButton(is_admin, value, label, user_rows.get(value, 0), style))
         if is_admin:
-            admin_rows = {"setup": 2, "backup": 2, "moderation": 3, "admin_help": 3}
+            admin_rows = {"setup": 2, "backup": 2, "moderation": 3, "games": 3, "admin_help": 3}
             for value, label, _description in SDAC_HUB_ADMIN_OPTIONS:
                 style = discord.ButtonStyle.primary if value == "setup" else discord.ButtonStyle.secondary
                 self.add_item(SDACHubButton(is_admin, value, label, admin_rows.get(value, 2), style))

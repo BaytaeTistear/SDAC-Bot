@@ -440,6 +440,87 @@ class DashboardAccessTests(unittest.TestCase):
         self.assertIn("Media attached: 5", body)
         self.assertIn("Missing media: 1", body)
 
+    def test_recent_imports_show_cancel_for_active_jobs(self):
+        with self.dashboard.database() as connection:
+            connection.execute(
+                """
+                INSERT INTO background_jobs (
+                    job_type, guild_id, status, requested_by,
+                    requested_by_name, payload_json, result_json,
+                    error, created_at, started_at, finished_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "guess_library_bulk_import",
+                    "111",
+                    "queued",
+                    "admin-id",
+                    "Admin",
+                    '{"csv_filename":"anime.csv","archive_filename":"anime.7z"}',
+                    '{"stage":"queued"}',
+                    "",
+                    "2026-07-18T00:00:00+00:00",
+                    "",
+                    "",
+                ),
+            )
+
+        with mock.patch.object(self.dashboard, "start_background_job"):
+            jobs = self.dashboard.recent_guess_library_import_jobs(guild_id="111")
+
+        self.assertEqual(jobs[0]["status"], "queued")
+        self.assertTrue(jobs[0]["can_cancel"])
+        self.assertIn("Waiting", jobs[0]["stage_label"])
+
+    def test_cancel_background_job_marks_import_canceled(self):
+        with tempfile.TemporaryDirectory() as root:
+            staging_dir = Path(root) / "import-job"
+            staging_dir.mkdir()
+            (staging_dir / "import.csv").write_text("answer\nSana\n", encoding="utf-8")
+            with self.dashboard.database() as connection:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO background_jobs (
+                        job_type, guild_id, status, requested_by,
+                        requested_by_name, payload_json, result_json,
+                        error, created_at, started_at, finished_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "guess_library_bulk_import",
+                        "111",
+                        "queued",
+                        "admin-id",
+                        "Admin",
+                        '{"staging_dir":"' + str(staging_dir).replace('\\', '\\\\') + '"}',
+                        "{}",
+                        "",
+                        "2026-07-18T00:00:00+00:00",
+                        "",
+                        "",
+                    ),
+                )
+                job_id = cursor.lastrowid
+
+            self.dashboard.cancel_background_job(job_id, actor_id="tester", actor_name="Tester")
+
+            with self.dashboard.database() as connection:
+                row = connection.execute(
+                    "SELECT status, error, finished_at FROM background_jobs WHERE id = ?",
+                    (job_id,),
+                ).fetchone()
+                audit_row = connection.execute(
+                    "SELECT action FROM admin_audit_log WHERE target_type = ? AND target_id = ?",
+                    ("background_job", str(job_id)),
+                ).fetchone()
+
+            self.assertEqual(row["status"], "canceled")
+            self.assertEqual(row["error"], "Canceled by admin.")
+            self.assertTrue(row["finished_at"])
+            self.assertEqual(audit_row["action"], "cancel_guess_library_import")
+            self.assertFalse(staging_dir.exists())
     def test_guess_bulk_import_with_media_uses_storage_helpers(self):
         csv_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", mode="w", encoding="utf-8")
         archive_file = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")

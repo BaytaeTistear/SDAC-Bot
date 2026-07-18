@@ -2585,6 +2585,7 @@ GAME_LIBRARY_HTML = """
                     <th>Extraction</th>
                     <th>Imported</th>
                     <th>When</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -2617,9 +2618,23 @@ GAME_LIBRARY_HTML = """
                             Started: {{ job.started_at or "" }}<br>
                             Finished: {{ job.finished_at or "" }}
                         </td>
+                        <td>
+                            {% if job.can_cancel %}
+                                <form method="post" action="{{ url_for('admin_game_library') }}" onsubmit="return confirm('Cancel this import job?');">
+                                    <input type="hidden" name="key" value="{{ admin_key }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="action" value="cancel_import">
+                                    <input type="hidden" name="guild_id" value="{{ selected_guild_id or 'all' }}">
+                                    <input type="hidden" name="job_id" value="{{ job.id }}">
+                                    <button class="danger" type="submit">Cancel</button>
+                                </form>
+                            {% else %}
+                                <span class="muted">-</span>
+                            {% endif %}
+                        </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="6" class="muted">No recent CSV or media archive imports yet.</td></tr>
+                    <tr><td colspan="7" class="muted">No recent CSV or media archive imports yet.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -8871,6 +8886,66 @@ def stage_guess_library_bulk_import_uploads(csv_upload, media_upload=None):
     return payload
 
 
+
+class BackgroundJobCancelled(Exception):
+    pass
+
+
+def background_job_cancel_requested(job_id):
+    if not job_id:
+        return False
+    with closing(connect_db()) as connection:
+        row = connection.execute(
+            "SELECT status FROM background_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+    return bool(row and row["status"] == "canceled")
+
+
+def ensure_background_job_not_canceled(job_id):
+    if background_job_cancel_requested(job_id):
+        raise BackgroundJobCancelled("Import canceled by an admin.")
+
+
+def cancel_background_job(job_id, actor_id="", actor_name=""):
+    with database() as connection:
+        job = connection.execute(
+            "SELECT * FROM background_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        if not job:
+            raise ValueError("Import job was not found.")
+        if job["job_type"] != "guess_library_bulk_import":
+            raise ValueError("Only Game Library import jobs can be canceled from this page.")
+        if job["status"] not in {"queued", "running", "retry"}:
+            raise ValueError("Only queued or running imports can be canceled.")
+        connection.execute(
+            """
+            UPDATE background_jobs
+            SET status = 'canceled', error = ?, finished_at = ?
+            WHERE id = ?
+            """,
+            ("Canceled by admin.", utc_now_iso(), job_id),
+        )
+        add_admin_audit_log(
+            connection,
+            job["guild_id"],
+            "cancel_guess_library_import",
+            actor_id,
+            actor_name,
+            "background_job",
+            str(job_id),
+            f"Canceled Game Library import job {job_id}.",
+        )
+        payload = json.loads(job["payload_json"] or "{}")
+        was_queued = job["status"] in {"queued", "retry"}
+    if was_queued:
+        staging_dir = payload.get("staging_dir") or ""
+        if staging_dir:
+            shutil.rmtree(staging_dir, ignore_errors=True)
+    return job
+
+
 def run_guess_library_bulk_import(
     guild_id,
     csv_path,
@@ -8883,6 +8958,7 @@ def run_guess_library_bulk_import(
     config_data = load_config()
     if guild_id not in set(config_data.get("guilds", {}).keys()):
         raise ValueError("Choose a valid Discord server.")
+    ensure_background_job_not_canceled(job_id)
     update_guess_import_progress(job_id, stage="reading_csv", guild_id=guild_id)
     raw_content = Path(csv_path).read_bytes()
     if not raw_content:
@@ -8899,6 +8975,7 @@ def run_guess_library_bulk_import(
     media_lookup = {}
     stored_upload = None
     if media_archive_path:
+        ensure_background_job_not_canceled(job_id)
         update_guess_import_progress(
             job_id,
             stage="opening_archive",
@@ -8912,6 +8989,7 @@ def run_guess_library_bulk_import(
         )
         try:
             media_archive, media_lookup = open_guess_media_zip(stored_upload)
+            ensure_background_job_not_canceled(job_id)
         finally:
             stored_upload.close()
         update_guess_import_progress(
@@ -8939,6 +9017,7 @@ def run_guess_library_bulk_import(
     )
     try:
         for row_number, raw_row in enumerate(reader, start=1):
+            ensure_background_job_not_canceled(job_id)
             row = {
                 str(key or "").strip().lower(): str(value or "").strip()
                 for key, value in raw_row.items()
@@ -9117,6 +9196,7 @@ def guess_library_import_stage_label(status, stage):
         "archive_indexed": "Archive opened; matching CSV rows to media files.",
         "importing_rows": "Rows are being saved into the Game Library.",
         "complete": "Import finished.",
+        "canceled": "Import was canceled by an admin.",
         "failed": "Import failed. Check the error on this row.",
     }
     return labels.get(stage, stage.replace("_", " ").title())
@@ -9185,6 +9265,7 @@ def recent_guess_library_import_jobs(limit=8, guild_id=None):
             "attached_media": int(result.get("attached_media") or 0),
             "missing_media": int(result.get("missing_media") or 0),
             "skipped": int(result.get("skipped") or 0),
+            "can_cancel": job.get("status") in {"queued", "running", "retry"},
         })
         jobs.append(job)
     return jobs
@@ -11968,12 +12049,28 @@ def process_background_job(job_id):
                     shutil.rmtree(staging_dir, ignore_errors=True)
             else:
                 raise ValueError(f"Unknown background job type: {job['job_type']}")
+            if background_job_cancel_requested(job_id):
+                return
             update_background_job(
                 job_id,
                 status="complete",
                 result_json=json.dumps(result, separators=(",", ":")),
                 finished_at=utc_now_iso(),
             )
+        except BackgroundJobCancelled as error:
+            update_background_job(
+                job_id,
+                status="canceled",
+                error=str(error),
+                finished_at=utc_now_iso(),
+            )
+            if job["job_type"] == "guess_library_bulk_import":
+                try:
+                    staging_dir = payload.get("staging_dir") or ""
+                    if staging_dir:
+                        shutil.rmtree(staging_dir, ignore_errors=True)
+                except Exception:
+                    pass
         except Exception as error:
             update_background_job(
                 job_id,
@@ -15807,6 +15904,14 @@ def admin_game_library():
             selected_server_id or "all",
         ).strip() or "all"
         try:
+            if action == "cancel_import":
+                job_id = int(request.form.get("job_id") or 0)
+                cancel_background_job(job_id, actor_id=actor_id, actor_name=actor_name)
+                return game_library_redirect(
+                    f"Import job #{job_id} canceled.",
+                    guild_id=redirect_guild_id,
+                )
+
             if action == "create_item":
                 guild_id = request.form.get("guild_id", "").strip()
                 if guild_id not in valid_guild_ids:

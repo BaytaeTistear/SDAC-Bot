@@ -130,5 +130,15 @@ class BotStartupTests(unittest.TestCase):
         }))
 
 
+    def test_sana_hub_admin_menu_includes_games(self):
+        import bot
+
+        admin_values = [value for value, _label, _description in bot.SDAC_HUB_ADMIN_OPTIONS]
+        self.assertIn("games", admin_values)
+        self.assertIn("games", bot.SDAC_SUBMENUS)
+        game_labels = [label for _value, label, _description in bot.SDAC_SUBMENUS["games"]["options"]]
+        self.assertIn("Create Game", game_labels)
+        self.assertIn("Create Guessing Game", bot.SDAC_SUBMENU_DETAILS["games_create"])
+
 if __name__ == "__main__":
     unittest.main()
