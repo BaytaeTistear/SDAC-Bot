@@ -2569,6 +2569,9 @@ GAME_LIBRARY_HTML = """
             </div>
             <p><button type="submit">Import Drafts</button></p>
         </form>
+            <div class="notice">
+                <strong>Import preview:</strong> after upload, CSV-only imports report totals immediately. CSV + archive imports show a queued job first, then update Recent Imports with archive indexing, rows seen, media matches, missing media, skipped rows, and any extraction error. If a job stays queued, open Jobs or Install Doctor to verify the dashboard worker is running.
+            </div>
     </section>
 
         <section class="panel">
@@ -24006,13 +24009,3 @@ def delete_submission(submission_id):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
-
-
-
-
-
-
-
-
-

@@ -220,5 +220,21 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("8 First letter", formatted)
         self.assertEqual(bot.append_hint_text("First letter: R", "Extra|Detail"), "First letter: R\nExtra Detail")
 
+    def test_sana_setup_menu_includes_doctor(self):
+        import inspect
+        import bot
+
+        setup_values = [value for value, _label, _description in bot.SDAC_SUBMENUS["setup"]["options"]]
+        self.assertIn("setup_doctor", setup_values)
+        self.assertIn("Sana-Chan Doctor", bot.SDAC_SUBMENU_DETAILS["setup_doctor"])
+        self.assertTrue(hasattr(bot, "doctor_summary_lines"))
+        self.assertTrue(hasattr(bot, "run_sana_doctor_action"))
+        summary = "\n".join(bot.doctor_summary_lines(["[OK] Ready", "[MISSING] Fix this", "[OPTIONAL] Polish this"]))
+        self.assertIn("Blockers: `1`", summary)
+        self.assertIn("Go Live Checklist", summary)
+        source = inspect.getsource(bot.start_library_game_from_interaction)
+        self.assertIn("belongs to a different server", source)
+        self.assertIn("Check the server filter, item status, and media attachment", source)
+
 if __name__ == "__main__":
     unittest.main()

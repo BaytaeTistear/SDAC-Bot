@@ -825,6 +825,7 @@ SDAC_SUBMENUS = {
             ("setup_status", "Setup Status", "Review current setup progress."),
             ("setup_test", "Run Setup Test", "Check channels, permissions, and required settings."),
             ("diagnostics", "Diagnostics", "Run runtime diagnostics."),
+            ("setup_doctor", "Doctor", "Run a guided release-readiness doctor."),
         ],
     },
     "backup": {
@@ -877,6 +878,7 @@ SDAC_SUBMENU_DETAILS = {
     "setup_bot_image": "**Bot Image**\nBot owners can update the global Discord bot avatar from an HTTPS image URL. This affects every server and may be rate limited by Discord.",
     "setup_command_alias": "**Command Name**\nAdmins can set a server-specific launcher like `/pepo`. `/sana` always remains available as the fallback.",
     "setup_sync_commands": "**Sync Commands**\nRefresh this server's Discord command list without restarting the bot. This also clears copied guild duplicates.",
+    "setup_doctor": "**Sana-Chan Doctor**\nRun a guided server doctor from `/sana`: setup checklist, permissions, command sync, release, public URL, and next dashboard links.",
     "backup_guide": "**Backup Provider Guide**\nRun `/backupguide provider` for provider-specific setup steps.",
     "backup_setup": "**Save Backup Target**\nRun `/backupsetup provider remote` to save the backup destination.",
     "backup_now": "**Test Backup**\nRun `/backupnow upload:true` to create and upload a backup now.",
@@ -1150,6 +1152,9 @@ class SDACSubmenuSelect(discord.ui.Select):
         action = self.values[0]
         if await handle_sana_instant_action(interaction, action, self.is_admin, self.section_key):
             return
+        if action == "setup_doctor":
+            if await run_sana_doctor_action(interaction, self.is_admin, self.section_key):
+                return
         if action == "setup_wizard":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
@@ -1410,6 +1415,9 @@ class SDACSubmenuButton(discord.ui.Button):
         action = self.value
         if await handle_sana_instant_action(interaction, action, self.is_admin, self.section_key):
             return
+        if action == "setup_doctor":
+            if await run_sana_doctor_action(interaction, self.is_admin, self.section_key):
+                return
         if action == "setup_wizard":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
@@ -7071,6 +7079,54 @@ async def diagnostic_lines(interaction):
     ])
     return lines
 
+def doctor_summary_lines(lines):
+    missing = [line for line in lines if str(line).startswith("[MISSING]")]
+    warnings = [line for line in lines if str(line).startswith("[WARN]") or str(line).startswith("[OPTIONAL]")]
+    ok_count = sum(1 for line in lines if str(line).startswith("[OK]"))
+    summary = [
+        "**Sana-Chan Doctor**",
+        f"Ready checks: `{ok_count}`",
+        f"Blockers: `{len(missing)}`",
+        f"Warnings: `{len(warnings)}`",
+    ]
+    if missing:
+        summary.append("**Fix First**")
+        summary.extend(missing[:6])
+    else:
+        summary.append("[OK] No blocking setup issues found in the Discord doctor.")
+    if warnings:
+        summary.append("**Polish Next**")
+        summary.extend(warnings[:4])
+    summary.extend([
+        "**Dashboard Follow-Ups**",
+        f"Go Live Checklist: {DASHBOARD_BASE_URL}/admin/go-live-checklist",
+        f"Install Doctor: {DASHBOARD_BASE_URL}/admin/install-doctor",
+        f"Release Checklist: {DASHBOARD_BASE_URL}/admin/release-checklist",
+    ])
+    return summary
+
+
+async def run_sana_doctor_action(interaction, is_admin, section_key):
+    if not admin_only(interaction):
+        await interaction.response.send_message("Only admins can use the Doctor.", ephemeral=True)
+        return True
+    await interaction.response.defer(ephemeral=True)
+    lines = await diagnostic_lines(interaction)
+    status, summary = save_setup_test_run(interaction, lines)
+    audit_interaction(
+        interaction,
+        "run_doctor_from_hub",
+        "guild",
+        interaction.guild_id,
+        f"Ran /sana doctor: {summary}",
+    )
+    content_lines = doctor_summary_lines(lines)
+    content_lines.insert(1, f"Saved doctor result: `{status}`.")
+    await interaction.edit_original_response(
+        content="\n".join(content_lines)[:1900],
+        view=SDACSubmenuView(is_admin, section_key),
+    )
+    return True
 
 class SetupCategoryModal(discord.ui.Modal):
     def __init__(self, owner_id, guild_id, channel_id, channel_mention):
@@ -11813,17 +11869,54 @@ async def start_library_game_from_interaction(
 
     if not item:
         filter_text = f" in category `{category_filter}`" if category_filter else ""
-        message = (
-            "No active Game Library item with media was found "
-            f"for this server{filter_text}."
-            if item_id <= 0
-            else f"Active Game Library item `{item_id}` was not found for this server."
-        )
+        inactive_item = None
+        other_server_item = None
+        if item_id > 0:
+            with database() as connection:
+                inactive_item = connection.execute("""
+                    SELECT id, status, media_path
+                    FROM guess_library_items
+                    WHERE id = ?
+                      AND guild_id = ?
+                    LIMIT 1
+                """, (item_id, str(interaction.guild_id))).fetchone()
+                if inactive_item is None:
+                    other_server_item = connection.execute("""
+                        SELECT id, guild_id, status, media_path
+                        FROM guess_library_items
+                        WHERE id = ?
+                        LIMIT 1
+                    """, (item_id,)).fetchone()
+        if item_id > 0 and inactive_item is not None:
+            inactive_status = inactive_item["status"] or "draft"
+            if not str(inactive_item["media_path"] or "").strip():
+                message = (
+                    f"Game Library item `{item_id}` exists for this server, "
+                    "but it needs media attached before it can start."
+                )
+            else:
+                message = (
+                    f"Game Library item `{item_id}` exists for this server, "
+                    f"but it is `{inactive_status}`. Enable/activate it in the Game Library first."
+                )
+        elif item_id > 0 and other_server_item is not None:
+            message = (
+                f"Game Library item `{item_id}` belongs to a different server "
+                f"(`{other_server_item['guild_id']}`). Open that server in the dashboard, "
+                "or add this item to the current server before starting it here."
+            )
+        else:
+            message = (
+                "No active Game Library item with media was found "
+                f"for this server{filter_text}. Open the Game Library, filter to this server, "
+                "and make sure at least one item is active with media attached."
+                if item_id <= 0
+                else f"Game Library item `{item_id}` was not found for this server. Check the server filter, item status, and media attachment in the dashboard."
+            )
         await interaction.followup.send(message, ephemeral=True)
         return
 
-    try:
-        game_id, replaced_game = await start_library_game_item(
+    try:        game_id, replaced_game = await start_library_game_item(
             interaction.guild,
             channel,
             item,
@@ -11931,6 +12024,7 @@ async def startlibrarygame(
                 LIMIT 1
             """, (item_id, str(interaction.guild_id))).fetchone()
             inactive_item = None
+            other_server_item = None
             if item is None:
                 inactive_item = connection.execute("""
                     SELECT id, status, media_path
@@ -11939,6 +12033,13 @@ async def startlibrarygame(
                       AND guild_id = ?
                     LIMIT 1
                 """, (item_id, str(interaction.guild_id))).fetchone()
+                if inactive_item is None:
+                    other_server_item = connection.execute("""
+                        SELECT id, guild_id, status, media_path
+                        FROM guess_library_items
+                        WHERE id = ?
+                        LIMIT 1
+                    """, (item_id,)).fetchone()
         else:
             where = [
                 "guild_id = ?",
@@ -11989,12 +12090,19 @@ async def startlibrarygame(
                     f"Game Library item `{item_id}` exists for this server, "
                     f"but it is `{inactive_status}`. Enable/activate it in the Game Library first."
                 )
+        elif item_id > 0 and other_server_item is not None:
+            message = (
+                f"Game Library item `{item_id}` belongs to a different server "
+                f"(`{other_server_item['guild_id']}`). Open that server in the dashboard, "
+                "or add this item to the current server before starting it here."
+            )
         else:
             message = (
                 "No active website game-library item with media was found "
-                f"for this server{filter_text}."
+                f"for this server{filter_text}. Open the Game Library, filter to this server, "
+                "and make sure at least one item is active with media attached."
                 if item_id <= 0
-                else f"Active website game-library item `{item_id}` was not found for this server."
+                else f"Game Library item `{item_id}` was not found for this server. Check the server filter, item status, and media attachment in the dashboard."
             )
         await interaction.response.send_message(message, ephemeral=True)
         return

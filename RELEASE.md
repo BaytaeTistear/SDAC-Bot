@@ -1,3 +1,18 @@
+# Sana-Chan Version 4.3.27 Experimental
+
+Version 4.3.27 is an experimental release-hardening polish pass.
+
+Update scope: Guided doctor, clearer imports, and safer game-library feedback
+
+Changes:
+- adds a /sana Setup > Doctor action that runs setup, permission, command-sync, release, and runtime checks from Discord
+- saves /sana Doctor results into setup test history and links admins to Go Live Checklist, Install Doctor, and Release Checklist
+- improves Start Library Game errors when an item is draft, missing media, on another server, or hidden by the current server filter
+- adds Game Library import preview guidance so admins know where CSV/archive extraction progress, missing media, and queued worker state appear
+- adds regression coverage for the Doctor menu, Doctor summary, Game Library messages, and import preview copy
+
+Notes:
+- This is an experimental update. The larger dashboard release, go-live, and install-doctor pages were already present; this pass connects them more directly to Discord and Game Library workflows.
 # Sana-Chan Version 4.3.26 Experimental
 
 Version 4.3.26 is an experimental guessing hint formatting fix.

@@ -298,6 +298,8 @@ class DashboardAccessTests(unittest.TestCase):
         body = response.get_data(as_text=True)
         self.assertIn('method="get" action="/admin/game-library"', body)
         self.assertIn('method="post" enctype="multipart/form-data" action="/admin/game-library"', body)
+        self.assertIn("Import preview", body)
+        self.assertIn("archive indexing", body)
         self.assertNotIn("localhost", body.lower())
         self.assertNotIn("127.0.0.1", body)
 
