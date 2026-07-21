@@ -7,13 +7,20 @@ x-sana-env: &sana-env
   SDAC_BOT_STATUS_FILE: /data/bot_status.json
   SANA_DASHBOARD_URL: ${SANA_DASHBOARD_URL:-http://localhost:5000}
   SDAC_PUBLIC_URL: ${SDAC_PUBLIC_URL:-http://localhost:5000}
+  DISCORD_TOKEN: ${DISCORD_TOKEN:-}
+  SDAC_ADMIN_KEY: ${SDAC_ADMIN_KEY:-}
+  SDAC_SECRET_KEY: ${SDAC_SECRET_KEY:-}
+  SDAC_DISCORD_CLIENT_ID: ${SDAC_DISCORD_CLIENT_ID:-}
+  SDAC_DISCORD_CLIENT_SECRET: ${SDAC_DISCORD_CLIENT_SECRET:-}
+  SDAC_BOT_CLIENT_ID: ${SDAC_BOT_CLIENT_ID:-}
+  SDAC_DASHBOARD_MAX_CONTENT_MB: ${SDAC_DASHBOARD_MAX_CONTENT_MB:-250}
+  SDAC_RELEASE: ${SDAC_RELEASE:-development}
+  SDAC_RELEASE_TAG: ${SDAC_RELEASE_TAG:-latest-experimental}
+  SDAC_DATABASE_URL: ${SDAC_DATABASE_URL:-}
 
 x-sana-service: &sana-service
   build:
     context: .
-  env_file:
-    - path: .env
-      required: false
   environment:
     <<: *sana-env
   volumes:

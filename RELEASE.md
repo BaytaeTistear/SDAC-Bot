@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.3.29 Experimental
+
+Version 4.3.29 is an experimental Docker Compose compatibility fix.
+
+Update scope: Make Docker startup work cleanly on Ubuntu hosts
+
+Changes:
+- removes newer optional env_file syntax from docker-compose.yml so older Compose parsers do not reject the file
+- moves Docker environment values into the shared service environment block while still allowing .env-based configuration
+- documents that Docker Compose v2 (`docker compose`) should be used instead of legacy docker-compose v1 on modern Docker engines
+- adds regression coverage to keep incompatible Compose env_file syntax from returning
+
+Notes:
+- This is an experimental update. The Ubuntu Hyper-V test VM now runs both dashboard and bot containers successfully with Docker Compose v2.
 # Sana-Chan Version 4.3.28 Experimental
 
 Version 4.3.28 is an experimental Docker portability update.

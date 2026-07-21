@@ -50,5 +50,14 @@ class BackendReleaseReadinessTests(unittest.TestCase):
             for package_file in package_files:
                 self.assertIn(filename, package_file.read_text(encoding="utf-8"), f"{filename} missing from {package_file.relative_to(ROOT)}")
 
+
+    def test_docker_compose_uses_portable_environment_syntax(self):
+        compose_text = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+        self.assertNotIn("required: false", compose_text)
+        self.assertNotIn("path: .env", compose_text)
+        self.assertNotIn("env_file:", compose_text)
+        self.assertIn("DISCORD_TOKEN: ${DISCORD_TOKEN:-}", compose_text)
+        self.assertIn("SDAC_SECRET_KEY: ${SDAC_SECRET_KEY:-}", compose_text)
+
 if __name__ == "__main__":
     unittest.main()
