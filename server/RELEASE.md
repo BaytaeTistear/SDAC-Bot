@@ -1,3 +1,20 @@
+# Sana-Chan Version 4.3.28 Experimental
+
+Version 4.3.28 is an experimental Docker portability update.
+
+Update scope: Make Sana-Chan easier to move between hosts
+
+Changes:
+- upgrades the Dockerfile with archive tooling, non-root runtime, persistent /data paths, and a dashboard healthcheck
+- updates Docker Compose to run dashboard and bot as separate services sharing one persistent Sana-Chan data volume
+- adds optional PostgreSQL service profile for future testing or migration work
+- adds .dockerignore, .env.example, and DOCKER.md for safer setup on VPS, home server, or container hosts
+- makes .env optional for compose validation while still loading it automatically when present
+- updates release packaging scripts so Docker support files are included in experimental and official releases
+- adds packaging coverage to prevent Docker files from being dropped from future release tooling
+
+Notes:
+- This is an experimental update. The Docker path is ready for local validation and host testing while you compare free hosting options.
 # Sana-Chan Version 4.3.27 Experimental
 
 Version 4.3.27 is an experimental release-hardening polish pass.

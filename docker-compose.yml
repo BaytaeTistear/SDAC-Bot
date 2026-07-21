@@ -1,52 +1,77 @@
+x-sana-env: &sana-env
+  SDAC_CONFIG_FILE: /data/config.json
+  SDAC_DB_FILE: /data/sdac.db
+  SDAC_MEDIA_DIR: /data/media
+  SDAC_BACKUP_DIR: /data/backups
+  SDAC_IMPORT_JOB_DIR: /data/import_jobs
+  SDAC_BOT_STATUS_FILE: /data/bot_status.json
+  SANA_DASHBOARD_URL: ${SANA_DASHBOARD_URL:-http://localhost:5000}
+  SDAC_PUBLIC_URL: ${SDAC_PUBLIC_URL:-http://localhost:5000}
+
+x-sana-service: &sana-service
+  build:
+    context: .
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    <<: *sana-env
+  volumes:
+    - sana-data:/data
+  restart: unless-stopped
+
 services:
   dashboard:
-    build: .
-    command: gunicorn --workers 2 --bind 0.0.0.0:5000 dashboard:app
-    env_file:
-      - .env
-    environment:
-      SDAC_CONFIG_FILE: /data/config.json
-      SDAC_DB_FILE: /data/sdac.db
-      SDAC_MEDIA_DIR: /data/media
-      SDAC_BACKUP_DIR: /data/backups
-      SDAC_BOT_STATUS_FILE: /data/bot_status.json
+    <<: *sana-service
+    command: gunicorn --workers 2 --threads 4 --timeout 120 --bind 0.0.0.0:5000 dashboard:app
     ports:
-      - "5000:5000"
-    volumes:
-      - sdac-data:/data
-    restart: unless-stopped
+      - "${SANA_DASHBOARD_PORT:-5000}:5000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/admin/health', timeout=4).read()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   bot:
-    build: .
+    <<: *sana-service
     command: python bot.py
-    env_file:
-      - .env
-    environment:
-      SDAC_CONFIG_FILE: /data/config.json
-      SDAC_DB_FILE: /data/sdac.db
-      SDAC_MEDIA_DIR: /data/media
-      SDAC_BACKUP_DIR: /data/backups
-      SDAC_BOT_STATUS_FILE: /data/bot_status.json
-    volumes:
-      - sdac-data:/data
-    restart: unless-stopped
     depends_on:
-      - dashboard
+      dashboard:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import json, os; p=os.environ.get('SDAC_BOT_STATUS_FILE','/data/bot_status.json'); data=json.load(open(p, encoding='utf-8')); assert data.get('updated_at') or data.get('created_at') or data.get('event')",
+        ]
+      interval: 60s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
   postgres:
     image: postgres:16-alpine
     profiles:
       - postgres
     environment:
-      POSTGRES_DB: sdac
-      POSTGRES_USER: sdac
-      POSTGRES_PASSWORD: sdac-change-me
+      POSTGRES_DB: ${POSTGRES_DB:-sana}
+      POSTGRES_USER: ${POSTGRES_USER:-sana}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - sdac-postgres:/var/lib/postgresql/data
+      - sana-postgres:/var/lib/postgresql/data
     restart: unless-stopped
 
 volumes:
-  sdac-data:
-  sdac-postgres:
+  sana-data:
+  sana-postgres:

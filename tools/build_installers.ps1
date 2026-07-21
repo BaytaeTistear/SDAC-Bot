@@ -21,6 +21,7 @@ function Copy-PayloadFiles {
         "README.md",
         "DEPLOY.md",
         "HOSTING.md",
+        "DOCKER.md",
         "DISCORD_PERMISSIONS.md",
         "PRODUCTION_NEXT.md",
         "MONITORING.md",
@@ -587,7 +588,8 @@ $chunkLiteral
         {
             "bot.py", "dashboard.py", "dashboard_account_templates.py", "dashboard_admin_roles.py", "dashboard_shell_assets.py", "dashboard_sidebar.py", "config.py", "requirements.txt",
             "database_migrations.py", "observability.py",
-            "README.md", "HOSTING.md", "DEPLOY.md", "PRODUCTION_NEXT.md",
+            "README.md", "HOSTING.md",
+        "DOCKER.md", "DEPLOY.md", "PRODUCTION_NEXT.md",
             "MONITORING.md", "POSTGRESQL.md", "DISCORD_PERMISSIONS.md", ".env"
         };
         foreach (string file in files)
