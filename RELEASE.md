@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.3.31 Experimental
+
+Version 4.3.31 adds launch readiness and Discord OAuth callback diagnostics for local/public hosting.
+
+## Go-Live Readiness
+
+- added an OAuth Diagnostics page that shows the exact Discord callback URL, public URL status, OAuth client ID/secret status, invite client ID status, and FreeDNS-friendly URL guidance
+- tightened Production Health, Install Doctor, Release Checklist, and Go Live Checklist with stable public URL, Discord callback URL, and Google Play tester account checks
+- added a Bot Owner sidebar link and Command Center entry for OAuth Diagnostics
+- added regression coverage for callback URL calculation, quick-tunnel warning behavior, and keeping the Default Google Play tester account low-access
+
+## Release Notes
+
+- This is an experimental update. Use `sana-update latest-experimental` to pull it.
 # Sana-Chan Version 4.3.30 Experimental
 
 Version 4.3.30 adds a Windows local-server launcher for Hyper-V and Cloudflare quick tunnels.

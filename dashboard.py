@@ -5190,6 +5190,7 @@ GO_LIVE_CHECKLIST_HTML = """
         <a href="{{ url_for('admin_releases', key=admin_key) }}">Releases</a>
         <a href="{{ url_for('admin_release_checklist', key=admin_key) }}">Release Checklist</a>
         <a href="{{ url_for('admin_production_health', key=admin_key) }}">Production Health</a>
+        <a href="{{ url_for('admin_oauth_diagnostics', key=admin_key) }}">OAuth Diagnostics</a>
         <a href="{{ url_for('admin_install_doctor', key=admin_key) }}">Install Doctor</a>
         <a href="{{ url_for('bot_invite') }}">Invite Flow</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
@@ -5269,6 +5270,7 @@ RELEASE_CHECKLIST_HTML = """
     <nav>
         <a href="{{ url_for('admin_releases', key=admin_key) }}">Releases</a>
         <a href="{{ url_for('admin_production_health', key=admin_key) }}">Production Health</a>
+        <a href="{{ url_for('admin_oauth_diagnostics', key=admin_key) }}">OAuth Diagnostics</a>
         <a href="{{ url_for('admin_install_doctor', key=admin_key) }}">Install Doctor</a>
         <a href="{{ url_for('bot_invite') }}">Invite Flow</a>
         <a href="{{ url_for('admin_logout') }}">Log out</a>
@@ -8195,7 +8197,11 @@ def production_health_report(config_data=None):
         ),
     )
     add("Storage warnings", not storage_warnings(config_data), "No storage warnings." if not storage_warnings(config_data) else "; ".join(storage_warnings(config_data)))
-    add("Public URL", bool(os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN")), "Public URL configured." if os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN") else "Set SDAC_PUBLIC_URL.")
+    public_status = public_url_launch_status()
+    default_account = google_play_test_account_status()
+    add("Public URL", public_status["ok"], f"{public_status['state']}: {public_status['detail']}")
+    add("Discord callback URL", bool(public_status["callback_url"]), public_status["callback_url"] or "Set SDAC_PUBLIC_URL first.")
+    add("Google Play tester", default_account["ok"], f"{default_account['state']}: {default_account['detail']}")
     add("Guilds configured", bool(config_data.get("guilds")), f"{len(config_data.get('guilds') or {})} guild(s) configured.")
     add(
         "Instance ID",
@@ -8265,7 +8271,9 @@ def install_doctor_report():
         "critical",
     )
     add("Session secret", bool(os.getenv("SDAC_SECRET_KEY")), "SDAC_SECRET_KEY is set." if os.getenv("SDAC_SECRET_KEY") else "Set SDAC_SECRET_KEY for stable sessions.", "critical")
-    add("Public URL", bool(os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN")), os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN") or "Set SDAC_PUBLIC_URL or SDAC_DOMAIN.")
+    public_status = public_url_launch_status()
+    add("Public URL", public_status["ok"], f"{public_status['public_url'] or 'Missing'} - {public_status['detail']}")
+    add("Discord callback", bool(public_status["callback_url"]), public_status["callback_url"] or "Set SDAC_PUBLIC_URL or SDAC_DOMAIN.")
     add("Configured guilds", bool(config_data.get("guilds")), f"{len(config_data.get('guilds') or {})} guild(s) configured.")
     add("Repository", bool(RELEASE_REPO), f"User/fork repo: {RELEASE_REPO}; original repo: {ORIGINAL_REPO}.")
 
@@ -9453,10 +9461,7 @@ def sidebar_server_options(config_data=None):
 
 
 def public_app_metadata():
-    public_url = (os.getenv("SDAC_PUBLIC_URL") or "").strip().rstrip("/")
-    domain = (os.getenv("SDAC_DOMAIN") or "").strip().strip("/")
-    if not public_url and domain:
-        public_url = f"https://{domain}"
+    public_url = configured_public_url()
     invite_url = bot_invite_url(public_url=public_url)
     return {
         "name": os.getenv("SDAC_PUBLIC_BOT_NAME", "Sana-Chan Bot").strip() or "Sana-Chan Bot",
@@ -9472,6 +9477,95 @@ def public_app_metadata():
         "permissions": os.getenv("SDAC_BOT_PERMISSIONS", "274878221376").strip(),
     }
 
+
+
+
+def configured_public_url(prefer_request=False):
+    public_url = (os.getenv("SDAC_PUBLIC_URL") or "").strip().rstrip("/")
+    domain = (os.getenv("SDAC_DOMAIN") or "").strip().strip("/")
+    if not public_url and domain:
+        public_url = f"https://{domain}"
+    if not public_url and prefer_request and has_request_context():
+        public_url = request.host_url.rstrip("/")
+    return public_url
+
+
+def dashboard_oauth_callback_url(public_url=None):
+    base_url = (public_url or configured_public_url(prefer_request=True)).strip().rstrip("/")
+    return f"{base_url}/account/oauth/callback" if base_url else ""
+
+
+def is_cloudflare_quick_tunnel_url(public_url=None):
+    value = (public_url or configured_public_url()).strip().lower()
+    return ".trycloudflare.com" in value
+
+
+def public_url_launch_status():
+    public_url = configured_public_url(prefer_request=True)
+    callback_url = dashboard_oauth_callback_url(public_url)
+    if not public_url:
+        return {
+            "ok": False,
+            "state": "Missing",
+            "public_url": "",
+            "callback_url": "",
+            "detail": "Set SDAC_PUBLIC_URL to the public dashboard URL before enabling Discord OAuth.",
+            "next_step": "Set SDAC_PUBLIC_URL, restart dashboard and bot, then add the callback URL in Discord Developer Portal.",
+        }
+    if is_cloudflare_quick_tunnel_url(public_url):
+        return {
+            "ok": False,
+            "state": "Temporary",
+            "public_url": public_url,
+            "callback_url": callback_url,
+            "detail": "This is a Cloudflare quick tunnel URL. It is fine for testing, but it may change after restart.",
+            "next_step": "Use this callback for testing now. Before public launch, move to a stable URL or be ready to update Discord OAuth whenever the tunnel changes.",
+        }
+    if not public_url.startswith("https://"):
+        return {
+            "ok": False,
+            "state": "Needs HTTPS",
+            "public_url": public_url,
+            "callback_url": callback_url,
+            "detail": "The public dashboard URL is not HTTPS.",
+            "next_step": "Use HTTPS for Discord OAuth and app login.",
+        }
+    return {
+        "ok": True,
+        "state": "Stable",
+        "public_url": public_url,
+        "callback_url": callback_url,
+        "detail": "Public URL is configured and does not look like a temporary quick tunnel.",
+        "next_step": "Add the callback URL in Discord Developer Portal and run a login test.",
+    }
+
+
+def google_play_test_account_status():
+    try:
+        user = dashboard_user("default")
+    except sqlite3.Error as error:
+        return {
+            "ok": False,
+            "state": "Unavailable",
+            "detail": f"Could not check the Default account: {error}",
+            "next_step": "Open Users and verify the permanent tester account manually.",
+        }
+    if not user:
+        return {
+            "ok": False,
+            "state": "Missing",
+            "detail": "Default Google Play tester account was not found.",
+            "next_step": "Run database migrations or create a low-access tester account for Google Play review.",
+        }
+    role = normalize_role(user["role"] or "not_added")
+    disabled = bool(user["disabled"])
+    low_access = role in {"not_added", "user"}
+    return {
+        "ok": (not disabled) and low_access,
+        "state": "Ready" if (not disabled and low_access) else "Too much access" if not low_access else "Disabled",
+        "detail": f"Default account role is {role}; disabled={disabled}.",
+        "next_step": "Keep this account active only as Not Added/User for Google Play testing; do not grant moderator, owner, admin, or bot owner access.",
+    }
 
 def bot_client_id():
     return (
@@ -19202,6 +19296,8 @@ def go_live_checklist_rows():
     backups = recent_database_backups()
     warnings = security_warnings() + storage_warnings(config_data)
     update_config = read_update_config()
+    public_status = public_url_launch_status()
+    default_account = google_play_test_account_status()
     limits = config_data.get("limits") or {}
     guilds = config_data.get("guilds") or {}
     official_version = release.get("official_version") or "unknown"
@@ -19251,6 +19347,26 @@ def go_live_checklist_rows():
         oauth_enabled(),
         "Discord OAuth is configured." if oauth_enabled() else "Discord OAuth client ID/secret are missing.",
         "Set SDAC_DISCORD_CLIENT_ID and SDAC_DISCORD_CLIENT_SECRET, then test dashboard login.",
+    )
+    add(
+        "Discord callback URL",
+        bool(public_status["callback_url"]),
+        public_status["callback_url"] or "No callback URL can be calculated yet.",
+        "Add this exact URL in Discord Developer Portal > OAuth2 > Redirects.",
+    )
+    add(
+        "Stable public URL",
+        public_status["ok"],
+        f"{public_status['state']}: {public_status['detail']}",
+        public_status["next_step"],
+        "warning" if public_status["state"] == "Temporary" else "blocker",
+    )
+    add(
+        "Google Play tester account",
+        default_account["ok"],
+        f"{default_account['state']}: {default_account['detail']}",
+        default_account["next_step"],
+        "warning" if default_account["state"] == "Missing" else "blocker",
     )
     add(
         "Invite flow",
@@ -19343,6 +19459,7 @@ def go_live_checklist_rows():
         "Submit image, video, and text media; vote from Discord and dashboard; remove/quarantine a test submission.",
         "Run a guessing game with hints and confirm points are awarded only when hints are not exhausted.",
         "Create a database backup, run restore validation, and confirm rollback instructions are visible.",
+        "Open OAuth Diagnostics and copy the exact callback URL into Discord Developer Portal > OAuth2 > Redirects.",
         "Install or update the Android app from the release APK and verify login/update diagnostics.",
         "Only after the exact experimental build passes, promote it to latest-official on request.",
     ]
@@ -19356,6 +19473,8 @@ def release_checklist_rows():
     bot_status = read_bot_status()
     backups = recent_database_backups()
     warnings = security_warnings() + storage_warnings(config_data)
+    public_status = public_url_launch_status()
+    default_account = google_play_test_account_status()
     official_version = release.get("official_version") or "unknown"
     experimental_version = release.get("experimental_version") or "unknown"
     installed_version = release.get("installed_version") or release.get("installed") or "development"
@@ -19372,6 +19491,9 @@ def release_checklist_rows():
 
     add("Production health", production["score"] == production["max_score"], f"Health score {production['score']} / {production['max_score']}.", warning=production["score"] >= max(1, production["max_score"] - 2))
     add("Discord OAuth", oauth_enabled(), "Discord login client ID and secret are configured." if oauth_enabled() else "Set SDAC_DISCORD_CLIENT_ID and SDAC_DISCORD_CLIENT_SECRET.")
+    add("Discord callback URL", bool(public_status["callback_url"]), public_status["callback_url"] or "Set SDAC_PUBLIC_URL first.")
+    add("Stable public URL", public_status["ok"], f"{public_status['state']}: {public_status['detail']}", warning=public_status["state"] == "Temporary")
+    add("Google Play tester", default_account["ok"], f"{default_account['state']}: {default_account['detail']}", warning=default_account["state"] == "Missing")
     add("Invite link", bool(app_info.get("invite_url")), "Public invite URL is available." if app_info.get("invite_url") else "Set SDAC_BOT_CLIENT_ID or DISCORD_CLIENT_ID.")
     add("Public links", bool(app_info.get("github_url") and app_info.get("wiki_url") and app_info.get("privacy_url") and app_info.get("terms_url")), "GitHub, wiki, privacy, and terms links are exposed to users.")
     add("Bot heartbeat", bool(bot_status.get("fresh") or bot_status.get("event")), bot_status.get("message") or "No bot heartbeat was recorded.", warning=bool(bot_status.get("event")))
@@ -19397,6 +19519,7 @@ def admin_command_actions():
         ("Theme Presets", "Server Owner", "Known-good dashboard theme and layout presets.", "admin_theme_presets", "theme preset layout colors", "secondary"),
         ("Training Mode", "Server Owner", "Guided practice reminder for onboarding owners.", "admin_training_mode", "training practice owner", "secondary"),
         ("Release Center", "Bot Owner", "Release status, safe mode, go-live checks, and support links.", "admin_release_center", "release safe mode latest experimental official", ""),
+        ("OAuth Diagnostics", "Bot Owner", "Exact Discord callback URL, OAuth secrets status, and public URL stability.", "admin_oauth_diagnostics", "oauth discord callback login public url", "secondary"),
         ("Notification Center", "Bot Owner", "Important bot, release, backup, security, and queue alerts.", "admin_notification_center", "notifications alerts security backup", "secondary"),
         ("Post-Update Wizard", "Bot Owner", "Checklist after applying a release on the server.", "admin_post_update_wizard", "post update restart checks", "secondary"),
         ("Undo Center", "Bot Owner", "Reset theme/layout, enable safe mode, and view recent audit rows.", "admin_undo_center", "undo restore reset config history", "secondary"),
@@ -19956,6 +20079,59 @@ def admin_activity_digest():
     """
     return admin_tool_shell("Admin Activity Digest", "Recent submissions, reports, moderation, config changes, and jobs.", body, days=days, rows=rows, recent=recent)
 
+
+
+@app.route("/admin/oauth-diagnostics")
+def admin_oauth_diagnostics():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    public_status = public_url_launch_status()
+    app_info = public_app_metadata()
+    rows = [
+        {
+            "area": "Public dashboard URL",
+            "value": public_status["public_url"] or "Missing",
+            "ok": public_status["ok"],
+            "detail": public_status["detail"],
+        },
+        {
+            "area": "Discord callback URL",
+            "value": public_status["callback_url"] or "Missing",
+            "ok": bool(public_status["callback_url"]),
+            "detail": "Copy this exact URL into Discord Developer Portal > OAuth2 > Redirects.",
+        },
+        {
+            "area": "OAuth client ID",
+            "value": "Configured" if DISCORD_OAUTH_CLIENT_ID else "Missing",
+            "ok": bool(DISCORD_OAUTH_CLIENT_ID),
+            "detail": "Set SDAC_DISCORD_CLIENT_ID from the Discord application OAuth2 page.",
+        },
+        {
+            "area": "OAuth client secret",
+            "value": "Configured" if DISCORD_OAUTH_CLIENT_SECRET else "Missing",
+            "ok": bool(DISCORD_OAUTH_CLIENT_SECRET),
+            "detail": "Set SDAC_DISCORD_CLIENT_SECRET from the Discord application OAuth2 page. Do not commit it.",
+        },
+        {
+            "area": "Bot invite client ID",
+            "value": app_info.get("client_id") or "Missing",
+            "ok": bool(app_info.get("client_id")),
+            "detail": "Set SDAC_BOT_CLIENT_ID or DISCORD_CLIENT_ID so Invite Bot can generate an OAuth link.",
+        },
+        {
+            "area": "FreeDNS friendly URL",
+            "value": os.getenv("SDAC_FRIENDLY_URL", "http://sanachan.bot.nu"),
+            "ok": True,
+            "detail": "Use this only as a human-friendly redirect unless it is the exact public dashboard URL.",
+        },
+    ]
+    body = """
+    <section class="panel"><h2>Discord OAuth Callback</h2><p>Discord must contain this exact redirect URL:</p><p><code>{{ callback_url or 'Set SDAC_PUBLIC_URL first' }}</code></p><p class="muted">For Cloudflare quick tunnels this URL changes when the tunnel changes, so update Discord OAuth each time the launcher prints a new URL.</p></section>
+    <section class="panel"><h2>OAuth Readiness</h2><table><thead><tr><th>Area</th><th>Value</th><th>Status</th><th>Detail</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.area }}</td><td><code>{{ row.value }}</code></td><td class="{{ 'ok' if row.ok else 'warn' }}">{{ 'Ready' if row.ok else 'Needs attention' }}</td><td>{{ row.detail }}</td></tr>{% endfor %}</tbody></table></section>
+    <section class="panel"><h2>Where To Check It</h2><ol><li>Open Discord Developer Portal.</li><li>Choose the Sana-Chan application.</li><li>Open OAuth2.</li><li>Under Redirects, add the callback URL shown above.</li><li>Save changes, restart the dashboard if you changed .env, then test Login with Discord.</li></ol></section>
+    """
+    return admin_tool_shell("OAuth Diagnostics", "Exact callback URL and login readiness for Discord OAuth.", body, callback_url=public_status["callback_url"], rows=rows)
 
 @app.route("/admin/app-store-readiness")
 def admin_app_store_readiness():

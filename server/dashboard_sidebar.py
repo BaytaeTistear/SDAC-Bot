@@ -65,6 +65,7 @@ ADMIN_SECTIONS = [
         "links": [
             ("Release Center", "admin_release_center", {}),
             ("Go Live Control", "admin_go_live_control_room", {}),
+            ("OAuth Diagnostics", "admin_oauth_diagnostics", {}),
             ("Release Notes Preview", "admin_release_notes_preview", {}),
             ("Self Tests", "admin_self_tests", {}),
             ("Command Audit", "admin_command_cleanup_audit", {}),

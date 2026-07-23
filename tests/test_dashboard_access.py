@@ -112,6 +112,40 @@ class DashboardAccessTests(unittest.TestCase):
 
         self.assertEqual([row["id"] for row in rows], ["111", "222"])
 
+    def test_oauth_callback_uses_public_url(self):
+        with self.dashboard.app.test_request_context("/admin/oauth-diagnostics", base_url="http://localhost:5000"):
+            with mock.patch.dict(os.environ, {"SDAC_PUBLIC_URL": "https://sana.example.test"}, clear=False):
+                status = self.dashboard.public_url_launch_status()
+
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["callback_url"], "https://sana.example.test/account/oauth/callback")
+
+    def test_quick_tunnel_callback_is_warning_not_missing(self):
+        with self.dashboard.app.test_request_context("/admin/oauth-diagnostics", base_url="http://localhost:5000"):
+            with mock.patch.dict(os.environ, {"SDAC_PUBLIC_URL": "https://alpha-beta.trycloudflare.com"}, clear=False):
+                status = self.dashboard.public_url_launch_status()
+
+        self.assertFalse(status["ok"])
+        self.assertEqual(status["state"], "Temporary")
+        self.assertEqual(status["callback_url"], "https://alpha-beta.trycloudflare.com/account/oauth/callback")
+
+    def test_default_google_play_account_must_stay_low_access(self):
+        with self.dashboard.database() as connection:
+            connection.execute("""
+                INSERT INTO dashboard_admin_users (
+                    username, email, display_name, password_hash, role,
+                    disabled, created_at, updated_at, guild_ids_json
+                )
+                VALUES ('default', '', 'Default', 'x', 'not_added', 0, '', '', '[]')
+            """)
+        status = self.dashboard.google_play_test_account_status()
+        self.assertTrue(status["ok"])
+
+        with self.dashboard.database() as connection:
+            connection.execute("UPDATE dashboard_admin_users SET role = 'bot_owner' WHERE username = 'default'")
+        status = self.dashboard.google_play_test_account_status()
+        self.assertFalse(status["ok"])
+        self.assertEqual(status["state"], "Too much access")
     def test_selected_server_role_overrides_global_role(self):
         with self.dashboard.app.test_request_context("/?guild_id=111"):
             self.dashboard.session["sdac_admin"] = True
