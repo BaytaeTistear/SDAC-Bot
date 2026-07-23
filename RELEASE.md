@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.3.32 Experimental
+
+Version 4.3.32 fixes updates for Docker/Git VM installs.
+
+## Docker Update Fix
+
+- updated `scripts/update_from_github.sh` so a repo checkout with `docker-compose.yml` updates in place with `git fetch`, `git checkout`, and `docker compose up -d --build dashboard bot`
+- added automatic app directory detection when the updater is run from a checked-out repo under `scripts/`
+- kept the existing installer/systemd path for production installs that do not use Docker Compose
+- added regression coverage so Docker update mode stays packaged in both root and server updater scripts
+
+## Release Notes
+
+- This is an experimental update. Use `sana-update latest-experimental` to pull it after the updater is installed, or `git pull` then `bash scripts/update_from_github.sh latest-experimental` in a Docker checkout.
 # Sana-Chan Version 4.3.31 Experimental
 
 Version 4.3.31 adds launch readiness and Discord OAuth callback diagnostics for local/public hosting.

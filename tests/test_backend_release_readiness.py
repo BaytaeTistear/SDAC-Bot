@@ -51,6 +51,13 @@ class BackendReleaseReadinessTests(unittest.TestCase):
                 self.assertIn(filename, package_file.read_text(encoding="utf-8"), f"{filename} missing from {package_file.relative_to(ROOT)}")
 
 
+    def test_update_script_supports_docker_git_checkouts(self):
+        for filename in ("scripts/update_from_github.sh", "server/scripts/update_from_github.sh"):
+            script = (ROOT / filename).read_text(encoding="utf-8")
+            self.assertIn("DETECTED_APP_DIR", script, filename)
+            self.assertIn("run_git_docker_update", script, filename)
+            self.assertIn("docker compose up -d --build dashboard bot", script, filename)
+            self.assertIn("Use 'docker compose', not old 'docker-compose'", script, filename)
     def test_docker_compose_uses_portable_environment_syntax(self):
         compose_text = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
         self.assertNotIn("required: false", compose_text)
