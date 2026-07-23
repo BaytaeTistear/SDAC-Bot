@@ -8,6 +8,15 @@ if command -v readlink >/dev/null 2>&1; then
     SCRIPT_PATH="$(readlink -f "$0" 2>/dev/null || printf '%s\n' "$0")"
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" >/dev/null 2>&1 && pwd -P)"
+DETECTED_APP_DIR=""
+if [[ -z "${SDAC_APP_DIR:-}" ]]; then
+    SCRIPT_PARENT="$(cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
+    if [[ -f "$SCRIPT_PARENT/docker-compose.yml" && -d "$SCRIPT_PARENT/.git" ]]; then
+        DETECTED_APP_DIR="$SCRIPT_PARENT"
+    fi
+fi
+
 if [[ -f "$CONFIG_FILE" ]]; then
     if [[ ! -r "$CONFIG_FILE" ]]; then
         echo "ERROR: Cannot read updater config: $CONFIG_FILE" >&2
@@ -24,7 +33,7 @@ RELEASE_TAG="${SDAC_RELEASE_TAG:-latest-official}"
 REQUESTED_RELEASE_TAG="$RELEASE_TAG"
 RESOLVED_VERSION="unknown"
 UPDATE_FINISHED=0
-APP_DIR="${SDAC_APP_DIR:-/home/ubuntu/discord-screenshot-bot}"
+APP_DIR="${SDAC_APP_DIR:-${DETECTED_APP_DIR:-/home/ubuntu/discord-screenshot-bot}}"
 ENV_FILE="${SDAC_ENV_FILE:-/etc/sdac-bot/sdac.env}"
 DASHBOARD_BIND="${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}"
 INSTALLER_NAME="${SDAC_INSTALLER_NAME:-Sana-Chan-Linux-Installer.sh}"
@@ -401,6 +410,51 @@ run_update_health_check() {
     echo "All post-update health checks passed."
 }
 
+
+run_git_docker_update() {
+    say "Updating Docker checkout in $APP_DIR"
+    need_command git
+    cd "$APP_DIR"
+
+    if [[ ! -d .git ]]; then
+        fail "Docker update mode needs a Git checkout at $APP_DIR."
+    fi
+    if [[ ! -f docker-compose.yml ]]; then
+        fail "Docker update mode needs docker-compose.yml at $APP_DIR."
+    fi
+    if ! command -v docker >/dev/null 2>&1; then
+        fail "Docker update mode needs the docker command."
+    fi
+    if ! docker compose version >/dev/null 2>&1; then
+        fail "Docker Compose v2 is required. Use 'docker compose', not old 'docker-compose'."
+    fi
+
+    git fetch --tags --force origin
+    if [[ "$RELEASE_TAG" == "latest-official" || "$RELEASE_TAG" == "latest-experimental" || "$RELEASE_TAG" == version-* ]]; then
+        git checkout -f "$RELEASE_TAG"
+    else
+        git checkout -f "$RELEASE_TAG"
+    fi
+
+    docker compose up -d --build dashboard bot
+    docker compose ps
+
+    if command -v curl >/dev/null 2>&1; then
+        say "Checking local dashboard health"
+        curl -fsS "http://127.0.0.1:5000/health" >/dev/null
+    fi
+
+    UPDATE_FINISHED=1
+    say "Update complete"
+    echo "Update result: SUCCESS"
+    echo "Requested update: $REQUESTED_RELEASE_TAG"
+    echo "Resolved release tag: $RELEASE_TAG"
+    echo "Resolved version: $RESOLVED_VERSION"
+    echo "Repository: $REPO"
+    echo "App directory: $APP_DIR"
+    echo "Update mode: docker"
+}
+
 run_rollback() {
     local rollback_script="$APP_DIR/scripts/rollback_ubuntu.sh"
     if [[ ! -f "$rollback_script" ]]; then
@@ -451,6 +505,14 @@ fi
 
 if [[ "$INSTALL_COMMAND" == "1" ]]; then
     install_update_command
+    exit 0
+fi
+
+if [[ "${SDAC_UPDATE_MODE:-auto}" != "installer" && -f "$APP_DIR/docker-compose.yml" && -d "$APP_DIR/.git" ]]; then
+    if [[ "$ROLLBACK_MODE" == "1" ]]; then
+        fail "Rollback is only supported for installer/systemd installs. Use git checkout and docker compose up for Docker rollbacks."
+    fi
+    run_git_docker_update
     exit 0
 fi
 

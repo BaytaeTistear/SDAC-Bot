@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.3.33 Experimental
+
+Version 4.3.33 completes the Docker updater source and release pipeline fix.
+
+## Updater Source Fix
+
+- committed the Docker/Git updater source changes into the repository, not only the generated release assets
+- added app-directory detection for updater scripts run from a checked-out repo under `scripts/`
+- updated experimental and official release tooling so updater source scripts are staged in future releases
+- expanded backend readiness tests to verify updater source staging and Docker checkout detection
+
+## Release Notes
+
+- This is an experimental update. Docker VM installs should run `git pull` once, then use `bash scripts/update_from_github.sh latest-experimental` from the repo checkout.
 # Sana-Chan Version 4.3.32 Experimental
 
 Version 4.3.32 fixes updates for Docker/Git VM installs.

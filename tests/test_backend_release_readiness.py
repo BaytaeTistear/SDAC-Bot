@@ -51,10 +51,22 @@ class BackendReleaseReadinessTests(unittest.TestCase):
                 self.assertIn(filename, package_file.read_text(encoding="utf-8"), f"{filename} missing from {package_file.relative_to(ROOT)}")
 
 
+    def test_release_scripts_stage_updater_sources(self):
+        for filename in ("tools/release_experimental.ps1", "tools/release_official.ps1"):
+            script = (ROOT / filename).read_text(encoding="utf-8")
+            for staged in (
+                "scripts/update_from_github.sh",
+                "scripts/update_from_github_windows.ps1",
+                "server/scripts/update_from_github.sh",
+                "server/scripts/update_from_github_windows.ps1",
+            ):
+                self.assertIn(staged, script, f"{staged} missing from {filename}")
+
     def test_update_script_supports_docker_git_checkouts(self):
         for filename in ("scripts/update_from_github.sh", "server/scripts/update_from_github.sh"):
             script = (ROOT / filename).read_text(encoding="utf-8")
             self.assertIn("DETECTED_APP_DIR", script, filename)
+            self.assertIn('SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")"', script, filename)
             self.assertIn("run_git_docker_update", script, filename)
             self.assertIn("docker compose up -d --build dashboard bot", script, filename)
             self.assertIn("Use 'docker compose', not old 'docker-compose'", script, filename)

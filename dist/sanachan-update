@@ -8,6 +8,15 @@ if command -v readlink >/dev/null 2>&1; then
     SCRIPT_PATH="$(readlink -f "$0" 2>/dev/null || printf '%s\n' "$0")"
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" >/dev/null 2>&1 && pwd -P)"
+DETECTED_APP_DIR=""
+if [[ -z "${SDAC_APP_DIR:-}" ]]; then
+    SCRIPT_PARENT="$(cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
+    if [[ -f "$SCRIPT_PARENT/docker-compose.yml" && -d "$SCRIPT_PARENT/.git" ]]; then
+        DETECTED_APP_DIR="$SCRIPT_PARENT"
+    fi
+fi
+
 if [[ -f "$CONFIG_FILE" ]]; then
     if [[ ! -r "$CONFIG_FILE" ]]; then
         echo "ERROR: Cannot read updater config: $CONFIG_FILE" >&2
