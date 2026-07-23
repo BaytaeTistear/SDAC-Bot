@@ -14902,6 +14902,12 @@ def oauth_redirect_uri():
     return url_for("admin_oauth_callback", key=ADMIN_KEY, _external=True)
 
 
+def account_oauth_redirect_uri():
+    if DISCORD_OAUTH_REDIRECT_URI:
+        return DISCORD_OAUTH_REDIRECT_URI
+    return dashboard_oauth_callback_url() or url_for("account_oauth_callback", _external=True)
+
+
 def discord_json_request(url, token, token_type="Bearer", method="GET", payload=None):
     headers = {
         "Accept": "application/json",
@@ -15457,7 +15463,7 @@ def account_oauth_start():
     store_oauth_state(state, next_url)
     authorize_params = {
         "client_id": DISCORD_OAUTH_CLIENT_ID,
-        "redirect_uri": url_for("account_oauth_callback", _external=True),
+        "redirect_uri": account_oauth_redirect_uri(),
         "response_type": "code",
         "scope": "identify guilds",
         "state": state,
@@ -15481,7 +15487,7 @@ def account_oauth_callback():
     try:
         token_payload = exchange_discord_oauth_code(
             code,
-            url_for("account_oauth_callback", _external=True),
+            account_oauth_redirect_uri(),
         )
         access_token = token_payload.get("access_token") or ""
         user = discord_current_user(access_token)

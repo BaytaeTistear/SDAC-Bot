@@ -112,6 +112,18 @@ class DashboardAccessTests(unittest.TestCase):
 
         self.assertEqual([row["id"] for row in rows], ["111", "222"])
 
+    def test_discord_oauth_start_uses_configured_https_public_callback(self):
+        with mock.patch.dict(self.dashboard.os.environ, {"SDAC_PUBLIC_URL": "https://alpha-beta.trycloudflare.com"}, clear=False):
+            with mock.patch.object(self.dashboard, "DISCORD_OAUTH_CLIENT_ID", "1234567890"):
+                with mock.patch.object(self.dashboard, "DISCORD_OAUTH_CLIENT_SECRET", "secret"):
+                    with self.dashboard.app.test_client() as client:
+                        response = client.get("/account/oauth/start", follow_redirects=False)
+
+        self.assertEqual(response.status_code, 302)
+        location = response.headers.get("Location", "")
+        self.assertIn("discord.com/api/oauth2/authorize", location)
+        self.assertIn("redirect_uri=https%3A%2F%2Falpha-beta.trycloudflare.com%2Faccount%2Foauth%2Fcallback", location)
+        self.assertNotIn("redirect_uri=http%3A%2F%2Falpha-beta.trycloudflare.com", location)
     def test_oauth_callback_uses_public_url(self):
         with self.dashboard.app.test_request_context("/admin/oauth-diagnostics", base_url="http://localhost:5000"):
             with mock.patch.dict(os.environ, {"SDAC_PUBLIC_URL": "https://sana.example.test"}, clear=False):

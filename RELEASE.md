@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.3.34 Experimental
+
+Version 4.3.34 fixes Discord OAuth redirects behind Cloudflare quick tunnels and other reverse proxies.
+
+## Discord OAuth Fix
+
+- account Discord login now sends Discord the configured public callback URL instead of Flask's internal request scheme
+- OAuth code exchange now uses the same public callback URL that was sent to Discord
+- added regression coverage to prevent `http://*.trycloudflare.com/account/oauth/callback` redirect URIs from returning
+
+## Release Notes
+
+- This is an experimental update. After updating, use OAuth Diagnostics to copy the exact HTTPS callback URL into Discord Developer Portal.
 # Sana-Chan Version 4.3.33 Experimental
 
 Version 4.3.33 completes the Docker updater source and release pipeline fix.
