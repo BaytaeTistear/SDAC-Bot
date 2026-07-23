@@ -63,6 +63,8 @@ function Copy-PayloadFiles {
         "scripts\test_restore.sh",
         "scripts\update_from_github.sh",
         "scripts\update_from_github_windows.ps1",
+        "scripts\windows\README.md",
+        "scripts\windows\start_sana_local_server.ps1",
         "systemd\sdac-bot.service.template",
         "systemd\sdac-dashboard.service.template",
         "systemd\sdac-journald.conf",

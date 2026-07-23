@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.3.30 Experimental
+
+Version 4.3.30 adds a Windows local-server launcher for Hyper-V and Cloudflare quick tunnels.
+
+## Local Server Automation
+
+- added `scripts/windows/start_sana_local_server.ps1` to start the Hyper-V Ubuntu VM, bring up Docker Compose services, open a Cloudflare quick tunnel, capture the generated public URL, update the VM `.env`, and restart the dashboard/bot with the new public URL
+- added `scripts/windows/README.md` with manual run and Windows logon scheduled-task instructions
+- included the Windows local launcher files in installer payloads and release staging
+
+## Release Notes
+
+- This is an experimental update. Use `sana-update latest-experimental` to pull it.
 # Sana-Chan Version 4.3.29 Experimental
 
 Version 4.3.29 is an experimental Docker Compose compatibility fix.
