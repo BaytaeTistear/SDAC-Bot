@@ -10,6 +10,18 @@ Version 4.3.34 fixes Discord OAuth redirects behind Cloudflare quick tunnels and
 
 ## Release Notes
 
+## Version 4.3.35
+
+Version 4.3.35 prepares Sana-Chan for restoring the Oracle Cloud production server and stable public domains.
+
+### Changed
+
+- recognizes `SANA_PUBLIC_URL`, `SANA_DASHBOARD_URL`, and `SANA_DOMAIN` anywhere OAuth, app login, bot links, Docker, or Ubuntu install scripts need the public dashboard address
+- keeps legacy `SDAC_*` public URL variables working while preferring the Sana names for new server restores
+- adds `freethefishies.us.to` and `sanachan.bot.nu` to the app/dashboard trusted public origins
+- defaults new Ubuntu installs toward the Oracle production label and `https://freethefishies.us.to`
+- documents the Oracle restore environment values and Discord OAuth callback in `ORACLE_RESTORE.md`
+
 - This is an experimental update. After updating, use OAuth Diagnostics to copy the exact HTTPS callback URL into Discord Developer Portal.
 # Sana-Chan Version 4.3.33 Experimental
 
@@ -23,6 +35,18 @@ Version 4.3.33 completes the Docker updater source and release pipeline fix.
 - expanded backend readiness tests to verify updater source staging and Docker checkout detection
 
 ## Release Notes
+
+## Version 4.3.35
+
+Version 4.3.35 prepares Sana-Chan for restoring the Oracle Cloud production server and stable public domains.
+
+### Changed
+
+- recognizes `SANA_PUBLIC_URL`, `SANA_DASHBOARD_URL`, and `SANA_DOMAIN` anywhere OAuth, app login, bot links, Docker, or Ubuntu install scripts need the public dashboard address
+- keeps legacy `SDAC_*` public URL variables working while preferring the Sana names for new server restores
+- adds `freethefishies.us.to` and `sanachan.bot.nu` to the app/dashboard trusted public origins
+- defaults new Ubuntu installs toward the Oracle production label and `https://freethefishies.us.to`
+- documents the Oracle restore environment values and Discord OAuth callback in `ORACLE_RESTORE.md`
 
 - This is an experimental update. Docker VM installs should run `git pull` once, then use `bash scripts/update_from_github.sh latest-experimental` from the repo checkout.
 # Sana-Chan Version 4.3.32 Experimental
@@ -38,6 +62,18 @@ Version 4.3.32 fixes updates for Docker/Git VM installs.
 
 ## Release Notes
 
+## Version 4.3.35
+
+Version 4.3.35 prepares Sana-Chan for restoring the Oracle Cloud production server and stable public domains.
+
+### Changed
+
+- recognizes `SANA_PUBLIC_URL`, `SANA_DASHBOARD_URL`, and `SANA_DOMAIN` anywhere OAuth, app login, bot links, Docker, or Ubuntu install scripts need the public dashboard address
+- keeps legacy `SDAC_*` public URL variables working while preferring the Sana names for new server restores
+- adds `freethefishies.us.to` and `sanachan.bot.nu` to the app/dashboard trusted public origins
+- defaults new Ubuntu installs toward the Oracle production label and `https://freethefishies.us.to`
+- documents the Oracle restore environment values and Discord OAuth callback in `ORACLE_RESTORE.md`
+
 - This is an experimental update. Use `sana-update latest-experimental` to pull it after the updater is installed, or `git pull` then `bash scripts/update_from_github.sh latest-experimental` in a Docker checkout.
 # Sana-Chan Version 4.3.31 Experimental
 
@@ -52,6 +88,18 @@ Version 4.3.31 adds launch readiness and Discord OAuth callback diagnostics for 
 
 ## Release Notes
 
+## Version 4.3.35
+
+Version 4.3.35 prepares Sana-Chan for restoring the Oracle Cloud production server and stable public domains.
+
+### Changed
+
+- recognizes `SANA_PUBLIC_URL`, `SANA_DASHBOARD_URL`, and `SANA_DOMAIN` anywhere OAuth, app login, bot links, Docker, or Ubuntu install scripts need the public dashboard address
+- keeps legacy `SDAC_*` public URL variables working while preferring the Sana names for new server restores
+- adds `freethefishies.us.to` and `sanachan.bot.nu` to the app/dashboard trusted public origins
+- defaults new Ubuntu installs toward the Oracle production label and `https://freethefishies.us.to`
+- documents the Oracle restore environment values and Discord OAuth callback in `ORACLE_RESTORE.md`
+
 - This is an experimental update. Use `sana-update latest-experimental` to pull it.
 # Sana-Chan Version 4.3.30 Experimental
 
@@ -64,6 +112,18 @@ Version 4.3.30 adds a Windows local-server launcher for Hyper-V and Cloudflare q
 - included the Windows local launcher files in installer payloads and release staging
 
 ## Release Notes
+
+## Version 4.3.35
+
+Version 4.3.35 prepares Sana-Chan for restoring the Oracle Cloud production server and stable public domains.
+
+### Changed
+
+- recognizes `SANA_PUBLIC_URL`, `SANA_DASHBOARD_URL`, and `SANA_DOMAIN` anywhere OAuth, app login, bot links, Docker, or Ubuntu install scripts need the public dashboard address
+- keeps legacy `SDAC_*` public URL variables working while preferring the Sana names for new server restores
+- adds `freethefishies.us.to` and `sanachan.bot.nu` to the app/dashboard trusted public origins
+- defaults new Ubuntu installs toward the Oracle production label and `https://freethefishies.us.to`
+- documents the Oracle restore environment values and Discord OAuth callback in `ORACLE_RESTORE.md`
 
 - This is an experimental update. Use `sana-update latest-experimental` to pull it.
 # Sana-Chan Version 4.3.29 Experimental
@@ -3502,3 +3562,4 @@ Not included:
 - `media/` uploads
 - `backups/`
 - `venv/` or Python cache files
+

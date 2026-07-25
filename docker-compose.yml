@@ -5,8 +5,12 @@ x-sana-env: &sana-env
   SDAC_BACKUP_DIR: /data/backups
   SDAC_IMPORT_JOB_DIR: /data/import_jobs
   SDAC_BOT_STATUS_FILE: /data/bot_status.json
+  SANA_PUBLIC_URL: ${SANA_PUBLIC_URL:-http://localhost:5000}
   SANA_DASHBOARD_URL: ${SANA_DASHBOARD_URL:-http://localhost:5000}
+  SANA_DOMAIN: ${SANA_DOMAIN:-}
+  SANA_FRIENDLY_URL: ${SANA_FRIENDLY_URL:-http://sanachan.bot.nu}
   SDAC_PUBLIC_URL: ${SDAC_PUBLIC_URL:-http://localhost:5000}
+  SDAC_DOMAIN: ${SDAC_DOMAIN:-}
   DISCORD_TOKEN: ${DISCORD_TOKEN:-}
   SDAC_ADMIN_KEY: ${SDAC_ADMIN_KEY:-}
   SDAC_SECRET_KEY: ${SDAC_SECRET_KEY:-}
@@ -82,3 +86,4 @@ services:
 volumes:
   sana-data:
   sana-postgres:
+

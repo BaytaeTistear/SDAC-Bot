@@ -141,7 +141,8 @@ DOCTOR
         write_update_assignment SDAC_APP_USER "$APP_USER"
         write_update_assignment SDAC_ENV_FILE "$ENV_FILE"
         write_update_assignment SDAC_DASHBOARD_BIND "$DASHBOARD_BIND"
-        write_update_assignment SDAC_DOMAIN "${SDAC_DOMAIN:-}"
+        write_update_assignment SANA_DOMAIN "${SANA_DOMAIN:-${SDAC_DOMAIN:-}}"
+        write_update_assignment SDAC_DOMAIN "${SDAC_DOMAIN:-${SANA_DOMAIN:-}}"
         write_update_assignment SDAC_RELOAD_NGINX "1"
     } > "$UPDATE_CONFIG_TMP"
     sudo mkdir -p "$ENV_DIR"
@@ -156,8 +157,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
     ADMIN_USERNAME_INPUT="${SDAC_ADMIN_USERNAME_INPUT:-${SDAC_ADMIN_USERNAME:-}}"
     ADMIN_PASSWORD_INPUT="${SDAC_ADMIN_PASSWORD_INPUT:-}"
     SECRET_KEY_INPUT="${SDAC_SECRET_KEY_INPUT:-}"
-    PUBLIC_URL_INPUT="${SDAC_PUBLIC_URL_INPUT:-${SDAC_PUBLIC_URL:-}}"
-    SERVER_NAME_INPUT="${SDAC_SERVER_NAME_INPUT:-${SDAC_SERVER_NAME:-}}"
+    PUBLIC_URL_INPUT="${SANA_PUBLIC_URL_INPUT:-${SDAC_PUBLIC_URL_INPUT:-${SANA_PUBLIC_URL:-${SDAC_PUBLIC_URL:-}}}}"
+    SERVER_NAME_INPUT="${SANA_SERVER_NAME_INPUT:-${SDAC_SERVER_NAME_INPUT:-${SANA_SERVER_NAME:-${SDAC_SERVER_NAME:-}}}}"
 
     if [[ -z "$DISCORD_TOKEN_INPUT" ]]; then
         read -r -p "Discord bot token: " DISCORD_TOKEN_INPUT
@@ -193,12 +194,13 @@ PY
 )"
     fi
     if [[ -z "$PUBLIC_URL_INPUT" ]]; then
-        read -r -p "Public dashboard URL or domain (optional): " PUBLIC_URL_INPUT
+        read -r -p "Public dashboard URL [https://freethefishies.us.to] or domain: " PUBLIC_URL_INPUT
     fi
     if [[ -z "$SERVER_NAME_INPUT" ]]; then
         read -r -p "Server label for dashboard status [production]: " SERVER_NAME_INPUT
     fi
-    SERVER_NAME_INPUT="${SERVER_NAME_INPUT:-production}"
+    PUBLIC_URL_INPUT="${PUBLIC_URL_INPUT:-https://freethefishies.us.to}"
+    SERVER_NAME_INPUT="${SERVER_NAME_INPUT:-oracle-production}"
 
     ENV_TMP="$(mktemp)"
     cat > "$ENV_TMP" <<EOF
@@ -206,8 +208,12 @@ DISCORD_TOKEN=$DISCORD_TOKEN_INPUT
 SDAC_ADMIN_KEY=$ADMIN_KEY_INPUT
 SDAC_SECRET_KEY=$SECRET_KEY_INPUT
 PYTHONUNBUFFERED=1
+SANA_PUBLIC_URL=$PUBLIC_URL_INPUT
+SANA_DASHBOARD_URL=$PUBLIC_URL_INPUT
+SANA_DOMAIN=${SANA_DOMAIN:-freethefishies.us.to}
+SANA_FRIENDLY_URL=${SANA_FRIENDLY_URL:-http://sanachan.bot.nu}
 SDAC_PUBLIC_URL=$PUBLIC_URL_INPUT
-SDAC_PUBLIC_BOT_NAME=SDAC Bot
+SDAC_PUBLIC_BOT_NAME=Sana-Chan Bot
 SDAC_PUBLIC_TAGLINE=Screenshot, media, and guessing-game management for Discord communities.
 SDAC_SUPPORT_URL=
 SDAC_PRIVACY_URL=
@@ -332,3 +338,6 @@ echo
 echo "View logs:"
 echo "  journalctl -u sdac-bot -n 80 --no-pager"
 echo "  journalctl -u sdac-dashboard -n 80 --no-pager"
+
+
+

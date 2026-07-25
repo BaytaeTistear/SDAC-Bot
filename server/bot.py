@@ -50,7 +50,15 @@ SIMPLIFIED_SLASH_COMMANDS = os.getenv("SANA_SIMPLIFIED_COMMANDS", os.getenv("SDA
 CORE_SLASH_COMMANDS = {"sana", "submit", "guess", "hint"}
 PROJECT_GITHUB_URL = f"https://github.com/{ORIGINAL_REPO}"
 PROJECT_WIKI_URL = f"{PROJECT_GITHUB_URL}/wiki"
-DASHBOARD_BASE_URL = os.getenv("SANA_DASHBOARD_URL", os.getenv("SDAC_DASHBOARD_URL", "https://freethefishies.us.to")).rstrip("/")
+DASHBOARD_BASE_URL = (
+    os.getenv("SANA_PUBLIC_URL")
+    or os.getenv("SDAC_PUBLIC_URL")
+    or os.getenv("SANA_DASHBOARD_URL")
+    or os.getenv("SDAC_DASHBOARD_URL")
+    or "https://freethefishies.us.to"
+).rstrip("/")
+if DASHBOARD_BASE_URL == "https://freethefuishies.us.to":
+    DASHBOARD_BASE_URL = "https://freethefishies.us.to"
 COMMAND_ALIAS_PATTERN = re.compile(r"^[a-z0-9_-]{1,32}$")
 COMMAND_ALIAS_RESERVED = CORE_SLASH_COMMANDS | {"commands", "admincommands", "setup"}
 
@@ -14175,3 +14183,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-DOMAIN="${1:-${SDAC_DOMAIN:-}}"
+DOMAIN="${1:-${SANA_DOMAIN:-${SDAC_DOMAIN:-}}}"
 DASHBOARD_LOCAL_URL="${SDAC_DASHBOARD_LOCAL_URL:-http://127.0.0.1:5000/health}"
 RUN_CERTBOT_DRY_RUN="${SDAC_RUN_CERTBOT_DRY_RUN:-0}"
 FAILED_CHECKS=0
@@ -46,3 +46,4 @@ if [[ "$FAILED_CHECKS" -gt 0 ]]; then
 fi
 
 echo "Production check complete. All checks passed."
+

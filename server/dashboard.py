@@ -88,6 +88,18 @@ DISCORD_OAUTH_CLIENT_SECRET = (
 DISCORD_OAUTH_REDIRECT_URI = os.getenv("SDAC_OAUTH_REDIRECT_URI", "")
 DISCORD_ADMINISTRATOR_PERMISSION = 0x8
 APP_LOGIN_TICKET_MAX_AGE_SECONDS = 5 * 60
+DEFAULT_PUBLIC_DASHBOARD_URL = "https://freethefishies.us.to"
+DEFAULT_FRIENDLY_DASHBOARD_URL = "http://sanachan.bot.nu"
+KNOWN_PUBLIC_DASHBOARD_URLS = {
+    DEFAULT_PUBLIC_DASHBOARD_URL,
+    DEFAULT_FRIENDLY_DASHBOARD_URL,
+    "http://freethefishies.us.to",
+    "https://sanachan.bot.nu",
+}
+KNOWN_PUBLIC_DASHBOARD_DOMAINS = {
+    "freethefishies.us.to",
+    "sanachan.bot.nu",
+}
 APP_LOGIN_DEEP_LINK_SCHEME = (
     os.getenv("SANA_APP_DEEP_LINK_SCHEME")
     or os.getenv("SDAC_APP_DEEP_LINK_SCHEME")
@@ -9481,10 +9493,18 @@ def public_app_metadata():
 
 
 def configured_public_url(prefer_request=False):
-    public_url = (os.getenv("SDAC_PUBLIC_URL") or "").strip().rstrip("/")
-    domain = (os.getenv("SDAC_DOMAIN") or "").strip().strip("/")
+    public_url = (
+        os.getenv("SANA_PUBLIC_URL")
+        or os.getenv("SDAC_PUBLIC_URL")
+        or os.getenv("SANA_DASHBOARD_URL")
+        or os.getenv("SDAC_DASHBOARD_URL")
+        or ""
+    ).strip().rstrip("/")
+    domain = (os.getenv("SANA_DOMAIN") or os.getenv("SDAC_DOMAIN") or "").strip().strip("/")
     if not public_url and domain:
         public_url = f"https://{domain}"
+    if public_url == "https://freethefuishies.us.to":
+        public_url = DEFAULT_PUBLIC_DASHBOARD_URL
     if not public_url and prefer_request and has_request_context():
         public_url = request.host_url.rstrip("/")
     return public_url
@@ -9509,8 +9529,8 @@ def public_url_launch_status():
             "state": "Missing",
             "public_url": "",
             "callback_url": "",
-            "detail": "Set SDAC_PUBLIC_URL to the public dashboard URL before enabling Discord OAuth.",
-            "next_step": "Set SDAC_PUBLIC_URL, restart dashboard and bot, then add the callback URL in Discord Developer Portal.",
+            "detail": "Set SANA_PUBLIC_URL to the public dashboard URL before enabling Discord OAuth.",
+            "next_step": "Set SANA_PUBLIC_URL, restart dashboard and bot, then add the callback URL in Discord Developer Portal.",
         }
     if is_cloudflare_quick_tunnel_url(public_url):
         return {
@@ -20127,13 +20147,13 @@ def admin_oauth_diagnostics():
         },
         {
             "area": "FreeDNS friendly URL",
-            "value": os.getenv("SDAC_FRIENDLY_URL", "http://sanachan.bot.nu"),
+            "value": os.getenv("SANA_FRIENDLY_URL", os.getenv("SDAC_FRIENDLY_URL", DEFAULT_FRIENDLY_DASHBOARD_URL)),
             "ok": True,
             "detail": "Use this only as a human-friendly redirect unless it is the exact public dashboard URL.",
         },
     ]
     body = """
-    <section class="panel"><h2>Discord OAuth Callback</h2><p>Discord must contain this exact redirect URL:</p><p><code>{{ callback_url or 'Set SDAC_PUBLIC_URL first' }}</code></p><p class="muted">For Cloudflare quick tunnels this URL changes when the tunnel changes, so update Discord OAuth each time the launcher prints a new URL.</p></section>
+    <section class="panel"><h2>Discord OAuth Callback</h2><p>Discord must contain this exact redirect URL:</p><p><code>{{ callback_url or 'Set SANA_PUBLIC_URL first' }}</code></p><p class="muted">For Cloudflare quick tunnels this URL changes when the tunnel changes, so update Discord OAuth each time the launcher prints a new URL.</p></section>
     <section class="panel"><h2>OAuth Readiness</h2><table><thead><tr><th>Area</th><th>Value</th><th>Status</th><th>Detail</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.area }}</td><td><code>{{ row.value }}</code></td><td class="{{ 'ok' if row.ok else 'warn' }}">{{ 'Ready' if row.ok else 'Needs attention' }}</td><td>{{ row.detail }}</td></tr>{% endfor %}</tbody></table></section>
     <section class="panel"><h2>Where To Check It</h2><ol><li>Open Discord Developer Portal.</li><li>Choose the Sana-Chan application.</li><li>Open OAuth2.</li><li>Under Redirects, add the callback URL shown above.</li><li>Save changes, restart the dashboard if you changed .env, then test Login with Discord.</li></ol></section>
     """
@@ -22919,6 +22939,10 @@ DEFAULT_APP_ALLOWED_ORIGINS = {
     "http://localhost:5174",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
+    DEFAULT_PUBLIC_DASHBOARD_URL,
+    DEFAULT_FRIENDLY_DASHBOARD_URL,
+    "http://freethefishies.us.to",
+    "https://sanachan.bot.nu",
 }
 
 
@@ -24191,3 +24215,11 @@ def delete_submission(submission_id):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
+
+
+
+
+
+
+

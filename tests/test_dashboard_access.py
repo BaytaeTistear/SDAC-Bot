@@ -113,7 +113,7 @@ class DashboardAccessTests(unittest.TestCase):
         self.assertEqual([row["id"] for row in rows], ["111", "222"])
 
     def test_discord_oauth_start_uses_configured_https_public_callback(self):
-        with mock.patch.dict(self.dashboard.os.environ, {"SDAC_PUBLIC_URL": "https://alpha-beta.trycloudflare.com"}, clear=False):
+        with mock.patch.dict(self.dashboard.os.environ, {"SANA_PUBLIC_URL": "", "SDAC_PUBLIC_URL": "https://alpha-beta.trycloudflare.com"}, clear=False):
             with mock.patch.object(self.dashboard, "DISCORD_OAUTH_CLIENT_ID", "1234567890"):
                 with mock.patch.object(self.dashboard, "DISCORD_OAUTH_CLIENT_SECRET", "secret"):
                     with self.dashboard.app.test_client() as client:
@@ -124,9 +124,40 @@ class DashboardAccessTests(unittest.TestCase):
         self.assertIn("discord.com/api/oauth2/authorize", location)
         self.assertIn("redirect_uri=https%3A%2F%2Falpha-beta.trycloudflare.com%2Faccount%2Foauth%2Fcallback", location)
         self.assertNotIn("redirect_uri=http%3A%2F%2Falpha-beta.trycloudflare.com", location)
+
+    def test_sana_public_url_takes_priority_for_oauth_callback(self):
+        with self.dashboard.app.test_request_context("/admin/oauth-diagnostics", base_url="http://localhost:5000"):
+            with mock.patch.dict(os.environ, {"SANA_PUBLIC_URL": "https://freethefishies.us.to", "SDAC_PUBLIC_URL": "https://old.example.test"}, clear=False):
+                status = self.dashboard.public_url_launch_status()
+
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["callback_url"], "https://freethefishies.us.to/account/oauth/callback")
+
+    def test_sana_domain_derives_stable_callback_url(self):
+        with self.dashboard.app.test_request_context("/admin/oauth-diagnostics", base_url="http://localhost:5000"):
+            with mock.patch.dict(os.environ, {"SANA_DOMAIN": "sanachan.bot.nu", "SANA_PUBLIC_URL": "", "SDAC_PUBLIC_URL": ""}, clear=False):
+                status = self.dashboard.public_url_launch_status()
+
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["callback_url"], "https://sanachan.bot.nu/account/oauth/callback")
+
+    def test_common_freethefishies_typo_is_normalized(self):
+        with self.dashboard.app.test_request_context("/admin/oauth-diagnostics", base_url="http://localhost:5000"):
+            with mock.patch.dict(os.environ, {"SANA_PUBLIC_URL": "https://freethefuishies.us.to", "SDAC_PUBLIC_URL": ""}, clear=False):
+                status = self.dashboard.public_url_launch_status()
+
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["public_url"], "https://freethefishies.us.to")
+
+    def test_stable_public_domains_are_allowed_app_origins(self):
+        with self.dashboard.app.test_request_context("/api/app/bootstrap", headers={"Origin": "https://freethefishies.us.to"}):
+            self.assertEqual(self.dashboard.app_allowed_cors_origin(), "https://freethefishies.us.to")
+        with self.dashboard.app.test_request_context("/api/app/bootstrap", headers={"Origin": "http://sanachan.bot.nu"}):
+            self.assertEqual(self.dashboard.app_allowed_cors_origin(), "http://sanachan.bot.nu")
+
     def test_oauth_callback_uses_public_url(self):
         with self.dashboard.app.test_request_context("/admin/oauth-diagnostics", base_url="http://localhost:5000"):
-            with mock.patch.dict(os.environ, {"SDAC_PUBLIC_URL": "https://sana.example.test"}, clear=False):
+            with mock.patch.dict(os.environ, {"SANA_PUBLIC_URL": "", "SDAC_PUBLIC_URL": "https://sana.example.test"}, clear=False):
                 status = self.dashboard.public_url_launch_status()
 
         self.assertTrue(status["ok"])
@@ -134,7 +165,7 @@ class DashboardAccessTests(unittest.TestCase):
 
     def test_quick_tunnel_callback_is_warning_not_missing(self):
         with self.dashboard.app.test_request_context("/admin/oauth-diagnostics", base_url="http://localhost:5000"):
-            with mock.patch.dict(os.environ, {"SDAC_PUBLIC_URL": "https://alpha-beta.trycloudflare.com"}, clear=False):
+            with mock.patch.dict(os.environ, {"SANA_PUBLIC_URL": "", "SDAC_PUBLIC_URL": "https://alpha-beta.trycloudflare.com"}, clear=False):
                 status = self.dashboard.public_url_launch_status()
 
         self.assertFalse(status["ok"])
@@ -846,3 +877,5 @@ class DashboardAccessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
