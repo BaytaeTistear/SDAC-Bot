@@ -508,21 +508,21 @@ STAFF_HOME_MODES = {
 }
 
 MODERATION_REMOVAL_REASONS = [
-    ("duplicate", "Duplicate"),
+    ("policy", "Server policy"),
+    ("duplicate", "Duplicate submission"),
     ("wrong_category", "Wrong category"),
-    ("nsfw", "NSFW or sensitive"),
-    ("spam", "Spam"),
-    ("bad_file", "Bad file"),
-    ("low_quality", "Low quality"),
+    ("broken_media", "Broken or missing media"),
     ("off_topic", "Off topic"),
+    ("spam", "Spam or flood"),
+    ("low_quality", "Low quality"),
     ("repost", "Repost"),
-    ("spoiler", "Spoiler"),
+    ("spoiler", "Unmarked spoiler"),
+    ("nsfw", "NSFW or sensitive"),
     ("privacy", "Privacy concern"),
-    ("broken_media", "Broken media"),
     ("missing_context", "Missing context"),
     ("copyright", "Copyright concern"),
-    ("policy", "Server policy"),
-    ("custom", "Custom"),
+    ("bad_file", "Bad file"),
+    ("custom", "Custom note"),
 ]
 
 LOCKOUT_SCOPE_LABELS = {
@@ -1355,7 +1355,8 @@ HTML = """
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <span>Remove because</span>
                                     <select name="reason_preset" aria-label="Removal reason">
-                                        {% for value, label in removal_reasons %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                                        <option value="policy" selected>Server policy</option>
+                                        {% for value, label in removal_reasons if value != "policy" %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
                                     </select>
                                     <input name="reason" placeholder="Audit note (optional)" aria-label="Removal audit note">
                                     <button class="delete-button" type="submit">Remove</button>
@@ -6979,7 +6980,8 @@ MODERATION_HTML = """
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <span>Remove because</span>
                                 <select name="reason_preset" aria-label="Removal reason">
-                                    {% for value, label in removal_reasons %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                                    <option value="policy" selected>Server policy</option>
+                                    {% for value, label in removal_reasons if value != "policy" %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
                                 </select>
                                 <input name="reason" placeholder="Audit note (optional)" aria-label="Removal audit note">
                                 <button class="danger" type="submit">Remove</button>

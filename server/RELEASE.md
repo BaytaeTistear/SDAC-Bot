@@ -1,3 +1,14 @@
+# Sana-Chan Version 4.3.50 Experimental
+
+Version 4.3.50 makes dashboard removal controls easier to use at a glance.
+
+## Removal Reason Defaults
+
+- preselects `Server policy` in removal reason dropdowns instead of leaving the control looking empty
+- puts the most common removal reasons first, including duplicate submissions, wrong category, broken media, off topic, and spam
+- keeps the gallery and moderator review queue removal controls consistent
+
+---
 # Sana-Chan Version 4.3.49 Experimental
 
 Version 4.3.49 keeps configured submission channels clean and explains the workflow when admins choose the channel.
