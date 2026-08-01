@@ -86,7 +86,7 @@ if ! python3 -m venv --help >/dev/null 2>&1; then
     exit 1
 fi
 
-echo "Setting up SDAC in $APP_DIR as user $APP_USER"
+echo "Setting up Sana-Chan in $APP_DIR as user $APP_USER"
 echo "Using environment file $ENV_FILE"
 
 if ! id "$APP_USER" >/dev/null 2>&1; then
@@ -272,9 +272,9 @@ if [[ ! -f "$ENV_FILE" ]]; then
     ADMIN_KEY_INPUT="${ADMIN_KEY_INPUT:-ImTheBestAdmin}"
 
     if [[ -z "$ADMIN_USERNAME_INPUT" ]]; then
-        read -r -p "Initial dashboard owner username [owner]: " ADMIN_USERNAME_INPUT
+        read -r -p "Initial dashboard owner username [baytae]: " ADMIN_USERNAME_INPUT
     fi
-    ADMIN_USERNAME_INPUT="${ADMIN_USERNAME_INPUT:-owner}"
+    ADMIN_USERNAME_INPUT="${ADMIN_USERNAME_INPUT:-baytae}"
 
     if [[ -z "$ADMIN_PASSWORD_INPUT" ]]; then
         read -r -s -p "Initial dashboard owner password: " ADMIN_PASSWORD_INPUT
@@ -380,8 +380,8 @@ PY
 )"
     if [[ "${DASHBOARD_ACCOUNT_COUNT:-0}" == "0" ]]; then
         if [[ -z "${ADMIN_USERNAME_INPUT:-}" ]]; then
-            read -r -p "Initial dashboard owner username [owner]: " ADMIN_USERNAME_INPUT
-            ADMIN_USERNAME_INPUT="${ADMIN_USERNAME_INPUT:-owner}"
+            read -r -p "Initial dashboard owner username [baytae]: " ADMIN_USERNAME_INPUT
+            ADMIN_USERNAME_INPUT="${ADMIN_USERNAME_INPUT:-baytae}"
         fi
         if [[ -z "${ADMIN_PASSWORD_INPUT:-}" ]]; then
             read -r -s -p "Initial dashboard owner password: " ADMIN_PASSWORD_INPUT

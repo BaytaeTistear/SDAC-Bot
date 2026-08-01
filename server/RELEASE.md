@@ -1,4 +1,14 @@
-# Sana-Chan Version 4.3.47 Experimental
+# Sana-Chan Version 4.3.48 Experimental
+
+Version 4.3.48 prevents fresh install/update flows from steering operators toward the wrong owner account name.
+
+## Owner Account Setup
+
+- changes the initial dashboard owner default from owner to aytae
+- updates dashboard reset guidance to use --role owner, which is the valid CLI role for Bot Owner access
+- removes an old installer message that still said SDAC during Sana-Chan setup
+
+---# Sana-Chan Version 4.3.47 Experimental
 
 Version 4.3.47 makes dashboard authentication easier to find from Discord.
 

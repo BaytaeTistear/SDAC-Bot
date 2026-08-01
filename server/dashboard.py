@@ -3452,7 +3452,7 @@ SETTINGS_HTML = """
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="8" class="muted">No dashboard accounts yet. Create the first Bot Owner with <code>python scripts/reset_admin_login.py --username owner --role bot_owner</code>.</td></tr>
+                    <tr><td colspan="8" class="muted">No dashboard accounts yet. Create the first Bot Owner with <code>python scripts/reset_admin_login.py --username baytae --role owner</code>.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
