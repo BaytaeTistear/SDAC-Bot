@@ -1,4 +1,14 @@
-# Sana-Chan Version 4.3.43 Experimental
+# Sana-Chan Version 4.3.44 Experimental
+
+Version 4.3.44 publishes the OAuth fix with a clean experimental asset set.
+
+## Release Packaging
+
+- includes the mirrored server env example in release commits
+- removes duplicate root/server service template uploads so GitHub release asset uploads complete cleanly
+- republishes the Sana OAuth env alias fix through the Linux installer and updater assets
+
+---# Sana-Chan Version 4.3.43 Experimental
 
 Version 4.3.43 fixes Discord OAuth setup for the new sanachan.bot.nu deployment path.
 
