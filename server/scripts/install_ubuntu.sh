@@ -9,54 +9,64 @@ ENV_DIR="${SDAC_ENV_DIR:-/etc/sdac-bot}"
 ENV_FILE="${SDAC_ENV_FILE:-$ENV_DIR/sdac.env}"
 SKIP_SERVICES="${SDAC_SKIP_SERVICES:-0}"
 INSTALL_BACKUP_PREREQS="${SDAC_INSTALL_BACKUP_PREREQS:-0}"
-SKIP_APT="${SDAC_SKIP_APT:-0}"
+SKIP_PACKAGES="${SDAC_SKIP_PACKAGES:-${SDAC_SKIP_APT:-0}}"
 
 install_system_prereqs() {
-    if [[ "$SKIP_APT" == "1" ]]; then
-        echo "Skipping apt package installation because SDAC_SKIP_APT=1."
-        return
-    fi
-    if ! command -v apt-get >/dev/null 2>&1; then
-        echo "apt-get was not found. Install Python 3, venv, pip, git, curl, archive tools, nginx, and build libraries manually." >&2
+    if [[ "$SKIP_PACKAGES" == "1" ]]; then
+        echo "Skipping system package installation because SDAC_SKIP_PACKAGES=1."
         return
     fi
 
-    local packages=(
-        ca-certificates
-        curl
-        git
-        sqlite3
-        python3
-        python3-dev
-        python3-pip
-        python3-venv
-        build-essential
-        pkg-config
-        libffi-dev
-        libssl-dev
-        libjpeg-dev
-        zlib1g-dev
-        libwebp-dev
-        libpq-dev
-        libpq5
-        libarchive-tools
-        p7zip-full
-        unar
-        unzip
-        xz-utils
-        zstd
-        ffmpeg
-        nginx
-        certbot
-        python3-certbot-nginx
-        lsof
-        jq
-        rsync
-    )
+    if command -v apt-get >/dev/null 2>&1; then
+        echo "Installing Debian/Ubuntu runtime packages"
+        sudo apt-get update
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl git sqlite3 python3 python3-dev python3-pip python3-venv \
+            build-essential pkg-config libffi-dev libssl-dev libjpeg-dev zlib1g-dev libwebp-dev \
+            libpq-dev libpq5 libarchive-tools p7zip-full unar unzip xz-utils zstd ffmpeg nginx \
+            certbot python3-certbot-nginx lsof jq rsync
+        return
+    fi
 
-    echo "Installing Ubuntu runtime packages"
-    sudo apt-get update
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+    if command -v dnf >/dev/null 2>&1; then
+        echo "Installing Fedora/RHEL/Oracle runtime packages with dnf"
+        sudo dnf install -y \
+            ca-certificates curl git sqlite python3 python3-devel python3-pip gcc gcc-c++ make \
+            pkgconf-pkg-config libffi-devel openssl-devel libjpeg-turbo-devel zlib-devel libwebp-devel \
+            libpq-devel libarchive p7zip p7zip-plugins unar unzip xz zstd ffmpeg nginx certbot \
+            python3-certbot-nginx lsof jq rsync
+        return
+    fi
+
+    if command -v yum >/dev/null 2>&1; then
+        echo "Installing RHEL/Oracle runtime packages with yum"
+        sudo yum install -y \
+            ca-certificates curl git sqlite python3 python3-devel python3-pip gcc gcc-c++ make \
+            pkgconfig libffi-devel openssl-devel libjpeg-turbo-devel zlib-devel libwebp-devel \
+            libpq-devel libarchive p7zip p7zip-plugins unar unzip xz zstd ffmpeg nginx certbot \
+            python3-certbot-nginx lsof jq rsync
+        return
+    fi
+
+    if command -v apk >/dev/null 2>&1; then
+        echo "Installing Alpine runtime packages"
+        sudo apk add --no-cache \
+            ca-certificates curl git sqlite python3 py3-pip py3-virtualenv python3-dev build-base \
+            pkgconf libffi-dev openssl-dev jpeg-dev zlib-dev libwebp-dev postgresql-dev libarchive-tools \
+            p7zip unrar unzip xz zstd ffmpeg nginx certbot certbot-nginx lsof jq rsync
+        return
+    fi
+
+    if command -v pacman >/dev/null 2>&1; then
+        echo "Installing Arch runtime packages"
+        sudo pacman -Sy --needed --noconfirm \
+            ca-certificates curl git sqlite python python-pip base-devel pkgconf libffi openssl libjpeg-turbo \
+            zlib libwebp postgresql-libs libarchive p7zip unrar unzip xz zstd ffmpeg nginx certbot \
+            certbot-nginx lsof jq rsync
+        return
+    fi
+
+    echo "No supported package manager was found. Install Python 3, venv, pip, git, curl, archive tools, nginx, and build libraries manually." >&2
 }
 
 if [[ ! -f "$APP_DIR/bot.py" || ! -f "$APP_DIR/dashboard.py" ]]; then

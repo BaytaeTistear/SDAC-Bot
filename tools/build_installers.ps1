@@ -240,7 +240,7 @@ set -Eeuo pipefail
 #   SDAC_ENV_FILE=/etc/sdac-bot/sdac.env
 #   SDAC_DASHBOARD_BIND=127.0.0.1:5000
 #   SDAC_SKIP_SERVICES=1            # extract and compile only
-#   SDAC_SKIP_APT=1                 # skip automatic apt package installation
+#   SDAC_SKIP_PACKAGES=1            # skip automatic OS package installation
 #   SDAC_INSTALL_JOURNAL_LIMITS=1   # install journald retention limits
 
 APP_DIR="`${SDAC_APP_DIR:-/home/ubuntu/discord-screenshot-bot}"
@@ -250,7 +250,7 @@ ENV_FILE="`${SDAC_ENV_FILE:-/etc/sdac-bot/sdac.env}"
 DASHBOARD_BIND="`${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}"
 SKIP_SERVICES="`${SDAC_SKIP_SERVICES:-0}"
 INSTALL_JOURNAL_LIMITS="`${SDAC_INSTALL_JOURNAL_LIMITS:-0}"
-SKIP_APT="`${SDAC_SKIP_APT:-0}"
+SKIP_PACKAGES="`${SDAC_SKIP_PACKAGES:-`${SDAC_SKIP_APT:-0}}"
 PAYLOAD_SHA256="$payloadSha"
 PAYLOAD_SIZE_BYTES="$payloadSize"
 SDAC_INSTALLER_VERSION="$installerVersion"
@@ -287,46 +287,61 @@ if ! id "`$APP_USER" >/dev/null 2>&1; then
 fi
 
 install_system_prereqs() {
-    if [[ "`$SKIP_APT" == "1" ]]; then
-        say "Skipping apt package installation because SDAC_SKIP_APT=1"
+    if [[ "`$SKIP_PACKAGES" == "1" ]]; then
+        say "Skipping system package installation because SDAC_SKIP_PACKAGES=1"
         return
     fi
-    if ! command -v apt-get >/dev/null 2>&1; then
-        fail "apt-get is missing. This one-file installer currently supports Ubuntu/Debian-style hosts."
+
+    if command -v apt-get >/dev/null 2>&1; then
+        say "Installing Debian/Ubuntu runtime packages"
+        sudo apt-get update
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl git sqlite3 python3 python3-dev python3-pip python3-venv \
+            build-essential pkg-config libffi-dev libssl-dev libjpeg-dev zlib1g-dev libwebp-dev \
+            libpq-dev libpq5 libarchive-tools p7zip-full unar unzip xz-utils zstd ffmpeg nginx \
+            certbot python3-certbot-nginx lsof jq rsync
+        return
     fi
-    say "Installing Ubuntu runtime packages"
-    sudo apt-get update
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        git \
-        sqlite3 \
-        python3 \
-        python3-dev \
-        python3-pip \
-        python3-venv \
-        build-essential \
-        pkg-config \
-        libffi-dev \
-        libssl-dev \
-        libjpeg-dev \
-        zlib1g-dev \
-        libwebp-dev \
-        libpq-dev \
-        libpq5 \
-        libarchive-tools \
-        p7zip-full \
-        unar \
-        unzip \
-        xz-utils \
-        zstd \
-        ffmpeg \
-        nginx \
-        certbot \
-        python3-certbot-nginx \
-        lsof \
-        jq \
-        rsync
+
+    if command -v dnf >/dev/null 2>&1; then
+        say "Installing Fedora/RHEL/Oracle runtime packages with dnf"
+        sudo dnf install -y \
+            ca-certificates curl git sqlite python3 python3-devel python3-pip gcc gcc-c++ make \
+            pkgconf-pkg-config libffi-devel openssl-devel libjpeg-turbo-devel zlib-devel libwebp-devel \
+            libpq-devel libarchive p7zip p7zip-plugins unar unzip xz zstd ffmpeg nginx certbot \
+            python3-certbot-nginx lsof jq rsync
+        return
+    fi
+
+    if command -v yum >/dev/null 2>&1; then
+        say "Installing RHEL/Oracle runtime packages with yum"
+        sudo yum install -y \
+            ca-certificates curl git sqlite python3 python3-devel python3-pip gcc gcc-c++ make \
+            pkgconfig libffi-devel openssl-devel libjpeg-turbo-devel zlib-devel libwebp-devel \
+            libpq-devel libarchive p7zip p7zip-plugins unar unzip xz zstd ffmpeg nginx certbot \
+            python3-certbot-nginx lsof jq rsync
+        return
+    fi
+
+    if command -v apk >/dev/null 2>&1; then
+        say "Installing Alpine runtime packages"
+        sudo apk add --no-cache \
+            ca-certificates curl git sqlite python3 py3-pip py3-virtualenv python3-dev build-base \
+            pkgconf libffi-dev openssl-dev jpeg-dev zlib-dev libwebp-dev postgresql-dev libarchive-tools \
+            p7zip unrar unzip xz zstd ffmpeg nginx certbot certbot-nginx lsof jq rsync
+        return
+    fi
+
+    if command -v pacman >/dev/null 2>&1; then
+        say "Installing Arch runtime packages"
+        sudo pacman -Sy --needed --noconfirm \
+            ca-certificates curl git sqlite python python-pip base-devel pkgconf libffi openssl libjpeg-turbo \
+            zlib libwebp postgresql-libs libarchive p7zip unrar unzip xz zstd ffmpeg nginx certbot \
+            certbot-nginx lsof jq rsync
+        return
+    fi
+
+    fail "No supported package manager was found. Install Python 3, venv, pip, git, curl, archive tools, nginx, and build libraries manually."
 }
 
 install_system_prereqs

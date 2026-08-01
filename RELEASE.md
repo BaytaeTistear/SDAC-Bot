@@ -1,3 +1,15 @@
+# Sana-Chan Version 4.3.38 Experimental
+
+Version 4.3.38 makes the Linux installer choose system packages by detected package manager instead of assuming every host is Ubuntu.
+
+## Cross-Distro Installer Bootstrap
+
+- detects `apt-get`, `dnf`, `yum`, `apk`, or `pacman` before installing OS prerequisites
+- installs matching dependency names for Debian/Ubuntu, Oracle/RHEL/Fedora-style, Alpine, and Arch-style hosts
+- keeps `SDAC_SKIP_APT=1` working while adding the clearer `SDAC_SKIP_PACKAGES=1` override
+- updates the backup prerequisite helper to use the same package-manager-aware approach
+
+---
 # Sana-Chan Version 4.3.37 Experimental
 
 Version 4.3.37 makes the Linux installer bootstrap a clean Ubuntu/Oracle host instead of assuming required libraries are already present.
