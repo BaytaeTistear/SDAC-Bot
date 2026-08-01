@@ -17264,6 +17264,7 @@ def admin_settings():
 
     notice = request.args.get("notice", "")
     error = request.args.get("error") == "1"
+    config_data = load_config()
 
     if request.method == "POST":
         require_csrf_token()

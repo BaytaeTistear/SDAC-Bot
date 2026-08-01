@@ -1,3 +1,14 @@
+# Sana-Chan Version 4.3.51 Experimental
+
+Version 4.3.51 fixes a dashboard settings save error and makes post-update health checks less brittle during service restarts.
+
+## Dashboard Settings And Health Checks
+
+- fixes `/admin/settings` account save actions that could fail with `config_data` referenced before assignment
+- lets updater health URL checks retry briefly so Gunicorn startup timing does not falsely fail a successful update
+- keeps root and server updater scripts aligned for one-installer deployments
+
+---
 # Sana-Chan Version 4.3.50 Experimental
 
 Version 4.3.50 makes dashboard removal controls easier to use at a glance.

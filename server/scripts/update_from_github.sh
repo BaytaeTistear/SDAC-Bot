@@ -373,13 +373,26 @@ run_update_health_check() {
     run_health_check() {
         local label="$1"
         shift
-        printf 'Checking %-34s' "$label"
-        if "$@" >/dev/null 2>&1; then
-            echo " ok"
-        else
-            echo " failed"
-            failed=1
+        local attempts=1
+        local delay=1
+        if [[ "$label" == *health* ]]; then
+            attempts=10
+            delay=2
         fi
+        printf 'Checking %-34s' "$label"
+        local attempt=1
+        while [[ "$attempt" -le "$attempts" ]]; do
+            if "$@" >/dev/null 2>&1; then
+                echo " ok"
+                return 0
+            fi
+            if [[ "$attempt" -lt "$attempts" ]]; then
+                sleep "$delay"
+            fi
+            attempt=$((attempt + 1))
+        done
+        echo " failed"
+        failed=1
     }
 
     run_health_check "sana-bot service" sudo systemctl is-active --quiet sana-bot
