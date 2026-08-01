@@ -64,7 +64,7 @@ DASHBOARD_BASE_URL = (
     or os.getenv("SDAC_PUBLIC_URL")
     or os.getenv("SANA_DASHBOARD_URL")
     or os.getenv("SDAC_DASHBOARD_URL")
-    or "https://freethefishies.us.to"
+    or "https://sanachan.bot.nu"
 ).rstrip("/")
 if DASHBOARD_BASE_URL == "https://freethefuishies.us.to":
     DASHBOARD_BASE_URL = "https://freethefishies.us.to"
@@ -1938,6 +1938,7 @@ class SDACHubView(discord.ui.View):
             for value, label, _description in SDAC_HUB_ADMIN_OPTIONS:
                 style = discord.ButtonStyle.primary if value == "setup" else discord.ButtonStyle.secondary
                 self.add_item(SDACHubButton(is_admin, value, label, admin_rows.get(value, 2), style))
+        self.add_item(discord.ui.Button(label="Website", style=discord.ButtonStyle.link, url=DASHBOARD_BASE_URL, row=1))
         self.add_item(discord.ui.Button(label="Authenticate", style=discord.ButtonStyle.link, url=f"{DASHBOARD_BASE_URL}/account/login", row=4))
         self.add_item(discord.ui.Button(label="GitHub", style=discord.ButtonStyle.link, url=PROJECT_GITHUB_URL, row=4))
         self.add_item(discord.ui.Button(label="Wiki", style=discord.ButtonStyle.link, url=PROJECT_WIKI_URL, row=4))
@@ -8114,7 +8115,13 @@ class SetupChannelSelect(discord.ui.ChannelSelect):
     async def callback(self, interaction):
         if not await self.view.ensure_allowed(interaction):
             return
-        channel = self.values[0]
+        channel = await resolve_selected_text_channel(interaction.guild, self.values[0])
+        if channel is None:
+            await interaction.response.send_message(
+                "I could not access that text channel. Choose a normal server text channel that Sana-Chan can view.",
+                ephemeral=True,
+            )
+            return
         guild_config = get_guild_config(interaction.guild_id)
 
         if self.setup_action == "category":
@@ -8128,6 +8135,7 @@ class SetupChannelSelect(discord.ui.ChannelSelect):
             )
             return
 
+        await interaction.response.defer()
         updates = {
             "submit": ("submit_channel", "setup_set_submit_channel"),
             "approval": ("approval_channel", "setup_set_approval_channel"),
@@ -8152,12 +8160,16 @@ class SetupChannelSelect(discord.ui.ChannelSelect):
             audit_action,
             "channel",
             channel.id,
-            f"Set by Discord setup wizard.",
+            "Set by Discord setup wizard.",
         )
         refresh_message = f"{channel.mention} saved for `{config_key}`."
         if notice_message:
             refresh_message += f"\n{notice_message}"
-        await self.view.refresh(interaction, refresh_message)
+        refreshed_config = get_guild_config(interaction.guild_id, create=False)
+        await interaction.edit_original_response(
+            content=setup_wizard_content(refreshed_config, self.view.page, refresh_message),
+            view=SetupWizardView(self.view.owner_id, self.view.guild_id, self.view.page),
+        )
 
 
 class SetupFeatureSelect(discord.ui.Select):

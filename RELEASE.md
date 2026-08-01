@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.4.2 Experimental
+
+Version 4.4.2 fixes the `/sana` setup wizard submission-channel picker and adds a direct Website button to the `/sana` hub.
+
+## Fixes
+
+- fixes `/sana` -> Setup -> Open Setup Wizard -> choose submission channel by deferring the interaction before posting channel instructions
+- resolves selected setup channels through the same safe text-channel helper used by other guided flows
+- adds a `/sana` Website button that opens `https://sanachan.bot.nu` by default
+- keeps the setup wizard response updated after the submission-channel explanation message is posted
+
+---
+
 # Sana-Chan Version 4.4.1 Experimental
 
 Version 4.4.1 adds guided admin submission controls to `/sana` so server admins can configure submissions without using hidden slash commands.
