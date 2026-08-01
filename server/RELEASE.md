@@ -1,4 +1,13 @@
-# Sana-Chan Version 4.3.46 Experimental
+# Sana-Chan Version 4.3.47 Experimental
+
+Version 4.3.47 makes dashboard authentication easier to find from Discord.
+
+## Discord Auth Access
+
+- adds an Authenticate link button to /sana that opens the dashboard account login/authentication page
+- keeps GitHub and Wiki links available beside the new account link
+
+---# Sana-Chan Version 4.3.46 Experimental
 
 Version 4.3.46 improves migration from old SDAC service/env files on rebuilt servers.
 
