@@ -181,6 +181,8 @@ DEFAULT_GUILD_CONFIG = {
     "setup_preset": "",
     "admin_role_ids": [],
     "submit_channel": None,
+    "submit_channel_notice_channel": None,
+    "submit_channel_notice_message": None,
     "daily_top_channel": None,
     "daily_top_time_utc": "00:00",
     "weekly_top_day": "sunday",
@@ -5120,6 +5122,95 @@ def submission_guidance_lines(guild_id, guild_config):
     return lines
 
 
+def submission_channel_notice_content(guild_id, guild_config):
+    guidance = "\n".join(
+        f"- {line}"
+        for line in submission_guidance_lines(
+            guild_id,
+            guild_config,
+        )
+    )
+    return (
+        "**Sana-Chan Submission Channel**\n"
+        "This channel is kept clean for guided submissions.\n\n"
+        "- Use `/submit` to start.\n"
+        "- Choose a category when Sana asks.\n"
+        "- Send your media/text only after Sana asks for it.\n"
+        "- Regular chat or stray messages in this channel will be removed.\n"
+        "- After a submission is posted, Sana removes the original upload message here.\n\n"
+        f"{guidance}"
+    ).strip()
+
+
+async def delete_submission_channel_notice(guild_config):
+    previous_channel_id = guild_config.get("submit_channel_notice_channel")
+    previous_message_id = guild_config.get("submit_channel_notice_message")
+    try:
+        previous_channel_int = int(previous_channel_id)
+        previous_message_int = int(previous_message_id)
+    except (TypeError, ValueError):
+        previous_channel_int = None
+        previous_message_int = None
+    if previous_channel_int and previous_message_int:
+        previous_channel = bot.get_channel(previous_channel_int)
+        if previous_channel is None:
+            try:
+                previous_channel = await bot.fetch_channel(previous_channel_int)
+            except (TypeError, ValueError, discord.HTTPException):
+                previous_channel = None
+        if previous_channel is not None:
+            try:
+                previous_message = await previous_channel.fetch_message(
+                    previous_message_int
+                )
+                await previous_message.delete()
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+    guild_config["submit_channel_notice_channel"] = None
+    guild_config["submit_channel_notice_message"] = None
+    save_config(config)
+
+
+async def send_submission_channel_notice(guild_id, channel, guild_config):
+    guild_config = guild_config or get_guild_config(guild_id)
+    await delete_submission_channel_notice(guild_config)
+    try:
+        notice = await channel.send(submission_channel_notice_content(guild_id, guild_config))
+    except discord.Forbidden:
+        guild_config["submit_channel_notice_channel"] = None
+        guild_config["submit_channel_notice_message"] = None
+        save_config(config)
+        return (
+            "Sana could not post the channel instructions. Give the bot "
+            "**View Channel** and **Send Messages** in the submit channel."
+        )
+    except discord.HTTPException as error:
+        guild_config["submit_channel_notice_channel"] = None
+        guild_config["submit_channel_notice_message"] = None
+        save_config(config)
+        return f"Sana could not post the channel instructions: `{error}`"
+
+    guild_config["submit_channel_notice_channel"] = channel.id
+    guild_config["submit_channel_notice_message"] = notice.id
+    save_config(config)
+    return "Sana posted the submission-channel instructions."
+
+
+def is_configured_submission_channel(message):
+    if message.guild is None:
+        return False
+    guild_config = get_guild_config(message.guild.id, create=False)
+    submit_channel_id = guild_config.get("submit_channel")
+    return bool(submit_channel_id and str(message.channel.id) == str(submit_channel_id))
+
+
+def message_is_active_submission_payload(message):
+    if message.guild is None:
+        return False
+    session_key = f"{message.guild.id}:{message.author.id}"
+    return session_key in active_submission_sessions
+
+
 def current_month_submission_count(connection, guild_id, guild_config):
     month = current_month_key(guild_config)
     row = connection.execute("""
@@ -7754,6 +7845,13 @@ class SetupChannelSelect(discord.ui.ChannelSelect):
         if self.setup_action == "approval":
             guild_config["approval_enabled"] = True
         save_config(config)
+        notice_message = ""
+        if self.setup_action == "submit":
+            notice_message = await send_submission_channel_notice(
+                interaction.guild_id,
+                channel,
+                guild_config,
+            )
         audit_interaction(
             interaction,
             audit_action,
@@ -7761,10 +7859,10 @@ class SetupChannelSelect(discord.ui.ChannelSelect):
             channel.id,
             f"Set by Discord setup wizard.",
         )
-        await self.view.refresh(
-            interaction,
-            f"{channel.mention} saved for `{config_key}`.",
-        )
+        refresh_message = f"{channel.mention} saved for `{config_key}`."
+        if notice_message:
+            refresh_message += f"\n{notice_message}"
+        await self.view.refresh(interaction, refresh_message)
 
 
 class SetupFeatureSelect(discord.ui.Select):
@@ -8906,6 +9004,11 @@ async def setsubmit(interaction, channel: discord.TextChannel):
     guild_config = get_guild_config(interaction.guild_id)
     guild_config["submit_channel"] = channel.id
     save_config(config)
+    notice_message = await send_submission_channel_notice(
+        interaction.guild_id,
+        channel,
+        guild_config,
+    )
     audit_interaction(
         interaction,
         "set_submit_channel",
@@ -8914,7 +9017,7 @@ async def setsubmit(interaction, channel: discord.TextChannel):
         f"Submit channel set to {channel.id}.",
     )
     await interaction.response.send_message(
-        f"Submit channel set to {channel.mention}.",
+        f"Submit channel set to {channel.mention}.\n{notice_message}",
         ephemeral=True,
     )
 
@@ -8926,6 +9029,7 @@ async def clearsubmit(interaction):
         return
     guild_config = get_guild_config(interaction.guild_id)
     guild_config["submit_channel"] = None
+    await delete_submission_channel_notice(guild_config)
     save_config(config)
     audit_interaction(
         interaction,
@@ -14115,6 +14219,31 @@ async def on_ready():
     print(f"Logged in as {bot.user}", flush=True)
     print(f"Using database: {DB_FILE}", flush=True)
     print(f"Using config: {CONFIG_FILE}", flush=True)
+
+
+@bot.event
+async def on_message(message):
+    if message.author.bot or message.guild is None:
+        return
+    if not is_configured_submission_channel(message):
+        return
+    if message_is_active_submission_payload(message):
+        return
+
+    content = (message.content or "").strip().casefold()
+    if content == "/submit" or content.startswith("/submit "):
+        return
+
+    deleted, delete_error = await delete_source_message(message)
+    if not deleted:
+        await send_error_notification(
+            message.guild.id,
+            (
+                "Sana could not clean a non-submission message in "
+                f"{message.channel.mention}: `{delete_error}`"
+            ),
+            "submit_channel_cleanup_failed",
+        )
 
 
 @bot.event

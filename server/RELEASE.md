@@ -1,3 +1,15 @@
+# Sana-Chan Version 4.3.49 Experimental
+
+Version 4.3.49 keeps configured submission channels clean and explains the workflow when admins choose the channel.
+
+## Submission Channel Hygiene
+
+- posts a Sana-Chan submission-channel instruction message when `/setsubmit` or the setup wizard selects the submit channel
+- replaces the prior instruction message instead of stacking duplicates when the channel is changed
+- removes non-`/submit` messages from the configured submission channel while preserving active guided upload messages
+- keeps clearing the submit channel from leaving an outdated instruction message behind
+
+---
 # Sana-Chan Version 4.3.48 Experimental
 
 Version 4.3.48 prevents fresh install/update flows from steering operators toward the wrong owner account name.
