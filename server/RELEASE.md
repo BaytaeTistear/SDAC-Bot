@@ -1,3 +1,14 @@
+# Sana-Chan Version 4.3.37 Experimental
+
+Version 4.3.37 makes the Linux installer bootstrap a clean Ubuntu/Oracle host instead of assuming required libraries are already present.
+
+## One-Installer Bootstrap
+
+- installs required Ubuntu runtime packages automatically, including Python venv/pip/dev headers, build tools, PostgreSQL client libraries, Pillow image libraries, archive tools for zip/7z/rar/tar handling, ffmpeg, nginx, certbot, jq, rsync, and port-inspection tools
+- applies the same dependency bootstrap to both the extracted `scripts/install_ubuntu.sh` flow and the generated one-file `Sana-Chan-Linux-Installer.sh`
+- adds `SDAC_SKIP_APT=1` for advanced installs that intentionally manage OS packages separately
+
+---
 # Sana-Chan Version 4.3.36 Experimental
 
 Version 4.3.36 fixes the 4.3.35 release-note ordering so latest-experimental shows only the current Oracle restore notes at the top.
@@ -3527,3 +3538,4 @@ Not included:
 - `media/` uploads
 - `backups/`
 - `venv/` or Python cache files
+

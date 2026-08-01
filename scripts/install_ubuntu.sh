@@ -9,19 +9,70 @@ ENV_DIR="${SDAC_ENV_DIR:-/etc/sdac-bot}"
 ENV_FILE="${SDAC_ENV_FILE:-$ENV_DIR/sdac.env}"
 SKIP_SERVICES="${SDAC_SKIP_SERVICES:-0}"
 INSTALL_BACKUP_PREREQS="${SDAC_INSTALL_BACKUP_PREREQS:-0}"
+SKIP_APT="${SDAC_SKIP_APT:-0}"
+
+install_system_prereqs() {
+    if [[ "$SKIP_APT" == "1" ]]; then
+        echo "Skipping apt package installation because SDAC_SKIP_APT=1."
+        return
+    fi
+    if ! command -v apt-get >/dev/null 2>&1; then
+        echo "apt-get was not found. Install Python 3, venv, pip, git, curl, archive tools, nginx, and build libraries manually." >&2
+        return
+    fi
+
+    local packages=(
+        ca-certificates
+        curl
+        git
+        sqlite3
+        python3
+        python3-dev
+        python3-pip
+        python3-venv
+        build-essential
+        pkg-config
+        libffi-dev
+        libssl-dev
+        libjpeg-dev
+        zlib1g-dev
+        libwebp-dev
+        libpq-dev
+        libpq5
+        libarchive-tools
+        p7zip-full
+        unar
+        unzip
+        xz-utils
+        zstd
+        ffmpeg
+        nginx
+        certbot
+        python3-certbot-nginx
+        lsof
+        jq
+        rsync
+    )
+
+    echo "Installing Ubuntu runtime packages"
+    sudo apt-get update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+}
 
 if [[ ! -f "$APP_DIR/bot.py" || ! -f "$APP_DIR/dashboard.py" ]]; then
     echo "Run this script from the SDAC bot folder, or set SDAC_APP_DIR." >&2
     exit 1
 fi
 
+install_system_prereqs
+
 if ! command -v python3 >/dev/null 2>&1; then
-    echo "python3 is required. Install it first: sudo apt install python3 python3-venv" >&2
+    echo "python3 is required and could not be installed automatically." >&2
     exit 1
 fi
 
 if ! python3 -m venv --help >/dev/null 2>&1; then
-    echo "python3-venv is required. Install it first: sudo apt install python3-venv" >&2
+    echo "python3-venv is required and could not be installed automatically." >&2
     exit 1
 fi
 
@@ -338,6 +389,7 @@ echo
 echo "View logs:"
 echo "  journalctl -u sdac-bot -n 80 --no-pager"
 echo "  journalctl -u sdac-dashboard -n 80 --no-pager"
+
 
 
 

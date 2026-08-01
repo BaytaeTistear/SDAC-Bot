@@ -240,6 +240,7 @@ set -Eeuo pipefail
 #   SDAC_ENV_FILE=/etc/sdac-bot/sdac.env
 #   SDAC_DASHBOARD_BIND=127.0.0.1:5000
 #   SDAC_SKIP_SERVICES=1            # extract and compile only
+#   SDAC_SKIP_APT=1                 # skip automatic apt package installation
 #   SDAC_INSTALL_JOURNAL_LIMITS=1   # install journald retention limits
 
 APP_DIR="`${SDAC_APP_DIR:-/home/ubuntu/discord-screenshot-bot}"
@@ -249,6 +250,7 @@ ENV_FILE="`${SDAC_ENV_FILE:-/etc/sdac-bot/sdac.env}"
 DASHBOARD_BIND="`${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}"
 SKIP_SERVICES="`${SDAC_SKIP_SERVICES:-0}"
 INSTALL_JOURNAL_LIMITS="`${SDAC_INSTALL_JOURNAL_LIMITS:-0}"
+SKIP_APT="`${SDAC_SKIP_APT:-0}"
 PAYLOAD_SHA256="$payloadSha"
 PAYLOAD_SIZE_BYTES="$payloadSize"
 SDAC_INSTALLER_VERSION="$installerVersion"
@@ -284,26 +286,58 @@ if ! id "`$APP_USER" >/dev/null 2>&1; then
     fi
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
-    if command -v apt-get >/dev/null 2>&1; then
-        say "Installing Python system packages"
-        sudo apt-get update
-        sudo apt-get install -y python3 python3-venv python3-pip
-    else
-        fail "python3 is missing, and apt-get is not available to install it."
+install_system_prereqs() {
+    if [[ "`$SKIP_APT" == "1" ]]; then
+        say "Skipping apt package installation because SDAC_SKIP_APT=1"
+        return
     fi
+    if ! command -v apt-get >/dev/null 2>&1; then
+        fail "apt-get is missing. This one-file installer currently supports Ubuntu/Debian-style hosts."
+    fi
+    say "Installing Ubuntu runtime packages"
+    sudo apt-get update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        git \
+        sqlite3 \
+        python3 \
+        python3-dev \
+        python3-pip \
+        python3-venv \
+        build-essential \
+        pkg-config \
+        libffi-dev \
+        libssl-dev \
+        libjpeg-dev \
+        zlib1g-dev \
+        libwebp-dev \
+        libpq-dev \
+        libpq5 \
+        libarchive-tools \
+        p7zip-full \
+        unar \
+        unzip \
+        xz-utils \
+        zstd \
+        ffmpeg \
+        nginx \
+        certbot \
+        python3-certbot-nginx \
+        lsof \
+        jq \
+        rsync
+}
+
+install_system_prereqs
+
+if ! command -v python3 >/dev/null 2>&1; then
+    fail "python3 is missing and could not be installed automatically."
 fi
 
 if ! python3 -m venv --help >/dev/null 2>&1; then
-    if command -v apt-get >/dev/null 2>&1; then
-        say "Installing python3-venv"
-        sudo apt-get update
-        sudo apt-get install -y python3-venv python3-pip
-    else
-        fail "python3-venv is missing, and apt-get is not available to install it."
-    fi
+    fail "python3-venv is missing and could not be installed automatically."
 fi
-
 say "Preparing `$APP_DIR"
 sudo mkdir -p "`$APP_DIR"
 CURRENT_USER="`$(id -un)"
