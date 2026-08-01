@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.4.0 Official
+
+Version 4.4.0 promotes the current Sana-Chan experimental line to a live official release for production servers.
+
+## Live Release Focus
+
+- promotes the stable dashboard, bot, installer, updater, and service rename work from the 4.3.x experimental builds
+- includes the improved Sana updater with accurate installed-version reporting and post-update health retries
+- includes dashboard moderation polish, removal reason defaults, submission-channel cleanup, and admin settings fixes
+- keeps live Linux update commands on `sana-update` / `sanachan-update` and Sana service names
+- publishes fresh Linux, Windows, Android, updater, systemd, and Nginx release assets
+
+---
 # Sana-Chan Version 4.3.52 Experimental
 
 Version 4.3.52 makes update summaries report the installed Sana-Chan version even when GitHub release metadata cannot be read on the server.
