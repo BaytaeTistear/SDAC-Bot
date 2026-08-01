@@ -205,6 +205,49 @@ DOCTOR
     rm -f "$UPDATE_CONFIG_TMP"
 }
 
+merge_legacy_env_file() {
+    local legacy_env_file="${SANA_LEGACY_ENV_FILE:-${SDAC_LEGACY_ENV_FILE:-/etc/sdac-bot/sdac.env}}"
+    if [[ "$legacy_env_file" == "$ENV_FILE" || ! -f "$legacy_env_file" ]]; then
+        return
+    fi
+
+    sudo mkdir -p "$ENV_DIR"
+    if [[ ! -f "$ENV_FILE" ]]; then
+        echo "Migrating legacy environment file $legacy_env_file to $ENV_FILE"
+        sudo cp "$legacy_env_file" "$ENV_FILE"
+        sudo chmod 600 "$ENV_FILE"
+    fi
+
+    copy_env_key() {
+        local target_key="$1"
+        local source_key="${2:-$1}"
+        if sudo grep -qE "^${target_key}=" "$ENV_FILE"; then
+            return
+        fi
+        local value
+        value="$(sudo awk -F= -v key="$source_key" '$1 == key {sub(/^[^=]*=/, ""); print; exit}' "$legacy_env_file")"
+        if [[ -n "$value" ]]; then
+            printf '%s=%s\n' "$target_key" "$value" | sudo tee -a "$ENV_FILE" >/dev/null
+        fi
+    }
+
+    copy_env_key DISCORD_TOKEN
+    copy_env_key SANA_ADMIN_KEY SDAC_ADMIN_KEY
+    copy_env_key SDAC_ADMIN_KEY
+    copy_env_key SANA_SECRET_KEY SDAC_SECRET_KEY
+    copy_env_key SDAC_SECRET_KEY
+    copy_env_key SANA_PUBLIC_URL SDAC_PUBLIC_URL
+    copy_env_key SANA_DASHBOARD_URL SDAC_PUBLIC_URL
+    copy_env_key SDAC_PUBLIC_URL
+    copy_env_key SANA_DISCORD_CLIENT_ID SDAC_DISCORD_CLIENT_ID
+    copy_env_key SANA_DISCORD_CLIENT_SECRET SDAC_DISCORD_CLIENT_SECRET
+    copy_env_key SDAC_DISCORD_CLIENT_ID
+    copy_env_key SDAC_DISCORD_CLIENT_SECRET
+    copy_env_key SANA_OAUTH_REDIRECT_URI SDAC_OAUTH_REDIRECT_URI
+    copy_env_key SDAC_OAUTH_REDIRECT_URI
+}
+
+merge_legacy_env_file
 if [[ ! -f "$ENV_FILE" ]]; then
     echo "Creating $ENV_FILE"
     DISCORD_TOKEN_INPUT="${SANA_DISCORD_TOKEN:-${SDAC_DISCORD_TOKEN:-}}"

@@ -1,4 +1,14 @@
-# Sana-Chan Version 4.3.45 Experimental
+# Sana-Chan Version 4.3.46 Experimental
+
+Version 4.3.46 improves migration from old SDAC service/env files on rebuilt servers.
+
+## Service Migration
+
+- copies missing values from /etc/sdac-bot/sdac.env into /etc/sana-bot/sana.env, including DISCORD_TOKEN and Discord OAuth settings
+- keeps old SDAC_* aliases populated while adding matching SANA_* values where possible
+- adds an syncio.to_thread compatibility fallback for Python runtimes older than 3.9
+
+---# Sana-Chan Version 4.3.45 Experimental
 
 Version 4.3.45 fixes bot startup on older Python runtimes where zoneinfo is not built in.
 

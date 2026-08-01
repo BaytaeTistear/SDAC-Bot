@@ -23,6 +23,12 @@ try:
 except ModuleNotFoundError:
     from backports.zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+if not hasattr(asyncio, "to_thread"):
+    async def _asyncio_to_thread(func, /, *args, **kwargs):
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
+
+    asyncio.to_thread = _asyncio_to_thread
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
