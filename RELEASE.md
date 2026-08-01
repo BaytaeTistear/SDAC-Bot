@@ -1,3 +1,18 @@
+# Sana-Chan Version 4.4.1 Experimental
+
+Version 4.4.1 adds guided admin submission controls to `/sana` so server admins can configure submissions without using hidden slash commands.
+
+## Submission Admin Flow
+
+- adds a `/sana` admin Submissions section
+- lets admins pick the `/submit` channel from a Discord channel selector
+- posts the submission-channel instructions after the submit channel is selected
+- lets admins create or update repost categories by choosing a destination channel and entering a category name
+- lets admins open or pause submissions from the guided panel
+- cleans the experimental release helper asset list to avoid duplicate uploaded release assets
+
+---
+
 # Sana-Chan Version 4.4.0 Official
 
 Version 4.4.0 promotes the current Sana-Chan experimental line to a live official release for production servers.

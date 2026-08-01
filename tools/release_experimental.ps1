@@ -61,6 +61,24 @@ if (-not $SkipCommit) {
 
 $commit = (git rev-parse HEAD).Trim()
 
+$releaseAssets = @(
+    "systemd/sana-bot.service.template",
+    "systemd/sana-dashboard.service.template",
+    "systemd/sana-journald.conf",
+    "nginx/sana-dashboard.conf.template",
+    "scripts/rollback_ubuntu.sh",
+    "scripts/install_journal_limits.sh",
+    "scripts/check_production.sh",
+    "scripts/install_ubuntu.sh",
+    "scripts/install_backup_prereqs.sh",
+    "dist/Sana-Chan-Linux-Installer.sh",
+    "dist/Sana-Chan-Ubuntu-Update.sh",
+    "dist/Sana-Chan-Windows-Installer.exe",
+    "dist/Sana-Chan-Windows-Update.ps1",
+    "dist/sana-update",
+    "dist/sanachan-update"
+)
+
 Run-Step "Tag $tag and latest-experimental" {
     git tag $tag $commit
     git tag -f latest-experimental $commit
@@ -73,12 +91,12 @@ Run-Step "Push branch and tags" {
 }
 
 Run-Step "Create version release" {
-    gh release create $tag systemd/sana-bot.service.template systemd/sana-dashboard.service.template systemd/sana-journald.conf nginx/sana-dashboard.conf.template scripts/rollback_ubuntu.sh scripts/install_journal_limits.sh server/scripts/rollback_ubuntu.sh scripts/check_production.sh server/scripts/check_production.sh scripts/install_ubuntu.sh server/scripts/install_ubuntu.sh scripts/install_backup_prereqs.sh server/scripts/install_backup_prereqs.sh dist/Sana-Chan-Linux-Installer.sh dist/Sana-Chan-Ubuntu-Update.sh dist/Sana-Chan-Windows-Installer.exe dist/Sana-Chan-Windows-Update.ps1 dist/sana-update dist/sanachan-update --repo $Repo --title "Version $Version Experimental" --notes $notes --prerelease
+    gh release create $tag @releaseAssets --repo $Repo --title "Version $Version Experimental" --notes $notes --prerelease
 }
 
 Run-Step "Update latest-experimental release" {
     gh release edit latest-experimental --repo $Repo --title "Latest Experimental ($Version)" --notes $notes --prerelease
-    gh release upload latest-experimental systemd/sana-bot.service.template systemd/sana-dashboard.service.template systemd/sana-journald.conf nginx/sana-dashboard.conf.template scripts/rollback_ubuntu.sh scripts/install_journal_limits.sh server/scripts/rollback_ubuntu.sh scripts/check_production.sh server/scripts/check_production.sh scripts/install_ubuntu.sh server/scripts/install_ubuntu.sh scripts/install_backup_prereqs.sh server/scripts/install_backup_prereqs.sh dist/Sana-Chan-Linux-Installer.sh dist/Sana-Chan-Ubuntu-Update.sh dist/Sana-Chan-Windows-Installer.exe dist/Sana-Chan-Windows-Update.ps1 dist/sana-update dist/sanachan-update --repo $Repo --clobber
+    gh release upload latest-experimental @releaseAssets --repo $Repo --clobber
 }
 
 Run-Step "Verify releases" {

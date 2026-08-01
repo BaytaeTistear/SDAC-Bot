@@ -798,6 +798,7 @@ SDAC_HUB_USER_OPTIONS = [
 
 SDAC_HUB_ADMIN_OPTIONS = [
     ("setup", "Setup", "Open setup, status, tests, and diagnostics."),
+    ("submission_admin", "Submissions", "Set submit channel, create categories, and open or pause submissions."),
     ("backup", "Backups", "See the short backup setup path."),
     ("moderation", "Moderation", "See approval and moderation setup shortcuts."),
     ("games", "Games", "Create, schedule, inspect, or cancel guessing games."),
@@ -845,6 +846,18 @@ SDAC_SUBMENUS = {
             ("setup_test", "Run Setup Test", "Check channels, permissions, and required settings."),
             ("diagnostics", "Diagnostics", "Run runtime diagnostics."),
             ("setup_doctor", "Doctor", "Run a guided release-readiness doctor."),
+        ],
+    },
+    "submission_admin": {
+        "title": "Admin Submissions",
+        "placeholder": "Choose a submission admin action",
+        "options": [
+            ("submission_setup_panel", "Submission Setup", "Set channel, add categories, and start or stop submissions."),
+            ("submission_set_channel", "Set Submit Channel", "Pick the channel where users run /submit."),
+            ("submission_create_category", "Create Category", "Create or update a category and repost destination."),
+            ("submission_open", "Open Submissions", "Resume submissions for this server."),
+            ("submission_pause", "Pause Submissions", "Pause submissions for this server."),
+            ("submit_categories", "View Categories", "Show available destinations."),
         ],
     },
     "backup": {
@@ -898,6 +911,11 @@ SDAC_SUBMENU_DETAILS = {
     "setup_command_alias": "**Command Name**\nAdmins can set a server-specific launcher like `/pepo`. `/sana` always remains available as the fallback.",
     "setup_sync_commands": "**Sync Commands**\nRefresh this server's Discord command list without restarting the bot. This also clears copied guild duplicates.",
     "setup_doctor": "**Sana-Chan Doctor**\nRun a guided server doctor from `/sana`: setup checklist, permissions, command sync, release, public URL, and next dashboard links.",
+    "submission_setup_panel": "**Submission Setup**\nUse guided buttons to choose the submit channel, add repost categories, and open or pause submissions.",
+    "submission_set_channel": "**Set Submit Channel**\nChoose the text channel where users should run `/submit`. Sana-Chan will post the channel instructions there.",
+    "submission_create_category": "**Create Category**\nChoose a repost destination channel, then enter the category name users should select during `/submit`.",
+    "submission_open": "**Open Submissions**\nResume submissions for this server.",
+    "submission_pause": "**Pause Submissions**\nPause submissions for this server and show users the saved reason.",
     "backup_guide": "**Backup Provider Guide**\nRun `/backupguide provider` for provider-specific setup steps.",
     "backup_setup": "**Save Backup Target**\nRun `/backupsetup provider remote` to save the backup destination.",
     "backup_now": "**Test Backup**\nRun `/backupnow upload:true` to create and upload a backup now.",
@@ -1000,7 +1018,7 @@ class SDACHubSelect(discord.ui.Select):
                 view=self.view,
             )
             return
-        if action in {"setup", "backup", "moderation", "games"} and not admin_only(interaction):
+        if action in {"setup", "submission_admin", "backup", "moderation", "games"} and not admin_only(interaction):
             await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
             return
         await interaction.response.edit_message(
@@ -1151,6 +1169,103 @@ async def handle_sana_instant_action(interaction, action, is_admin, section_key)
         return True
     return False
 
+
+def submission_admin_panel_content(guild_id, guild=None, notice=""):
+    guild_config = get_guild_config(guild_id, create=False)
+    submit_channel_id = guild_config.get("submit_channel")
+    submit_channel = guild.get_channel(int(submit_channel_id)) if guild and submit_channel_id else None
+    submit_label = submit_channel.mention if submit_channel else (f"Unknown channel `{submit_channel_id}`" if submit_channel_id else "Not set")
+    paused = bool(guild_config.get("emergency_paused"))
+    reason = (guild_config.get("emergency_reason") or "No reason provided.") if paused else ""
+    categories = guild_config.get("categories") or {}
+    category_lines = []
+    for category, channel_id in sorted(categories.items()):
+        channel = guild.get_channel(int(channel_id)) if guild and channel_id else None
+        destination = channel.mention if channel else f"Unknown channel `{channel_id}`"
+        category_lines.append(f"- `{category}` -> {destination}")
+    if not category_lines:
+        category_lines.append("- No repost categories are configured yet.")
+
+    lines = [
+        "**Submission Setup**",
+        "Use these controls to manage the submission channel, repost categories, and whether users can submit right now.",
+        "",
+        f"Submit channel: {submit_label}",
+        f"Status: {'Paused' if paused else 'Open'}",
+    ]
+    if paused:
+        lines.append(f"Pause reason: {reason}")
+    if notice:
+        lines.extend(["", notice])
+    lines.extend(["", "**Categories**"])
+    lines.extend(category_lines[:12])
+    if len(category_lines) > 12:
+        lines.append(f"- ...and {len(category_lines) - 12} more.")
+    return "\n".join(lines)[:1900]
+
+
+async def set_submission_pause_from_sana(interaction, paused, reason="", *, edit_message=True):
+    if not admin_only(interaction):
+        await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+        return
+    reason = (reason or "").strip()[:300]
+    guild_config = get_guild_config(interaction.guild_id)
+    guild_config["emergency_paused"] = bool(paused)
+    guild_config["emergency_reason"] = reason if paused else ""
+    save_config(config)
+    audit_interaction(
+        interaction,
+        "sana_submission_pause" if paused else "sana_submission_open",
+        "guild",
+        interaction.guild_id,
+        reason or ("Paused submissions from /sana." if paused else "Opened submissions from /sana."),
+    )
+    notice = (
+        f"Submissions are paused. Reason: {reason or 'No reason provided.'}"
+        if paused
+        else "Submissions are open again."
+    )
+    if edit_message:
+        await interaction.response.edit_message(
+            content=submission_admin_panel_content(interaction.guild_id, interaction.guild, notice),
+            view=SubmissionSetupView(True, interaction.user.id),
+        )
+    else:
+        await interaction.response.send_message(notice, ephemeral=True)
+
+
+async def handle_sana_submission_admin_action(interaction, action, is_admin, section_key):
+    if not str(action or "").startswith("submission_"):
+        return False
+    if not admin_only(interaction):
+        await interaction.response.send_message("Only admins can use submission setup controls.", ephemeral=True)
+        return True
+    if action == "submission_setup_panel":
+        await interaction.response.edit_message(
+            content=submission_admin_panel_content(interaction.guild_id, interaction.guild),
+            view=SubmissionSetupView(is_admin, interaction.user.id),
+        )
+        return True
+    if action == "submission_set_channel":
+        await interaction.response.edit_message(
+            content="**Set Submit Channel**\nChoose the channel where users should run `/submit`.",
+            view=SubmissionChannelOnlyView(is_admin, interaction.user.id),
+        )
+        return True
+    if action == "submission_create_category":
+        await interaction.response.edit_message(
+            content="**Create Category**\nChoose the repost destination channel. Sana-Chan will ask for the category name next.",
+            view=SubmissionCategoryOnlyView(is_admin, interaction.user.id),
+        )
+        return True
+    if action == "submission_open":
+        await set_submission_pause_from_sana(interaction, False)
+        return True
+    if action == "submission_pause":
+        await interaction.response.send_modal(SubmissionPauseReasonModal(interaction.user.id))
+        return True
+    return False
+
 class SDACSubmenuSelect(discord.ui.Select):
     def __init__(self, is_admin, section_key):
         self.is_admin = bool(is_admin)
@@ -1174,6 +1289,8 @@ class SDACSubmenuSelect(discord.ui.Select):
         if action == "setup_doctor":
             if await run_sana_doctor_action(interaction, self.is_admin, self.section_key):
                 return
+        if await handle_sana_submission_admin_action(interaction, action, self.is_admin, self.section_key):
+            return
         if action == "setup_wizard":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
@@ -1381,6 +1498,182 @@ class SDACBackButton(discord.ui.Button):
         )
 
 
+
+class SubmissionChannelSelect(discord.ui.ChannelSelect):
+    def __init__(self, owner_id, mode, row=0):
+        placeholder = "Choose the /submit channel" if mode == "submit" else "Choose the repost category channel"
+        super().__init__(placeholder=placeholder, min_values=1, max_values=1, channel_types=[discord.ChannelType.text], row=row)
+        self.owner_id = int(owner_id)
+        self.mode = mode
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can use submission setup controls.", ephemeral=True)
+            return
+        channel = await resolve_selected_text_channel(interaction.guild, self.values[0])
+        if channel is None:
+            await interaction.response.send_message("Choose a normal text channel Sana-Chan can view.", ephemeral=True)
+            return
+        if self.mode == "category":
+            await interaction.response.send_modal(SubmissionCategoryModal(interaction.user.id, channel.id, channel.mention))
+            return
+
+        guild_config = get_guild_config(interaction.guild_id)
+        guild_config["submit_channel"] = channel.id
+        save_config(config)
+        notice_message = await send_submission_channel_notice(interaction.guild_id, channel, guild_config)
+        audit_interaction(
+            interaction,
+            "set_submit_channel_from_sana",
+            "channel",
+            channel.id,
+            f"Submit channel set to {channel.id} from /sana.",
+        )
+        await interaction.response.edit_message(
+            content=submission_admin_panel_content(
+                interaction.guild_id,
+                interaction.guild,
+                f"Submit channel set to {channel.mention}. {notice_message}",
+            ),
+            view=SubmissionSetupView(True, interaction.user.id),
+        )
+
+
+class SubmissionCategoryModal(discord.ui.Modal, title="Create Submission Category"):
+    category_input = discord.ui.TextInput(
+        label="Category name",
+        placeholder="screenshots, clips, art, memes",
+        required=True,
+        max_length=80,
+    )
+
+    def __init__(self, owner_id, channel_id, channel_mention):
+        super().__init__()
+        self.owner_id = int(owner_id)
+        self.channel_id = int(channel_id)
+        self.channel_mention = channel_mention
+
+    async def on_submit(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can create submission categories.", ephemeral=True)
+            return
+        category = clean_category_name(str(self.category_input.value or ""))
+        if not category:
+            await interaction.response.send_message("Category name cannot be empty.", ephemeral=True)
+            return
+
+        guild_config = get_guild_config(interaction.guild_id)
+        guild_config.setdefault("categories", {})[category] = self.channel_id
+        save_config(config)
+        with database() as connection:
+            connection.execute("""
+                INSERT INTO category_history (
+                    guild_id, action, category, channel_id,
+                    admin_user_id, admin_username, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                str(interaction.guild_id),
+                "set_from_sana",
+                category,
+                str(self.channel_id),
+                str(interaction.user.id),
+                str(interaction.user),
+                utc_now_iso(),
+            ))
+            add_admin_audit_log(
+                connection,
+                interaction.guild_id,
+                "set_category_from_sana",
+                interaction.user.id,
+                interaction.user,
+                "category",
+                category,
+                f"Channel {self.channel_id}.",
+            )
+        await interaction.response.send_message(
+            f"Category `{category}` now reposts to {self.channel_mention}.",
+            ephemeral=True,
+        )
+
+
+class SubmissionPauseReasonModal(discord.ui.Modal, title="Pause Submissions"):
+    reason_input = discord.ui.TextInput(
+        label="Reason shown to users",
+        placeholder="Optional, for example: submissions are closed for maintenance",
+        required=False,
+        max_length=300,
+        style=discord.TextStyle.paragraph,
+    )
+
+    def __init__(self, owner_id):
+        super().__init__()
+        self.owner_id = int(owner_id)
+
+    async def on_submit(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        await set_submission_pause_from_sana(interaction, True, str(self.reason_input.value or ""), edit_message=False)
+
+
+class SubmissionOpenButton(discord.ui.Button):
+    def __init__(self, owner_id):
+        super().__init__(label="Open Submissions", style=discord.ButtonStyle.success, row=2)
+        self.owner_id = int(owner_id)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        await set_submission_pause_from_sana(interaction, False)
+
+
+class SubmissionPauseButton(discord.ui.Button):
+    def __init__(self, owner_id):
+        super().__init__(label="Pause Submissions", style=discord.ButtonStyle.danger, row=2)
+        self.owner_id = int(owner_id)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can pause submissions.", ephemeral=True)
+            return
+        await interaction.response.send_modal(SubmissionPauseReasonModal(interaction.user.id))
+
+
+class SubmissionSetupView(discord.ui.View):
+    def __init__(self, is_admin, owner_id):
+        super().__init__(timeout=600)
+        self.add_item(SubmissionChannelSelect(owner_id, "submit", row=0))
+        self.add_item(SubmissionChannelSelect(owner_id, "category", row=1))
+        self.add_item(SubmissionOpenButton(owner_id))
+        self.add_item(SubmissionPauseButton(owner_id))
+        self.add_item(SDACBackButton(is_admin))
+
+
+class SubmissionChannelOnlyView(discord.ui.View):
+    def __init__(self, is_admin, owner_id):
+        super().__init__(timeout=600)
+        self.add_item(SubmissionChannelSelect(owner_id, "submit", row=0))
+        self.add_item(SDACBackButton(is_admin))
+
+
+class SubmissionCategoryOnlyView(discord.ui.View):
+    def __init__(self, is_admin, owner_id):
+        super().__init__(timeout=600)
+        self.add_item(SubmissionChannelSelect(owner_id, "category", row=0))
+        self.add_item(SDACBackButton(is_admin))
+
+
 class SDACHubButton(discord.ui.Button):
     def __init__(self, is_admin, value, label, row=0, style=discord.ButtonStyle.secondary):
         super().__init__(label=label, style=style, row=row)
@@ -1437,6 +1730,8 @@ class SDACSubmenuButton(discord.ui.Button):
         if action == "setup_doctor":
             if await run_sana_doctor_action(interaction, self.is_admin, self.section_key):
                 return
+        if await handle_sana_submission_admin_action(interaction, action, self.is_admin, self.section_key):
+            return
         if action == "setup_wizard":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
@@ -1639,7 +1934,7 @@ class SDACHubView(discord.ui.View):
             style = discord.ButtonStyle.primary if value == "submit" else discord.ButtonStyle.secondary
             self.add_item(SDACHubButton(is_admin, value, label, user_rows.get(value, 0), style))
         if is_admin:
-            admin_rows = {"setup": 2, "backup": 2, "moderation": 3, "games": 3, "admin_help": 3}
+            admin_rows = {"setup": 2, "submission_admin": 2, "backup": 3, "moderation": 3, "games": 4, "admin_help": 4}
             for value, label, _description in SDAC_HUB_ADMIN_OPTIONS:
                 style = discord.ButtonStyle.primary if value == "setup" else discord.ButtonStyle.secondary
                 self.add_item(SDACHubButton(is_admin, value, label, admin_rows.get(value, 2), style))
