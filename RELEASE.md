@@ -1,3 +1,13 @@
+# Sana-Chan Version 4.3.39 Experimental
+
+Version 4.3.39 finishes the cross-distro installer cleanup by making backup prerequisite helpers part of the release workflow.
+
+## Release Packaging
+
+- includes the package-manager-aware backup prerequisite helper in experimental and official release commits
+- keeps backup setup aligned with the main installer on Debian/Ubuntu, Oracle/RHEL/Fedora-style, Alpine, and Arch-style hosts
+
+---
 # Sana-Chan Version 4.3.38 Experimental
 
 Version 4.3.38 makes the Linux installer choose system packages by detected package manager instead of assuming every host is Ubuntu.

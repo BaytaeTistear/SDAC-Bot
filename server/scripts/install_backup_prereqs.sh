@@ -6,15 +6,44 @@ if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
     SUDO="sudo"
 fi
 
-if ! command -v apt-get >/dev/null 2>&1; then
-    echo "This helper currently supports Ubuntu/Debian servers with apt-get." >&2
+install_backup_packages() {
+    if command -v apt-get >/dev/null 2>&1; then
+        echo "Installing Sana-Chan backup prerequisites with apt."
+        $SUDO apt-get update
+        $SUDO apt-get install -y rclone zip unzip ca-certificates
+        return
+    fi
+
+    if command -v dnf >/dev/null 2>&1; then
+        echo "Installing Sana-Chan backup prerequisites with dnf."
+        $SUDO dnf install -y rclone zip unzip ca-certificates
+        return
+    fi
+
+    if command -v yum >/dev/null 2>&1; then
+        echo "Installing Sana-Chan backup prerequisites with yum."
+        $SUDO yum install -y rclone zip unzip ca-certificates
+        return
+    fi
+
+    if command -v apk >/dev/null 2>&1; then
+        echo "Installing Sana-Chan backup prerequisites with apk."
+        $SUDO apk add --no-cache rclone zip unzip ca-certificates
+        return
+    fi
+
+    if command -v pacman >/dev/null 2>&1; then
+        echo "Installing Sana-Chan backup prerequisites with pacman."
+        $SUDO pacman -Sy --needed --noconfirm rclone zip unzip ca-certificates
+        return
+    fi
+
+    echo "No supported package manager was found." >&2
     echo "Install these packages manually: rclone zip unzip ca-certificates." >&2
     exit 1
-fi
+}
 
-echo "Installing SDAC backup prerequisites."
-$SUDO apt-get update
-$SUDO apt-get install -y rclone zip unzip ca-certificates
+install_backup_packages
 
 echo
 echo "Installed versions:"
