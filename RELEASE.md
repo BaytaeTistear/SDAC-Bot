@@ -1,3 +1,15 @@
+# Sana-Chan Version 4.3.40 Experimental
+
+Version 4.3.40 fixes fresh-install dashboard owner creation when the audit table has not been created yet.
+
+## Admin Login Recovery
+
+- adds `admin_audit_log` to the shared database migrations so CLI tools, bot startup, and dashboard startup agree on the schema
+- makes `scripts/reset_admin_login.py` create the audit table before writing its audit record
+- verifies dashboard account reset against a brand-new SQLite database
+- includes reset-admin and database migration files in experimental and official release packaging
+
+---
 # Sana-Chan Version 4.3.39 Experimental
 
 Version 4.3.39 finishes the cross-distro installer cleanup by making backup prerequisite helpers part of the release workflow.

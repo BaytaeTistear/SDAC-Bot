@@ -189,7 +189,36 @@ def print_accounts(connection):
         )
 
 
+
+def ensure_admin_audit_log(connection):
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS admin_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT,
+            action TEXT,
+            actor_user_id TEXT,
+            actor_username TEXT,
+            target_type TEXT,
+            target_id TEXT,
+            details TEXT,
+            created_at TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
+        ON admin_audit_log (created_at, id)
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_log_action
+        ON admin_audit_log (action, guild_id)
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_log_guild_created
+        ON admin_audit_log (guild_id, created_at, id)
+    """)
+
 def audit(connection, action, username, details):
+    ensure_admin_audit_log(connection)
     connection.execute("""
         INSERT INTO admin_audit_log (
             guild_id, action, actor_user_id, actor_username,
@@ -213,6 +242,7 @@ def main():
     connection = connect_database(db_path, timeout=30)
     try:
         apply_database_migrations(connection)
+        ensure_admin_audit_log(connection)
         connection.commit()
 
         if args.list:

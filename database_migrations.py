@@ -3,7 +3,7 @@ import sqlite3
 
 
 
-DATABASE_SCHEMA_VERSION = 18
+DATABASE_SCHEMA_VERSION = 19
 GOOGLE_PLAY_REVIEW_PASSWORD_HASH = "scrypt:32768:8:1$tpr2C1Lx7O3szQ0T$0f9b5ee8f0d5caaecaf4d69667ea93aff95365decc7108fd955590df4ef07c17680a64610805821aef23fcb86171de70c4bc0f577501ca920bb6b5bb80a4426b"
 
 
@@ -743,6 +743,34 @@ def migration_18_google_play_test_account(connection):
         )
     """, (GOOGLE_PLAY_REVIEW_PASSWORD_HASH, now, now, now))
 
+
+
+def migration_19_admin_audit_log(connection):
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS admin_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT,
+            action TEXT,
+            actor_user_id TEXT,
+            actor_username TEXT,
+            target_type TEXT,
+            target_id TEXT,
+            details TEXT,
+            created_at TEXT
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
+        ON admin_audit_log (created_at, id)
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_log_action
+        ON admin_audit_log (action, guild_id)
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_log_guild_created
+        ON admin_audit_log (guild_id, created_at, id)
+    """)
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -760,6 +788,7 @@ MIGRATIONS = (
     (16, migration_16_dashboard_access_and_bot_owners),
     (17, migration_17_dashboard_auth_codes),
     (18, migration_18_google_play_test_account),
+    (19, migration_19_admin_audit_log),
 )
 
 
