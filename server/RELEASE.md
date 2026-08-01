@@ -1,3 +1,15 @@
+# Sana-Chan Version 4.3.43 Experimental
+
+Version 4.3.43 fixes Discord OAuth setup for the new sanachan.bot.nu deployment path.
+
+## Discord OAuth
+
+- accepts SANA_DISCORD_CLIENT_ID, SANA_DISCORD_CLIENT_SECRET, and SANA_OAUTH_REDIRECT_URI while keeping old env names as fallbacks
+- updates dashboard setup/checklist guidance to show the Sana OAuth variable names
+- adds Sana OAuth variables to the env examples
+- fixes experimental release packaging so current Sana service/nginx assets are uploaded
+
+---
 # Sana-Chan Version 4.3.42 Experimental
 
 Version 4.3.42 finishes the installer/service rename from SDAC to Sana-Chan for new Linux installs and updates.

@@ -75,17 +75,20 @@ init_sentry("sdac-dashboard")
 
 ADMIN_KEY = os.getenv("SDAC_ADMIN_KEY", "ImTheBestAdmin")
 DISCORD_OAUTH_CLIENT_ID = (
-    os.getenv("SDAC_DISCORD_CLIENT_ID")
+    os.getenv("SANA_DISCORD_CLIENT_ID")
+    or os.getenv("SDAC_DISCORD_CLIENT_ID")
     or os.getenv("DISCORD_CLIENT_ID")
+    or os.getenv("SANA_BOT_CLIENT_ID")
     or os.getenv("SDAC_BOT_CLIENT_ID")
     or ""
 )
 DISCORD_OAUTH_CLIENT_SECRET = (
-    os.getenv("SDAC_DISCORD_CLIENT_SECRET")
+    os.getenv("SANA_DISCORD_CLIENT_SECRET")
+    or os.getenv("SDAC_DISCORD_CLIENT_SECRET")
     or os.getenv("DISCORD_CLIENT_SECRET")
     or ""
 )
-DISCORD_OAUTH_REDIRECT_URI = os.getenv("SDAC_OAUTH_REDIRECT_URI", "")
+DISCORD_OAUTH_REDIRECT_URI = os.getenv("SANA_OAUTH_REDIRECT_URI", os.getenv("SDAC_OAUTH_REDIRECT_URI", ""))
 DISCORD_ADMINISTRATOR_PERMISSION = 0x8
 APP_LOGIN_TICKET_MAX_AGE_SECONDS = 5 * 60
 DEFAULT_PUBLIC_DASHBOARD_URL = "https://freethefishies.us.to"
@@ -8190,7 +8193,7 @@ def production_health_report(config_data=None):
             else "Create an owner with scripts/reset_admin_login.py before exposing the admin dashboard."
         ),
     )
-    add("Discord OAuth", oauth_enabled(), "OAuth configured." if oauth_enabled() else "Set SDAC_DISCORD_CLIENT_ID and SDAC_DISCORD_CLIENT_SECRET.")
+    add("Discord OAuth", oauth_enabled(), "OAuth configured." if oauth_enabled() else "Set SANA_DISCORD_CLIENT_ID and SANA_DISCORD_CLIENT_SECRET.")
     add("Bot heartbeat", bot_status.get("fresh"), bot_status.get("message") or "No heartbeat.")
     add("Database backend", True, "PostgreSQL mode." if using_postgres() else "SQLite mode.")
     add("Backups", bool(recent_database_backups()), "Recent backup found." if recent_database_backups() else "No database backup found yet.")
@@ -8212,7 +8215,7 @@ def production_health_report(config_data=None):
     public_status = public_url_launch_status()
     default_account = google_play_test_account_status()
     add("Public URL", public_status["ok"], f"{public_status['state']}: {public_status['detail']}")
-    add("Discord callback URL", bool(public_status["callback_url"]), public_status["callback_url"] or "Set SDAC_PUBLIC_URL first.")
+    add("Discord callback URL", bool(public_status["callback_url"]), public_status["callback_url"] or "Set SANA_PUBLIC_URL first.")
     add("Google Play tester", default_account["ok"], f"{default_account['state']}: {default_account['detail']}")
     add("Guilds configured", bool(config_data.get("guilds")), f"{len(config_data.get('guilds') or {})} guild(s) configured.")
     add(
@@ -8285,7 +8288,7 @@ def install_doctor_report():
     add("Session secret", bool(os.getenv("SDAC_SECRET_KEY")), "SDAC_SECRET_KEY is set." if os.getenv("SDAC_SECRET_KEY") else "Set SDAC_SECRET_KEY for stable sessions.", "critical")
     public_status = public_url_launch_status()
     add("Public URL", public_status["ok"], f"{public_status['public_url'] or 'Missing'} - {public_status['detail']}")
-    add("Discord callback", bool(public_status["callback_url"]), public_status["callback_url"] or "Set SDAC_PUBLIC_URL or SDAC_DOMAIN.")
+    add("Discord callback", bool(public_status["callback_url"]), public_status["callback_url"] or "Set SANA_PUBLIC_URL or SANA_DOMAIN.")
     add("Configured guilds", bool(config_data.get("guilds")), f"{len(config_data.get('guilds') or {})} guild(s) configured.")
     add("Repository", bool(RELEASE_REPO), f"User/fork repo: {RELEASE_REPO}; original repo: {ORIGINAL_REPO}.")
 
@@ -15471,7 +15474,7 @@ def account_oauth_start():
     if not oauth_enabled():
         return redirect(url_for(
             "account_login",
-            notice="Discord login is visible, but OAuth is not configured yet. Set SDAC_DISCORD_CLIENT_ID and SDAC_DISCORD_CLIENT_SECRET.",
+            notice="Discord login is visible, but OAuth is not configured yet. Set SANA_DISCORD_CLIENT_ID and SANA_DISCORD_CLIENT_SECRET.",
             error=1,
             next=request.args.get("next") or url_for("account_home"),
         ))
@@ -19372,7 +19375,7 @@ def go_live_checklist_rows():
         "Discord OAuth",
         oauth_enabled(),
         "Discord OAuth is configured." if oauth_enabled() else "Discord OAuth client ID/secret are missing.",
-        "Set SDAC_DISCORD_CLIENT_ID and SDAC_DISCORD_CLIENT_SECRET, then test dashboard login.",
+        "Set SANA_DISCORD_CLIENT_ID and SANA_DISCORD_CLIENT_SECRET, then test dashboard login.",
     )
     add(
         "Discord callback URL",
@@ -19516,8 +19519,8 @@ def release_checklist_rows():
         })
 
     add("Production health", production["score"] == production["max_score"], f"Health score {production['score']} / {production['max_score']}.", warning=production["score"] >= max(1, production["max_score"] - 2))
-    add("Discord OAuth", oauth_enabled(), "Discord login client ID and secret are configured." if oauth_enabled() else "Set SDAC_DISCORD_CLIENT_ID and SDAC_DISCORD_CLIENT_SECRET.")
-    add("Discord callback URL", bool(public_status["callback_url"]), public_status["callback_url"] or "Set SDAC_PUBLIC_URL first.")
+    add("Discord OAuth", oauth_enabled(), "Discord login client ID and secret are configured." if oauth_enabled() else "Set SANA_DISCORD_CLIENT_ID and SANA_DISCORD_CLIENT_SECRET.")
+    add("Discord callback URL", bool(public_status["callback_url"]), public_status["callback_url"] or "Set SANA_PUBLIC_URL first.")
     add("Stable public URL", public_status["ok"], f"{public_status['state']}: {public_status['detail']}", warning=public_status["state"] == "Temporary")
     add("Google Play tester", default_account["ok"], f"{default_account['state']}: {default_account['detail']}", warning=default_account["state"] == "Missing")
     add("Invite link", bool(app_info.get("invite_url")), "Public invite URL is available." if app_info.get("invite_url") else "Set SDAC_BOT_CLIENT_ID or DISCORD_CLIENT_ID.")
@@ -20131,13 +20134,13 @@ def admin_oauth_diagnostics():
             "area": "OAuth client ID",
             "value": "Configured" if DISCORD_OAUTH_CLIENT_ID else "Missing",
             "ok": bool(DISCORD_OAUTH_CLIENT_ID),
-            "detail": "Set SDAC_DISCORD_CLIENT_ID from the Discord application OAuth2 page.",
+            "detail": "Set SANA_DISCORD_CLIENT_ID from the Discord application OAuth2 page.",
         },
         {
             "area": "OAuth client secret",
             "value": "Configured" if DISCORD_OAUTH_CLIENT_SECRET else "Missing",
             "ok": bool(DISCORD_OAUTH_CLIENT_SECRET),
-            "detail": "Set SDAC_DISCORD_CLIENT_SECRET from the Discord application OAuth2 page. Do not commit it.",
+            "detail": "Set SANA_DISCORD_CLIENT_SECRET from the Discord application OAuth2 page. Do not commit it.",
         },
         {
             "area": "Bot invite client ID",

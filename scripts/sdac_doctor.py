@@ -77,7 +77,9 @@ def check_database():
 
 def check_environment():
     status("Discord token", bool(os.getenv("DISCORD_TOKEN")), "DISCORD_TOKEN set" if os.getenv("DISCORD_TOKEN") else "DISCORD_TOKEN missing")
-    oauth_ready = bool(os.getenv("SDAC_DISCORD_CLIENT_ID") and os.getenv("SDAC_DISCORD_CLIENT_SECRET"))
+    oauth_client_id = os.getenv("SANA_DISCORD_CLIENT_ID") or os.getenv("SDAC_DISCORD_CLIENT_ID")
+    oauth_client_secret = os.getenv("SANA_DISCORD_CLIENT_SECRET") or os.getenv("SDAC_DISCORD_CLIENT_SECRET")
+    oauth_ready = bool(oauth_client_id and oauth_client_secret)
     status("Discord OAuth", oauth_ready, "client id/secret set" if oauth_ready else "client id/secret missing")
 
 
