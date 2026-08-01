@@ -1,3 +1,14 @@
+# Sana-Chan Version 4.3.52 Experimental
+
+Version 4.3.52 makes update summaries report the installed Sana-Chan version even when GitHub release metadata cannot be read on the server.
+
+## Updater Version Reporting
+
+- reads the installed `RELEASE.md` after systemd and Docker updates to fill in the resolved version
+- keeps tag-based version resolution for direct `version-x.y.z` updates
+- prevents successful `latest-experimental` updates from ending with `Resolved version: unknown` when the installed files include a version
+
+---
 # Sana-Chan Version 4.3.51 Experimental
 
 Version 4.3.51 fixes a dashboard settings save error and makes post-update health checks less brittle during service restarts.

@@ -192,6 +192,27 @@ if [[ "$ROLLBACK_MODE" != "1" ]]; then
     RESOLVED_VERSION="$(resolve_release_version "$RELEASE_TAG")"
 fi
 
+detect_installed_version() {
+    local release_file="$APP_DIR/RELEASE.md"
+    local first_line=""
+    if [[ -f "$release_file" ]]; then
+        first_line="$(head -n 1 "$release_file" 2>/dev/null || true)"
+        if [[ "$first_line" =~ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            printf '%s\n' "${BASH_REMATCH[1]}"
+            return
+        fi
+    fi
+    printf '%s\n' "$RESOLVED_VERSION"
+}
+
+refresh_resolved_version_from_install() {
+    local installed_version
+    installed_version="$(detect_installed_version)"
+    if [[ -n "$installed_version" && "$installed_version" != "unknown" ]]; then
+        RESOLVED_VERSION="$installed_version"
+    fi
+}
+
 default_app_user() {
     if [[ -n "${SDAC_APP_USER:-}" ]]; then
         printf '%s\n' "$SDAC_APP_USER"
@@ -455,6 +476,7 @@ run_git_docker_update() {
         curl -fsS "http://127.0.0.1:5000/health" >/dev/null
     fi
 
+    refresh_resolved_version_from_install
     UPDATE_FINISHED=1
     say "Update complete"
     echo "Update result: SUCCESS"
@@ -482,6 +504,7 @@ run_rollback() {
 }
 
 print_summary() {
+    refresh_resolved_version_from_install
     say "Update complete"
     echo "Update result: SUCCESS"
     echo "Requested update: $REQUESTED_RELEASE_TAG"
