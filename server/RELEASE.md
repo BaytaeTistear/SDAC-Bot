@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.3.42 Experimental
+
+Version 4.3.42 finishes the installer/service rename from SDAC to Sana-Chan for new Linux installs and updates.
+
+## Sana Service Names
+
+- installs `sana-bot.service` and `sana-dashboard.service` instead of `sdac-bot.service` and `sdac-dashboard.service`
+- disables and removes old `sdac-*` unit files during install/update migration
+- renames deployment templates to `sana-*`, including systemd, journald, and Nginx templates
+- moves default env/update files to `/etc/sana-bot/sana.env` and `/etc/sana-bot/update.env`
+- updates health checks, rollback, installer output, and update summaries to show Sana service commands
+- keeps old `SDAC_*` environment variables as fallback aliases so existing installs can still update cleanly
+
+---
 # Sana-Chan Version 4.3.40 Experimental
 
 Version 4.3.40 fixes fresh-install dashboard owner creation when the audit table has not been created yet.

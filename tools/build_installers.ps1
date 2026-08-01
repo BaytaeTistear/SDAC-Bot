@@ -56,7 +56,7 @@ function Copy-PayloadFiles {
         "scripts\release_readiness.py",
         "scripts\pre_release_smoke.py",
         "scripts\sdac_doctor.py",
-        "scripts\sdac-doctor",
+        "scripts\sana-doctor",
         "scripts\migrate_database.py",
         "scripts\archive_old_history.py",
         "scripts\export_sqlite_to_postgres.py",
@@ -65,10 +65,10 @@ function Copy-PayloadFiles {
         "scripts\update_from_github_windows.ps1",
         "scripts\windows\README.md",
         "scripts\windows\start_sana_local_server.ps1",
-        "systemd\sdac-bot.service.template",
-        "systemd\sdac-dashboard.service.template",
-        "systemd\sdac-journald.conf",
-        "nginx\sdac-dashboard.conf.template"
+        "systemd\sana-bot.service.template",
+        "systemd\sana-dashboard.service.template",
+        "systemd\sana-journald.conf",
+        "nginx\sana-dashboard.conf.template"
     )
 
     foreach ($file in $files) {
@@ -100,7 +100,7 @@ function Convert-PayloadTextFilesToLf {
     )
     $textFileNames = @(
         "Dockerfile",
-        "sdac-doctor"
+        "sana-doctor"
     )
 
     Get-ChildItem -LiteralPath $PayloadRoot -Recurse -File |
@@ -198,7 +198,7 @@ function Split-Base64 {
 function New-LinuxInstaller {
     param([string]$PayloadRoot, [string]$OutputPath)
 
-    $archive = Join-Path $Dist "sdac-linux-payload.tar.gz"
+    $archive = Join-Path $Dist "sana-linux-payload.tar.gz"
     if (Test-Path -LiteralPath $archive) {
         Remove-Item -LiteralPath $archive -Force
     }
@@ -234,26 +234,26 @@ set -Eeuo pipefail
 #   ./Sana-Chan-Linux-Installer.sh
 #
 # Optional environment overrides:
-#   SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot
-#   SDAC_APP_USER=ubuntu
-#   SDAC_CREATE_APP_USER=1         # create SDAC_APP_USER if it is missing
-#   SDAC_ENV_FILE=/etc/sdac-bot/sdac.env
-#   SDAC_DASHBOARD_BIND=127.0.0.1:5000
-#   SDAC_SKIP_SERVICES=1            # extract and compile only
-#   SDAC_SKIP_PACKAGES=1            # skip automatic OS package installation
-#   SDAC_INSTALL_JOURNAL_LIMITS=1   # install journald retention limits
+#   SANA_APP_DIR=/home/ubuntu/discord-screenshot-bot
+#   SANA_APP_USER=ubuntu
+#   SANA_CREATE_APP_USER=1         # create SANA_APP_USER if it is missing
+#   SANA_ENV_FILE=/etc/sana-bot/sana.env
+#   SANA_DASHBOARD_BIND=127.0.0.1:5000
+#   SANA_SKIP_SERVICES=1            # extract and compile only
+#   SANA_SKIP_PACKAGES=1            # skip automatic OS package installation
+#   SANA_INSTALL_JOURNAL_LIMITS=1   # install journald retention limits
 
-APP_DIR="`${SDAC_APP_DIR:-/home/ubuntu/discord-screenshot-bot}"
-APP_USER="`${SDAC_APP_USER:-`$(id -un)}"
-CREATE_APP_USER="`${SDAC_CREATE_APP_USER:-0}"
-ENV_FILE="`${SDAC_ENV_FILE:-/etc/sdac-bot/sdac.env}"
-DASHBOARD_BIND="`${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}"
-SKIP_SERVICES="`${SDAC_SKIP_SERVICES:-0}"
-INSTALL_JOURNAL_LIMITS="`${SDAC_INSTALL_JOURNAL_LIMITS:-0}"
-SKIP_PACKAGES="`${SDAC_SKIP_PACKAGES:-`${SDAC_SKIP_APT:-0}}"
+APP_DIR="`${SANA_APP_DIR:-`${SDAC_APP_DIR:-/home/ubuntu/discord-screenshot-bot}}"
+APP_USER="`${SANA_APP_USER:-`${SDAC_APP_USER:-`$(id -un)}}"
+CREATE_APP_USER="`${SANA_CREATE_APP_USER:-`${SDAC_CREATE_APP_USER:-0}}"
+ENV_FILE="`${SANA_ENV_FILE:-`${SDAC_ENV_FILE:-/etc/sana-bot/sana.env}}"
+DASHBOARD_BIND="`${SANA_DASHBOARD_BIND:-`${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}}"
+SKIP_SERVICES="`${SANA_SKIP_SERVICES:-`${SDAC_SKIP_SERVICES:-0}}"
+INSTALL_JOURNAL_LIMITS="`${SANA_INSTALL_JOURNAL_LIMITS:-`${SDAC_INSTALL_JOURNAL_LIMITS:-0}}"
+SKIP_PACKAGES="`${SANA_SKIP_PACKAGES:-`${SDAC_SKIP_PACKAGES:-`${SDAC_SKIP_APT:-0}}}"
 PAYLOAD_SHA256="$payloadSha"
 PAYLOAD_SIZE_BYTES="$payloadSize"
-SDAC_INSTALLER_VERSION="$installerVersion"
+SANA_INSTALLER_VERSION="$installerVersion"
 STAMP="`$(date -u +%Y%m%d-%H%M%S)"
 
 say() {
@@ -282,13 +282,13 @@ if ! id "`$APP_USER" >/dev/null 2>&1; then
         say "Creating system user `$APP_USER"
         sudo useradd --system --home-dir "`$APP_DIR" --shell /usr/sbin/nologin --no-create-home "`$APP_USER"
     else
-        fail "User `$APP_USER does not exist. Create it, use SDAC_APP_USER=`$(id -un), or set SDAC_CREATE_APP_USER=1."
+        fail "User `$APP_USER does not exist. Create it, use SANA_APP_USER=`$(id -un), or set SANA_CREATE_APP_USER=1."
     fi
 fi
 
 install_system_prereqs() {
     if [[ "`$SKIP_PACKAGES" == "1" ]]; then
-        say "Skipping system package installation because SDAC_SKIP_PACKAGES=1"
+        say "Skipping system package installation because SANA_SKIP_PACKAGES=1"
         return
     fi
 
@@ -421,10 +421,10 @@ cleanup() {
     rm -rf "`$TMP_DIR"
 }
 trap cleanup EXIT
-PAYLOAD_FILE="`$TMP_DIR/sdac-payload.tar.gz"
+PAYLOAD_FILE="`$TMP_DIR/sana-payload.tar.gz"
 
-say "Extracting embedded SDAC payload"
-awk '/^__SDAC_PAYLOAD_BELOW__$/ {found=1; next} found {print}' "`$0" | base64 -d > "`$PAYLOAD_FILE"
+say "Extracting embedded Sana-Chan payload"
+awk '/^__SANA_PAYLOAD_BELOW__$/ {found=1; next} found {print}' "`$0" | base64 -d > "`$PAYLOAD_FILE"
 ACTUAL_SHA256="`$(sha256sum "`$PAYLOAD_FILE" | awk '{print `$1}')"
 if [[ "`$ACTUAL_SHA256" != "`$PAYLOAD_SHA256" ]]; then
     fail "Embedded payload checksum mismatch. Expected `$PAYLOAD_SHA256 but got `$ACTUAL_SHA256."
@@ -442,15 +442,15 @@ if [[ "`$SKIP_SERVICES" == "1" ]]; then
     say "Compiling Python files without installing services"
     python3 -m py_compile "`$APP_DIR/bot.py" "`$APP_DIR/dashboard.py" "`$APP_DIR/dashboard_account_templates.py" "`$APP_DIR/dashboard_admin_roles.py" "`$APP_DIR/dashboard_shell_assets.py" "`$APP_DIR/dashboard_sidebar.py" "`$APP_DIR/config.py" "`$APP_DIR/database_backend.py"
     python3 -m py_compile "`$APP_DIR/database_migrations.py" "`$APP_DIR/observability.py" "`$APP_DIR/scripts/migrate_database.py" "`$APP_DIR/scripts/export_sqlite_to_postgres.py" "`$APP_DIR/scripts/release_readiness.py"
-    echo "SDAC files extracted to `$APP_DIR"
+    echo "Sana-Chan files extracted to `$APP_DIR"
     exit 0
 fi
 
-say "Running Ubuntu installer"
-export SDAC_APP_DIR="`$APP_DIR"
-export SDAC_APP_USER="`$APP_USER"
-export SDAC_ENV_FILE="`$ENV_FILE"
-export SDAC_DASHBOARD_BIND="`$DASHBOARD_BIND"
+say "Running Sana-Chan installer"
+export SANA_APP_DIR="`$APP_DIR"
+export SANA_APP_USER="`$APP_USER"
+export SANA_ENV_FILE="`$ENV_FILE"
+export SANA_DASHBOARD_BIND="`$DASHBOARD_BIND"
 bash "`$APP_DIR/scripts/install_ubuntu.sh"
 
 if [[ "`$INSTALL_JOURNAL_LIMITS" == "1" ]]; then
@@ -458,20 +458,20 @@ if [[ "`$INSTALL_JOURNAL_LIMITS" == "1" ]]; then
     bash "`$APP_DIR/scripts/install_journal_limits.sh"
 fi
 
-say "SDAC single-file install complete"
+say "Sana-Chan single-file install complete"
 echo "Installer result: SUCCESS"
-echo "Installer version: `$SDAC_INSTALLER_VERSION"
+echo "Installer version: `$SANA_INSTALLER_VERSION"
 echo "App directory: `$APP_DIR"
 echo "Environment file: `$ENV_FILE"
 echo "Logs:"
-echo "  journalctl -u sdac-bot -n 80 --no-pager"
-echo "  journalctl -u sdac-dashboard -n 80 --no-pager"
+echo "  journalctl -u sana-bot -n 80 --no-pager"
+echo "  journalctl -u sana-dashboard -n 80 --no-pager"
 echo "Health:"
 echo "  curl http://127.0.0.1:5000/health"
 
 exit 0
 
-__SDAC_PAYLOAD_BELOW__
+__SANA_PAYLOAD_BELOW__
 "@
 
     $scriptContent = ($header + "`n" + $payloadBase64) `
@@ -489,7 +489,7 @@ __SDAC_PAYLOAD_BELOW__
 function New-WindowsInstaller {
     param([string]$PayloadRoot, [string]$OutputPath)
 
-    $zipPath = Join-Path $Dist "sdac-windows-payload.zip"
+    $zipPath = Join-Path $Dist "sana-windows-payload.zip"
     if (Test-Path -LiteralPath $zipPath) {
         Remove-Item -LiteralPath $zipPath -Force
     }

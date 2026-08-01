@@ -1,5 +1,5 @@
 [Unit]
-Description=SDAC Discord Bot
+Description=Sana-Chan Discord Bot
 After=network-online.target
 Wants=network-online.target
 

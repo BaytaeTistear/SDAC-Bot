@@ -1,5 +1,5 @@
 [Unit]
-Description=SDAC Dashboard
+Description=Sana-Chan Dashboard
 After=network-online.target
 Wants=network-online.target
 

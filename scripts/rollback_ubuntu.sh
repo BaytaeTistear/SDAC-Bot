@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-APP_DIR="${SDAC_APP_DIR:-$(pwd)}"
-APP_USER="${SDAC_APP_USER:-$(id -un)}"
-DASHBOARD_BIND="${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}"
-ENV_FILE="${SDAC_ENV_FILE:-/etc/sdac-bot/sdac.env}"
+APP_DIR="${SANA_APP_DIR:-${SDAC_APP_DIR:-$(pwd)}}"
+APP_USER="${SANA_APP_USER:-${SDAC_APP_USER:-$(id -un)}}"
+DASHBOARD_BIND="${SANA_DASHBOARD_BIND:-${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}}"
+ENV_FILE="${SANA_ENV_FILE:-${SDAC_ENV_FILE:-/etc/sana-bot/sana.env}}"
 DEPLOY_BACKUP_ROOT="$APP_DIR/deploy-backups"
 BACKUP_DIR="${1:-}"
 PYTHON="$APP_DIR/venv/bin/python"
@@ -70,20 +70,20 @@ render_service() {
 }
 
 render_service \
-    "$APP_DIR/systemd/sdac-bot.service.template" \
-    "/etc/systemd/system/sdac-bot.service"
+    "$APP_DIR/systemd/sana-bot.service.template" \
+    "/etc/systemd/system/sana-bot.service"
 render_service \
-    "$APP_DIR/systemd/sdac-dashboard.service.template" \
-    "/etc/systemd/system/sdac-dashboard.service"
+    "$APP_DIR/systemd/sana-dashboard.service.template" \
+    "/etc/systemd/system/sana-dashboard.service"
 
 sudo systemctl daemon-reload
-sudo systemctl restart sdac-bot sdac-dashboard
-sudo systemctl is-active --quiet sdac-bot
-sudo systemctl is-active --quiet sdac-dashboard
+sudo systemctl restart sana-bot sana-dashboard
+sudo systemctl is-active --quiet sana-bot
+sudo systemctl is-active --quiet sana-dashboard
 
 echo "Rollback complete."
 echo "Environment file: $ENV_FILE"
 echo "Dashboard bind: $DASHBOARD_BIND"
 echo "Service status:"
-sudo systemctl status sdac-bot --no-pager -l
-sudo systemctl status sdac-dashboard --no-pager -l
+sudo systemctl status sana-bot --no-pager -l
+sudo systemctl status sana-dashboard --no-pager -l

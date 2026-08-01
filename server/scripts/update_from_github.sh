@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-CONFIG_FILE="${SDAC_UPDATE_CONFIG:-/etc/sdac-bot/update.env}"
+CONFIG_FILE="${SANA_UPDATE_CONFIG:-${SDAC_UPDATE_CONFIG:-/etc/sana-bot/update.env}}"
 COMMAND_PATH="${SANA_UPDATE_COMMAND_PATH:-${SDAC_UPDATE_COMMAND_PATH:-/usr/local/bin/sana-update}}"
 SCRIPT_PATH="$0"
 if command -v readlink >/dev/null 2>&1; then
@@ -10,7 +10,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" >/dev/null 2>&1 && pwd -P)"
 DETECTED_APP_DIR=""
-if [[ -z "${SDAC_APP_DIR:-}" ]]; then
+if [[ -z "${SANA_APP_DIR:-${SDAC_APP_DIR:-}}" ]]; then
     SCRIPT_PARENT="$(cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
     if [[ -f "$SCRIPT_PARENT/docker-compose.yml" && -d "$SCRIPT_PARENT/.git" ]]; then
         DETECTED_APP_DIR="$SCRIPT_PARENT"
@@ -28,19 +28,19 @@ if [[ -f "$CONFIG_FILE" ]]; then
     source "$CONFIG_FILE"
 fi
 
-REPO="${SDAC_GITHUB_REPO:-BaytaeTistear/SDAC-Bot}"
-RELEASE_TAG="${SDAC_RELEASE_TAG:-latest-official}"
+REPO="${SANA_GITHUB_REPO:-${SDAC_GITHUB_REPO:-BaytaeTistear/SDAC-Bot}}"
+RELEASE_TAG="${SANA_RELEASE_TAG:-${SDAC_RELEASE_TAG:-latest-official}}"
 REQUESTED_RELEASE_TAG="$RELEASE_TAG"
 RESOLVED_VERSION="unknown"
 UPDATE_FINISHED=0
-APP_DIR="${SDAC_APP_DIR:-${DETECTED_APP_DIR:-/home/ubuntu/discord-screenshot-bot}}"
-ENV_FILE="${SDAC_ENV_FILE:-/etc/sdac-bot/sdac.env}"
-DASHBOARD_BIND="${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}"
-INSTALLER_NAME="${SDAC_INSTALLER_NAME:-Sana-Chan-Linux-Installer.sh}"
-RUN_RESTORE_TEST="${SDAC_RUN_RESTORE_TEST:-0}"
-RUN_PRODUCTION_CHECK="${SDAC_RUN_PRODUCTION_CHECK:-0}"
-DOMAIN="${SDAC_DOMAIN:-}"
-RELOAD_NGINX="${SDAC_RELOAD_NGINX:-1}"
+APP_DIR="${SANA_APP_DIR:-${SDAC_APP_DIR:-${DETECTED_APP_DIR:-/home/ubuntu/discord-screenshot-bot}}}"
+ENV_FILE="${SANA_ENV_FILE:-${SDAC_ENV_FILE:-/etc/sana-bot/sana.env}}"
+DASHBOARD_BIND="${SANA_DASHBOARD_BIND:-${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}}"
+INSTALLER_NAME="${SANA_INSTALLER_NAME:-${SDAC_INSTALLER_NAME:-Sana-Chan-Linux-Installer.sh}}"
+RUN_RESTORE_TEST="${SANA_RUN_RESTORE_TEST:-${SDAC_RUN_RESTORE_TEST:-0}}"
+RUN_PRODUCTION_CHECK="${SANA_RUN_PRODUCTION_CHECK:-${SDAC_RUN_PRODUCTION_CHECK:-0}}"
+DOMAIN="${SANA_DOMAIN:-${SDAC_DOMAIN:-}}"
+RELOAD_NGINX="${SANA_RELOAD_NGINX:-${SDAC_RELOAD_NGINX:-1}}"
 INSTALL_COMMAND=0
 ROLLBACK_MODE=0
 ROLLBACK_TARGET=""
@@ -57,8 +57,8 @@ print_failure_summary() {
     echo "Resolved version: $RESOLVED_VERSION"
     echo "Exit code: $exit_code"
     echo "Review the lines above, then run:"
-    echo "  journalctl -u sdac-bot -n 80 --no-pager"
-    echo "  journalctl -u sdac-dashboard -n 80 --no-pager"
+    echo "  journalctl -u sana-bot -n 80 --no-pager"
+    echo "  journalctl -u sana-dashboard -n 80 --no-pager"
 }
 
 trap 'exit_code=$?; print_failure_summary "$exit_code"' EXIT
@@ -81,15 +81,15 @@ Examples:
   sana-update latest-experimental
   sana-update latest-expirimental
   sana-update rollback
-  SDAC_RUN_RESTORE_TEST=1 sana-update latest-official
+  SANA_RUN_RESTORE_TEST=1 sana-update latest-official
 
 Environment:
-  SDAC_GITHUB_REPO=$REPO
-  SDAC_RELEASE_TAG=$RELEASE_TAG
-  SDAC_APP_DIR=$APP_DIR
-  SDAC_APP_USER=${SDAC_APP_USER:-}
-  SDAC_ENV_FILE=$ENV_FILE
-  SDAC_DOMAIN=$DOMAIN
+  SANA_GITHUB_REPO=$REPO
+  SANA_RELEASE_TAG=$RELEASE_TAG
+  SANA_APP_DIR=$APP_DIR
+  SANA_APP_USER=${SANA_APP_USER:-${SDAC_APP_USER:-}}
+  SANA_ENV_FILE=$ENV_FILE
+  SANA_DOMAIN=$DOMAIN
 EOF
 }
 
@@ -239,11 +239,10 @@ install_update_command() {
     say "Installing sana-update and sanachan-update commands"
     sudo install -m 755 "$SCRIPT_PATH" "$COMMAND_PATH"
     sudo install -m 755 "$SCRIPT_PATH" "/usr/local/bin/sanachan-update"
-    sudo rm -f "/usr/local/bin/sdac-update"
-    if [[ -f "$APP_DIR/scripts/sana-doctor" && -f "$APP_DIR/scripts/sdac-doctor" ]]; then
+    sudo rm -f "/usr/local/bin/sdac-update" "/usr/local/bin/sdac-doctor"
+    if [[ -f "$APP_DIR/scripts/sana-doctor" ]]; then
         say "Installing sana-doctor command"
         sudo install -m 755 "$APP_DIR/scripts/sana-doctor" "/usr/local/bin/sana-doctor"
-        sudo install -m 755 "$APP_DIR/scripts/sdac-doctor" "/usr/local/bin/sdac-doctor"
     elif [[ -f "$APP_DIR/scripts/sdac_doctor.py" ]]; then
         say "Installing sana-doctor command"
         local doctor_tmp
@@ -251,22 +250,18 @@ install_update_command() {
         cat > "$doctor_tmp" <<'DOCTOR'
 #!/usr/bin/env bash
 set -euo pipefail
-APP_DIR="${SDAC_BASE_DIR:-/home/ubuntu/discord-screenshot-bot}"
-PYTHON_BIN="${SDAC_PYTHON:-$APP_DIR/venv/bin/python}"
+APP_DIR="${SANA_BASE_DIR:-${SDAC_BASE_DIR:-/home/ubuntu/discord-screenshot-bot}}"
+PYTHON_BIN="${SANA_PYTHON:-${SDAC_PYTHON:-$APP_DIR/venv/bin/python}}"
 if [[ ! -x "$PYTHON_BIN" ]]; then
     PYTHON_BIN="python3"
 fi
 exec "$PYTHON_BIN" "$APP_DIR/scripts/sdac_doctor.py" "$@"
 DOCTOR
         sudo install -m 755 "$doctor_tmp" "/usr/local/bin/sana-doctor"
-        sudo install -m 755 "$doctor_tmp" "/usr/local/bin/sdac-doctor"
         rm -f "$doctor_tmp"
     fi
     if [[ -f "/usr/local/bin/sana-doctor" ]]; then
         sudo sed -i 's/\r$//' "/usr/local/bin/sana-doctor"
-    fi
-    if [[ -f "/usr/local/bin/sdac-doctor" ]]; then
-        sudo sed -i 's/\r$//' "/usr/local/bin/sdac-doctor"
     fi
 
     local config_dir
@@ -274,15 +269,15 @@ DOCTOR
     local config_tmp
     config_tmp="$(mktemp)"
     {
-        write_assignment SDAC_GITHUB_REPO "$REPO"
-        write_assignment SDAC_RELEASE_TAG "$RELEASE_TAG"
-        write_assignment SDAC_RELEASE "$RESOLVED_VERSION"
-        write_assignment SDAC_APP_DIR "$APP_DIR"
-        write_assignment SDAC_APP_USER "$APP_USER"
-        write_assignment SDAC_ENV_FILE "$ENV_FILE"
-        write_assignment SDAC_DASHBOARD_BIND "$DASHBOARD_BIND"
-        write_assignment SDAC_DOMAIN "$DOMAIN"
-        write_assignment SDAC_RELOAD_NGINX "$RELOAD_NGINX"
+        write_assignment SANA_GITHUB_REPO "$REPO"
+        write_assignment SANA_RELEASE_TAG "$RELEASE_TAG"
+        write_assignment SANA_RELEASE "$RESOLVED_VERSION"
+        write_assignment SANA_APP_DIR "$APP_DIR"
+        write_assignment SANA_APP_USER "$APP_USER"
+        write_assignment SANA_ENV_FILE "$ENV_FILE"
+        write_assignment SANA_DASHBOARD_BIND "$DASHBOARD_BIND"
+        write_assignment SANA_DOMAIN "$DOMAIN"
+        write_assignment SANA_RELOAD_NGINX "$RELOAD_NGINX"
     } > "$config_tmp"
     sudo mkdir -p "$config_dir"
     sudo install -m 644 -o root -g root "$config_tmp" "$CONFIG_FILE"
@@ -339,11 +334,14 @@ download_installer() {
 }
 
 restart_services() {
-    say "Reloading systemd and restarting SDAC services"
+    say "Reloading systemd and restarting Sana-Chan services"
     sudo systemctl daemon-reload
-    sudo systemctl reset-failed sdac-bot sdac-dashboard >/dev/null 2>&1 || true
-    sudo systemctl restart sdac-bot
-    sudo systemctl restart sdac-dashboard
+    sudo systemctl disable --now sdac-bot sdac-dashboard >/dev/null 2>&1 || true
+    sudo rm -f /etc/systemd/system/sdac-bot.service /etc/systemd/system/sdac-dashboard.service
+    sudo systemctl daemon-reload
+    sudo systemctl reset-failed sana-bot sana-dashboard >/dev/null 2>&1 || true
+    sudo systemctl restart sana-bot
+    sudo systemctl restart sana-dashboard
 
     if [[ "$RELOAD_NGINX" == "1" ]] && systemctl list-unit-files nginx.service >/dev/null 2>&1; then
         if systemctl is-active --quiet nginx; then
@@ -352,19 +350,19 @@ restart_services() {
         fi
     fi
 
-    sudo systemctl is-active --quiet sdac-bot
-    sudo systemctl is-active --quiet sdac-dashboard
+    sudo systemctl is-active --quiet sana-bot
+    sudo systemctl is-active --quiet sana-dashboard
 }
 
 run_optional_checks() {
     if [[ "$RUN_RESTORE_TEST" == "1" && -x "$APP_DIR/scripts/test_restore.sh" ]]; then
         say "Running restore test"
-        SDAC_APP_DIR="$APP_DIR" bash "$APP_DIR/scripts/test_restore.sh"
+        SANA_APP_DIR="$APP_DIR" bash "$APP_DIR/scripts/test_restore.sh"
     fi
 
     if [[ "$RUN_PRODUCTION_CHECK" == "1" && -x "$APP_DIR/scripts/check_production.sh" ]]; then
         say "Running production check"
-        SDAC_DOMAIN="$DOMAIN" bash "$APP_DIR/scripts/check_production.sh"
+        SANA_DOMAIN="$DOMAIN" bash "$APP_DIR/scripts/check_production.sh"
     fi
 }
 
@@ -384,8 +382,8 @@ run_update_health_check() {
         fi
     }
 
-    run_health_check "sdac-bot service" sudo systemctl is-active --quiet sdac-bot
-    run_health_check "sdac-dashboard service" sudo systemctl is-active --quiet sdac-dashboard
+    run_health_check "sana-bot service" sudo systemctl is-active --quiet sana-bot
+    run_health_check "sana-dashboard service" sudo systemctl is-active --quiet sana-dashboard
 
     if [[ -x "$APP_DIR/venv/bin/python" && -f "$APP_DIR/scripts/migrate_database.py" && -f "$APP_DIR/sdac.db" ]]; then
         run_health_check "database migration check" "$APP_DIR/venv/bin/python" "$APP_DIR/scripts/migrate_database.py" --db "$APP_DIR/sdac.db"
@@ -460,11 +458,11 @@ run_rollback() {
     if [[ ! -f "$rollback_script" ]]; then
         fail "Rollback script not found: $rollback_script"
     fi
-    say "Rolling back SDAC"
-    SDAC_APP_DIR="$APP_DIR" \
-    SDAC_APP_USER="$APP_USER" \
-    SDAC_ENV_FILE="$ENV_FILE" \
-    SDAC_DASHBOARD_BIND="$DASHBOARD_BIND" \
+    say "Rolling back Sana-Chan"
+    SANA_APP_DIR="$APP_DIR" \
+    SANA_APP_USER="$APP_USER" \
+    SANA_ENV_FILE="$ENV_FILE" \
+    SANA_DASHBOARD_BIND="$DASHBOARD_BIND" \
     bash "$rollback_script" "$ROLLBACK_TARGET"
     run_update_health_check
     print_summary
@@ -483,15 +481,15 @@ print_summary() {
     echo "Dashboard bind: $DASHBOARD_BIND"
     echo
     echo "Service status:"
-    printf '  sdac-bot:       %s\n' "$(systemctl is-active sdac-bot 2>/dev/null || echo unknown)"
-    printf '  sdac-dashboard: %s\n' "$(systemctl is-active sdac-dashboard 2>/dev/null || echo unknown)"
+    printf '  sana-bot:       %s\n' "$(systemctl is-active sana-bot 2>/dev/null || echo unknown)"
+    printf '  sana-dashboard: %s\n' "$(systemctl is-active sana-dashboard 2>/dev/null || echo unknown)"
     if [[ "$RELOAD_NGINX" == "1" ]] && systemctl list-unit-files nginx.service >/dev/null 2>&1; then
         printf '  nginx:          %s\n' "$(systemctl is-active nginx 2>/dev/null || echo unknown)"
     fi
     echo
     echo "Useful commands:"
-    echo "  journalctl -u sdac-bot -n 80 --no-pager"
-    echo "  journalctl -u sdac-dashboard -n 80 --no-pager"
+    echo "  journalctl -u sana-bot -n 80 --no-pager"
+    echo "  journalctl -u sana-dashboard -n 80 --no-pager"
     echo "  curl http://127.0.0.1:5000/health"
     if [[ -n "$DOMAIN" ]]; then
         echo "  curl -I https://$DOMAIN/health"
@@ -508,7 +506,7 @@ if [[ "$INSTALL_COMMAND" == "1" ]]; then
     exit 0
 fi
 
-if [[ "${SDAC_UPDATE_MODE:-auto}" != "installer" && -f "$APP_DIR/docker-compose.yml" && -d "$APP_DIR/.git" ]]; then
+if [[ "${SANA_UPDATE_MODE:-${SDAC_UPDATE_MODE:-auto}}" != "installer" && -f "$APP_DIR/docker-compose.yml" && -d "$APP_DIR/.git" ]]; then
     if [[ "$ROLLBACK_MODE" == "1" ]]; then
         fail "Rollback is only supported for installer/systemd installs. Use git checkout and docker compose up for Docker rollbacks."
     fi
@@ -529,11 +527,11 @@ fi
 download_installer
 
 say "Running release installer"
-SDAC_APP_DIR="$APP_DIR" \
-SDAC_APP_USER="$APP_USER" \
-SDAC_CREATE_APP_USER="${SDAC_CREATE_APP_USER:-0}" \
-SDAC_ENV_FILE="$ENV_FILE" \
-SDAC_DASHBOARD_BIND="$DASHBOARD_BIND" \
+SANA_APP_DIR="$APP_DIR" \
+SANA_APP_USER="$APP_USER" \
+SANA_CREATE_APP_USER="${SANA_CREATE_APP_USER:-${SDAC_CREATE_APP_USER:-0}}" \
+SANA_ENV_FILE="$ENV_FILE" \
+SANA_DASHBOARD_BIND="$DASHBOARD_BIND" \
 "$INSTALLER_PATH"
 
 restart_services

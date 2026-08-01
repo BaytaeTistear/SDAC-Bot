@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 
 DOMAIN="${1:-${SANA_DOMAIN:-${SDAC_DOMAIN:-}}}"
-DASHBOARD_LOCAL_URL="${SDAC_DASHBOARD_LOCAL_URL:-http://127.0.0.1:5000/health}"
-RUN_CERTBOT_DRY_RUN="${SDAC_RUN_CERTBOT_DRY_RUN:-0}"
+DASHBOARD_LOCAL_URL="${SANA_DASHBOARD_LOCAL_URL:-${SDAC_DASHBOARD_LOCAL_URL:-http://127.0.0.1:5000/health}}"
+RUN_CERTBOT_DRY_RUN="${SANA_RUN_CERTBOT_DRY_RUN:-${SDAC_RUN_CERTBOT_DRY_RUN:-0}}"
 FAILED_CHECKS=0
 
 check() {
@@ -19,8 +19,8 @@ check() {
     fi
 }
 
-check "sdac-bot service" systemctl is-active --quiet sdac-bot
-check "sdac-dashboard service" systemctl is-active --quiet sdac-dashboard
+check "sana-bot service" systemctl is-active --quiet sana-bot
+check "sana-dashboard service" systemctl is-active --quiet sana-dashboard
 
 if systemctl list-unit-files nginx.service >/dev/null 2>&1; then
     check "nginx service" systemctl is-active --quiet nginx
@@ -37,7 +37,7 @@ fi
 if [[ "$RUN_CERTBOT_DRY_RUN" == "1" ]]; then
     check "certbot renew dry-run" sudo certbot renew --dry-run
 else
-    echo "Skipping certbot dry-run. Set SDAC_RUN_CERTBOT_DRY_RUN=1 to include it."
+    echo "Skipping certbot dry-run. Set SANA_RUN_CERTBOT_DRY_RUN=1 to include it."
 fi
 
 if [[ "$FAILED_CHECKS" -gt 0 ]]; then

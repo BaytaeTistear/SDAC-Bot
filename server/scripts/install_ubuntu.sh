@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-APP_DIR="${SDAC_APP_DIR:-$(pwd)}"
-APP_USER="${SDAC_APP_USER:-$(id -un)}"
-CREATE_APP_USER="${SDAC_CREATE_APP_USER:-0}"
-DASHBOARD_BIND="${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}"
-ENV_DIR="${SDAC_ENV_DIR:-/etc/sdac-bot}"
-ENV_FILE="${SDAC_ENV_FILE:-$ENV_DIR/sdac.env}"
-SKIP_SERVICES="${SDAC_SKIP_SERVICES:-0}"
-INSTALL_BACKUP_PREREQS="${SDAC_INSTALL_BACKUP_PREREQS:-0}"
-SKIP_PACKAGES="${SDAC_SKIP_PACKAGES:-${SDAC_SKIP_APT:-0}}"
+APP_DIR="${SANA_APP_DIR:-${SDAC_APP_DIR:-$(pwd)}}"
+APP_USER="${SANA_APP_USER:-${SDAC_APP_USER:-$(id -un)}}"
+CREATE_APP_USER="${SANA_CREATE_APP_USER:-${SDAC_CREATE_APP_USER:-0}}"
+DASHBOARD_BIND="${SANA_DASHBOARD_BIND:-${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}}"
+ENV_DIR="${SANA_ENV_DIR:-${SDAC_ENV_DIR:-/etc/sana-bot}}"
+ENV_FILE="${SANA_ENV_FILE:-${SDAC_ENV_FILE:-$ENV_DIR/sana.env}}"
+SKIP_SERVICES="${SANA_SKIP_SERVICES:-${SDAC_SKIP_SERVICES:-0}}"
+INSTALL_BACKUP_PREREQS="${SANA_INSTALL_BACKUP_PREREQS:-${SDAC_INSTALL_BACKUP_PREREQS:-0}}"
+SKIP_PACKAGES="${SANA_SKIP_PACKAGES:-${SDAC_SKIP_PACKAGES:-${SDAC_SKIP_APT:-0}}}"
 
 install_system_prereqs() {
     if [[ "$SKIP_PACKAGES" == "1" ]]; then
-        echo "Skipping system package installation because SDAC_SKIP_PACKAGES=1."
+        echo "Skipping system package installation because SANA_SKIP_PACKAGES=1."
         return
     fi
 
@@ -70,7 +70,7 @@ install_system_prereqs() {
 }
 
 if [[ ! -f "$APP_DIR/bot.py" || ! -f "$APP_DIR/dashboard.py" ]]; then
-    echo "Run this script from the SDAC bot folder, or set SDAC_APP_DIR." >&2
+    echo "Run this script from the Sana-Chan bot folder, or set SANA_APP_DIR." >&2
     exit 1
 fi
 
@@ -95,7 +95,7 @@ if ! id "$APP_USER" >/dev/null 2>&1; then
         sudo useradd --system --home-dir "$APP_DIR" --shell /usr/sbin/nologin --no-create-home "$APP_USER"
     else
         echo "User $APP_USER does not exist." >&2
-        echo "Create it first, use SDAC_APP_USER=$(id -un), or set SDAC_CREATE_APP_USER=1." >&2
+        echo "Create it first, use SANA_APP_USER=$(id -un), or set SANA_CREATE_APP_USER=1." >&2
         exit 1
     fi
 fi
@@ -165,46 +165,40 @@ install_update_command() {
     echo "Installing sana-update and sanachan-update commands"
     sudo install -m 755 "$APP_DIR/scripts/update_from_github.sh" "/usr/local/bin/sana-update"
     sudo install -m 755 "$APP_DIR/scripts/update_from_github.sh" "/usr/local/bin/sanachan-update"
-    sudo rm -f "/usr/local/bin/sdac-update"
-    if [[ -f "$APP_DIR/scripts/sana-doctor" && -f "$APP_DIR/scripts/sdac-doctor" ]]; then
+    sudo rm -f "/usr/local/bin/sdac-update" "/usr/local/bin/sdac-doctor"
+    if [[ -f "$APP_DIR/scripts/sana-doctor" ]]; then
         echo "Installing sana-doctor command"
         sudo install -m 755 "$APP_DIR/scripts/sana-doctor" "/usr/local/bin/sana-doctor"
-        sudo install -m 755 "$APP_DIR/scripts/sdac-doctor" "/usr/local/bin/sdac-doctor"
     elif [[ -f "$APP_DIR/scripts/sdac_doctor.py" ]]; then
         echo "Installing sana-doctor command"
         DOCTOR_TMP="$(mktemp)"
         cat > "$DOCTOR_TMP" <<'DOCTOR'
 #!/usr/bin/env bash
 set -euo pipefail
-APP_DIR="${SDAC_BASE_DIR:-/home/ubuntu/discord-screenshot-bot}"
-PYTHON_BIN="${SDAC_PYTHON:-$APP_DIR/venv/bin/python}"
+APP_DIR="${SANA_BASE_DIR:-${SDAC_BASE_DIR:-/home/ubuntu/discord-screenshot-bot}}"
+PYTHON_BIN="${SANA_PYTHON:-${SDAC_PYTHON:-$APP_DIR/venv/bin/python}}"
 if [[ ! -x "$PYTHON_BIN" ]]; then
     PYTHON_BIN="python3"
 fi
 exec "$PYTHON_BIN" "$APP_DIR/scripts/sdac_doctor.py" "$@"
 DOCTOR
         sudo install -m 755 "$DOCTOR_TMP" "/usr/local/bin/sana-doctor"
-        sudo install -m 755 "$DOCTOR_TMP" "/usr/local/bin/sdac-doctor"
         rm -f "$DOCTOR_TMP"
     fi
     if [[ -f "/usr/local/bin/sana-doctor" ]]; then
         sudo sed -i 's/\r$//' "/usr/local/bin/sana-doctor"
     fi
-    if [[ -f "/usr/local/bin/sdac-doctor" ]]; then
-        sudo sed -i 's/\r$//' "/usr/local/bin/sdac-doctor"
-    fi
 
     UPDATE_CONFIG_TMP="$(mktemp)"
     {
-        write_update_assignment SDAC_GITHUB_REPO "BaytaeTistear/SDAC-Bot"
-        write_update_assignment SDAC_RELEASE_TAG "latest-official"
-        write_update_assignment SDAC_APP_DIR "$APP_DIR"
-        write_update_assignment SDAC_APP_USER "$APP_USER"
-        write_update_assignment SDAC_ENV_FILE "$ENV_FILE"
-        write_update_assignment SDAC_DASHBOARD_BIND "$DASHBOARD_BIND"
+        write_update_assignment SANA_GITHUB_REPO "BaytaeTistear/SDAC-Bot"
+        write_update_assignment SANA_RELEASE_TAG "latest-official"
+        write_update_assignment SANA_APP_DIR "$APP_DIR"
+        write_update_assignment SANA_APP_USER "$APP_USER"
+        write_update_assignment SANA_ENV_FILE "$ENV_FILE"
+        write_update_assignment SANA_DASHBOARD_BIND "$DASHBOARD_BIND"
         write_update_assignment SANA_DOMAIN "${SANA_DOMAIN:-${SDAC_DOMAIN:-}}"
-        write_update_assignment SDAC_DOMAIN "${SDAC_DOMAIN:-${SANA_DOMAIN:-}}"
-        write_update_assignment SDAC_RELOAD_NGINX "1"
+        write_update_assignment SANA_RELOAD_NGINX "1"
     } > "$UPDATE_CONFIG_TMP"
     sudo mkdir -p "$ENV_DIR"
     sudo install -m 644 -o root -g root "$UPDATE_CONFIG_TMP" "$ENV_DIR/update.env"
@@ -213,11 +207,11 @@ DOCTOR
 
 if [[ ! -f "$ENV_FILE" ]]; then
     echo "Creating $ENV_FILE"
-    DISCORD_TOKEN_INPUT="${SDAC_DISCORD_TOKEN:-}"
-    ADMIN_KEY_INPUT="${SDAC_ADMIN_KEY_INPUT:-}"
-    ADMIN_USERNAME_INPUT="${SDAC_ADMIN_USERNAME_INPUT:-${SDAC_ADMIN_USERNAME:-}}"
-    ADMIN_PASSWORD_INPUT="${SDAC_ADMIN_PASSWORD_INPUT:-}"
-    SECRET_KEY_INPUT="${SDAC_SECRET_KEY_INPUT:-}"
+    DISCORD_TOKEN_INPUT="${SANA_DISCORD_TOKEN:-${SDAC_DISCORD_TOKEN:-}}"
+    ADMIN_KEY_INPUT="${SANA_ADMIN_KEY_INPUT:-${SDAC_ADMIN_KEY_INPUT:-}}"
+    ADMIN_USERNAME_INPUT="${SANA_ADMIN_USERNAME_INPUT:-${SDAC_ADMIN_USERNAME_INPUT:-${SANA_ADMIN_USERNAME:-${SDAC_ADMIN_USERNAME:-}}}}"
+    ADMIN_PASSWORD_INPUT="${SANA_ADMIN_PASSWORD_INPUT:-${SDAC_ADMIN_PASSWORD_INPUT:-}}"
+    SECRET_KEY_INPUT="${SANA_SECRET_KEY_INPUT:-${SDAC_SECRET_KEY_INPUT:-}}"
     PUBLIC_URL_INPUT="${SANA_PUBLIC_URL_INPUT:-${SDAC_PUBLIC_URL_INPUT:-${SANA_PUBLIC_URL:-${SDAC_PUBLIC_URL:-}}}}"
     SERVER_NAME_INPUT="${SANA_SERVER_NAME_INPUT:-${SDAC_SERVER_NAME_INPUT:-${SANA_SERVER_NAME:-${SDAC_SERVER_NAME:-}}}}"
 
@@ -266,7 +260,9 @@ PY
     ENV_TMP="$(mktemp)"
     cat > "$ENV_TMP" <<EOF
 DISCORD_TOKEN=$DISCORD_TOKEN_INPUT
+SANA_ADMIN_KEY=$ADMIN_KEY_INPUT
 SDAC_ADMIN_KEY=$ADMIN_KEY_INPUT
+SANA_SECRET_KEY=$SECRET_KEY_INPUT
 SDAC_SECRET_KEY=$SECRET_KEY_INPUT
 PYTHONUNBUFFERED=1
 SANA_PUBLIC_URL=$PUBLIC_URL_INPUT
@@ -274,15 +270,22 @@ SANA_DASHBOARD_URL=$PUBLIC_URL_INPUT
 SANA_DOMAIN=${SANA_DOMAIN:-freethefishies.us.to}
 SANA_FRIENDLY_URL=${SANA_FRIENDLY_URL:-http://sanachan.bot.nu}
 SDAC_PUBLIC_URL=$PUBLIC_URL_INPUT
+SANA_PUBLIC_BOT_NAME=Sana-Chan Bot
 SDAC_PUBLIC_BOT_NAME=Sana-Chan Bot
+SANA_PUBLIC_TAGLINE=Screenshot, media, and guessing-game management for Discord communities.
 SDAC_PUBLIC_TAGLINE=Screenshot, media, and guessing-game management for Discord communities.
+SANA_SUPPORT_URL=
 SDAC_SUPPORT_URL=
+SANA_PRIVACY_URL=
 SDAC_PRIVACY_URL=
+SANA_TERMS_URL=
 SDAC_TERMS_URL=
 SENTRY_DSN=
 SENTRY_ENVIRONMENT=production
 SENTRY_TRACES_SAMPLE_RATE=0
+SANA_RELEASE=
 SDAC_RELEASE=
+SANA_SERVER_NAME=$SERVER_NAME_INPUT
 SDAC_SERVER_NAME=$SERVER_NAME_INPUT
 EOF
     sudo mkdir -p "$ENV_DIR"
@@ -352,7 +355,7 @@ sudo chown -R "$APP_USER:$APP_USER" "$APP_DIR" 2>/dev/null || sudo chown -R "$AP
 
 if [[ "$SKIP_SERVICES" == "1" ]]; then
     echo
-    echo "SDAC files compiled. Skipping service installation because SDAC_SKIP_SERVICES=1."
+    echo "Sana-Chan files compiled. Skipping service installation because SANA_SKIP_SERVICES=1."
     exit 0
 fi
 
@@ -370,25 +373,28 @@ render_service() {
 }
 
 render_service \
-    "$APP_DIR/systemd/sdac-bot.service.template" \
-    "/etc/systemd/system/sdac-bot.service"
+    "$APP_DIR/systemd/sana-bot.service.template" \
+    "/etc/systemd/system/sana-bot.service"
 render_service \
-    "$APP_DIR/systemd/sdac-dashboard.service.template" \
-    "/etc/systemd/system/sdac-dashboard.service"
+    "$APP_DIR/systemd/sana-dashboard.service.template" \
+    "/etc/systemd/system/sana-dashboard.service"
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now sdac-bot sdac-dashboard
+sudo systemctl disable --now sdac-bot sdac-dashboard >/dev/null 2>&1 || true
+sudo rm -f /etc/systemd/system/sdac-bot.service /etc/systemd/system/sdac-dashboard.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now sana-bot sana-dashboard
 
 echo
-echo "SDAC install complete."
+echo "Sana-Chan install complete."
 echo "Environment file: $ENV_FILE"
 echo "Dashboard bind: $DASHBOARD_BIND"
 echo "Run Discord setup:"
 echo "  /setup"
 echo "  /setuptest"
 echo "Check status:"
-echo "  sudo systemctl status sdac-bot --no-pager"
-echo "  sudo systemctl status sdac-dashboard --no-pager"
+echo "  sudo systemctl status sana-bot --no-pager"
+echo "  sudo systemctl status sana-dashboard --no-pager"
 echo
 echo "Future GitHub updates:"
 echo "  sana-update \"Version 3\""
@@ -397,8 +403,8 @@ echo "  sanachan-update latest-experimental"
 echo "  sana-update 2.6"
 echo
 echo "View logs:"
-echo "  journalctl -u sdac-bot -n 80 --no-pager"
-echo "  journalctl -u sdac-dashboard -n 80 --no-pager"
+echo "  journalctl -u sana-bot -n 80 --no-pager"
+echo "  journalctl -u sana-dashboard -n 80 --no-pager"
 
 
 
