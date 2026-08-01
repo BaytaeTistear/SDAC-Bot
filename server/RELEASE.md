@@ -1,4 +1,14 @@
-# Sana-Chan Version 4.3.44 Experimental
+# Sana-Chan Version 4.3.45 Experimental
+
+Version 4.3.45 fixes bot startup on older Python runtimes where zoneinfo is not built in.
+
+## Bot Startup
+
+- falls back to ackports.zoneinfo when the standard library zoneinfo module is unavailable
+- installs timezone fallback dependencies through requirements so older Ubuntu environments can run the bot
+- keeps the server mirror aligned for one-installer deployments
+
+---# Sana-Chan Version 4.3.44 Experimental
 
 Version 4.3.44 publishes the OAuth fix with a clean experimental asset set.
 

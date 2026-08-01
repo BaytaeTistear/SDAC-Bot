@@ -18,7 +18,10 @@ from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+try:
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+except ModuleNotFoundError:
+    from backports.zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import discord
 from discord import app_commands
