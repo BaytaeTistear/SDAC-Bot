@@ -186,6 +186,7 @@ DEFAULT_GUILD_CONFIG = {
     "daily_top_channel": None,
     "daily_top_time_utc": "00:00",
     "weekly_top_day": "sunday",
+    "guessing_channel": None,
     "game_summary_channel": None,
     "error_channel": None,
     "timezone": "UTC",
@@ -886,6 +887,7 @@ SDAC_SUBMENUS = {
         "placeholder": "Choose a game action",
         "options": [
             ("games_create", "Create Game", "Create a saved guessing-game item from the dashboard."),
+            ("games_set_channel", "Set Guessing Channel", "Save the default channel for guessing games."),
             ("games_start_library", "Start Library Game", "Start a saved Game Library item."),
             ("games_schedule", "Schedule Game", "Schedule one saved library game."),
             ("games_bulk_schedule", "Bulk Schedule", "Ask a new saved-library question on a repeating cadence."),
@@ -1416,6 +1418,19 @@ class SDACSubmenuSelect(discord.ui.Select):
                 view=SDACSubmenuView(self.is_admin, self.section_key),
             )
             return
+        if action == "games_set_channel":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can set the guessing channel.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                content=(
+                    "**Set Guessing Channel**\n"
+                    "Choose the default channel where guessing games should start. "
+                    "Start Library Game and Bulk Schedule will offer this saved channel first."
+                ),
+                view=SetGuessingChannelView(self.is_admin, self.section_key, interaction.user.id),
+            )
+            return
         if action == "games_start_library":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can start library games.", ephemeral=True)
@@ -1426,7 +1441,7 @@ class SDACSubmenuSelect(discord.ui.Select):
                     "Choose the channel where players should guess. After that, Sana-Chan "
                     "will ask for an optional library item ID, category filter, and random mode."
                 ),
-                view=StartLibraryGameWizardView(self.is_admin, self.section_key, interaction.user.id),
+                view=StartLibraryGameWizardView(self.is_admin, self.section_key, interaction.user.id, interaction.guild_id),
             )
             return
         if action == "games_schedule":
@@ -1439,7 +1454,7 @@ class SDACSubmenuSelect(discord.ui.Select):
                     "Choose the channel where the scheduled game should start. After that, Sana-Chan "
                     "will ask for the start time and optional library filters."
                 ),
-                view=ScheduleGameWizardView(self.is_admin, interaction.user.id),
+                view=ScheduleGameWizardView(self.is_admin, interaction.user.id, interaction.guild_id),
             )
             return
         if action == "games_bulk_schedule":
@@ -1452,7 +1467,7 @@ class SDACSubmenuSelect(discord.ui.Select):
                     "Choose the channel where scheduled games should start. After that, Sana-Chan "
                     "will ask how often to post new questions and optional library filters."
                 ),
-                view=BulkScheduleGameWizardView(self.is_admin, interaction.user.id),
+                view=BulkScheduleGameWizardView(self.is_admin, interaction.user.id, interaction.guild_id),
             )
             return
         if action == "games_cancel_scheduled":
@@ -1863,6 +1878,19 @@ class SDACSubmenuButton(discord.ui.Button):
                 view=SDACSubmenuView(self.is_admin, self.section_key),
             )
             return
+        if action == "games_set_channel":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can set the guessing channel.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                content=(
+                    "**Set Guessing Channel**\n"
+                    "Choose the default channel where guessing games should start. "
+                    "Start Library Game and Bulk Schedule will offer this saved channel first."
+                ),
+                view=SetGuessingChannelView(self.is_admin, self.section_key, interaction.user.id),
+            )
+            return
         if action == "games_start_library":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can start library games.", ephemeral=True)
@@ -1873,7 +1901,7 @@ class SDACSubmenuButton(discord.ui.Button):
                     "Choose the channel where players should guess. After that, Sana-Chan "
                     "will ask for an optional library item ID, category filter, and random mode."
                 ),
-                view=StartLibraryGameWizardView(self.is_admin, self.section_key, interaction.user.id),
+                view=StartLibraryGameWizardView(self.is_admin, self.section_key, interaction.user.id, interaction.guild_id),
             )
             return
         if action == "games_schedule":
@@ -1886,7 +1914,7 @@ class SDACSubmenuButton(discord.ui.Button):
                     "Choose the channel where the scheduled game should start. After that, Sana-Chan "
                     "will ask for the start time and optional library filters."
                 ),
-                view=ScheduleGameWizardView(self.is_admin, interaction.user.id),
+                view=ScheduleGameWizardView(self.is_admin, interaction.user.id, interaction.guild_id),
             )
             return
         if action == "games_bulk_schedule":
@@ -1899,7 +1927,7 @@ class SDACSubmenuButton(discord.ui.Button):
                     "Choose the channel where scheduled games should start. After that, Sana-Chan "
                     "will ask how often to post new questions and optional library filters."
                 ),
-                view=BulkScheduleGameWizardView(self.is_admin, interaction.user.id),
+                view=BulkScheduleGameWizardView(self.is_admin, interaction.user.id, interaction.guild_id),
             )
             return
         if action == "games_cancel_scheduled":
@@ -2189,10 +2217,35 @@ class ScheduleGameChannelSelect(discord.ui.ChannelSelect):
         await interaction.response.send_modal(ScheduleGameModal(interaction.user.id, channel.id, channel.mention))
 
 
+
+class UseSavedScheduleChannelButton(discord.ui.Button):
+    def __init__(self, owner_id, channel_id):
+        super().__init__(label="Use Saved Channel", style=discord.ButtonStyle.primary, row=1)
+        self.owner_id = int(owner_id)
+        self.channel_id = int(channel_id)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can schedule games.", ephemeral=True)
+            return
+        channel = interaction.guild.get_channel(self.channel_id) if interaction.guild else None
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message("The saved guessing channel is no longer available. Pick a channel instead.", ephemeral=True)
+            return
+        await interaction.response.send_modal(ScheduleGameModal(interaction.user.id, channel.id, channel.mention))
+
+
 class ScheduleGameWizardView(discord.ui.View):
-    def __init__(self, is_admin, owner_id):
+    def __init__(self, is_admin, owner_id, guild_id=None):
         super().__init__(timeout=300)
         self.add_item(ScheduleGameChannelSelect(owner_id))
+        guild_config = get_guild_config(guild_id, create=False) if guild_id else {}
+        saved_channel_id = guild_config.get("guessing_channel")
+        if saved_channel_id:
+            self.add_item(UseSavedScheduleChannelButton(owner_id, int(saved_channel_id)))
         self.add_item(SDACBackButton(is_admin))
 
 class BulkScheduleGameModal(discord.ui.Modal):
@@ -2399,10 +2452,44 @@ class BulkScheduleGameChannelSelect(discord.ui.ChannelSelect):
         )
 
 
+
+class UseSavedBulkScheduleChannelButton(discord.ui.Button):
+    def __init__(self, owner_id, channel_id, is_admin):
+        super().__init__(label="Use Saved Channel", style=discord.ButtonStyle.primary, row=1)
+        self.owner_id = int(owner_id)
+        self.channel_id = int(channel_id)
+        self.is_admin = bool(is_admin)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can bulk schedule games.", ephemeral=True)
+            return
+        channel = interaction.guild.get_channel(self.channel_id) if interaction.guild else None
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message("The saved guessing channel is no longer available. Pick a channel instead.", ephemeral=True)
+            return
+        await interaction.response.edit_message(
+            content=(
+                "**Bulk Schedule Games**\n"
+                f"Channel: {channel.mention}\n"
+                "Pick whether Sana-Chan should ask new questions every N minutes, hours, or days. "
+                "Each new scheduled question will close any older active game in that channel."
+            ),
+            view=BulkScheduleUnitView(self.is_admin, interaction.user.id, channel.id, channel.mention),
+        )
+
+
 class BulkScheduleGameWizardView(discord.ui.View):
-    def __init__(self, is_admin, owner_id):
+    def __init__(self, is_admin, owner_id, guild_id=None):
         super().__init__(timeout=300)
         self.add_item(BulkScheduleGameChannelSelect(owner_id, is_admin))
+        guild_config = get_guild_config(guild_id, create=False) if guild_id else {}
+        saved_channel_id = guild_config.get("guessing_channel")
+        if saved_channel_id:
+            self.add_item(UseSavedBulkScheduleChannelButton(owner_id, int(saved_channel_id), is_admin))
         self.add_item(SDACBackButton(is_admin))
 
 class StartLibraryGameModal(discord.ui.Modal):
@@ -2464,6 +2551,74 @@ async def resolve_selected_text_channel(guild, selected_channel):
             return fetched_channel
     return None
 
+
+class SetGuessingChannelSelect(discord.ui.ChannelSelect):
+    def __init__(self, owner_id, is_admin, section_key):
+        super().__init__(placeholder="Choose the default guessing-game channel", min_values=1, max_values=1, channel_types=[discord.ChannelType.text], row=0)
+        self.owner_id = int(owner_id)
+        self.is_admin = bool(is_admin)
+        self.section_key = section_key
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can set the guessing channel.", ephemeral=True)
+            return
+        channel = await resolve_selected_text_channel(interaction.guild, self.values[0])
+        if channel is None:
+            await interaction.response.send_message(
+                "I could not access that text channel. Choose a normal server text channel that Sana-Chan can view.",
+                ephemeral=True,
+            )
+            return
+        guild_config = get_guild_config(interaction.guild_id)
+        guild_config["guessing_channel"] = channel.id
+        save_config(config)
+        audit_interaction(
+            interaction,
+            "set_guessing_channel_from_sana",
+            "channel",
+            channel.id,
+            f"Default guessing channel set to {channel.id} from /sana.",
+        )
+        await interaction.response.edit_message(
+            content=(
+                "**Set Guessing Channel**\n"
+                f"Saved {channel.mention} as the default guessing-game channel."
+            ),
+            view=SDACSubmenuView(self.is_admin, self.section_key),
+        )
+
+
+class SetGuessingChannelView(discord.ui.View):
+    def __init__(self, is_admin, section_key, owner_id):
+        super().__init__(timeout=300)
+        self.add_item(SetGuessingChannelSelect(owner_id, is_admin, section_key))
+        self.add_item(SDACBackButton(is_admin))
+
+
+class UseSavedGuessingChannelButton(discord.ui.Button):
+    def __init__(self, owner_id, channel_id):
+        super().__init__(label="Use Saved Channel", style=discord.ButtonStyle.primary, row=1)
+        self.owner_id = int(owner_id)
+        self.channel_id = int(channel_id)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can start library games.", ephemeral=True)
+            return
+        channel = interaction.guild.get_channel(self.channel_id) if interaction.guild else None
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message("The saved guessing channel is no longer available. Pick a channel instead.", ephemeral=True)
+            return
+        await interaction.response.send_modal(StartLibraryGameModal(interaction.user.id, channel.id, channel.mention))
+
+
 class StartLibraryGameChannelSelect(discord.ui.ChannelSelect):
     def __init__(self, owner_id):
         super().__init__(placeholder="Choose the guessing-game channel", min_values=1, max_values=1, channel_types=[discord.ChannelType.text], row=0)
@@ -2487,9 +2642,13 @@ class StartLibraryGameChannelSelect(discord.ui.ChannelSelect):
 
 
 class StartLibraryGameWizardView(discord.ui.View):
-    def __init__(self, is_admin, section_key, owner_id):
+    def __init__(self, is_admin, section_key, owner_id, guild_id=None):
         super().__init__(timeout=300)
         self.add_item(StartLibraryGameChannelSelect(owner_id))
+        guild_config = get_guild_config(guild_id, create=False) if guild_id else {}
+        saved_channel_id = guild_config.get("guessing_channel")
+        if saved_channel_id:
+            self.add_item(UseSavedGuessingChannelButton(owner_id, int(saved_channel_id)))
         self.add_item(SDACBackButton(is_admin))
 
 def fill_nested_defaults(target, defaults):
@@ -2567,6 +2726,7 @@ def load_config():
             "guild_name": data.get("guild_name", ""),
             "admin_role_ids": data.get("admin_role_ids") or [],
             "weekly_top_day": data.get("weekly_top_day", "sunday"),
+            "guessing_channel": data.get("guessing_channel"),
             "game_summary_channel": data.get("game_summary_channel"),
             "error_channel": data.get("error_channel"),
             "approval_enabled": data.get("approval_enabled", False),
@@ -2629,6 +2789,7 @@ def migrate_legacy_config():
         "daily_top_channel",
         "daily_top_time_utc",
         "weekly_top_day",
+        "guessing_channel",
         "game_summary_channel",
         "error_channel",
         "timezone",
@@ -6308,6 +6469,7 @@ def settings_lines(guild_config):
         f"Timezone: `{timezone_name}`",
         f"Approval: {'Enabled' if guild_config['approval_enabled'] else 'Disabled'}",
         f"Approval channel: {channel_display(guild_config.get('approval_channel'))}",
+        f"Guessing channel: {channel_display(guild_config.get('guessing_channel'))}",
         f"Game summary channel: {channel_display(guild_config.get('game_summary_channel'))}",
         f"Error channel: {channel_display(guild_config.get('error_channel'))}",
         f"Admin roles: `{len(guild_config.get('admin_role_ids', []))}`",

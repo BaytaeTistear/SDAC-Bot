@@ -1,3 +1,15 @@
+# Sana-Chan Version 4.4.4 Experimental
+
+Version 4.4.4 adds a saved guessing-game channel control to `/sana`.
+
+## Admin Games
+
+- adds `/sana` -> Games -> Set Guessing Channel
+- stores the default guessing-game channel per server
+- offers the saved channel when starting, scheduling, or bulk scheduling library games
+- shows the configured guessing channel in server settings output
+
+---
 # Sana-Chan Version 4.4.3 Experimental
 
 Version 4.4.3 improves setup dropdown reliability for servers with many roles.
