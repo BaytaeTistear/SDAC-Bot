@@ -830,7 +830,7 @@ SDAC_SUBMENUS = {
         "options": [
             ("anime_save", "Save Profile", "Run /animeprofile favorites watching."),
             ("anime_import", "Import MyAnimeList", "Run /animeprofileimport username."),
-            ("anime_view", "View Profile", "Run /animeprofileview member."),
+            ("anime_view", "View Profile", "Choose a member and show their saved anime profile."),
             ("anime_activities", "Activity List", "Run /animeactivities for activity keys."),
         ],
     },
@@ -907,7 +907,7 @@ SDAC_SUBMENU_DETAILS = {
     "guess_active": "**Active Game**\nShow the active guessing game status in this channel.",
     "anime_save": "**Save Anime Profile**\nRun `/animeprofile favorites watching` to save favorites and currently watching notes.",
     "anime_import": "**Import MyAnimeList**\nRun `/animeprofileimport username` to import public MyAnimeList favorites and watching data.",
-    "anime_view": "**View Anime Profile**\nRun `/animeprofileview @member` to view a saved anime profile.",
+    "anime_view": "**View Anime Profile**\nChoose a server member from `/sana` to view their saved anime profile.",
     "anime_activities": "**Anime Activities**\nRun `/animeactivities` to see available activity keys and anime game/community ideas.",
     "setup_bot_name": "**Bot Name**\nAdmins can set the bot nickname users see inside this server. Leave it blank to reset to the bot's global username.",
     "setup_bot_image": "**Bot Image**\nBot owners can update the global Discord bot avatar from an HTTPS image URL. This affects every server and may be rate limited by Discord.",
@@ -1295,6 +1295,8 @@ class SDACSubmenuSelect(discord.ui.Select):
                 return
         if await handle_sana_submission_admin_action(interaction, action, self.is_admin, self.section_key):
             return
+        if await handle_sana_anime_action(interaction, action, self.is_admin, self.section_key):
+            return
         if action == "setup_wizard":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
@@ -1507,6 +1509,82 @@ class SDACSubmenuSelect(discord.ui.Select):
             content=sdac_submenu_content(self.section_key, SDAC_SUBMENU_DETAILS.get(action, "Action selected.")),
             view=SDACSubmenuView(self.is_admin, self.section_key),
         )
+
+
+def anime_profile_content_for_member(guild_id, member):
+    with database() as connection:
+        row = connection.execute("""
+            SELECT username, favorites, watching, updated_at
+            FROM anime_profiles
+            WHERE guild_id = ? AND user_id = ?
+        """, (str(guild_id), str(member.id))).fetchone()
+    if not row:
+        return f"No anime profile found for {member.mention} yet."
+    lines = [
+        f"**Anime Profile: {row['username'] or member.display_name}**",
+        f"Favorites: {row['favorites'] or 'Not set'}",
+        f"Watching: {row['watching'] or 'Not set'}",
+        f"Updated: `{row['updated_at'] or 'unknown'}`",
+        f"Experimental note: {ANIME_ACTIVITY_RETIREMENT_NOTE}",
+    ]
+    return "\n".join(lines)[:1900]
+
+
+class AnimeProfileSelfButton(discord.ui.Button):
+    def __init__(self, owner_id):
+        super().__init__(label="View My Profile", style=discord.ButtonStyle.primary, row=1)
+        self.owner_id = int(owner_id)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        await interaction.response.edit_message(
+            content=anime_profile_content_for_member(interaction.guild_id, interaction.user),
+            view=AnimeProfileView(self.owner_id, self.view.is_admin),
+        )
+
+
+class AnimeProfileMemberSelect(discord.ui.UserSelect):
+    def __init__(self, owner_id):
+        super().__init__(placeholder="Choose a member to view", min_values=1, max_values=1, row=0)
+        self.owner_id = int(owner_id)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        selected_user = self.values[0]
+        member = selected_user
+        if interaction.guild and not isinstance(member, discord.Member):
+            member = interaction.guild.get_member(int(selected_user.id)) or selected_user
+        await interaction.response.edit_message(
+            content=anime_profile_content_for_member(interaction.guild_id, member),
+            view=AnimeProfileView(self.owner_id, self.view.is_admin),
+        )
+
+
+class AnimeProfileView(discord.ui.View):
+    def __init__(self, owner_id, is_admin=False):
+        super().__init__(timeout=300)
+        self.owner_id = int(owner_id)
+        self.is_admin = bool(is_admin)
+        self.add_item(AnimeProfileMemberSelect(owner_id))
+        self.add_item(AnimeProfileSelfButton(owner_id))
+        self.add_item(SDACBackButton(is_admin))
+
+
+async def handle_sana_anime_action(interaction, action, is_admin, section_key):
+    if action != "anime_view":
+        return False
+    await interaction.response.edit_message(
+        content=(
+            "**View Anime Profile**\n"
+            "Choose a server member below, or use the button to view your own saved anime profile."
+        ),
+        view=AnimeProfileView(interaction.user.id, is_admin),
+    )
+    return True
 
 
 class SDACBackButton(discord.ui.Button):
@@ -1754,6 +1832,8 @@ class SDACSubmenuButton(discord.ui.Button):
             if await run_sana_doctor_action(interaction, self.is_admin, self.section_key):
                 return
         if await handle_sana_submission_admin_action(interaction, action, self.is_admin, self.section_key):
+            return
+        if await handle_sana_anime_action(interaction, action, self.is_admin, self.section_key):
             return
         if action == "setup_wizard":
             if not admin_only(interaction):
@@ -9171,26 +9251,8 @@ async def animeprofileview(
     member: Optional[discord.Member] = None,
 ):
     member = member or interaction.user
-    with database() as connection:
-        row = connection.execute("""
-            SELECT username, favorites, watching, updated_at
-            FROM anime_profiles
-            WHERE guild_id = ? AND user_id = ?
-        """, (str(interaction.guild_id), str(member.id))).fetchone()
-    if not row:
-        await interaction.response.send_message(
-            f"No anime profile found for {member.mention} yet.",
-            ephemeral=True,
-        )
-        return
-    lines = [
-        f"**Anime Profile: {row['username'] or member.display_name}**",
-        f"Favorites: {row['favorites'] or 'Not set'}",
-        f"Watching: {row['watching'] or 'Not set'}",
-        f"Updated: `{row['updated_at'] or 'unknown'}`",
-        f"Experimental note: {ANIME_ACTIVITY_RETIREMENT_NOTE}",
-    ]
-    await interaction.response.send_message("\n".join(lines)[:1900])
+    content = anime_profile_content_for_member(interaction.guild_id, member)
+    await interaction.response.send_message(content, ephemeral=content.startswith("No anime profile found"))
 
 
 @optional_tree_command(ENABLE_ANIME_COMMANDS, name="animeleaderboard", description="Show the experimental anime community leaderboard")

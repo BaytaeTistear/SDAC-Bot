@@ -1,3 +1,15 @@
+# Sana-Chan Version 4.4.7 Experimental
+
+Version 4.4.7 makes Anime Profile viewing work from the guided `/sana` menu instead of pointing users at a hidden command.
+
+## Anime Profiles
+
+- changes `/sana` -> Anime Profile -> View Profile to open a member picker
+- adds a View My Profile button for the current user
+- reuses the same saved profile display as the compatibility command
+- removes the hidden `/animeprofileview` instruction from the `/sana` Anime Profile menu text
+
+---
 # Sana-Chan Version 4.4.6 Experimental
 
 Version 4.4.6 reworks scheduled guessing hint timing so admins can choose whether automatic hints should compress to fit the schedule.

@@ -245,5 +245,17 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("belongs to a different server", source)
         self.assertIn("Check the server filter, item status, and media attachment", source)
 
+    def test_sana_anime_profile_view_is_guided(self):
+        import bot
+
+        anime_labels = [label for _value, label, _description in bot.SDAC_SUBMENUS["anime"]["options"]]
+        self.assertIn("View Profile", anime_labels)
+        self.assertIn("Choose a server member", bot.SDAC_SUBMENU_DETAILS["anime_view"])
+        self.assertNotIn("/animeprofileview", bot.SDAC_SUBMENU_DETAILS["anime_view"])
+        self.assertTrue(hasattr(bot, "AnimeProfileView"))
+        self.assertTrue(hasattr(bot, "AnimeProfileMemberSelect"))
+        self.assertTrue(hasattr(bot, "AnimeProfileSelfButton"))
+        self.assertTrue(hasattr(bot, "handle_sana_anime_action"))
+
 if __name__ == "__main__":
     unittest.main()
