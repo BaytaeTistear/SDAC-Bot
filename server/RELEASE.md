@@ -1,3 +1,13 @@
+# Sana-Chan Version 4.4.5 Experimental
+
+Version 4.4.5 fixes the `/sana` Admin Games menu metadata for the saved guessing channel action.
+
+## Admin Games
+
+- adds the missing Set Guessing Channel detail text used by release readiness checks
+- keeps the saved guessing channel available from `/sana` -> Games
+
+---
 # Sana-Chan Version 4.4.4 Experimental
 
 Version 4.4.4 adds a saved guessing-game channel control to `/sana`.

@@ -928,6 +928,7 @@ SDAC_SUBMENU_DETAILS = {
     "moderation_reasons": "**Reason Presets**\nRun `/reasonpresets` to see standard admin action reasons.",
     "moderation_permissions": "**Permission Check**\nRun `/checkpermissions` to inspect access or `/repairpermissions` to get a repair invite.",
     "games_create": "**Create Guessing Game**\nOpen the dashboard Game Library to create a reusable game item with answer aliases, hints, media, category, pack, and tags.",
+    "games_set_channel": "**Set Guessing Channel**\nChoose this action to save the default channel where Sana-Chan should start and schedule guessing games.",
     "games_start_library": "**Start Library Game**\nChoose this action to pick a channel, optionally set a library item ID or category, and start the game directly from `/sana`.",
     "games_schedule": "**Schedule Game**\nUse this action for one saved library game, or choose Bulk Schedule to queue a repeating run.",
     "games_bulk_schedule": "**Bulk Schedule**\nChoose a game channel, pick minutes, hours, or days, then enter how often Sana-Chan should ask a new saved-library question.",
