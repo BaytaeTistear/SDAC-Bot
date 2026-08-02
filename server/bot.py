@@ -11,6 +11,7 @@ import tempfile
 import time
 import traceback
 import zipfile
+import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -829,7 +830,7 @@ SDAC_SUBMENUS = {
         "placeholder": "Choose an anime profile action",
         "options": [
             ("anime_save", "Save Profile", "Run /animeprofile favorites watching."),
-            ("anime_import", "Import MyAnimeList", "Run /animeprofileimport username."),
+            ("anime_import", "Import MyAnimeList", "Import by username or pasted XML export."),
             ("anime_view", "View Profile", "Choose a member and show their saved anime profile."),
             ("anime_activities", "Activity List", "Run /animeactivities for activity keys."),
         ],
@@ -906,7 +907,7 @@ SDAC_SUBMENU_DETAILS = {
     "guess_hint": "**Show Hint**\nShow the currently revealed hint for the active game in this channel.",
     "guess_active": "**Active Game**\nShow the active guessing game status in this channel.",
     "anime_save": "**Save Anime Profile**\nRun `/animeprofile favorites watching` to save favorites and currently watching notes.",
-    "anime_import": "**Import MyAnimeList**\nRun `/animeprofileimport username` to import public MyAnimeList favorites and watching data.",
+    "anime_import": "**Import MyAnimeList**\nImport a public MyAnimeList username or paste MAL XML export data from the guided `/sana` flow.",
     "anime_view": "**View Anime Profile**\nChoose a server member from `/sana` to view their saved anime profile.",
     "anime_activities": "**Anime Activities**\nRun `/animeactivities` to see available activity keys and anime game/community ideas.",
     "setup_bot_name": "**Bot Name**\nAdmins can set the bot nickname users see inside this server. Leave it blank to reset to the bot's global username.",
@@ -1511,19 +1512,80 @@ class SDACSubmenuSelect(discord.ui.Select):
         )
 
 
+def clean_profile_text(value, limit=500):
+    value = re.sub(r"[\r\n\t]+", " ", str(value or ""))
+    value = re.sub(r"\s{2,}", " ", value).strip()
+    return value[:limit]
+
+
+def join_profile_titles(titles, fallback="Not set", limit=500):
+    cleaned = []
+    seen = set()
+    for title in titles or []:
+        title = clean_profile_text(title, 120)
+        key = title.casefold()
+        if not title or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(title)
+        text = ", ".join(cleaned)
+        if len(text) >= limit:
+            break
+    return (", ".join(cleaned) or fallback)[:limit]
+
+
+def save_anime_profile_sections(
+    guild_id,
+    user_id,
+    username,
+    anime_favorites="",
+    anime_watching="",
+    manga_favorites="",
+    manga_reading="",
+):
+    with database() as connection:
+        connection.execute("""
+            INSERT INTO anime_profiles (
+                guild_id, user_id, username, favorites, watching,
+                manga_favorites, manga_reading, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                username = excluded.username,
+                favorites = excluded.favorites,
+                watching = excluded.watching,
+                manga_favorites = excluded.manga_favorites,
+                manga_reading = excluded.manga_reading,
+                updated_at = excluded.updated_at
+        """, (
+            str(guild_id),
+            str(user_id),
+            str(username),
+            clean_profile_text(anime_favorites),
+            clean_profile_text(anime_watching),
+            clean_profile_text(manga_favorites),
+            clean_profile_text(manga_reading),
+            utc_now_iso(),
+        ))
+
+
 def anime_profile_content_for_member(guild_id, member):
     with database() as connection:
         row = connection.execute("""
-            SELECT username, favorites, watching, updated_at
+            SELECT username, favorites, watching, manga_favorites, manga_reading, updated_at
             FROM anime_profiles
             WHERE guild_id = ? AND user_id = ?
         """, (str(guild_id), str(member.id))).fetchone()
     if not row:
         return f"No anime profile found for {member.mention} yet."
     lines = [
-        f"**Anime Profile: {row['username'] or member.display_name}**",
+        f"**Anime & Manga Profile: {row['username'] or member.display_name}**",
+        "**Anime**",
         f"Favorites: {row['favorites'] or 'Not set'}",
         f"Watching: {row['watching'] or 'Not set'}",
+        "**Manga**",
+        f"Favorites: {row['manga_favorites'] or 'Not set'}",
+        f"Reading: {row['manga_reading'] or 'Not set'}",
         f"Updated: `{row['updated_at'] or 'unknown'}`",
         f"Experimental note: {ANIME_ACTIVITY_RETIREMENT_NOTE}",
     ]
@@ -1574,17 +1636,131 @@ class AnimeProfileView(discord.ui.View):
         self.add_item(SDACBackButton(is_admin))
 
 
+class AnimeProfileImportUsernameModal(discord.ui.Modal):
+    def __init__(self, owner_id, is_admin=False):
+        super().__init__(title="Import MyAnimeList")
+        self.owner_id = int(owner_id)
+        self.is_admin = bool(is_admin)
+        self.username_input = discord.ui.TextInput(
+            label="MyAnimeList username",
+            placeholder="Public MAL username",
+            required=True,
+            max_length=40,
+        )
+        self.add_item(self.username_input)
+
+    async def on_submit(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            profile = await fetch_mal_profile_summary(str(self.username_input.value or ""))
+        except ValueError as error:
+            await interaction.followup.send(str(error), ephemeral=True)
+            return
+        save_anime_profile_sections(
+            interaction.guild_id,
+            interaction.user.id,
+            interaction.user,
+            profile["anime_favorites"],
+            profile["anime_watching"],
+            profile["manga_favorites"],
+            profile["manga_reading"],
+        )
+        await interaction.followup.send(
+            "Imported public MyAnimeList profile "
+            f"`{profile['username']}` into your Sana-Chan anime and manga profile.",
+            ephemeral=True,
+        )
+
+
+class AnimeProfileImportXmlModal(discord.ui.Modal):
+    def __init__(self, owner_id, is_admin=False):
+        super().__init__(title="Import MAL XML")
+        self.owner_id = int(owner_id)
+        self.is_admin = bool(is_admin)
+        self.xml_input = discord.ui.TextInput(
+            label="MAL XML export text",
+            placeholder="Paste XML starting with <myanimelist>...",
+            style=discord.TextStyle.paragraph,
+            required=True,
+            max_length=4000,
+        )
+        self.add_item(self.xml_input)
+
+    async def on_submit(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        try:
+            profile = summarize_mal_xml_profile(str(self.xml_input.value or ""))
+        except ValueError as error:
+            await interaction.response.send_message(str(error), ephemeral=True)
+            return
+        save_anime_profile_sections(
+            interaction.guild_id,
+            interaction.user.id,
+            interaction.user,
+            profile["anime_favorites"],
+            profile["anime_watching"],
+            profile["manga_favorites"],
+            profile["manga_reading"],
+        )
+        await interaction.response.send_message(
+            "Imported MyAnimeList XML into your Sana-Chan anime and manga profile.",
+            ephemeral=True,
+        )
+
+
+class AnimeProfileImportButton(discord.ui.Button):
+    def __init__(self, owner_id, mode, is_admin=False):
+        label = "Import by Username" if mode == "username" else "Import XML"
+        style = discord.ButtonStyle.primary if mode == "username" else discord.ButtonStyle.secondary
+        super().__init__(label=label, style=style, row=0)
+        self.owner_id = int(owner_id)
+        self.mode = mode
+        self.is_admin = bool(is_admin)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if self.mode == "xml":
+            await interaction.response.send_modal(AnimeProfileImportXmlModal(self.owner_id, self.is_admin))
+            return
+        await interaction.response.send_modal(AnimeProfileImportUsernameModal(self.owner_id, self.is_admin))
+
+
+class AnimeProfileImportView(discord.ui.View):
+    def __init__(self, owner_id, is_admin=False):
+        super().__init__(timeout=300)
+        self.add_item(AnimeProfileImportButton(owner_id, "username", is_admin))
+        self.add_item(AnimeProfileImportButton(owner_id, "xml", is_admin))
+        self.add_item(SDACBackButton(is_admin))
+
+
 async def handle_sana_anime_action(interaction, action, is_admin, section_key):
-    if action != "anime_view":
-        return False
-    await interaction.response.edit_message(
-        content=(
-            "**View Anime Profile**\n"
-            "Choose a server member below, or use the button to view your own saved anime profile."
-        ),
-        view=AnimeProfileView(interaction.user.id, is_admin),
-    )
-    return True
+    if action == "anime_import":
+        await interaction.response.edit_message(
+            content=(
+                "**Import MyAnimeList**\n"
+                "Choose username import for public MAL lists, or XML import if you exported your MAL list. "
+                "Imported data is saved into separate Anime and Manga sections."
+            ),
+            view=AnimeProfileImportView(interaction.user.id, is_admin),
+        )
+        return True
+    if action == "anime_view":
+        await interaction.response.edit_message(
+            content=(
+                "**View Anime Profile**\n"
+                "Choose a server member below, or use the button to view your own saved anime and manga profile."
+            ),
+            view=AnimeProfileView(interaction.user.id, is_admin),
+        )
+        return True
+    return False
 
 
 class SDACBackButton(discord.ui.Button):
@@ -3283,6 +3459,8 @@ def initialize_database():
                 username TEXT,
                 favorites TEXT,
                 watching TEXT,
+                manga_favorites TEXT,
+                manga_reading TEXT,
                 updated_at TEXT,
                 PRIMARY KEY (guild_id, user_id)
             )
@@ -4009,6 +4187,12 @@ def initialize_database():
             CREATE INDEX IF NOT EXISTS idx_admin_notifications_guild_event
             ON admin_notifications (guild_id, event_key, enabled)
         """)
+        for column, definition in {
+            "manga_favorites": "TEXT",
+            "manga_reading": "TEXT",
+        }.items():
+            ensure_column(connection, "anime_profiles", column, definition)
+
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_anime_profiles_updated
             ON anime_profiles (guild_id, updated_at)
@@ -9105,19 +9289,23 @@ def jikan_get_json(path, params=None):
         raise ValueError("MyAnimeList import could not reach the public anime list service.") from error
 
 
-def anime_title_from_jikan_entry(entry):
-    anime = entry.get("anime") if isinstance(entry, dict) else None
-    if isinstance(anime, dict):
-        return str(anime.get("title") or anime.get("title_english") or "").strip()
+def title_from_jikan_entry(entry, media_key="anime"):
+    media = entry.get(media_key) if isinstance(entry, dict) else None
+    if isinstance(media, dict):
+        return str(media.get("title") or media.get("title_english") or media.get("name") or "").strip()
     if isinstance(entry, dict):
         return str(entry.get("title") or entry.get("name") or "").strip()
     return ""
 
 
-def jikan_title_list(payload, limit=8):
+def anime_title_from_jikan_entry(entry):
+    return title_from_jikan_entry(entry, "anime")
+
+
+def jikan_title_list(payload, limit=8, media_key="anime"):
     titles = []
     for entry in (payload or {}).get("data", []):
-        title = anime_title_from_jikan_entry(entry)
+        title = title_from_jikan_entry(entry, media_key)
         if title and title not in titles:
             titles.append(title)
         if len(titles) >= limit:
@@ -9125,24 +9313,98 @@ def jikan_title_list(payload, limit=8):
     return titles
 
 
-def summarize_mal_profile(username, watching_payload, completed_payload, favorites_payload):
-    watching = jikan_title_list(watching_payload, limit=8)
-    completed = jikan_title_list(completed_payload, limit=8)
-    favorite_entries = ((favorites_payload or {}).get("data") or {}).get("anime", [])
-    favorites = jikan_title_list({"data": favorite_entries}, limit=8)
-    favorites_text = ", ".join(favorites or completed[:5] or watching[:5])
-    watching_parts = []
-    if watching:
-        watching_parts.append("Watching: " + ", ".join(watching))
-    if completed:
-        watching_parts.append("Completed highlights: " + ", ".join(completed[:5]))
-    watching_text = " | ".join(watching_parts) or "Imported from MyAnimeList; no public watching list items found."
+def summarize_mal_profile(
+    username,
+    watching_payload,
+    completed_payload,
+    favorites_payload,
+    manga_reading_payload=None,
+    manga_completed_payload=None,
+):
+    watching = jikan_title_list(watching_payload, limit=8, media_key="anime")
+    completed = jikan_title_list(completed_payload, limit=8, media_key="anime")
+    favorite_data = (favorites_payload or {}).get("data") or {}
+    favorite_anime_entries = favorite_data.get("anime", []) if isinstance(favorite_data, dict) else []
+    favorite_manga_entries = favorite_data.get("manga", []) if isinstance(favorite_data, dict) else []
+    favorites = jikan_title_list({"data": favorite_anime_entries}, limit=8, media_key="anime")
+    manga_reading = jikan_title_list(manga_reading_payload, limit=8, media_key="manga")
+    manga_completed = jikan_title_list(manga_completed_payload, limit=8, media_key="manga")
+    manga_favorites = jikan_title_list({"data": favorite_manga_entries}, limit=8, media_key="manga")
     note = f"Imported from MyAnimeList user {username}."
-    if favorites_text:
-        favorites_text = f"{favorites_text} ({note})"
-    else:
-        favorites_text = note
-    return favorites_text[:500], watching_text[:500]
+    anime_favorites = join_profile_titles(favorites or completed[:5] or watching[:5], note)
+    anime_watching_parts = []
+    if watching:
+        anime_watching_parts.append("Watching: " + ", ".join(watching))
+    if completed:
+        anime_watching_parts.append("Completed highlights: " + ", ".join(completed[:5]))
+    anime_watching = clean_profile_text(" | ".join(anime_watching_parts) or "Imported from MyAnimeList; no public watching list items found.")
+    if anime_favorites != note:
+        anime_favorites = clean_profile_text(f"{anime_favorites} ({note})")
+    manga_favorites_text = join_profile_titles(manga_favorites or manga_completed[:5] or manga_reading[:5], "No public manga favorites found.")
+    manga_reading_parts = []
+    if manga_reading:
+        manga_reading_parts.append("Reading: " + ", ".join(manga_reading))
+    if manga_completed:
+        manga_reading_parts.append("Completed highlights: " + ", ".join(manga_completed[:5]))
+    manga_reading_text = clean_profile_text(" | ".join(manga_reading_parts) or "No public manga reading list items found.")
+    return {
+        "username": username,
+        "anime_favorites": anime_favorites,
+        "anime_watching": anime_watching,
+        "manga_favorites": manga_favorites_text,
+        "manga_reading": manga_reading_text,
+    }
+
+
+def xml_child_text(parent, names):
+    for name in names:
+        child = parent.find(name)
+        if child is not None and child.text:
+            value = clean_profile_text(child.text, 200)
+            if value:
+                return value
+    return ""
+
+
+def summarize_mal_xml_profile(xml_text):
+    xml_text = str(xml_text or "").strip()
+    if not xml_text:
+        raise ValueError("Paste MyAnimeList XML export text first.")
+    try:
+        root = ET.fromstring(xml_text.encode("utf-8"))
+    except ET.ParseError as error:
+        raise ValueError("That does not look like valid MyAnimeList XML export data.") from error
+    anime_watching = []
+    anime_completed = []
+    manga_reading = []
+    manga_completed = []
+    for entry in root.findall(".//anime"):
+        title = xml_child_text(entry, ["series_title", "anime_title", "title"])
+        status = xml_child_text(entry, ["my_status", "status"]).casefold()
+        if not title:
+            continue
+        if status in {"watching", "plan to watch", "on-hold", "dropped"}:
+            anime_watching.append(title)
+        elif status == "completed":
+            anime_completed.append(title)
+    for entry in root.findall(".//manga"):
+        title = xml_child_text(entry, ["manga_title", "series_title", "title"])
+        status = xml_child_text(entry, ["my_status", "status"]).casefold()
+        if not title:
+            continue
+        if status in {"reading", "plan to read", "on-hold", "dropped"}:
+            manga_reading.append(title)
+        elif status == "completed":
+            manga_completed.append(title)
+    if not (anime_watching or anime_completed or manga_reading or manga_completed):
+        raise ValueError("No anime or manga entries were found in that XML text.")
+    return {
+        "username": "MAL XML export",
+        "anime_favorites": join_profile_titles(anime_completed[:8] or anime_watching[:8], "Imported from MyAnimeList XML."),
+        "anime_watching": clean_profile_text(("Watching: " + ", ".join(anime_watching[:8])) if anime_watching else "Completed highlights: " + ", ".join(anime_completed[:5])),
+        "manga_favorites": join_profile_titles(manga_completed[:8] or manga_reading[:8], "Imported from MyAnimeList XML."),
+        "manga_reading": clean_profile_text(("Reading: " + ", ".join(manga_reading[:8])) if manga_reading else "Completed highlights: " + ", ".join(manga_completed[:5])),
+    }
 
 
 async def fetch_mal_profile_summary(username):
@@ -9150,7 +9412,7 @@ async def fetch_mal_profile_summary(username):
     if not clean_username:
         raise ValueError("Enter a valid MyAnimeList username.")
     encoded = quote(clean_username, safe="")
-    watching_payload, completed_payload, favorites_payload = await asyncio.gather(
+    watching_payload, completed_payload, favorites_payload, manga_reading_payload, manga_completed_payload = await asyncio.gather(
         asyncio.to_thread(
             jikan_get_json,
             f"/users/{encoded}/animelist",
@@ -9162,86 +9424,80 @@ async def fetch_mal_profile_summary(username):
             {"status": "completed", "limit": 10, "order_by": "score", "sort": "desc"},
         ),
         asyncio.to_thread(jikan_get_json, f"/users/{encoded}/favorites", None),
+        asyncio.to_thread(
+            jikan_get_json,
+            f"/users/{encoded}/mangalist",
+            {"status": "reading", "limit": 10, "order_by": "updated_at", "sort": "desc"},
+        ),
+        asyncio.to_thread(
+            jikan_get_json,
+            f"/users/{encoded}/mangalist",
+            {"status": "completed", "limit": 10, "order_by": "score", "sort": "desc"},
+        ),
     )
-    favorites, watching = summarize_mal_profile(
+    return summarize_mal_profile(
         clean_username,
         watching_payload,
         completed_payload,
         favorites_payload,
+        manga_reading_payload,
+        manga_completed_payload,
     )
-    return clean_username, favorites, watching
 
 
-@optional_tree_command(ENABLE_ANIME_COMMANDS, name="animeprofileimport", description="Import your anime profile from public MyAnimeList data")
+@optional_tree_command(ENABLE_ANIME_COMMANDS, name="animeprofileimport", description="Import your anime and manga profile from public MyAnimeList data")
 @app_commands.guild_only()
 @app_commands.describe(username="Your public MyAnimeList username")
 async def animeprofileimport(interaction, username: str):
     await interaction.response.defer(ephemeral=True, thinking=True)
     try:
-        mal_username, favorites, watching = await fetch_mal_profile_summary(username)
+        profile = await fetch_mal_profile_summary(username)
     except ValueError as error:
         await interaction.followup.send(str(error), ephemeral=True)
         return
-    with database() as connection:
-        connection.execute("""
-            INSERT INTO anime_profiles (
-                guild_id, user_id, username, favorites, watching, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(guild_id, user_id) DO UPDATE SET
-                username = excluded.username,
-                favorites = excluded.favorites,
-                watching = excluded.watching,
-                updated_at = excluded.updated_at
-        """, (
-            str(interaction.guild_id),
-            str(interaction.user.id),
-            str(interaction.user),
-            favorites,
-            watching,
-            utc_now_iso(),
-        ))
+    save_anime_profile_sections(
+        interaction.guild_id,
+        interaction.user.id,
+        interaction.user,
+        profile["anime_favorites"],
+        profile["anime_watching"],
+        profile["manga_favorites"],
+        profile["manga_reading"],
+    )
     await interaction.followup.send(
-        f"Imported public MyAnimeList profile `{mal_username}` into your SDAC anime profile.",
+        f"Imported public MyAnimeList profile `{profile['username']}` into your Sana-Chan anime and manga profile.",
         ephemeral=True,
     )
 
-@optional_tree_command(ENABLE_ANIME_COMMANDS, name="animeprofile", description="Save your experimental anime favorites and watching status")
+@optional_tree_command(ENABLE_ANIME_COMMANDS, name="animeprofile", description="Save your experimental anime and manga profile")
 @app_commands.guild_only()
 @app_commands.describe(
     favorites="Favorite anime, characters, genres, or studios",
     watching="What you are currently watching or planning to watch",
+    manga_favorites="Favorite manga, authors, artists, or genres",
+    manga_reading="What manga you are currently reading or planning to read",
 )
 async def animeprofile(
     interaction,
     favorites: str,
     watching: Optional[str] = "",
+    manga_favorites: Optional[str] = "",
+    manga_reading: Optional[str] = "",
 ):
-    with database() as connection:
-        connection.execute("""
-            INSERT INTO anime_profiles (
-                guild_id, user_id, username, favorites, watching, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(guild_id, user_id) DO UPDATE SET
-                username = excluded.username,
-                favorites = excluded.favorites,
-                watching = excluded.watching,
-                updated_at = excluded.updated_at
-        """, (
-            str(interaction.guild_id),
-            str(interaction.user.id),
-            str(interaction.user),
-            favorites[:500],
-            (watching or "")[:500],
-            utc_now_iso(),
-        ))
+    save_anime_profile_sections(
+        interaction.guild_id,
+        interaction.user.id,
+        interaction.user,
+        favorites,
+        watching or "",
+        manga_favorites or "",
+        manga_reading or "",
+    )
     await interaction.response.send_message(
-        "Anime profile saved.\n"
+        "Anime and manga profile saved.\n"
         f"Experimental note: {ANIME_ACTIVITY_RETIREMENT_NOTE}",
         ephemeral=True,
     )
-
 
 @optional_tree_command(ENABLE_ANIME_COMMANDS, name="animeprofileview", description="View an experimental anime profile")
 @app_commands.guild_only()

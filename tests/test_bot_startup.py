@@ -99,16 +99,40 @@ class BotStartupTests(unittest.TestCase):
     def test_mal_profile_summary_uses_public_list_data(self):
         import bot
 
-        favorites, watching = bot.summarize_mal_profile(
+        profile = bot.summarize_mal_profile(
             "example_user",
             {"data": [{"anime": {"title": "Watching One"}}]},
             {"data": [{"anime": {"title": "Completed One"}}]},
-            {"data": {"anime": [{"title": "Favorite One"}]}},
+            {"data": {
+                "anime": [{"title": "Favorite One"}],
+                "manga": [{"title": "Favorite Manga"}],
+            }},
+            {"data": [{"manga": {"title": "Reading One"}}]},
+            {"data": [{"manga": {"title": "Completed Manga"}}]},
         )
-        self.assertIn("Favorite One", favorites)
-        self.assertIn("example_user", favorites)
-        self.assertIn("Watching One", watching)
-        self.assertIn("Completed One", watching)
+        self.assertIn("Favorite One", profile["anime_favorites"])
+        self.assertIn("example_user", profile["anime_favorites"])
+        self.assertIn("Watching One", profile["anime_watching"])
+        self.assertIn("Completed One", profile["anime_watching"])
+        self.assertIn("Favorite Manga", profile["manga_favorites"])
+        self.assertIn("Reading One", profile["manga_reading"])
+        self.assertIn("Completed Manga", profile["manga_reading"])
+
+    def test_mal_xml_profile_summary_splits_anime_and_manga(self):
+        import bot
+
+        profile = bot.summarize_mal_xml_profile("""
+        <myanimelist>
+          <anime><series_title>Anime Watching</series_title><my_status>Watching</my_status></anime>
+          <anime><series_title>Anime Done</series_title><my_status>Completed</my_status></anime>
+          <manga><manga_title>Manga Reading</manga_title><my_status>Reading</my_status></manga>
+          <manga><manga_title>Manga Done</manga_title><my_status>Completed</my_status></manga>
+        </myanimelist>
+        """)
+        self.assertIn("Anime Done", profile["anime_favorites"])
+        self.assertIn("Anime Watching", profile["anime_watching"])
+        self.assertIn("Manga Done", profile["manga_favorites"])
+        self.assertIn("Manga Reading", profile["manga_reading"])
 
     def test_scheduled_auto_hint_time_scales_to_question_window(self):
         from datetime import datetime, timedelta, timezone
@@ -252,9 +276,14 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("View Profile", anime_labels)
         self.assertIn("Choose a server member", bot.SDAC_SUBMENU_DETAILS["anime_view"])
         self.assertNotIn("/animeprofileview", bot.SDAC_SUBMENU_DETAILS["anime_view"])
+        self.assertIn("XML", bot.SDAC_SUBMENU_DETAILS["anime_import"])
+        self.assertNotIn("/animeprofileimport", bot.SDAC_SUBMENU_DETAILS["anime_import"])
         self.assertTrue(hasattr(bot, "AnimeProfileView"))
         self.assertTrue(hasattr(bot, "AnimeProfileMemberSelect"))
         self.assertTrue(hasattr(bot, "AnimeProfileSelfButton"))
+        self.assertTrue(hasattr(bot, "AnimeProfileImportView"))
+        self.assertTrue(hasattr(bot, "AnimeProfileImportUsernameModal"))
+        self.assertTrue(hasattr(bot, "AnimeProfileImportXmlModal"))
         self.assertTrue(hasattr(bot, "handle_sana_anime_action"))
 
 if __name__ == "__main__":

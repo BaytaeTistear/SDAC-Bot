@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.4.8 Experimental
+
+Version 4.4.8 moves MyAnimeList import into the guided `/sana` Anime Profile flow and splits profiles into Anime and Manga sections.
+
+## Anime Profiles
+
+- changes `/sana` -> Anime Profile -> Import MyAnimeList to open guided import buttons instead of pointing at a hidden command
+- adds public MyAnimeList username import for both anime and manga lists
+- adds MAL XML export paste import support
+- stores manga favorites and manga reading separately from anime favorites and watching
+- updates profile viewing to display separate Anime and Manga sections
+
+---
 # Sana-Chan Version 4.4.7 Experimental
 
 Version 4.4.7 makes Anime Profile viewing work from the guided `/sana` menu instead of pointing users at a hidden command.

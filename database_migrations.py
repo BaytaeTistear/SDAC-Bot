@@ -3,7 +3,7 @@ import sqlite3
 
 
 
-DATABASE_SCHEMA_VERSION = 19
+DATABASE_SCHEMA_VERSION = 21
 GOOGLE_PLAY_REVIEW_PASSWORD_HASH = "scrypt:32768:8:1$tpr2C1Lx7O3szQ0T$0f9b5ee8f0d5caaecaf4d69667ea93aff95365decc7108fd955590df4ef07c17680a64610805821aef23fcb86171de70c4bc0f577501ca920bb6b5bb80a4426b"
 
 
@@ -776,6 +776,11 @@ def migration_20_scheduled_hint_scaling_toggle(connection):
     ensure_column(connection, "scheduled_games", "scale_hint_timing", "INTEGER DEFAULT 1")
 
 
+def migration_21_anime_profile_manga_sections(connection):
+    ensure_column(connection, "anime_profiles", "manga_favorites", "TEXT")
+    ensure_column(connection, "anime_profiles", "manga_reading", "TEXT")
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -795,6 +800,7 @@ MIGRATIONS = (
     (18, migration_18_google_play_test_account),
     (19, migration_19_admin_audit_log),
     (20, migration_20_scheduled_hint_scaling_toggle),
+    (21, migration_21_anime_profile_manga_sections),
 )
 
 

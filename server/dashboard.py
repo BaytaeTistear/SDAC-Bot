@@ -10285,6 +10285,8 @@ def initialize_database():
                 username TEXT,
                 favorites TEXT,
                 watching TEXT,
+                manga_favorites TEXT,
+                manga_reading TEXT,
                 updated_at TEXT,
                 PRIMARY KEY (guild_id, user_id)
             )
@@ -10950,6 +10952,21 @@ def initialize_database():
             CREATE INDEX IF NOT EXISTS idx_admin_notifications_guild_event
             ON admin_notifications (guild_id, event_key, enabled)
         """)
+        anime_profile_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(anime_profiles)"
+            ).fetchall()
+        }
+        for column, definition in {
+            "manga_favorites": "TEXT",
+            "manga_reading": "TEXT",
+        }.items():
+            if column not in anime_profile_columns:
+                connection.execute(
+                    f"ALTER TABLE anime_profiles ADD COLUMN {column} {definition}"
+                )
+
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_anime_profiles_updated
             ON anime_profiles (guild_id, updated_at)
