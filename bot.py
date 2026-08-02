@@ -838,6 +838,7 @@ SDAC_SUBMENUS = {
         "placeholder": "Choose a setup action",
         "options": [
             ("setup_wizard", "Open Setup Wizard", "Use selectors and buttons for server setup."),
+            ("setup_admin_role", "Admin Role", "Set an admin role by picker, mention, name, or ID."),
             ("setup_bot_name", "Bot Name", "Change the bot nickname shown in this server."),
             ("setup_bot_image", "Bot Image", "Change the global bot avatar from an HTTPS image URL."),
             ("setup_command_alias", "Command Name", "Choose this server's optional /command launcher."),
@@ -1308,6 +1309,12 @@ class SDACSubmenuSelect(discord.ui.Select):
                 view=SetupWizardView(interaction.user.id, interaction.guild_id, 1),
             )
             return
+        if action == "setup_admin_role":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            await interaction.response.send_modal(SetupAdminRoleModal())
+            return
         if action == "setup_bot_name":
             if not admin_only(interaction):
                 await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
@@ -1748,6 +1755,12 @@ class SDACSubmenuButton(discord.ui.Button):
                 content=setup_wizard_content(guild_config, page=1),
                 view=SetupWizardView(interaction.user.id, interaction.guild_id, 1),
             )
+            return
+        if action == "setup_admin_role":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            await interaction.response.send_modal(SetupAdminRoleModal())
             return
         if action == "setup_bot_name":
             if not admin_only(interaction):
@@ -8066,10 +8079,85 @@ class SetupCommandAliasModal(discord.ui.Modal):
         )
 
 
+
+def find_guild_role_by_query(guild, query):
+    if guild is None:
+        return None, "This must be used inside a Discord server."
+    query = str(query or "").strip()
+    if not query:
+        return None, "Enter a role mention, role ID, or exact role name."
+    mention_match = re.fullmatch(r"<@&(\d+)>", query)
+    role_id = mention_match.group(1) if mention_match else query
+    if role_id.isdigit():
+        role = guild.get_role(int(role_id))
+        if role:
+            return role, ""
+        return None, f"No role with ID `{role_id}` was found in this server."
+    lowered = query.casefold()
+    exact_matches = [role for role in guild.roles if role.name.casefold() == lowered]
+    if len(exact_matches) == 1:
+        return exact_matches[0], ""
+    if len(exact_matches) > 1:
+        return None, "Multiple roles have that exact name. Paste the role ID instead."
+    partial_matches = [role for role in guild.roles if lowered in role.name.casefold()]
+    if len(partial_matches) == 1:
+        return partial_matches[0], ""
+    if len(partial_matches) > 1:
+        sample = ", ".join(role.name for role in partial_matches[:8])
+        return None, f"Multiple roles matched: {sample}. Paste the role ID for the one you want."
+    return None, f"No role named `{query}` was found in this server."
+
+
+async def save_setup_admin_role(interaction, role, refresh_view=None):
+    if role is None:
+        await interaction.response.send_message("Choose a valid server role.", ephemeral=True)
+        return
+    guild_config = get_guild_config(interaction.guild_id)
+    role_ids = {
+        str(role_id)
+        for role_id in guild_config.get("admin_role_ids", [])
+        if str(role_id).strip()
+    }
+    role_ids.add(str(role.id))
+    guild_config["admin_role_ids"] = sorted(role_ids)
+    save_config(config)
+    audit_interaction(
+        interaction,
+        "setup_set_admin_role",
+        "role",
+        role.id,
+        f"Added Sana-Chan admin role {role.name}.",
+    )
+    notice = f"{role.mention} can now manage Sana-Chan."
+    if refresh_view is not None:
+        await refresh_view.refresh(interaction, notice)
+    else:
+        await interaction.response.send_message(notice, ephemeral=True)
+
+
+class SetupAdminRoleModal(discord.ui.Modal, title="Set Admin Role"):
+    role_input = discord.ui.TextInput(
+        label="Role mention, exact name, or ID",
+        placeholder="@Moderators, Moderators, or 123456789012345678",
+        required=True,
+        max_length=120,
+    )
+
+    async def on_submit(self, interaction):
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can use this setup control.", ephemeral=True)
+            return
+        role, error = find_guild_role_by_query(interaction.guild, str(self.role_input.value or ""))
+        if error:
+            await interaction.response.send_message(error, ephemeral=True)
+            return
+        await save_setup_admin_role(interaction, role)
+
+
 class SetupRoleSelect(discord.ui.RoleSelect):
     def __init__(self):
         super().__init__(
-            placeholder="Step 1: choose an SDAC admin role",
+            placeholder="Step 1: choose a Sana-Chan admin role",
             min_values=1,
             max_values=1,
             row=0,
@@ -8079,25 +8167,10 @@ class SetupRoleSelect(discord.ui.RoleSelect):
         if not await self.view.ensure_allowed(interaction):
             return
         role = self.values[0]
-        guild_config = get_guild_config(interaction.guild_id)
-        role_ids = {
-            str(role_id)
-            for role_id in guild_config.get("admin_role_ids", [])
-            if str(role_id).strip()
-        }
-        role_ids.add(str(role.id))
-        guild_config["admin_role_ids"] = sorted(role_ids)
-        save_config(config)
-        audit_interaction(
+        await save_setup_admin_role(
             interaction,
-            "setup_set_admin_role",
-            "role",
-            role.id,
-            f"Added SDAC admin role {role.name}.",
-        )
-        await self.view.refresh(
-            interaction,
-            f"{role.mention} can now manage SDAC.",
+            role,
+            refresh_view=self.view,
         )
 
 
@@ -10165,9 +10238,9 @@ async def closepoll(interaction, poll_id: int):
 
 
 
-@tree.command(name="setadminrole", description="Allow a role to manage SDAC")
+@tree.command(name="setadminrole", description="Allow a role to manage Sana-Chan")
 @app_commands.guild_only()
-@app_commands.describe(role="Role that can manage SDAC without Administrator")
+@app_commands.describe(role="Role that can manage Sana-Chan without Administrator")
 async def setadminrole(interaction, role: discord.Role):
     if not await require_admin(interaction):
         return
@@ -10185,17 +10258,17 @@ async def setadminrole(interaction, role: discord.Role):
         "set_admin_role",
         "role",
         role.id,
-        f"Added SDAC admin role {role.name}.",
+        f"Added Sana-Chan admin role {role.name}.",
     )
     await interaction.response.send_message(
-        f"{role.mention} can now manage SDAC.",
+        f"{role.mention} can now manage Sana-Chan.",
         ephemeral=True,
     )
 
 
-@tree.command(name="removeadminrole", description="Remove an SDAC admin role")
+@tree.command(name="removeadminrole", description="Remove a Sana-Chan admin role")
 @app_commands.guild_only()
-@app_commands.describe(role="Role to remove from SDAC admin access")
+@app_commands.describe(role="Role to remove from Sana-Chan admin access")
 async def removeadminrole(interaction, role: discord.Role):
     if not await require_admin(interaction):
         return
@@ -10215,7 +10288,7 @@ async def removeadminrole(interaction, role: discord.Role):
         f"Removed SDAC admin role {role.name}.",
     )
     await interaction.response.send_message(
-        f"{role.mention} can no longer manage SDAC through its role.",
+        f"{role.mention} can no longer manage Sana-Chan through its role.",
         ephemeral=True,
     )
 

@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.4.3 Experimental
+
+Version 4.4.3 improves setup dropdown reliability for servers with many roles.
+
+## Setup Role Fix
+
+- adds a `/sana` -> Setup -> Admin Role action that accepts a role mention, exact role name, or role ID
+- keeps the setup wizard role picker, but no longer depends on Discord showing every role in the native dropdown
+- updates visible admin-role setup wording from SDAC to Sana-Chan
+- keeps dashboard HTML dropdown options styled dark with readable text
+
+---
+
 # Sana-Chan Version 4.4.2 Experimental
 
 Version 4.4.2 fixes the `/sana` setup wizard submission-channel picker and adds a direct Website button to the `/sana` hub.
