@@ -120,6 +120,9 @@ class BotStartupTests(unittest.TestCase):
         self.assertEqual(bot.scaled_auto_hint_minutes(60, hints, next_question, now=now), 10)
         self.assertEqual(bot.scaled_auto_hint_minutes(5, hints, next_question, now=now), 5)
         self.assertEqual(bot.scaled_auto_hint_minutes(60, [], next_question, now=now), 60)
+        close_deadline = bot.scheduled_hint_deadline(close_after_minutes=30, now=now)
+        self.assertEqual(bot.scaled_auto_hint_minutes(60, hints, close_deadline, now=now), 10)
+        self.assertIsNone(bot.scheduled_hint_deadline(close_after_minutes=0, now=now))
 
 
     def test_guess_points_are_blocked_only_after_all_generated_hints(self):
@@ -179,6 +182,10 @@ class BotStartupTests(unittest.TestCase):
         self.assertTrue(hasattr(bot, "BulkScheduleGameModal"))
         self.assertTrue(hasattr(bot, "BulkScheduleUnitView"))
         self.assertTrue(hasattr(bot, "BulkScheduleUnitSelect"))
+        self.assertTrue(hasattr(bot, "ScheduleHintTimingView"))
+        self.assertTrue(hasattr(bot, "ScheduleHintTimingButton"))
+        self.assertTrue(hasattr(bot, "BulkScheduleHintTimingView"))
+        self.assertTrue(hasattr(bot, "BulkScheduleHintTimingButton"))
         self.assertTrue(hasattr(bot, "GuessTimeoutModal"))
         self.assertTrue(hasattr(bot, "CancelScheduledGamesView"))
         self.assertTrue(hasattr(bot, "ConfirmCancelScheduledGamesButton"))
@@ -209,6 +216,8 @@ class BotStartupTests(unittest.TestCase):
         self.assertNotIn("Scheduled game `{scheduled_id}` is now live.", source)
         self.assertNotIn("Hint timing was shortened to fit before the next scheduled question.", source)
         self.assertIn("Automatic hints are enabled every", source)
+        self.assertIn("scale_hint_timing", source)
+        self.assertIn("scheduled_hint_deadline", source)
 
     def test_hint_display_replaces_pipe_separators(self):
         import bot

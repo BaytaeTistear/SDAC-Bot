@@ -521,6 +521,7 @@ def migration_12_schedules_achievements_and_archives(connection):
             random_item INTEGER DEFAULT 0,
             starts_at TEXT,
             close_after_minutes INTEGER DEFAULT 0,
+            scale_hint_timing INTEGER DEFAULT 1,
             status TEXT DEFAULT 'queued',
             game_id INTEGER,
             created_by TEXT,
@@ -771,6 +772,10 @@ def migration_19_admin_audit_log(connection):
         CREATE INDEX IF NOT EXISTS idx_admin_audit_log_guild_created
         ON admin_audit_log (guild_id, created_at, id)
     """)
+def migration_20_scheduled_hint_scaling_toggle(connection):
+    ensure_column(connection, "scheduled_games", "scale_hint_timing", "INTEGER DEFAULT 1")
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -789,6 +794,7 @@ MIGRATIONS = (
     (17, migration_17_dashboard_auth_codes),
     (18, migration_18_google_play_test_account),
     (19, migration_19_admin_audit_log),
+    (20, migration_20_scheduled_hint_scaling_toggle),
 )
 
 

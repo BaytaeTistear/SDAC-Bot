@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.4.6 Experimental
+
+Version 4.4.6 reworks scheduled guessing hint timing so admins can choose whether automatic hints should compress to fit the schedule.
+
+## Scheduled Guessing
+
+- adds an Auto-scale Hints / Normal Hint Timing toggle to `/sana` scheduled game setup
+- adds the same toggle to bulk schedule after the cadence unit is selected
+- stores the hint timing choice per scheduled game
+- scales hint intervals against the next scheduled question, or against auto-close time when no next question exists
+- keeps legacy `/schedulegame` compatible with a `scale_hint_timing` option
+
+---
 # Sana-Chan Version 4.4.5 Experimental
 
 Version 4.4.5 fixes the `/sana` Admin Games menu metadata for the saved guessing channel action.

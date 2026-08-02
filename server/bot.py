@@ -2100,11 +2100,12 @@ class GuessTimeoutModal(discord.ui.Modal):
 
 
 class ScheduleGameModal(discord.ui.Modal):
-    def __init__(self, owner_id, channel_id, channel_mention):
+    def __init__(self, owner_id, channel_id, channel_mention, scale_hint_timing=True):
         super().__init__(title="Schedule Game")
         self.owner_id = int(owner_id)
         self.channel_id = int(channel_id)
         self.channel_mention = channel_mention
+        self.scale_hint_timing = bool(scale_hint_timing)
         self.start_time_input = discord.ui.TextInput(
             label="Start time",
             placeholder="YYYY-MM-DD HH:MM in server timezone, or ISO time",
@@ -2181,6 +2182,7 @@ class ScheduleGameModal(discord.ui.Modal):
                 category=str(self.category_input.value or "").strip(),
                 random_item=random_item,
                 close_after_minutes=close_after_minutes,
+                scale_hint_timing=self.scale_hint_timing,
             )
         except ValueError as error:
             await interaction.response.send_message(str(error), ephemeral=True)
@@ -2191,6 +2193,7 @@ class ScheduleGameModal(discord.ui.Modal):
                 f"Scheduled game `{scheduled_id}` for {channel.mention}.",
                 f"Starts: `{local_time}`",
                 f"Selected item now: `{item['id']}` - `{item['title'] or item['answer_display']}`",
+                f"Hint timing: `{'auto-scaled' if self.scale_hint_timing else 'normal'}`",
             ])[:1900],
             ephemeral=True,
         )
@@ -2215,8 +2218,53 @@ class ScheduleGameChannelSelect(discord.ui.ChannelSelect):
                 ephemeral=True,
             )
             return
-        await interaction.response.send_modal(ScheduleGameModal(interaction.user.id, channel.id, channel.mention))
+        await interaction.response.edit_message(
+            content=(
+                "**Schedule Game**\n"
+                f"Channel: {channel.mention}\n"
+                "Should Sana-Chan auto-scale hint timing to fit before the next scheduled question or auto-close time?"
+            ),
+            view=ScheduleHintTimingView(interaction.user.id, channel.id, channel.mention, True),
+        )
 
+
+class ScheduleHintTimingButton(discord.ui.Button):
+    def __init__(self, owner_id, channel_id, channel_mention, is_admin, scale_hint_timing):
+        label = "Auto-scale Hints" if scale_hint_timing else "Normal Hint Timing"
+        style = discord.ButtonStyle.primary if scale_hint_timing else discord.ButtonStyle.secondary
+        super().__init__(label=label, style=style, row=0)
+        self.owner_id = int(owner_id)
+        self.channel_id = int(channel_id)
+        self.channel_mention = channel_mention
+        self.scale_hint_timing = bool(scale_hint_timing)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can schedule games.", ephemeral=True)
+            return
+        channel = interaction.guild.get_channel(self.channel_id) if interaction.guild else None
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message("That channel is no longer available.", ephemeral=True)
+            return
+        await interaction.response.send_modal(
+            ScheduleGameModal(
+                interaction.user.id,
+                channel.id,
+                channel.mention,
+                scale_hint_timing=self.scale_hint_timing,
+            )
+        )
+
+
+class ScheduleHintTimingView(discord.ui.View):
+    def __init__(self, owner_id, channel_id, channel_mention, is_admin):
+        super().__init__(timeout=300)
+        self.add_item(ScheduleHintTimingButton(owner_id, channel_id, channel_mention, is_admin, True))
+        self.add_item(ScheduleHintTimingButton(owner_id, channel_id, channel_mention, is_admin, False))
+        self.add_item(SDACBackButton(is_admin))
 
 
 class UseSavedScheduleChannelButton(discord.ui.Button):
@@ -2236,7 +2284,14 @@ class UseSavedScheduleChannelButton(discord.ui.Button):
         if not isinstance(channel, discord.TextChannel):
             await interaction.response.send_message("The saved guessing channel is no longer available. Pick a channel instead.", ephemeral=True)
             return
-        await interaction.response.send_modal(ScheduleGameModal(interaction.user.id, channel.id, channel.mention))
+        await interaction.response.edit_message(
+            content=(
+                "**Schedule Game**\n"
+                f"Channel: {channel.mention}\n"
+                "Should Sana-Chan auto-scale hint timing to fit before the next scheduled question or auto-close time?"
+            ),
+            view=ScheduleHintTimingView(interaction.user.id, channel.id, channel.mention, True),
+        )
 
 
 class ScheduleGameWizardView(discord.ui.View):
@@ -2250,12 +2305,13 @@ class ScheduleGameWizardView(discord.ui.View):
         self.add_item(SDACBackButton(is_admin))
 
 class BulkScheduleGameModal(discord.ui.Modal):
-    def __init__(self, owner_id, channel_id, channel_mention, interval_unit):
+    def __init__(self, owner_id, channel_id, channel_mention, interval_unit, scale_hint_timing=True):
         super().__init__(title=f"Bulk Schedule: {interval_unit.title()}")
         self.owner_id = int(owner_id)
         self.channel_id = int(channel_id)
         self.channel_mention = channel_mention
         self.interval_unit = interval_unit
+        self.scale_hint_timing = bool(scale_hint_timing)
         self.interval_amount_input = discord.ui.TextInput(
             label=f"How often? ({interval_unit})",
             placeholder="Examples: 30 minutes, 3 hours, or 7 days",
@@ -2365,6 +2421,7 @@ class BulkScheduleGameModal(discord.ui.Modal):
                     category=category,
                     random_item=True,
                     close_after_minutes=close_after_minutes,
+                    scale_hint_timing=self.scale_hint_timing,
                 )
                 local_time = starts_at.astimezone(timezone_info).strftime("%Y-%m-%d %H:%M %Z")
                 created.append(f"#{scheduled_id} `{local_time}` item `{selected_item['id']}`")
@@ -2376,6 +2433,7 @@ class BulkScheduleGameModal(discord.ui.Modal):
             f"Channel: {channel.mention}",
             f"Cadence: every `{interval_amount}` {self.interval_unit}",
             "When each scheduled question starts, any older active game in that channel is closed first.",
+            f"Hint timing: `{'auto-scaled' if self.scale_hint_timing else 'normal'}`",
         ]
         if created:
             lines.extend(["", "Queued:", *created[:15]])
@@ -2405,14 +2463,62 @@ class BulkScheduleUnitSelect(discord.ui.Select):
         if not admin_only(interaction):
             await interaction.response.send_message("Only admins can bulk schedule games.", ephemeral=True)
             return
-        await interaction.response.send_modal(
-            BulkScheduleGameModal(
+        await interaction.response.edit_message(
+            content=(
+                "**Bulk Schedule Games**\n"
+                f"Channel: {self.channel_mention}\n"
+                f"Cadence unit: `{str(self.values[0])}`\n"
+                "Should Sana-Chan auto-scale hint timing so every generated hint can appear before the next question?"
+            ),
+            view=BulkScheduleHintTimingView(
                 interaction.user.id,
                 self.channel_id,
                 self.channel_mention,
                 str(self.values[0]),
+                True,
+            ),
+        )
+
+
+class BulkScheduleHintTimingButton(discord.ui.Button):
+    def __init__(self, owner_id, channel_id, channel_mention, interval_unit, is_admin, scale_hint_timing):
+        label = "Auto-scale Hints" if scale_hint_timing else "Normal Hint Timing"
+        style = discord.ButtonStyle.primary if scale_hint_timing else discord.ButtonStyle.secondary
+        super().__init__(label=label, style=style, row=0)
+        self.owner_id = int(owner_id)
+        self.channel_id = int(channel_id)
+        self.channel_mention = channel_mention
+        self.interval_unit = interval_unit
+        self.scale_hint_timing = bool(scale_hint_timing)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can bulk schedule games.", ephemeral=True)
+            return
+        channel = interaction.guild.get_channel(self.channel_id) if interaction.guild else None
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message("That channel is no longer available.", ephemeral=True)
+            return
+        await interaction.response.send_modal(
+            BulkScheduleGameModal(
+                interaction.user.id,
+                channel.id,
+                channel.mention,
+                self.interval_unit,
+                scale_hint_timing=self.scale_hint_timing,
             )
         )
+
+
+class BulkScheduleHintTimingView(discord.ui.View):
+    def __init__(self, owner_id, channel_id, channel_mention, interval_unit, is_admin):
+        super().__init__(timeout=300)
+        self.add_item(BulkScheduleHintTimingButton(owner_id, channel_id, channel_mention, interval_unit, is_admin, True))
+        self.add_item(BulkScheduleHintTimingButton(owner_id, channel_id, channel_mention, interval_unit, is_admin, False))
+        self.add_item(SDACBackButton(is_admin))
 
 
 class BulkScheduleUnitView(discord.ui.View):
@@ -3417,6 +3523,7 @@ def initialize_database():
                 random_item INTEGER DEFAULT 0,
                 starts_at TEXT,
                 close_after_minutes INTEGER DEFAULT 0,
+                scale_hint_timing INTEGER DEFAULT 1,
                 status TEXT DEFAULT 'queued',
                 game_id INTEGER,
                 created_by TEXT,
@@ -3564,6 +3671,13 @@ def initialize_database():
             ensure_column(
                 connection, "guess_library_items", column, definition
             )
+
+        ensure_column(
+            connection,
+            "scheduled_games",
+            "scale_hint_timing",
+            "INTEGER DEFAULT 1",
+        )
 
         ensure_column(
             connection,
@@ -4109,6 +4223,20 @@ def scaled_auto_hint_minutes(auto_hint_minutes, hints, next_question_at=None, no
     phases = hint_count + 1
     scaled_minutes = max(1, available_seconds // 60 // phases)
     return min(auto_hint_minutes, int(scaled_minutes))
+
+
+def scheduled_hint_deadline(next_scheduled_start_at=None, close_after_minutes=0, now=None):
+    if next_scheduled_start_at:
+        return next_scheduled_start_at
+    try:
+        close_after_minutes = int(close_after_minutes or 0)
+    except (TypeError, ValueError):
+        close_after_minutes = 0
+    if close_after_minutes <= 0:
+        return None
+    if now is None:
+        now = datetime.now(timezone.utc)
+    return now + timedelta(minutes=close_after_minutes)
 
 
 def format_hint_text_for_display(hint):
@@ -5792,6 +5920,8 @@ async def start_library_game_item(
     source="library",
     scheduled_id=None,
     next_scheduled_start_at=None,
+    close_after_minutes=0,
+    scale_hint_timing=True,
 ):
     guild_config = get_guild_config(guild.id, create=False)
     if emergency_pause_message(guild_config):
@@ -5901,11 +6031,15 @@ async def start_library_game_item(
             item["category"] or "",
             item["hint_text"] or "",
         )
-        auto_hint_minutes = scaled_auto_hint_minutes(
-            auto_hint_minutes,
-            generated_hints,
-            next_question_at=next_scheduled_start_at,
-        )
+        if scale_hint_timing:
+            auto_hint_minutes = scaled_auto_hint_minutes(
+                auto_hint_minutes,
+                generated_hints,
+                next_question_at=scheduled_hint_deadline(
+                    next_scheduled_start_at,
+                    close_after_minutes=close_after_minutes,
+                ),
+            )
         game_lines = ["**Guessing Game Started**"]
         prompt_text = (item["prompt_text"] or "").strip()
         if prompt_text:
@@ -11982,6 +12116,7 @@ def schedule_library_game_record(
     category="",
     random_item=True,
     close_after_minutes=0,
+    scale_hint_timing=True,
 ):
     guild_config = get_guild_config(interaction.guild_id, create=False)
     if not feature_enabled(guild_config, "guessing_games"):
@@ -12005,10 +12140,10 @@ def schedule_library_game_record(
         cursor = connection.execute("""
             INSERT INTO scheduled_games (
                 guild_id, channel_id, library_item_id, category, random_item,
-                starts_at, close_after_minutes, status, created_by,
+                starts_at, close_after_minutes, scale_hint_timing, status, created_by,
                 created_by_name, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)
         """, (
             str(interaction.guild_id),
             str(channel.id),
@@ -12017,6 +12152,7 @@ def schedule_library_game_record(
             1 if random_item else 0,
             starts_at.isoformat(),
             int(close_after_minutes or 0),
+            1 if scale_hint_timing else 0,
             str(interaction.user.id),
             str(interaction.user),
             utc_now_iso(),
@@ -12044,6 +12180,7 @@ def schedule_library_game_record(
     category="Optional library category filter when item_id is 0",
     random_item="Pick a random matching library item",
     close_after_minutes="Automatically close the game after this many minutes",
+    scale_hint_timing="Shorten automatic hint timing to fit before the next schedule or auto-close time",
 )
 async def schedulegame(
     interaction,
@@ -12053,6 +12190,7 @@ async def schedulegame(
     category: str = "",
     random_item: bool = True,
     close_after_minutes: int = 0,
+    scale_hint_timing: bool = True,
 ):
     if not await require_admin(interaction):
         return
@@ -12067,6 +12205,7 @@ async def schedulegame(
             category=category,
             random_item=random_item,
             close_after_minutes=close_after_minutes,
+            scale_hint_timing=scale_hint_timing,
         )
     except ValueError as error:
         await interaction.response.send_message(str(error), ephemeral=True)
@@ -12082,6 +12221,7 @@ async def schedulegame(
                 if close_after_minutes
                 else "Auto-close: `disabled`"
             ),
+            f"Hint timing: `{'auto-scaled' if scale_hint_timing else 'normal'}`",
         ]),
         ephemeral=True,
     )
@@ -14402,10 +14542,12 @@ async def start_due_scheduled_games():
                 channel,
                 item,
                 scheduled["created_by"] or "system",
-                scheduled["created_by_name"] or "SDAC scheduler",
+                scheduled["created_by_name"] or "Sana scheduler",
                 source="scheduled",
                 scheduled_id=scheduled["id"],
                 next_scheduled_start_at=next_scheduled_start_at,
+                close_after_minutes=int(scheduled["close_after_minutes"] or 0),
+                scale_hint_timing=int(scheduled["scale_hint_timing"] if scheduled["scale_hint_timing"] is not None else 1) != 0,
             )
             new_status = (
                 "running"
