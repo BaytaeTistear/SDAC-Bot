@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.4.9 Experimental
+
+Version 4.4.9 makes MyAnimeList XML import use real `.xml` file uploads and makes username import more resilient when the public MAL/Jikan service has temporary 504 errors.
+
+## Anime Profiles
+
+- changes `/sana` -> Anime Profile -> Import MyAnimeList -> Import XML to wait for a `.xml` attachment instead of pasted XML text
+- imports uploaded MAL XML files into separate Anime and Manga profile sections
+- removes the uploaded XML message after import when Discord permissions allow it
+- lets username imports continue when one public MAL/Jikan subsection returns a temporary upstream error
+- shows a friendly fallback message when username import is fully unavailable and recommends XML file import
+
+---
 # Sana-Chan Version 4.4.8 Experimental
 
 Version 4.4.8 moves MyAnimeList import into the guided `/sana` Anime Profile flow and splits profiles into Anime and Manga sections.

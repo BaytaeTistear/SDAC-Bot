@@ -830,7 +830,7 @@ SDAC_SUBMENUS = {
         "placeholder": "Choose an anime profile action",
         "options": [
             ("anime_save", "Save Profile", "Run /animeprofile favorites watching."),
-            ("anime_import", "Import MyAnimeList", "Import by username or pasted XML export."),
+            ("anime_import", "Import MyAnimeList", "Import by username or .xml export file."),
             ("anime_view", "View Profile", "Choose a member and show their saved anime profile."),
             ("anime_activities", "Activity List", "Run /animeactivities for activity keys."),
         ],
@@ -907,7 +907,7 @@ SDAC_SUBMENU_DETAILS = {
     "guess_hint": "**Show Hint**\nShow the currently revealed hint for the active game in this channel.",
     "guess_active": "**Active Game**\nShow the active guessing game status in this channel.",
     "anime_save": "**Save Anime Profile**\nRun `/animeprofile favorites watching` to save favorites and currently watching notes.",
-    "anime_import": "**Import MyAnimeList**\nImport a public MyAnimeList username or paste MAL XML export data from the guided `/sana` flow.",
+    "anime_import": "**Import MyAnimeList**\nImport a public MyAnimeList username or upload a `.xml` export file from the guided `/sana` flow.",
     "anime_view": "**View Anime Profile**\nChoose a server member from `/sana` to view their saved anime profile.",
     "anime_activities": "**Anime Activities**\nRun `/animeactivities` to see available activity keys and anime game/community ideas.",
     "setup_bot_name": "**Bot Name**\nAdmins can set the bot nickname users see inside this server. Leave it blank to reset to the bot's global username.",
@@ -1675,43 +1675,72 @@ class AnimeProfileImportUsernameModal(discord.ui.Modal):
         )
 
 
-class AnimeProfileImportXmlModal(discord.ui.Modal):
-    def __init__(self, owner_id, is_admin=False):
-        super().__init__(title="Import MAL XML")
-        self.owner_id = int(owner_id)
-        self.is_admin = bool(is_admin)
-        self.xml_input = discord.ui.TextInput(
-            label="MAL XML export text",
-            placeholder="Paste XML starting with <myanimelist>...",
-            style=discord.TextStyle.paragraph,
-            required=True,
-            max_length=4000,
-        )
-        self.add_item(self.xml_input)
+async def import_mal_xml_attachment_flow(interaction, owner_id, is_admin=False):
+    if interaction.user.id != int(owner_id):
+        await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+        return
+    if not interaction.channel:
+        await interaction.response.send_message("Sana-Chan needs a server channel so you can attach the `.xml` export file.", ephemeral=True)
+        return
+    await interaction.response.send_message(
+        "Attach your MyAnimeList `.xml` export file in this channel within 3 minutes. "
+        "Sana-Chan will read it, import Anime and Manga sections, then remove the upload message if allowed.",
+        ephemeral=True,
+    )
 
-    async def on_submit(self, interaction):
-        if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
-            return
-        try:
-            profile = summarize_mal_xml_profile(str(self.xml_input.value or ""))
-        except ValueError as error:
-            await interaction.response.send_message(str(error), ephemeral=True)
-            return
-        save_anime_profile_sections(
-            interaction.guild_id,
-            interaction.user.id,
-            interaction.user,
-            profile["anime_favorites"],
-            profile["anime_watching"],
-            profile["manga_favorites"],
-            profile["manga_reading"],
-        )
-        await interaction.response.send_message(
-            "Imported MyAnimeList XML into your Sana-Chan anime and manga profile.",
-            ephemeral=True,
-        )
+    def xml_upload_check(message):
+        if message.author.id != int(owner_id):
+            return False
+        if message.channel.id != interaction.channel.id:
+            return False
+        return any(str(attachment.filename or "").casefold().endswith(".xml") for attachment in message.attachments)
 
+    try:
+        message = await bot.wait_for("message", check=xml_upload_check, timeout=180)
+    except asyncio.TimeoutError:
+        await interaction.followup.send("No `.xml` file was uploaded before the import timed out. Try Import XML again when the file is ready.", ephemeral=True)
+        return
+
+    attachment = next(
+        attachment
+        for attachment in message.attachments
+        if str(attachment.filename or "").casefold().endswith(".xml")
+    )
+    if int(attachment.size or 0) > 5 * 1024 * 1024:
+        await interaction.followup.send("That XML file is too large. Export a smaller MAL list file or trim old entries first.", ephemeral=True)
+        return
+    try:
+        xml_bytes = await attachment.read()
+        xml_text = xml_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        await interaction.followup.send("That XML file is not UTF-8 text. Re-export it from MyAnimeList and try again.", ephemeral=True)
+        return
+    except discord.HTTPException:
+        await interaction.followup.send("Sana-Chan could not download that XML attachment from Discord. Try uploading it again.", ephemeral=True)
+        return
+
+    try:
+        profile = summarize_mal_xml_profile(xml_text)
+    except ValueError as error:
+        await interaction.followup.send(str(error), ephemeral=True)
+        return
+    save_anime_profile_sections(
+        interaction.guild_id,
+        interaction.user.id,
+        interaction.user,
+        profile["anime_favorites"],
+        profile["anime_watching"],
+        profile["manga_favorites"],
+        profile["manga_reading"],
+    )
+    try:
+        await message.delete()
+    except discord.HTTPException:
+        pass
+    await interaction.followup.send(
+        "Imported your MyAnimeList XML file into separate Sana-Chan Anime and Manga profile sections.",
+        ephemeral=True,
+    )
 
 class AnimeProfileImportButton(discord.ui.Button):
     def __init__(self, owner_id, mode, is_admin=False):
@@ -1727,7 +1756,7 @@ class AnimeProfileImportButton(discord.ui.Button):
             await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
             return
         if self.mode == "xml":
-            await interaction.response.send_modal(AnimeProfileImportXmlModal(self.owner_id, self.is_admin))
+            await import_mal_xml_attachment_flow(interaction, self.owner_id, self.is_admin)
             return
         await interaction.response.send_modal(AnimeProfileImportUsernameModal(self.owner_id, self.is_admin))
 
@@ -1745,7 +1774,7 @@ async def handle_sana_anime_action(interaction, action, is_admin, section_key):
         await interaction.response.edit_message(
             content=(
                 "**Import MyAnimeList**\n"
-                "Choose username import for public MAL lists, or XML import if you exported your MAL list. "
+                "Choose username import for public MAL lists, or upload a `.xml` export if you exported your MAL list. "
                 "Imported data is saved into separate Anime and Manga sections."
             ),
             view=AnimeProfileImportView(interaction.user.id, is_admin),
@@ -9274,10 +9303,10 @@ def jikan_get_json(path, params=None):
         )
     request = Request(
         f"{JIKAN_API_BASE}{path}{query}",
-        headers={"User-Agent": "SDAC-Bot MyAnimeList import"},
+        headers={"User-Agent": "Sana-Chan MyAnimeList import"},
     )
     try:
-        with urlopen(request, timeout=12) as response:
+        with urlopen(request, timeout=8) as response:
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as error:
         if error.code == 404:
@@ -9288,6 +9317,21 @@ def jikan_get_json(path, params=None):
     except (URLError, TimeoutError, json.JSONDecodeError) as error:
         raise ValueError("MyAnimeList import could not reach the public anime list service.") from error
 
+
+def jikan_get_json_optional(path, params=None):
+    try:
+        return jikan_get_json(path, params), ""
+    except ValueError as error:
+        return {}, str(error)
+
+
+def jikan_payload_has_data(payload):
+    data = (payload or {}).get("data")
+    if isinstance(data, list):
+        return bool(data)
+    if isinstance(data, dict):
+        return any(bool(value) for value in data.values())
+    return False
 
 def title_from_jikan_entry(entry, media_key="anime"):
     media = entry.get(media_key) if isinstance(entry, dict) else None
@@ -9412,29 +9456,36 @@ async def fetch_mal_profile_summary(username):
     if not clean_username:
         raise ValueError("Enter a valid MyAnimeList username.")
     encoded = quote(clean_username, safe="")
-    watching_payload, completed_payload, favorites_payload, manga_reading_payload, manga_completed_payload = await asyncio.gather(
+    results = await asyncio.gather(
         asyncio.to_thread(
-            jikan_get_json,
+            jikan_get_json_optional,
             f"/users/{encoded}/animelist",
             {"status": "watching", "limit": 10, "order_by": "updated_at", "sort": "desc"},
         ),
         asyncio.to_thread(
-            jikan_get_json,
+            jikan_get_json_optional,
             f"/users/{encoded}/animelist",
             {"status": "completed", "limit": 10, "order_by": "score", "sort": "desc"},
         ),
-        asyncio.to_thread(jikan_get_json, f"/users/{encoded}/favorites", None),
+        asyncio.to_thread(jikan_get_json_optional, f"/users/{encoded}/favorites", None),
         asyncio.to_thread(
-            jikan_get_json,
+            jikan_get_json_optional,
             f"/users/{encoded}/mangalist",
             {"status": "reading", "limit": 10, "order_by": "updated_at", "sort": "desc"},
         ),
         asyncio.to_thread(
-            jikan_get_json,
+            jikan_get_json_optional,
             f"/users/{encoded}/mangalist",
             {"status": "completed", "limit": 10, "order_by": "score", "sort": "desc"},
         ),
     )
+    payloads = [payload for payload, _error in results]
+    errors = [error for _payload, error in results if error]
+    if errors and not any(jikan_payload_has_data(payload) for payload in payloads):
+        if all("not found or is not public" in error for error in errors):
+            raise ValueError("That MyAnimeList profile was not found or is not public.")
+        raise ValueError("MyAnimeList import is temporarily unavailable. Try again in a minute, or use XML file import.")
+    watching_payload, completed_payload, favorites_payload, manga_reading_payload, manga_completed_payload = payloads
     return summarize_mal_profile(
         clean_username,
         watching_payload,

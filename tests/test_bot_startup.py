@@ -1,3 +1,4 @@
+import asyncio
 import os
 import tempfile
 import unittest
@@ -118,6 +119,29 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("Reading One", profile["manga_reading"])
         self.assertIn("Completed Manga", profile["manga_reading"])
 
+    def test_jikan_optional_fetch_allows_partial_profile_import(self):
+        import bot
+
+        original = bot.jikan_get_json
+        calls = []
+
+        def fake_jikan_get_json(path, params=None):
+            calls.append((path, params or {}))
+            if "mangalist" in path:
+                raise ValueError("MyAnimeList import failed with HTTP 504.")
+            if "favorites" in path:
+                return {"data": {"anime": [{"title": "Favorite Anime"}], "manga": []}}
+            return {"data": [{"anime": {"title": "Anime Pick"}}]}
+
+        try:
+            bot.jikan_get_json = fake_jikan_get_json
+            profile = asyncio.run(bot.fetch_mal_profile_summary("partial_user"))
+        finally:
+            bot.jikan_get_json = original
+
+        self.assertEqual(len(calls), 5)
+        self.assertIn("Favorite Anime", profile["anime_favorites"])
+        self.assertIn("No public manga", profile["manga_reading"])
     def test_mal_xml_profile_summary_splits_anime_and_manga(self):
         import bot
 
@@ -276,14 +300,17 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("View Profile", anime_labels)
         self.assertIn("Choose a server member", bot.SDAC_SUBMENU_DETAILS["anime_view"])
         self.assertNotIn("/animeprofileview", bot.SDAC_SUBMENU_DETAILS["anime_view"])
-        self.assertIn("XML", bot.SDAC_SUBMENU_DETAILS["anime_import"])
+        self.assertIn(".xml", bot.SDAC_SUBMENU_DETAILS["anime_import"])
         self.assertNotIn("/animeprofileimport", bot.SDAC_SUBMENU_DETAILS["anime_import"])
         self.assertTrue(hasattr(bot, "AnimeProfileView"))
         self.assertTrue(hasattr(bot, "AnimeProfileMemberSelect"))
         self.assertTrue(hasattr(bot, "AnimeProfileSelfButton"))
         self.assertTrue(hasattr(bot, "AnimeProfileImportView"))
         self.assertTrue(hasattr(bot, "AnimeProfileImportUsernameModal"))
-        self.assertTrue(hasattr(bot, "AnimeProfileImportXmlModal"))
+        self.assertTrue(hasattr(bot, "import_mal_xml_attachment_flow"))
+        self.assertFalse(hasattr(bot, "AnimeProfileImportXmlModal"))
+        self.assertTrue(hasattr(bot, "jikan_get_json_optional"))
+        self.assertTrue(hasattr(bot, "jikan_payload_has_data"))
         self.assertTrue(hasattr(bot, "handle_sana_anime_action"))
 
 if __name__ == "__main__":
