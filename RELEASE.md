@@ -1,4 +1,15 @@
-# Sana-Chan Version 4.4.12 Experimental
+# Sana-Chan Version 4.4.13 Experimental
+
+Version 4.4.13 fixes bulk scheduled guessing cadence entry by replacing the minutes/hours/days unit picker with a single `DD:HH:MM` duration field.
+
+## Guessing Games
+
+- removes the broken bulk schedule cadence unit dropdown
+- changes bulk schedule cadence entry to `DD:HH:MM`, such as `00:00:30`, `00:03:00`, or `07:00:00`
+- validates days, hours, and minutes before scheduling games
+- shows the saved cadence back to admins in `DD:HH:MM` format
+
+---# Sana-Chan Version 4.4.12 Experimental
 
 Version 4.4.12 adds the MyAnimeList export page link to the XML import flow.
 

@@ -930,7 +930,7 @@ SDAC_SUBMENU_DETAILS = {
     "games_set_channel": "**Set Guessing Channel**\nChoose this action to save the default channel where Sana-Chan should start and schedule guessing games.",
     "games_start_library": "**Start Library Game**\nChoose this action to pick a channel, optionally set a library item ID or category, and start the game directly from `/sana`.",
     "games_schedule": "**Schedule Game**\nUse this action for one saved library game, or choose Bulk Schedule to queue a repeating run.",
-    "games_bulk_schedule": "**Bulk Schedule**\nChoose a game channel, pick minutes, hours, or days, then enter how often Sana-Chan should ask a new saved-library question.",
+    "games_bulk_schedule": "**Bulk Schedule**\nChoose a game channel, then enter how often Sana-Chan should ask a new saved-library question as `DD:HH:MM`, such as `00:00:30`, `00:03:00`, or `07:00:00`.",
     "games_timeout": "**Guess Timeout**\nSet how many minutes a user waits after a wrong guess before they can guess again.",
     "games_active": "**Active Game**\nShow admin details for the active guessing game in this channel.",
     "games_cancel_scheduled": "**Cancel Scheduled Games**\nCancel all queued or starting scheduled games for this server. Current live games are handled by Cancel Game.",
@@ -2570,20 +2570,41 @@ class ScheduleGameWizardView(discord.ui.View):
             self.add_item(UseSavedScheduleChannelButton(owner_id, int(saved_channel_id)))
         self.add_item(SDACBackButton(is_admin))
 
+def parse_dd_hh_mm_duration(value):
+    raw = str(value or "").strip()
+    match = re.fullmatch(r"(\d{1,3}):(\d{1,2}):(\d{1,2})", raw)
+    if not match:
+        raise ValueError("Enter cadence as `DD:HH:MM`, for example `00:00:30`, `00:03:00`, or `07:00:00`.")
+    days, hours, minutes = (int(part) for part in match.groups())
+    if hours > 23:
+        raise ValueError("Hours in `DD:HH:MM` must be between 00 and 23.")
+    if minutes > 59:
+        raise ValueError("Minutes in `DD:HH:MM` must be between 00 and 59.")
+    total_minutes = days * 1440 + hours * 60 + minutes
+    if total_minutes < 1 or total_minutes > 525600:
+        raise ValueError("The schedule interval must be between `00:00:01` and `365:00:00`.")
+    return total_minutes
+
+
+def format_dd_hh_mm_duration(total_minutes):
+    total_minutes = max(0, int(total_minutes or 0))
+    days, remainder = divmod(total_minutes, 1440)
+    hours, minutes = divmod(remainder, 60)
+    return f"{days:02d}:{hours:02d}:{minutes:02d}"
+
 class BulkScheduleGameModal(discord.ui.Modal):
-    def __init__(self, owner_id, channel_id, channel_mention, interval_unit, scale_hint_timing=True):
-        super().__init__(title=f"Bulk Schedule: {interval_unit.title()}")
+    def __init__(self, owner_id, channel_id, channel_mention, scale_hint_timing=True):
+        super().__init__(title="Bulk Schedule")
         self.owner_id = int(owner_id)
         self.channel_id = int(channel_id)
         self.channel_mention = channel_mention
-        self.interval_unit = interval_unit
         self.scale_hint_timing = bool(scale_hint_timing)
-        self.interval_amount_input = discord.ui.TextInput(
-            label=f"How often? ({interval_unit})",
-            placeholder="Examples: 30 minutes, 3 hours, or 7 days",
-            default="30" if interval_unit == "minutes" else "3" if interval_unit == "hours" else "7",
+        self.interval_duration_input = discord.ui.TextInput(
+            label="How often? (DD:HH:MM)",
+            placeholder="Examples: 00:00:30, 00:03:00, or 07:00:00",
+            default="00:00:30",
             required=True,
-            max_length=6,
+            max_length=9,
         )
         self.question_count_input = discord.ui.TextInput(
             label="How many questions should be queued?",
@@ -2612,7 +2633,7 @@ class BulkScheduleGameModal(discord.ui.Modal):
             required=False,
             max_length=8,
         )
-        self.add_item(self.interval_amount_input)
+        self.add_item(self.interval_duration_input)
         self.add_item(self.question_count_input)
         self.add_item(self.item_id_input)
         self.add_item(self.category_input)
@@ -2630,20 +2651,9 @@ class BulkScheduleGameModal(discord.ui.Modal):
             await interaction.response.send_message("That channel is no longer available.", ephemeral=True)
             return
         try:
-            interval_amount = int(str(self.interval_amount_input.value or "").strip())
-        except ValueError:
-            await interaction.response.send_message("The schedule interval must be a whole number.", ephemeral=True)
-            return
-        if interval_amount < 1:
-            await interaction.response.send_message("The schedule interval must be at least 1.", ephemeral=True)
-            return
-        unit_minutes = {"minutes": 1, "hours": 60, "days": 1440}.get(self.interval_unit)
-        if unit_minutes is None:
-            await interaction.response.send_message("Choose minutes, hours, or days for the schedule interval.", ephemeral=True)
-            return
-        interval_minutes = interval_amount * unit_minutes
-        if interval_minutes < 1 or interval_minutes > 525600:
-            await interaction.response.send_message("The schedule interval must be between 1 minute and 365 days.", ephemeral=True)
+            interval_minutes = parse_dd_hh_mm_duration(self.interval_duration_input.value)
+        except ValueError as error:
+            await interaction.response.send_message(str(error), ephemeral=True)
             return
         try:
             question_count = int(str(self.question_count_input.value or "").strip())
@@ -2697,7 +2707,7 @@ class BulkScheduleGameModal(discord.ui.Modal):
         lines = [
             "**Bulk Schedule Games**",
             f"Channel: {channel.mention}",
-            f"Cadence: every `{interval_amount}` {self.interval_unit}",
+            f"Cadence: every `{format_dd_hh_mm_duration(interval_minutes)}` (`DD:HH:MM`)",
             "When each scheduled question starts, any older active game in that channel is closed first.",
             f"Hint timing: `{'auto-scaled' if self.scale_hint_timing else 'normal'}`",
         ]
@@ -2709,52 +2719,14 @@ class BulkScheduleGameModal(discord.ui.Modal):
             lines.extend(["", "Stopped:", *errors[:4]])
         await interaction.edit_original_response(content="\n".join(lines)[:1900])
 
-
-class BulkScheduleUnitSelect(discord.ui.Select):
-    def __init__(self, owner_id, channel_id, channel_mention):
-        self.owner_id = int(owner_id)
-        self.channel_id = int(channel_id)
-        self.channel_mention = channel_mention
-        options = [
-            discord.SelectOption(label="Minutes", value="minutes", description="Ask every N minutes, such as 30 minutes."),
-            discord.SelectOption(label="Hours", value="hours", description="Ask every N hours, such as 3 hours."),
-            discord.SelectOption(label="Days", value="days", description="Ask every N days, such as 7 days."),
-        ]
-        super().__init__(placeholder="How often should Sana-Chan ask?", min_values=1, max_values=1, options=options, row=0)
-
-    async def callback(self, interaction):
-        if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
-            return
-        if not admin_only(interaction):
-            await interaction.response.send_message("Only admins can bulk schedule games.", ephemeral=True)
-            return
-        await interaction.response.edit_message(
-            content=(
-                "**Bulk Schedule Games**\n"
-                f"Channel: {self.channel_mention}\n"
-                f"Cadence unit: `{str(self.values[0])}`\n"
-                "Should Sana-Chan auto-scale hint timing so every generated hint can appear before the next question?"
-            ),
-            view=BulkScheduleHintTimingView(
-                interaction.user.id,
-                self.channel_id,
-                self.channel_mention,
-                str(self.values[0]),
-                True,
-            ),
-        )
-
-
 class BulkScheduleHintTimingButton(discord.ui.Button):
-    def __init__(self, owner_id, channel_id, channel_mention, interval_unit, is_admin, scale_hint_timing):
+    def __init__(self, owner_id, channel_id, channel_mention, is_admin, scale_hint_timing):
         label = "Auto-scale Hints" if scale_hint_timing else "Normal Hint Timing"
         style = discord.ButtonStyle.primary if scale_hint_timing else discord.ButtonStyle.secondary
         super().__init__(label=label, style=style, row=0)
         self.owner_id = int(owner_id)
         self.channel_id = int(channel_id)
         self.channel_mention = channel_mention
-        self.interval_unit = interval_unit
         self.scale_hint_timing = bool(scale_hint_timing)
 
     async def callback(self, interaction):
@@ -2773,24 +2745,16 @@ class BulkScheduleHintTimingButton(discord.ui.Button):
                 interaction.user.id,
                 channel.id,
                 channel.mention,
-                self.interval_unit,
                 scale_hint_timing=self.scale_hint_timing,
             )
         )
 
 
 class BulkScheduleHintTimingView(discord.ui.View):
-    def __init__(self, owner_id, channel_id, channel_mention, interval_unit, is_admin):
+    def __init__(self, owner_id, channel_id, channel_mention, is_admin):
         super().__init__(timeout=300)
-        self.add_item(BulkScheduleHintTimingButton(owner_id, channel_id, channel_mention, interval_unit, is_admin, True))
-        self.add_item(BulkScheduleHintTimingButton(owner_id, channel_id, channel_mention, interval_unit, is_admin, False))
-        self.add_item(SDACBackButton(is_admin))
-
-
-class BulkScheduleUnitView(discord.ui.View):
-    def __init__(self, is_admin, owner_id, channel_id, channel_mention):
-        super().__init__(timeout=300)
-        self.add_item(BulkScheduleUnitSelect(owner_id, channel_id, channel_mention))
+        self.add_item(BulkScheduleHintTimingButton(owner_id, channel_id, channel_mention, is_admin, True))
+        self.add_item(BulkScheduleHintTimingButton(owner_id, channel_id, channel_mention, is_admin, False))
         self.add_item(SDACBackButton(is_admin))
 
 
@@ -2818,10 +2782,10 @@ class BulkScheduleGameChannelSelect(discord.ui.ChannelSelect):
             content=(
                 "**Bulk Schedule Games**\n"
                 f"Channel: {channel.mention}\n"
-                "Pick whether Sana-Chan should ask new questions every N minutes, hours, or days. "
+                "Choose hint timing, then enter the repeating cadence as `DD:HH:MM`. "
                 "Each new scheduled question will close any older active game in that channel."
             ),
-            view=BulkScheduleUnitView(self.is_admin, interaction.user.id, channel.id, channel.mention),
+            view=BulkScheduleHintTimingView(interaction.user.id, channel.id, channel.mention, self.is_admin),
         )
 
 
@@ -2848,10 +2812,10 @@ class UseSavedBulkScheduleChannelButton(discord.ui.Button):
             content=(
                 "**Bulk Schedule Games**\n"
                 f"Channel: {channel.mention}\n"
-                "Pick whether Sana-Chan should ask new questions every N minutes, hours, or days. "
+                "Choose hint timing, then enter the repeating cadence as `DD:HH:MM`. "
                 "Each new scheduled question will close any older active game in that channel."
             ),
-            view=BulkScheduleUnitView(self.is_admin, interaction.user.id, channel.id, channel.mention),
+            view=BulkScheduleHintTimingView(interaction.user.id, channel.id, channel.mention, self.is_admin),
         )
 
 
