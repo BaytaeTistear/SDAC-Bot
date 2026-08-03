@@ -247,6 +247,18 @@ class BotStartupTests(unittest.TestCase):
         self.assertTrue(hasattr(bot, "sana_categories_content"))
         self.assertTrue(hasattr(bot, "resolve_selected_text_channel"))
 
+    def test_event_logging_inserts_have_matching_placeholders(self):
+        import inspect
+        import re
+        import bot
+
+        source = inspect.getsource(bot.record_rate_limit_event)
+        source += "\n" + inspect.getsource(bot.record_content_moderation_event)
+        source += "\n" + inspect.getsource(bot.guess.callback)
+        for match in re.finditer(r"INSERT INTO (rate_limit_events|content_moderation_events) \((.*?)\)\s*VALUES \((.*?)\)", source, re.S):
+            columns = [column.strip() for column in match.group(2).replace("\n", " ").split(",") if column.strip()]
+            placeholders = re.findall(r"\?", match.group(3))
+            self.assertEqual(len(columns), len(placeholders), match.group(1))
     def test_scheduled_game_start_message_hides_internal_status(self):
         import inspect
         import bot

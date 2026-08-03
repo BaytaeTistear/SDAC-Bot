@@ -5802,7 +5802,7 @@ def record_rate_limit_event(
                 guild_id, user_id, username, bucket, action,
                 retry_after_seconds, details, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             str(guild_id) if guild_id is not None else "",
             str(user_id) if user_id is not None else "",
@@ -5830,7 +5830,7 @@ def record_content_moderation_event(
                 guild_id, user_id, username, category, reason, action,
                 details, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             str(guild_id) if guild_id is not None else "",
             str(user_id) if user_id is not None else "",
@@ -13875,7 +13875,7 @@ async def guess(interaction, guess: str):
                     guild_id, user_id, username, bucket, action,
                     retry_after_seconds, details, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 str(interaction.guild_id),
                 str(interaction.user.id),

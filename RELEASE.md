@@ -1,3 +1,14 @@
+# Sana-Chan Version 4.4.15 Experimental
+
+Version 4.4.15 fixes `/guess` and other cooldown-protected commands that could fail before Discord received a response.
+
+## Guessing Games
+
+- fixes the wrong-guess cooldown logging insert so incorrect guesses respond properly
+- fixes shared rate-limit and moderation logging inserts with matching SQL placeholders
+- adds regression coverage for event logging placeholder counts
+
+---
 # Sana-Chan Version 4.4.14 Experimental
 
 Version 4.4.14 restores the missing bulk schedule start-time prompt while keeping the new `DD:HH:MM` repeat cadence format.
@@ -3874,5 +3885,4 @@ Not included:
 - `media/` uploads
 - `backups/`
 - `venv/` or Python cache files
-
 
