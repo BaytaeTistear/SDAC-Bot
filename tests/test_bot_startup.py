@@ -220,6 +220,11 @@ class BotStartupTests(unittest.TestCase):
         self.assertTrue(hasattr(bot, "ScheduleHintTimingButton"))
         self.assertTrue(hasattr(bot, "BulkScheduleHintTimingView"))
         self.assertTrue(hasattr(bot, "BulkScheduleHintTimingButton"))
+        import inspect
+        bulk_modal_source = inspect.getsource(bot.BulkScheduleGameModal)
+        self.assertIn("Start when?", bulk_modal_source)
+        self.assertIn("Repeat every (DD:HH:MM)", bulk_modal_source)
+        self.assertIn("parse_scheduled_start_time", bulk_modal_source)
         self.assertTrue(hasattr(bot, "GuessTimeoutModal"))
         self.assertTrue(hasattr(bot, "CancelScheduledGamesView"))
         self.assertTrue(hasattr(bot, "ConfirmCancelScheduledGamesButton"))
@@ -301,3 +306,4 @@ class BotStartupTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

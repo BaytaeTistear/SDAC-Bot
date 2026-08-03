@@ -2599,8 +2599,15 @@ class BulkScheduleGameModal(discord.ui.Modal):
         self.channel_id = int(channel_id)
         self.channel_mention = channel_mention
         self.scale_hint_timing = bool(scale_hint_timing)
+        self.start_time_input = discord.ui.TextInput(
+            label="Start when?",
+            placeholder="now, +30m, +2h, tomorrow 8pm, or 2026-08-03 18:00",
+            default="now",
+            required=True,
+            max_length=80,
+        )
         self.interval_duration_input = discord.ui.TextInput(
-            label="How often? (DD:HH:MM)",
+            label="Repeat every (DD:HH:MM)",
             placeholder="Examples: 00:00:30, 00:03:00, or 07:00:00",
             default="00:00:30",
             required=True,
@@ -2626,18 +2633,11 @@ class BulkScheduleGameModal(discord.ui.Modal):
             required=False,
             max_length=80,
         )
-        self.close_after_input = discord.ui.TextInput(
-            label="Auto-close minutes",
-            placeholder="0 disables auto-close",
-            default="0",
-            required=False,
-            max_length=8,
-        )
+        self.add_item(self.start_time_input)
         self.add_item(self.interval_duration_input)
         self.add_item(self.question_count_input)
         self.add_item(self.item_id_input)
         self.add_item(self.category_input)
-        self.add_item(self.close_after_input)
 
     async def on_submit(self, interaction):
         if interaction.user.id != self.owner_id:
@@ -2650,7 +2650,9 @@ class BulkScheduleGameModal(discord.ui.Modal):
         if not isinstance(channel, discord.TextChannel):
             await interaction.response.send_message("That channel is no longer available.", ephemeral=True)
             return
+        guild_config = get_guild_config(interaction.guild_id, create=False)
         try:
+            starts_at = parse_scheduled_start_time(str(self.start_time_input.value or "").strip(), guild_config)
             interval_minutes = parse_dd_hh_mm_duration(self.interval_duration_input.value)
         except ValueError as error:
             await interaction.response.send_message(str(error), ephemeral=True)
@@ -2671,23 +2673,15 @@ class BulkScheduleGameModal(discord.ui.Modal):
         if item_id < 0:
             await interaction.response.send_message("Library item ID must be 0 or a positive number.", ephemeral=True)
             return
-        try:
-            close_after_minutes = int(str(self.close_after_input.value or "0").strip() or "0")
-        except ValueError:
-            await interaction.response.send_message("Auto-close minutes must be a whole number.", ephemeral=True)
-            return
-        if close_after_minutes < 0 or close_after_minutes > 10080:
-            await interaction.response.send_message("Auto-close minutes must be between 0 and 10080.", ephemeral=True)
-            return
+        close_after_minutes = 0
         await interaction.response.defer(ephemeral=True, thinking=True)
         category = str(self.category_input.value or "").strip()
         created = []
         errors = []
-        now = datetime.now(timezone.utc)
-        guild_config = get_guild_config(interaction.guild_id, create=False)
         timezone_info = get_guild_timezone(guild_config)
+        first_start_at = starts_at
         for index in range(question_count):
-            starts_at = now + timedelta(minutes=interval_minutes * (index + 1))
+            starts_at = first_start_at + timedelta(minutes=interval_minutes * index)
             try:
                 scheduled_id, selected_item = schedule_library_game_record(
                     interaction,
@@ -2707,6 +2701,7 @@ class BulkScheduleGameModal(discord.ui.Modal):
         lines = [
             "**Bulk Schedule Games**",
             f"Channel: {channel.mention}",
+            f"First question: `{first_start_at.astimezone(timezone_info).strftime('%Y-%m-%d %H:%M %Z')}`",
             f"Cadence: every `{format_dd_hh_mm_duration(interval_minutes)}` (`DD:HH:MM`)",
             "When each scheduled question starts, any older active game in that channel is closed first.",
             f"Hint timing: `{'auto-scaled' if self.scale_hint_timing else 'normal'}`",

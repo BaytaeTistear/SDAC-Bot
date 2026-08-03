@@ -1,3 +1,15 @@
+# Sana-Chan Version 4.4.14 Experimental
+
+Version 4.4.14 restores the missing bulk schedule start-time prompt while keeping the new `DD:HH:MM` repeat cadence format.
+
+## Guessing Games
+
+- adds `Start when?` back to the bulk schedule modal
+- keeps repeat cadence as a single `DD:HH:MM` field
+- schedules the first bulk question at the requested start time, then repeats from there
+- shows the first scheduled question time in the confirmation message
+
+---
 # Sana-Chan Version 4.4.13 Experimental
 
 Version 4.4.13 fixes bulk scheduled guessing cadence entry by replacing the minutes/hours/days unit picker with a single `DD:HH:MM` duration field.
@@ -3862,4 +3874,5 @@ Not included:
 - `media/` uploads
 - `backups/`
 - `venv/` or Python cache files
+
 
