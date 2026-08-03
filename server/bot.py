@@ -905,7 +905,7 @@ SDAC_SUBMENU_DETAILS = {
     "guess_hint": "**Show Hint**\nShow the currently revealed hint for the active game in this channel.",
     "guess_active": "**Active Game**\nShow the active guessing game status in this channel.",
     "anime_save": "**Save Anime Profile**\nRun `/animeprofile favorites watching` to save favorites and currently watching notes.",
-    "anime_import": "**Import MyAnimeList**\nUpload your own `.xml` export file from the guided `/sana` flow. Username import is disabled so users cannot import someone else's public account.",
+    "anime_import": "**Import MyAnimeList**\nUpload your own `.xml` export file from the guided `/sana` flow. Export your lists at https://myanimelist.net/panel.php?go=export. Username import is disabled so users cannot import someone else's public account.",
     "anime_view": "**View Anime Profile**\nChoose a server member from `/sana` to view their saved anime profile.",
     "anime_activities": "**Anime Activities**\nRun `/animeactivities` to see available activity keys and anime game/community ideas.",
     "setup_bot_name": "**Bot Name**\nAdmins can set the bot nickname users see inside this server. Leave it blank to reset to the bot's global username.",
@@ -1754,6 +1754,7 @@ async def handle_sana_anime_action(interaction, action, is_admin, section_key):
             content=(
                 "**Import MyAnimeList**\n"
                 "Upload your own MyAnimeList `.xml` export file. "
+                "Export your lists first at https://myanimelist.net/panel.php?go=export. "
                 "Username import is disabled so users cannot import someone else's public account. "
                 "Imported data is saved into separate Anime and Manga sections with profile links and previews when available."
             ),

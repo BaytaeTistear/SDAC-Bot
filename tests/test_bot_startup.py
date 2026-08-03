@@ -282,6 +282,7 @@ class BotStartupTests(unittest.TestCase):
         self.assertNotIn("/animeprofileview", bot.SDAC_SUBMENU_DETAILS["anime_view"])
         self.assertIn(".xml", bot.SDAC_SUBMENU_DETAILS["anime_import"])
         self.assertIn("Username import is disabled", bot.SDAC_SUBMENU_DETAILS["anime_import"])
+        self.assertIn("https://myanimelist.net/panel.php?go=export", bot.SDAC_SUBMENU_DETAILS["anime_import"])
         self.assertNotIn("/animeprofileimport", bot.SDAC_SUBMENU_DETAILS["anime_import"])
         self.assertTrue(hasattr(bot, "AnimeProfileView"))
         self.assertTrue(hasattr(bot, "AnimeProfileMemberSelect"))

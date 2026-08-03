@@ -1,4 +1,14 @@
-# Sana-Chan Version 4.4.11 Experimental
+# Sana-Chan Version 4.4.12 Experimental
+
+Version 4.4.12 adds the MyAnimeList export page link to the XML import flow.
+
+## Anime Profiles
+
+- shows users where to export their MyAnimeList XML file before importing
+- adds `https://myanimelist.net/panel.php?go=export` to the guided `/sana` Anime Profile import text
+- repeats the export link when Sana waits for the uploaded `.xml` file
+
+---# Sana-Chan Version 4.4.11 Experimental
 
 Version 4.4.11 removes unsafe MyAnimeList username import and expands XML profile imports with profile links and previews.
 
