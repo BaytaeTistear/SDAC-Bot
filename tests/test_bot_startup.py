@@ -25,7 +25,7 @@ class BotStartupTests(unittest.TestCase):
         command_names = {command.name for command in bot.tree.get_commands()}
         self.assertEqual(command_names, {"sana", "submit", "guess", "hint"})
         self.assertTrue(bot.SIMPLIFIED_SLASH_COMMANDS)
-        self.assertIn("animeprofileimport", bot.LOW_COST_COMMAND_COOLDOWNS)
+        self.assertNotIn("animeprofileimport", bot.LOW_COST_COMMAND_COOLDOWNS)
         self.assertIn("animeactivities", bot.PRUNED_SLASH_COMMANDS)
         self.assertIn("admincommands", bot.PRUNED_SLASH_COMMANDS)
 
@@ -119,45 +119,25 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("Reading One", profile["manga_reading"])
         self.assertIn("Completed Manga", profile["manga_reading"])
 
-    def test_jikan_optional_fetch_allows_partial_profile_import(self):
-        import bot
-
-        original = bot.jikan_get_json
-        calls = []
-
-        def fake_jikan_get_json(path, params=None):
-            calls.append((path, params or {}))
-            if "mangalist" in path:
-                raise ValueError("MyAnimeList import failed with HTTP 504.")
-            if "favorites" in path:
-                return {"data": {"anime": [{"title": "Favorite Anime"}], "manga": []}}
-            return {"data": [{"anime": {"title": "Anime Pick"}}]}
-
-        try:
-            bot.jikan_get_json = fake_jikan_get_json
-            profile = asyncio.run(bot.fetch_mal_profile_summary("partial_user"))
-        finally:
-            bot.jikan_get_json = original
-
-        self.assertEqual(len(calls), 5)
-        self.assertIn("Favorite Anime", profile["anime_favorites"])
-        self.assertIn("No public manga", profile["manga_reading"])
     def test_mal_xml_profile_summary_splits_anime_and_manga(self):
         import bot
 
         profile = bot.summarize_mal_xml_profile("""
         <myanimelist>
-          <anime><series_title>Anime Watching</series_title><my_status>Watching</my_status></anime>
-          <anime><series_title>Anime Done</series_title><my_status>Completed</my_status></anime>
-          <manga><manga_title>Manga Reading</manga_title><my_status>Reading</my_status></manga>
-          <manga><manga_title>Manga Done</manga_title><my_status>Completed</my_status></manga>
+          <myinfo><user_name>test_user</user_name></myinfo>
+          <anime><series_title>Anime Watching</series_title><my_status>Watching</my_status><series_image>https://cdn.example/anime1.jpg</series_image></anime>
+          <anime><series_title>Anime Done</series_title><my_status>Completed</my_status><series_image>https://cdn.example/anime2.jpg</series_image></anime>
+          <manga><manga_title>Manga Reading</manga_title><my_status>Reading</my_status><series_image>https://cdn.example/manga1.jpg</series_image></manga>
+          <manga><manga_title>Manga Done</manga_title><my_status>Completed</my_status><series_image>https://cdn.example/manga2.jpg</series_image></manga>
         </myanimelist>
         """)
+        self.assertEqual(profile["mal_profile_url"], "https://myanimelist.net/profile/test_user")
         self.assertIn("Anime Done", profile["anime_favorites"])
         self.assertIn("Anime Watching", profile["anime_watching"])
         self.assertIn("Manga Done", profile["manga_favorites"])
         self.assertIn("Manga Reading", profile["manga_reading"])
-
+        self.assertEqual(profile["anime_preview_images"][:1], ["https://cdn.example/anime1.jpg"])
+        self.assertEqual(profile["manga_preview_images"][:1], ["https://cdn.example/manga1.jpg"])
     def test_scheduled_auto_hint_time_scales_to_question_window(self):
         from datetime import datetime, timedelta, timezone
         import bot
@@ -301,16 +281,15 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("Choose a server member", bot.SDAC_SUBMENU_DETAILS["anime_view"])
         self.assertNotIn("/animeprofileview", bot.SDAC_SUBMENU_DETAILS["anime_view"])
         self.assertIn(".xml", bot.SDAC_SUBMENU_DETAILS["anime_import"])
+        self.assertIn("Username import is disabled", bot.SDAC_SUBMENU_DETAILS["anime_import"])
         self.assertNotIn("/animeprofileimport", bot.SDAC_SUBMENU_DETAILS["anime_import"])
         self.assertTrue(hasattr(bot, "AnimeProfileView"))
         self.assertTrue(hasattr(bot, "AnimeProfileMemberSelect"))
         self.assertTrue(hasattr(bot, "AnimeProfileSelfButton"))
         self.assertTrue(hasattr(bot, "AnimeProfileImportView"))
-        self.assertTrue(hasattr(bot, "AnimeProfileImportUsernameModal"))
+        self.assertFalse(hasattr(bot, "AnimeProfileImportUsernameModal"))
         self.assertTrue(hasattr(bot, "import_mal_xml_attachment_flow"))
         self.assertFalse(hasattr(bot, "AnimeProfileImportXmlModal"))
-        self.assertTrue(hasattr(bot, "jikan_get_json_optional"))
-        self.assertTrue(hasattr(bot, "jikan_payload_has_data"))
         self.assertTrue(hasattr(bot, "handle_sana_anime_action"))
 
 if __name__ == "__main__":

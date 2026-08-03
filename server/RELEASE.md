@@ -1,4 +1,16 @@
-# Sana-Chan Version 4.4.10 Experimental
+# Sana-Chan Version 4.4.11 Experimental
+
+Version 4.4.11 removes unsafe MyAnimeList username import and expands XML profile imports with profile links and previews.
+
+## Anime Profiles
+
+- removes the guided and compatibility username import path so users cannot import someone else''s public MyAnimeList account
+- keeps MyAnimeList import XML-only through `/sana` -> Anime Profile -> Import MyAnimeList
+- stores the MyAnimeList profile URL from the XML export when the export includes a username
+- stores and displays the first few anime and manga preview image URLs when the XML export includes image fields
+- adds profile links to the import confirmation and saved profile display
+
+---# Sana-Chan Version 4.4.10 Experimental
 
 Version 4.4.10 stops temporary MyAnimeList/Jikan 504 errors from blocking username imports.
 

@@ -2895,7 +2895,7 @@ ANIME_ACTIVITIES_HTML = """
             <div class="card"><code>/animeevent activity #channel details</code><p>Post an activity prompt to Discord using one of the keys below.</p></div>
             <div class="card"><code>/animechallenge mode prompt answer hint</code><p>Create a Game Library item for anime guessing modes.</p></div>
             <div class="card"><code>/animeprofile favorites watching</code><p>Let users save favorite anime and currently watching notes.</p></div>
-            <div class="card"><code>/animeprofileimport username</code><p>Import public MyAnimeList favorites and watching data into a user anime profile.</p></div>
+            <div class="card"><code>/sana -> Anime Profile -> Import MyAnimeList</code><p>Import your own MyAnimeList XML export into separate Anime and Manga profile sections.</p></div>
             <div class="card"><code>/animeleaderboard month</code><p>Show a combined anime score from submission votes and guessing points.</p></div>
         </div>
     </section>
@@ -10287,6 +10287,9 @@ def initialize_database():
                 watching TEXT,
                 manga_favorites TEXT,
                 manga_reading TEXT,
+                mal_profile_url TEXT,
+                anime_preview_images TEXT,
+                manga_preview_images TEXT,
                 updated_at TEXT,
                 PRIMARY KEY (guild_id, user_id)
             )
@@ -10961,6 +10964,9 @@ def initialize_database():
         for column, definition in {
             "manga_favorites": "TEXT",
             "manga_reading": "TEXT",
+            "mal_profile_url": "TEXT",
+            "anime_preview_images": "TEXT",
+            "manga_preview_images": "TEXT",
         }.items():
             if column not in anime_profile_columns:
                 connection.execute(
