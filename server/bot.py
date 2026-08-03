@@ -9481,10 +9481,8 @@ async def fetch_mal_profile_summary(username):
     )
     payloads = [payload for payload, _error in results]
     errors = [error for _payload, error in results if error]
-    if errors and not any(jikan_payload_has_data(payload) for payload in payloads):
-        if all("not found or is not public" in error for error in errors):
-            raise ValueError("That MyAnimeList profile was not found or is not public.")
-        raise ValueError("MyAnimeList import is temporarily unavailable. Try again in a minute, or use XML file import.")
+    if errors and all("not found or is not public" in error for error in errors):
+        raise ValueError("That MyAnimeList profile was not found or is not public.")
     watching_payload, completed_payload, favorites_payload, manga_reading_payload, manga_completed_payload = payloads
     return summarize_mal_profile(
         clean_username,

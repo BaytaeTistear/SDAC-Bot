@@ -1,4 +1,14 @@
-# Sana-Chan Version 4.4.9 Experimental
+# Sana-Chan Version 4.4.10 Experimental
+
+Version 4.4.10 stops temporary MyAnimeList/Jikan 504 errors from blocking username imports.
+
+## Anime Profiles
+
+- lets username imports finish even when the public MAL/Jikan list service returns temporary 504 errors for every section
+- keeps true private/missing MyAnimeList profiles as a clear not-found error
+- preserves the XML file import path as the recommended complete import when public MAL data is unavailable
+
+---# Sana-Chan Version 4.4.9 Experimental
 
 Version 4.4.9 makes MyAnimeList XML import use real `.xml` file uploads and makes username import more resilient when the public MAL/Jikan service has temporary 504 errors.
 
