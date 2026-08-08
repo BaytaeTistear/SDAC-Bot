@@ -1,3 +1,14 @@
+# Sana-Chan Version 4.4.19 Experimental
+
+Version 4.4.19 adds Events and Meetups to the main user navigation and the guided `/sana` Discord menu.
+
+## Community Navigation
+
+- adds Events and Meetups links under the authenticated User sidebar section
+- adds `/sana -> Events` with View Events, View Meetups, Submit Event, and Submit Meetup actions
+- uses website link buttons for event and meetup actions so users can browse or submit from Discord without adding more public slash commands
+
+---
 # Sana-Chan Version 4.4.18 Experimental
 
 Version 4.4.18 makes Events and Meetups explicit website categories and rounds shared table containers across dashboard pages.

@@ -12,6 +12,8 @@ ADMIN_SECTIONS = [
         "links": [
             ("Staff Home", "admin_staff_home", {}),
             ("Submissions", "index", {}),
+            ("Events", "community_events", {}),
+            ("Meetups", "community_meetups", {}),
             ("My Submissions", "my_submissions", {}),
             ("Guessing", "guessing_leaderboard", {}),
             ("Servers", "servers", {}),

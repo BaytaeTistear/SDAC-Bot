@@ -23902,7 +23902,7 @@ COMMUNITY_LISTING_HTML = """
     <section class="panel">
         <h2>Submit {{ labels.singular }}</h2>
         <p class="muted">{{ labels.submit_help }}</p>
-        <form method="post" class="form-grid">
+        <form id="submit" method="post" class="form-grid">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <label>Title<input name="title" maxlength="140" required placeholder="Convention, game night, watch party..."></label>
             <label>{{ labels.host_label }}<input name="host_name" maxlength="140" placeholder="Community, organizer, or host"></label>

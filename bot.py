@@ -791,6 +791,7 @@ async def send_command_help_menu(interaction, title, groups, intro=""):
 
 SDAC_HUB_USER_OPTIONS = [
     ("submit", "Submit Media", "Start the existing guided submission flow."),
+    ("events", "Events", "View or submit Events and Meetups."),
     ("guess", "Guessing Games", "See the small set of guessing actions users need."),
     ("anime", "Anime Profile", "Save, view, or import anime profile data."),
     ("public_help", "User Help", "Browse user commands by category."),
@@ -812,6 +813,16 @@ SDAC_SUBMENUS = {
         "options": [
             ("submit_start", "Start Submission", "Run /submit for the guided upload flow."),
             ("submit_categories", "View Categories", "Show available destinations."),
+        ],
+    },
+    "events": {
+        "title": "Events And Meetups",
+        "placeholder": "Choose an events action",
+        "options": [
+            ("events_view", "View Events", "Open approved community Events."),
+            ("meetups_view", "View Meetups", "Open approved community Meetups."),
+            ("events_submit", "Submit Event", "Open the Event submission form."),
+            ("meetups_submit", "Submit Meetup", "Open the Meetup submission form."),
         ],
     },
     "guess": {
@@ -903,6 +914,10 @@ SDAC_SUBMENUS = {
 SDAC_SUBMENU_DETAILS = {
     "submit_start": "**Start Submission**\nRun `/submit` to open the guided 3-step upload flow.",
     "submit_categories": "**View Categories**\nShow this server configuration and submission category destinations.",
+    "events_view": "**View Events**\nOpen the Events website page to browse approved community-promoted events.",
+    "meetups_view": "**View Meetups**\nOpen the Meetups website page to browse approved individual or partner-community meetups.",
+    "events_submit": "**Submit Event**\nOpen the Events form. Submissions go to admin review before appearing publicly.",
+    "meetups_submit": "**Submit Meetup**\nOpen the Meetups form. Submissions go to admin review before appearing publicly.",
     "guess_answer": "**Guess Answer**\nRun `/guess answer` in the channel where a guessing game is active.",
     "guess_hint": "**Show Hint**\nShow the currently revealed hint for the active game in this channel.",
     "guess_active": "**Active Game**\nShow the active guessing game status in this channel.",
@@ -953,6 +968,7 @@ def sdac_hub_content(is_admin=False, notice=""):
         "",
         "**Common user paths**",
         "- Submit media: guided upload and category lookup.",
+        "- Events and Meetups: browse approved posts or submit one for admin review.",
         "- Guessing games: answer, hint, and active-game lookup.",
         "- Anime profile: save, view, import from MyAnimeList, or list activities.",
     ])
@@ -2303,7 +2319,7 @@ class SDACSubmenuButton(discord.ui.Button):
 class SDACHubView(discord.ui.View):
     def __init__(self, is_admin):
         super().__init__(timeout=600)
-        user_rows = {"submit": 0, "guess": 0, "anime": 1, "public_help": 1}
+        user_rows = {"submit": 0, "events": 0, "guess": 1, "anime": 1, "public_help": 2}
         for value, label, _description in SDAC_HUB_USER_OPTIONS:
             style = discord.ButtonStyle.primary if value == "submit" else discord.ButtonStyle.secondary
             self.add_item(SDACHubButton(is_admin, value, label, user_rows.get(value, 0), style))
@@ -2322,6 +2338,17 @@ class SDACSubmenuView(discord.ui.View):
     def __init__(self, is_admin, section_key):
         super().__init__(timeout=600)
         submenu = SDAC_SUBMENUS[section_key]
+        if section_key == "events":
+            event_links = [
+                ("View Events", f"{DASHBOARD_BASE_URL}/events"),
+                ("View Meetups", f"{DASHBOARD_BASE_URL}/meetups"),
+                ("Submit Event", f"{DASHBOARD_BASE_URL}/events#submit"),
+                ("Submit Meetup", f"{DASHBOARD_BASE_URL}/meetups#submit"),
+            ]
+            for index, (label, url) in enumerate(event_links):
+                self.add_item(discord.ui.Button(label=label, style=discord.ButtonStyle.link, url=url, row=index // 2))
+            self.add_item(SDACBackButton(is_admin))
+            return
         for index, (value, label, _description) in enumerate(submenu["options"][:20]):
             style = discord.ButtonStyle.primary if index == 0 else discord.ButtonStyle.secondary
             self.add_item(SDACSubmenuButton(is_admin, section_key, value, label, index // 2, style))
