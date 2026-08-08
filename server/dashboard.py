@@ -23843,6 +23843,7 @@ COMMUNITY_POST_LABELS = {
         "intro": "Community-promoted conventions, club days, watch parties, tournaments, and other happenings.",
         "submit_help": "Share events that the community should know about. Admins review each submission before it appears here.",
         "host_label": "Promoting community or organizer",
+        "category": "Events",
     },
     "meetup": {
         "title": "Meetups",
@@ -23851,6 +23852,7 @@ COMMUNITY_POST_LABELS = {
         "intro": "Individual-hosted or partner-community meetups that members may want to join.",
         "submit_help": "Share meetups hosted by people or other communities. Admins review each submission before it appears here.",
         "host_label": "Host or community name",
+        "category": "Meetups",
     },
 }
 
@@ -23923,6 +23925,7 @@ COMMUNITY_LISTING_HTML = """
                 <article class="card">
                     <h3>{{ post.title }}</h3>
                     <div class="meta">
+                        <span class="pill">{{ post.category }}</span>
                         {% if post.starts_at_label %}<span class="pill">{{ post.starts_at_label }}</span>{% endif %}
                         {% if post.location %}<span class="pill">{{ post.location }}</span>{% endif %}
                         {% if post.guild_name %}<span class="pill">{{ post.guild_name }}</span>{% endif %}
@@ -23951,7 +23954,7 @@ COMMUNITY_APPROVAL_BODY = """
                 {% for option in status_options %}<option value="{{ option }}" {% if option == selected_status %}selected{% endif %}>{{ option.title() }}</option>{% endfor %}
             </select>
         </label>
-        <label>Type
+        <label>Category
             <select name="post_type">
                 <option value="all" {% if selected_type == 'all' %}selected{% endif %}>All</option>
                 <option value="event" {% if selected_type == 'event' %}selected{% endif %}>Events</option>
@@ -23964,12 +23967,12 @@ COMMUNITY_APPROVAL_BODY = """
 <section class="panel">
     <h2>Submitted Events And Meetups</h2>
     <table>
-        <thead><tr><th>ID</th><th>Type</th><th>Details</th><th>Submitter</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>ID</th><th>Category</th><th>Details</th><th>Submitter</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>
             {% for post in posts %}
                 <tr>
                     <td>#{{ post.id }}</td>
-                    <td>{{ post.post_type.title() }}</td>
+                    <td>{{ post.category }}</td>
                     <td>
                         <strong>{{ post.title }}</strong><br>
                         <span class="muted">{{ post.description }}</span><br>
@@ -24021,9 +24024,16 @@ def ensure_community_posts_table():
                 updated_at TEXT NOT NULL,
                 reviewed_at TEXT NOT NULL DEFAULT '',
                 reviewed_by TEXT NOT NULL DEFAULT '',
-                review_notes TEXT NOT NULL DEFAULT ''
+                review_notes TEXT NOT NULL DEFAULT '',
+                category TEXT NOT NULL DEFAULT ''
             )
         """)
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(community_posts)").fetchall()}
+        if "category" not in columns:
+            connection.execute("ALTER TABLE community_posts ADD COLUMN category TEXT NOT NULL DEFAULT ''")
+        connection.execute("UPDATE community_posts SET category = 'Events' WHERE category = '' AND post_type = 'event'")
+        connection.execute("UPDATE community_posts SET category = 'Meetups' WHERE category = '' AND post_type = 'meetup'")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_category_status ON community_posts(category, status, starts_at)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_type_status ON community_posts(post_type, status, starts_at)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_status_created ON community_posts(status, created_at)")
 
@@ -24083,6 +24093,7 @@ def community_post_rows(post_type=None, status="approved", limit=100):
     for row in rows:
         item = dict(row)
         item["guild_name"] = guild_names.get(str(row["guild_id"]), "") if row["guild_id"] else ""
+        item["category"] = row["category"] or COMMUNITY_POST_LABELS.get(row["post_type"], {}).get("category", row["post_type"].title())
         item["starts_at_label"] = community_datetime_label(row["starts_at"])
         item["created_at_label"] = community_datetime_label(row["created_at"])
         output.append(item)
@@ -24105,13 +24116,14 @@ def save_community_post(post_type):
         connection.execute(
             """
             INSERT INTO community_posts (
-                post_type, status, title, description, location, starts_at, ends_at,
+                post_type, category, status, title, description, location, starts_at, ends_at,
                 host_name, contact_url, guild_id, submitter_name, submitter_contact,
                 created_at, updated_at
-            ) VALUES (?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 post_type,
+                labels["category"],
                 title,
                 description,
                 community_clean_text(request.form.get("location"), 180),

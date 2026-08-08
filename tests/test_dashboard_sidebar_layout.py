@@ -66,7 +66,11 @@ class DashboardSidebarLayoutTests(unittest.TestCase):
             "body.sdac-has-sidebar.sdac-sidebar-collapsed { padding-left: 0 !important; }",
             body,
         )
-        self.assertIn("body.sdac-has-sidebar table { display: block; max-width: 100%; overflow-x: auto; width: 100%; }", body)
+        self.assertIn("body.sdac-has-sidebar table { border-collapse: separate !important;", body)
+        self.assertIn("border-radius: max(var(--sdac-card-radius), 12px) !important", body)
+        self.assertIn("overflow-x: auto; overflow-y: hidden", body)
+        self.assertIn("body.sdac-theme thead tr:first-child th:first-child", body)
+
     def test_sidebar_centers_page_content_and_has_invite_action(self):
         response = self.client.get(f"/admin/bot-owner?key={dashboard.ADMIN_KEY}")
         self.assertEqual(response.status_code, 200)

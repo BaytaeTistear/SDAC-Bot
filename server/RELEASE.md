@@ -1,3 +1,20 @@
+# Sana-Chan Version 4.4.18 Experimental
+
+Version 4.4.18 makes Events and Meetups explicit website categories and rounds shared table containers across dashboard pages.
+
+## Community Pages
+
+- stores public Event submissions with the `Events` category
+- stores public Meetup submissions with the `Meetups` category
+- backfills existing community submissions so admins see category names instead of internal types
+- shows the category on approved Event and Meetup cards and in the moderator review table
+
+## Dashboard Polish
+
+- rounds shared table containers and table header/footer corners across sidebar-rendered pages
+- keeps table overflow contained so item boxes no longer show square header edges
+
+---
 # Sana-Chan Version 4.4.17 Experimental
 
 Version 4.4.17 makes the Events and Meetups regression coverage part of the release package.

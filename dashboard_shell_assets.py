@@ -267,7 +267,12 @@ body.sdac-sidebar-collapsed .sdac-sidebar { transform: translateX(-105%); }
 .sdac-sidebar-invite:hover { color: #fff !important; filter: brightness(1.08); }
 .sdac-sidebar-footer { border-top: 1px solid var(--sdac-border); flex: 0 0 auto; margin-top: 12px; overflow: visible; padding-top: 12px; width: 100% !important; }
 body.sdac-has-sidebar > nav, body.sdac-has-sidebar main > nav:not(.pagination), body.sdac-has-sidebar .admin-nav { display: none !important; }
-body.sdac-has-sidebar table { display: block; max-width: 100%; overflow-x: auto; width: 100%; }
+body.sdac-has-sidebar table { border-collapse: separate !important; border-radius: max(var(--sdac-card-radius), 12px) !important; border-spacing: 0 !important; display: block; max-width: 100%; overflow-x: auto; overflow-y: hidden; width: 100%; }
+body.sdac-theme table { border-collapse: separate !important; border-radius: max(var(--sdac-card-radius), 12px) !important; border-spacing: 0 !important; overflow: hidden; }
+body.sdac-theme thead tr:first-child th:first-child { border-top-left-radius: max(var(--sdac-card-radius), 12px) !important; }
+body.sdac-theme thead tr:first-child th:last-child { border-top-right-radius: max(var(--sdac-card-radius), 12px) !important; }
+body.sdac-theme tbody tr:last-child td:first-child { border-bottom-left-radius: max(var(--sdac-card-radius), 12px) !important; }
+body.sdac-theme tbody tr:last-child td:last-child { border-bottom-right-radius: max(var(--sdac-card-radius), 12px) !important; }
 body.sdac-has-sidebar form { max-width: 100%; }
 body.sdac-has-sidebar input, body.sdac-has-sidebar select, body.sdac-has-sidebar textarea, body.sdac-has-sidebar button { max-width: 100%; min-width: 0; }
 .sdac-dashboard-grid { display: grid; gap: var(--sdac-layout-gap); grid-template-columns: repeat(auto-fit, minmax(var(--sdac-grid-min), 1fr)); margin: clamp(0.75rem, 1.6vw, 1.25rem) 0; }
