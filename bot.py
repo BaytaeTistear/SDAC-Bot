@@ -846,6 +846,8 @@ SDAC_SUBMENUS = {
             ("setup_status", "Setup Status", "Review current setup progress."),
             ("setup_test", "Run Setup Test", "Check channels, permissions, and required settings."),
             ("diagnostics", "Diagnostics", "Run runtime diagnostics."),
+            ("live_status", "Live Status", "Show bot, dashboard, OAuth, scheduler, and backup health."),
+            ("self_tests", "Self Tests", "Run quick command and configuration self-tests."),
             ("setup_doctor", "Doctor", "Run a guided release-readiness doctor."),
         ],
     },
@@ -912,6 +914,8 @@ SDAC_SUBMENU_DETAILS = {
     "setup_bot_image": "**Bot Image**\nBot owners can update the global Discord bot avatar from an HTTPS image URL. This affects every server and may be rate limited by Discord.",
     "setup_command_alias": "**Command Name**\nAdmins can set a server-specific launcher like `/pepo`. `/sana` always remains available as the fallback.",
     "setup_sync_commands": "**Sync Commands**\nRefresh this server's Discord command list without restarting the bot. This also clears copied guild duplicates.",
+    "live_status": "**Live Status**\nShow bot version, dashboard URL, OAuth setup, database status, active games, scheduled games, import jobs, and backup health from `/sana`.",
+    "self_tests": "**Self Tests**\nRun quick admin checks for setup, command visibility, submission channel, guessing channel, active games, scheduler, OAuth, dashboard URL, and backup readiness.",
     "setup_doctor": "**Sana-Chan Doctor**\nRun a guided server doctor from `/sana`: setup checklist, permissions, command sync, release, public URL, and next dashboard links.",
     "submission_setup_panel": "**Submission Setup**\nUse guided buttons to choose the submit channel, add repost categories, and open or pause submissions.",
     "submission_set_channel": "**Set Submit Channel**\nChoose the text channel where users should run `/submit`. Sana-Chan will post the channel instructions there.",
@@ -1415,6 +1419,37 @@ class SDACSubmenuSelect(discord.ui.Select):
                 f"Ran diagnostics from /sana: {summary}",
             )
             lines.insert(1, f"Saved diagnostic result: `{status}`.")
+            await interaction.edit_original_response(
+                content="\n".join(lines)[:1900],
+                view=SDACSubmenuView(self.is_admin, self.section_key),
+            )
+            return
+        if action == "live_status":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            await interaction.response.defer(ephemeral=True)
+            lines = await live_status_lines(interaction)
+            await interaction.edit_original_response(
+                content="\n".join(lines)[:1900],
+                view=SDACSubmenuView(self.is_admin, self.section_key),
+            )
+            return
+        if action == "self_tests":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            await interaction.response.defer(ephemeral=True)
+            lines = await self_test_lines(interaction)
+            status, summary = save_setup_test_run(interaction, lines)
+            audit_interaction(
+                interaction,
+                "run_self_tests_from_hub",
+                "guild",
+                interaction.guild_id,
+                f"Ran self tests from /sana: {summary}",
+            )
+            lines.insert(1, f"Saved self-test result: `{status}`.")
             await interaction.edit_original_response(
                 content="\n".join(lines)[:1900],
                 view=SDACSubmenuView(self.is_admin, self.section_key),
@@ -2140,6 +2175,37 @@ class SDACSubmenuButton(discord.ui.Button):
                 f"Ran diagnostics from /sana: {summary}",
             )
             lines.insert(1, f"Saved diagnostic result: `{status}`.")
+            await interaction.edit_original_response(
+                content="\n".join(lines)[:1900],
+                view=SDACSubmenuView(self.is_admin, self.section_key),
+            )
+            return
+        if action == "live_status":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            await interaction.response.defer(ephemeral=True)
+            lines = await live_status_lines(interaction)
+            await interaction.edit_original_response(
+                content="\n".join(lines)[:1900],
+                view=SDACSubmenuView(self.is_admin, self.section_key),
+            )
+            return
+        if action == "self_tests":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
+                return
+            await interaction.response.defer(ephemeral=True)
+            lines = await self_test_lines(interaction)
+            status, summary = save_setup_test_run(interaction, lines)
+            audit_interaction(
+                interaction,
+                "run_self_tests_from_hub",
+                "guild",
+                interaction.guild_id,
+                f"Ran self tests from /sana: {summary}",
+            )
+            lines.insert(1, f"Saved self-test result: `{status}`.")
             await interaction.edit_original_response(
                 content="\n".join(lines)[:1900],
                 view=SDACSubmenuView(self.is_admin, self.section_key),
@@ -8011,6 +8077,23 @@ def save_setup_test_run(interaction, lines):
 async def diagnostic_lines(interaction):
     guild_config = get_guild_config(interaction.guild_id, create=False)
     lines = await setup_test_lines(interaction.guild, guild_config)
+    with database() as connection:
+        active_games = connection.execute(
+            "SELECT COUNT(*) FROM guess_games WHERE guild_id = ? AND status = 'active'",
+            (str(interaction.guild_id),),
+        ).fetchone()[0]
+        scheduled_games = connection.execute(
+            "SELECT COUNT(*) FROM scheduled_games WHERE guild_id = ? AND status IN ('queued', 'starting', 'running')",
+            (str(interaction.guild_id),),
+        ).fetchone()[0]
+        import_jobs = connection.execute(
+            "SELECT COUNT(*) FROM background_jobs WHERE guild_id = ? AND job_type = 'guess_library_bulk_import' AND status IN ('queued', 'running', 'retry')",
+            (str(interaction.guild_id),),
+        ).fetchone()[0]
+    oauth_ready = bool(
+        (os.getenv("SANA_DISCORD_CLIENT_ID") or os.getenv("SDAC_DISCORD_CLIENT_ID") or os.getenv("DISCORD_CLIENT_ID"))
+        and (os.getenv("SANA_DISCORD_CLIENT_SECRET") or os.getenv("SDAC_DISCORD_CLIENT_SECRET") or os.getenv("DISCORD_CLIENT_SECRET"))
+    )
     lines.extend([
         "",
         "**Runtime Diagnostics**",
@@ -8019,17 +8102,82 @@ async def diagnostic_lines(interaction):
         f"[OK] Database path: `{DB_FILE}`",
         f"[OK] Config path: `{CONFIG_FILE}`",
         f"[OK] Release: `{os.getenv('SDAC_RELEASE') or 'development'}`",
-        (
-            "[OK] Discord token is loaded."
-            if bool(TOKEN)
-            else "[MISSING] Discord token is missing."
-        ),
-        (
-            "[OK] Public URL/domain configured."
-            if (os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN"))
-            else "[OPTIONAL] Public URL/domain is not configured."
-        ),
+        f"[OK] Dashboard URL: `{DASHBOARD_BASE_URL}`",
+        f"[OK] Active games in this server: `{active_games}`",
+        f"[OK] Scheduled games queued/running: `{scheduled_games}`",
+        f"[OK] Active import jobs: `{import_jobs}`",
+        ("[OK] Discord OAuth env is configured." if oauth_ready else "[MISSING] Discord OAuth env is missing client ID or secret."),
+        ("[OK] Discord token is loaded." if bool(TOKEN) else "[MISSING] Discord token is missing."),
+        ("[OK] Public URL/domain configured." if (os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN") or os.getenv("SANA_PUBLIC_URL") or os.getenv("SANA_DOMAIN")) else "[OPTIONAL] Public URL/domain is not configured."),
     ])
+    return lines
+
+
+def command_visibility_self_test_lines():
+    command_names = {command.name for command in tree.get_commands()}
+    required = {"sana", "submit", "guess", "hint"}
+    extra_visible = sorted(command_names - required) if SIMPLIFIED_SLASH_COMMANDS else []
+    lines = []
+    missing = sorted(required - command_names)
+    lines.append("[OK] Main slash commands are visible." if not missing else "[MISSING] Missing slash command(s): `" + "`, `".join(missing) + "`.")
+    lines.append("[OK] Advanced commands are hidden behind `/sana`." if not extra_visible else "[WARN] Extra visible command(s): `" + "`, `".join(extra_visible[:8]) + "`.")
+    return lines
+
+
+async def self_test_lines(interaction):
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    lines = ["**Sana-Chan Self Tests**"]
+    lines.extend(command_visibility_self_test_lines())
+    lines.append("[OK] Admin permissions accepted." if admin_only(interaction) else "[MISSING] Admin permissions were not accepted.")
+    lines.append("[OK] Submission channel configured." if guild_config.get("submit_channel_id") else "[WARN] Submission channel is not set.")
+    lines.append("[OK] Guessing channel configured." if guild_config.get("guessing_channel") else "[WARN] Guessing channel is not set.")
+    lines.append("[OK] Public dashboard URL is HTTPS." if DASHBOARD_BASE_URL.startswith("https://") else "[WARN] Dashboard URL should be HTTPS before launch.")
+    with database() as connection:
+        schema = connection.execute("SELECT version FROM schema_version WHERE id = 1").fetchone()
+        queued = connection.execute("SELECT COUNT(*) FROM scheduled_games WHERE guild_id = ? AND status IN ('queued', 'starting')", (str(interaction.guild_id),)).fetchone()[0]
+        running_imports = connection.execute("SELECT COUNT(*) FROM background_jobs WHERE guild_id = ? AND status IN ('queued', 'running', 'retry')", (str(interaction.guild_id),)).fetchone()[0]
+    lines.append(f"[OK] Database schema: `{schema['version'] if schema else 'unknown'}`.")
+    lines.append(f"[OK] Queued scheduled games: `{queued}`.")
+    lines.append(f"[OK] Active background jobs: `{running_imports}`.")
+    lines.append(f"[OK] Dashboard live status: {DASHBOARD_BASE_URL}/admin/live-status")
+    return lines
+
+
+async def live_status_lines(interaction):
+    guild_config = get_guild_config(interaction.guild_id, create=False)
+    bot_seen = BOT_STATUS_FILE.exists()
+    db_size = DB_FILE.stat().st_size if DB_FILE.exists() else 0
+    backup_count = len(list(BACKUP_DIR.glob("*.db"))) if BACKUP_DIR.exists() else 0
+    with database() as connection:
+        active_games = connection.execute("SELECT COUNT(*) FROM guess_games WHERE guild_id = ? AND status = 'active'", (str(interaction.guild_id),)).fetchone()[0]
+        scheduled_rows = connection.execute("""
+            SELECT id, channel_id, starts_at, status, category, library_item_id, close_after_minutes, scale_hint_timing, created_by_name
+            FROM scheduled_games
+            WHERE guild_id = ? AND status IN ('queued', 'starting', 'running')
+            ORDER BY starts_at ASC, id ASC
+            LIMIT 5
+        """, (str(interaction.guild_id),)).fetchall()
+        failed_imports = connection.execute("SELECT COUNT(*) FROM background_jobs WHERE guild_id = ? AND job_type = 'guess_library_bulk_import' AND status = 'failed'", (str(interaction.guild_id),)).fetchone()[0]
+    lines = [
+        "**Sana-Chan Live Status**",
+        f"Version: `{os.getenv('SDAC_RELEASE') or 'development'}`",
+        f"Dashboard: {DASHBOARD_BASE_URL}",
+        f"Bot heartbeat file: `{'seen' if bot_seen else 'missing'}`",
+        f"Database: `{format_bytes(db_size)}` at `{DB_FILE}`",
+        f"Backups found: `{backup_count}`",
+        f"Active games: `{active_games}`",
+        f"Failed imports needing cleanup/retry: `{failed_imports}`",
+        f"OAuth: `{'configured' if (os.getenv('SANA_DISCORD_CLIENT_ID') or os.getenv('SDAC_DISCORD_CLIENT_ID')) and (os.getenv('SANA_DISCORD_CLIENT_SECRET') or os.getenv('SDAC_DISCORD_CLIENT_SECRET')) else 'needs env'}`",
+    ]
+    if scheduled_rows:
+        lines.append("**Next Scheduled Games**")
+        timezone_info = get_guild_timezone(guild_config)
+        for row in scheduled_rows:
+            starts_at = parse_database_datetime(row["starts_at"])
+            starts_text = starts_at.astimezone(timezone_info).strftime("%Y-%m-%d %H:%M %Z") if starts_at else (row["starts_at"] or "unknown")
+            lines.append(f"- `#{row['id']}` {channel_display(row['channel_id'])} `{row['status']}` at `{starts_text}` category `{row['category'] or 'any'}` item `{row['library_item_id'] or 'auto'}`")
+    else:
+        lines.append("No queued or running scheduled games.")
     return lines
 
 def doctor_summary_lines(lines):
@@ -12614,12 +12762,21 @@ async def scheduledgames(interaction):
             )
         else:
             starts_text = row["starts_at"] or "unknown"
+        cadence = "auto-close off"
+        try:
+            close_after = int(row["close_after_minutes"] or 0)
+        except (TypeError, ValueError):
+            close_after = 0
+        if close_after > 0:
+            cadence = f"auto-close `{close_after}m`"
+        scale_label = "scaled hints" if int(row["scale_hint_timing"] if row["scale_hint_timing"] is not None else 1) else "normal hints"
+        creator = row["created_by_name"] or "unknown"
         lines.append(
             (
                 f"- `{row['id']}` {channel_display(row['channel_id'])} "
                 f"`{row['status']}` at `{starts_text}` "
-                f"item `{row['library_item_id'] or 'auto'}` "
-                f"category `{row['category'] or 'any'}`"
+                f"item `{row['library_item_id'] or 'auto'}` category `{row['category'] or 'any'}`; "
+                f"{scale_label}; {cadence}; by `{creator}`"
             )
         )
     await interaction.response.send_message("\n".join(lines)[:1900], ephemeral=True)
@@ -15265,6 +15422,28 @@ async def on_error(event_method, *args, **kwargs):
     )
 
 
+@tree.error
+async def on_app_command_error(interaction, error):
+    capture_exception(error)
+    command_name = getattr(getattr(interaction, "command", None), "name", "unknown")
+    details = traceback.format_exception_only(type(error), error)[-1].strip()[:900]
+    user_message = (
+        "Sana-Chan hit an internal error while running this command. "
+        "The issue was logged for the bot owner. Try again after the bot is updated or restarted."
+    )
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(user_message, ephemeral=True)
+        else:
+            await interaction.response.send_message(user_message, ephemeral=True)
+    except Exception as response_error:
+        print(f"Could not send command error response: {response_error}", flush=True)
+    await send_system_error_notification(
+        f"Slash command `{command_name}` failed for `{interaction.user}` in `{interaction.guild_id}`:\n```{details}```",
+        "system_errors",
+    )
+
+
 @bot.event
 async def on_guild_join(guild):
     guild_config = get_guild_config(guild.id)
@@ -15329,4 +15508,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

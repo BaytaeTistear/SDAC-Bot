@@ -577,6 +577,7 @@ ADMIN_ROLE_CHOICES = {
 ADMIN_ENDPOINT_GUILD_ROLE_REQUIREMENTS = {
     "admin_moderation": "moderator",
     "admin_removal_reasons": "moderator",
+    "admin_community_submissions": "moderator",
     "audit_log": "moderator",
     "admin_users": "moderator",
     "admin_polls": "moderator",
@@ -2648,7 +2649,28 @@ GAME_LIBRARY_HTML = """
                                     <input type="hidden" name="job_id" value="{{ job.id }}">
                                     <button class="danger" type="submit">Cancel</button>
                                 </form>
-                            {% else %}
+                            {% endif %}
+                            {% if job.can_retry %}
+                                <form method="post" action="{{ url_for('admin_game_library') }}">
+                                    <input type="hidden" name="key" value="{{ admin_key }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="action" value="retry_import">
+                                    <input type="hidden" name="guild_id" value="{{ selected_guild_id or 'all' }}">
+                                    <input type="hidden" name="job_id" value="{{ job.id }}">
+                                    <button type="submit">Retry</button>
+                                </form>
+                            {% endif %}
+                            {% if job.can_delete_files %}
+                                <form method="post" action="{{ url_for('admin_game_library') }}" onsubmit="return confirm('Delete staged CSV/archive files for this failed import?');">
+                                    <input type="hidden" name="key" value="{{ admin_key }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="action" value="delete_import_files">
+                                    <input type="hidden" name="guild_id" value="{{ selected_guild_id or 'all' }}">
+                                    <input type="hidden" name="job_id" value="{{ job.id }}">
+                                    <button class="danger" type="submit">Delete Files</button>
+                                </form>
+                            {% endif %}
+                            {% if not job.can_cancel and not job.can_retry and not job.can_delete_files %}
                                 <span class="muted">-</span>
                             {% endif %}
                         </td>
@@ -9017,6 +9039,85 @@ def cancel_background_job(job_id, actor_id="", actor_name=""):
     return job
 
 
+def retry_guess_library_import_job(job_id, actor_id="", actor_name=""):
+    with database() as connection:
+        job = connection.execute(
+            "SELECT * FROM background_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        if not job:
+            raise ValueError("Import job was not found.")
+        if job["job_type"] != "guess_library_bulk_import":
+            raise ValueError("Only Game Library import jobs can be retried from this page.")
+        if job["status"] not in {"failed", "canceled"}:
+            raise ValueError("Only failed or canceled imports can be retried.")
+        payload = json.loads(job["payload_json"] or "{}")
+        staging_dir = Path(payload.get("staging_dir") or "")
+        if not staging_dir or not staging_dir.exists():
+            raise ValueError("The staged import files are gone. Upload the CSV/archive again.")
+        connection.execute(
+            """
+            UPDATE background_jobs
+            SET status = 'retry', error = '', started_at = NULL, finished_at = NULL
+            WHERE id = ?
+            """,
+            (job_id,),
+        )
+        add_admin_audit_log(
+            connection,
+            job["guild_id"],
+            "retry_guess_library_import",
+            actor_id,
+            actor_name,
+            "background_job",
+            str(job_id),
+            f"Retried Game Library import job {job_id}.",
+        )
+    start_background_job(job_id)
+    return job
+
+
+def delete_guess_library_import_files(job_id, actor_id="", actor_name=""):
+    with database() as connection:
+        job = connection.execute(
+            "SELECT * FROM background_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        if not job:
+            raise ValueError("Import job was not found.")
+        if job["job_type"] != "guess_library_bulk_import":
+            raise ValueError("Only Game Library import files can be deleted from this page.")
+        if job["status"] in {"queued", "running", "retry"}:
+            raise ValueError("Cancel the import before deleting staged files.")
+        payload = json.loads(job["payload_json"] or "{}")
+        staging_dir = Path(payload.get("staging_dir") or "")
+        if staging_dir and staging_dir.exists():
+            shutil.rmtree(staging_dir, ignore_errors=True)
+        connection.execute(
+            """
+            UPDATE background_jobs
+            SET error = CASE
+                    WHEN COALESCE(error, '') = '' THEN 'Staged files deleted by admin.'
+                    ELSE error || ' Staged files deleted by admin.'
+                END,
+                finished_at = COALESCE(finished_at, ?)
+            WHERE id = ?
+            """,
+            (utc_now_iso(), job_id),
+        )
+        add_admin_audit_log(
+            connection,
+            job["guild_id"],
+            "delete_guess_library_import_files",
+            actor_id,
+            actor_name,
+            "background_job",
+            str(job_id),
+            f"Deleted staged files for Game Library import job {job_id}.",
+        )
+    return job
+
+
 def run_guess_library_bulk_import(
     guild_id,
     csv_path,
@@ -9337,6 +9438,8 @@ def recent_guess_library_import_jobs(limit=8, guild_id=None):
             "missing_media": int(result.get("missing_media") or 0),
             "skipped": int(result.get("skipped") or 0),
             "can_cancel": job.get("status") in {"queued", "running", "retry"},
+            "can_retry": job.get("status") in {"failed", "canceled"} and bool(payload.get("staging_dir") and Path(payload.get("staging_dir")).exists()),
+            "can_delete_files": job.get("status") in {"failed", "canceled"} and bool(payload.get("staging_dir") and Path(payload.get("staging_dir")).exists()),
         })
         jobs.append(job)
     return jobs
@@ -16103,6 +16206,22 @@ def admin_game_library():
                 cancel_background_job(job_id, actor_id=actor_id, actor_name=actor_name)
                 return game_library_redirect(
                     f"Import job #{job_id} canceled.",
+                    guild_id=redirect_guild_id,
+                )
+
+            if action == "retry_import":
+                job_id = int(request.form.get("job_id") or 0)
+                retry_guess_library_import_job(job_id, actor_id=actor_id, actor_name=actor_name)
+                return game_library_redirect(
+                    f"Import job #{job_id} restarted.",
+                    guild_id=redirect_guild_id,
+                )
+
+            if action == "delete_import_files":
+                job_id = int(request.form.get("job_id") or 0)
+                delete_guess_library_import_files(job_id, actor_id=actor_id, actor_name=actor_name)
+                return game_library_redirect(
+                    f"Deleted staged files for import job #{job_id}.",
                     guild_id=redirect_guild_id,
                 )
 
@@ -23579,6 +23698,592 @@ What looked wrong:</pre>
 </body>
 </html>
 """, health_cards=health_cards, layout_checks=layout_checks, release=release, selected_server=selected_server)
+
+
+LIVE_STATUS_BODY = """
+<section class="panel">
+    <h2>Service Status</h2>
+    <div class="grid">
+        {% for item in status_items %}
+            <div class="stat"><strong>{{ item.value }}</strong><span>{{ item.label }}</span><p class="muted">{{ item.detail }}</p></div>
+        {% endfor %}
+    </div>
+</section>
+<section class="panel">
+    <h2>Launch Shortcuts</h2>
+    <div class="actions">
+        <a class="button" href="{{ url_for('admin_scheduled_games_page', key=admin_key) }}">Scheduled Games</a>
+        <a class="button" href="{{ url_for('admin_game_library', key=admin_key) }}">Imports</a>
+        <a class="button" href="{{ url_for('admin_backup_exports', key=admin_key) }}">Backups / Exports</a>
+        <a class="button" href="{{ url_for('admin_release_checklist', key=admin_key) }}">Release Checklist</a>
+        <a class="button" href="{{ url_for('admin_health', key=admin_key) }}">Health JSON</a>
+    </div>
+</section>
+<section class="panel">
+    <h2>Next Scheduled Games</h2>
+    <table><thead><tr><th>ID</th><th>Server</th><th>Channel</th><th>Status</th><th>Starts</th><th>Details</th></tr></thead><tbody>
+        {% for row in scheduled_rows %}
+            <tr><td>#{{ row.id }}</td><td>{{ row.guild_name }}</td><td>{{ row.channel_id }}</td><td>{{ row.status }}</td><td>{{ row.starts_at }}</td><td>{{ row.detail }}</td></tr>
+        {% else %}
+            <tr><td colspan="6" class="muted">No queued or running scheduled games.</td></tr>
+        {% endfor %}
+    </tbody></table>
+</section>
+"""
+
+SCHEDULED_GAMES_BODY = """
+<section class="panel">
+    <h2>Scheduled Guessing Games</h2>
+    <p class="muted">Shows upcoming and running scheduled games. Cancel from Discord with /sana -> Games -> Cancel Scheduled or /cancelscheduledgame if advanced commands are enabled.</p>
+    <table><thead><tr><th>ID</th><th>Server</th><th>Channel</th><th>Status</th><th>Starts</th><th>Item</th><th>Category</th><th>Hint Timing</th><th>Created By</th></tr></thead><tbody>
+    {% for row in rows %}
+        <tr><td>#{{ row.id }}</td><td>{{ row.guild_name }}</td><td>{{ row.channel_id }}</td><td>{{ row.status }}</td><td>{{ row.starts_at }}</td><td>{{ row.item }}</td><td>{{ row.category }}</td><td>{{ row.hints }}</td><td>{{ row.created_by }}</td></tr>
+    {% else %}
+        <tr><td colspan="9" class="muted">No queued or running scheduled games.</td></tr>
+    {% endfor %}
+    </tbody></table>
+</section>
+"""
+
+BACKUP_EXPORTS_BODY = """
+<section class="panel">
+    <h2>Download Exports</h2>
+    <div class="actions">
+        <a class="button" href="{{ url_for('export_submissions', key=admin_key) }}">Submissions CSV</a>
+        <a class="button" href="{{ url_for('export_guessing', key=admin_key) }}">Guessing CSV</a>
+        <a class="button" href="{{ url_for('admin_export_support_manifest', key=admin_key) }}">Support Manifest JSON</a>
+    </div>
+</section>
+<section class="panel">
+    <h2>Database Backups</h2>
+    <table><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Download</th></tr></thead><tbody>
+    {% for backup in backups %}
+        <tr><td><code>{{ backup.name }}</code></td><td>{{ backup.size }}</td><td>{{ backup.modified }}</td><td><a href="{{ url_for('download_backup', name=backup.name, key=admin_key) }}">Download</a></td></tr>
+    {% else %}
+        <tr><td colspan="4" class="muted">No database backups found.</td></tr>
+    {% endfor %}
+    </tbody></table>
+</section>
+"""
+
+
+def dashboard_live_status_items(config_data):
+    bot_status = read_bot_status()
+    release = release_status()
+    with closing(connect_db()) as connection:
+        active_games = connection.execute("SELECT COUNT(*) FROM guess_games WHERE status = 'active'").fetchone()[0]
+        scheduled = connection.execute("SELECT COUNT(*) FROM scheduled_games WHERE status IN ('queued', 'starting', 'running')").fetchone()[0]
+        jobs = connection.execute("SELECT COUNT(*) FROM background_jobs WHERE status IN ('queued', 'running', 'retry')").fetchone()[0]
+        failed_jobs = connection.execute("SELECT COUNT(*) FROM background_jobs WHERE status = 'failed'").fetchone()[0]
+    oauth_ready = bool(DISCORD_OAUTH_CLIENT_ID and DISCORD_OAUTH_CLIENT_SECRET)
+    return [
+        {"label": "Bot heartbeat", "value": "Seen" if bot_status else "Missing", "detail": (bot_status or {}).get("updated_at", "No heartbeat file found.")},
+        {"label": "Dashboard URL", "value": PUBLIC_BASE_URL, "detail": "Public links and OAuth callback base."},
+        {"label": "OAuth", "value": "Ready" if oauth_ready else "Needs env", "detail": "SANA_DISCORD_CLIENT_ID and SANA_DISCORD_CLIENT_SECRET."},
+        {"label": "Release", "value": release.get("installed_version") or "development", "detail": f"Experimental {release.get('latest_experimental') or 'unknown'}; official {release.get('latest_official') or 'unknown'}."},
+        {"label": "Database", "value": format_bytes(DB_FILE.stat().st_size if DB_FILE.exists() else 0), "detail": str(DB_FILE)},
+        {"label": "Active games", "value": active_games, "detail": "Currently open guessing games."},
+        {"label": "Scheduled games", "value": scheduled, "detail": "Queued, starting, or running schedules."},
+        {"label": "Background jobs", "value": jobs, "detail": f"Failed jobs needing attention: {failed_jobs}."},
+    ]
+
+
+def scheduled_game_dashboard_rows(config_data, limit=50):
+    guild_names = {str(guild_id): cfg.get("guild_name") or str(guild_id) for guild_id, cfg in (config_data.get("guilds") or {}).items()}
+    with closing(connect_db()) as connection:
+        rows = connection.execute("""
+            SELECT id, guild_id, channel_id, status, starts_at, library_item_id, category,
+                   close_after_minutes, scale_hint_timing, random_item, created_by_name
+            FROM scheduled_games
+            WHERE status IN ('queued', 'starting', 'running')
+            ORDER BY starts_at ASC, id ASC
+            LIMIT ?
+        """, (int(limit),)).fetchall()
+    output = []
+    for row in rows:
+        try:
+            starts = datetime.fromisoformat(row["starts_at"]) if row["starts_at"] else None
+        except (TypeError, ValueError):
+            starts = None
+        starts_text = starts.strftime("%Y-%m-%d %H:%M UTC") if starts else (row["starts_at"] or "unknown")
+        output.append({
+            "id": row["id"],
+            "guild_name": guild_names.get(str(row["guild_id"]), str(row["guild_id"] or "unknown")),
+            "channel_id": row["channel_id"] or "unknown",
+            "status": row["status"],
+            "starts_at": starts_text,
+            "item": row["library_item_id"] or ("random" if row["random_item"] else "auto"),
+            "category": row["category"] or "any",
+            "hints": "Auto-scaled" if int(row["scale_hint_timing"] if row["scale_hint_timing"] is not None else 1) else "Normal",
+            "created_by": row["created_by_name"] or "unknown",
+            "detail": f"item {row['library_item_id'] or 'auto'}; category {row['category'] or 'any'}",
+        })
+    return output
+
+
+def backup_download_rows(limit=20):
+    rows = []
+    if BACKUP_DIR.exists():
+        for backup in sorted(BACKUP_DIR.glob("*.db"), key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)[:limit]:
+            stat = backup.stat()
+            rows.append({
+                "name": backup.name,
+                "size": format_bytes(stat.st_size),
+                "modified": datetime.fromtimestamp(stat.st_mtime, timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            })
+    return rows
+
+
+
+COMMUNITY_POST_LABELS = {
+    "event": {
+        "title": "Events",
+        "singular": "Event",
+        "path": "community_events",
+        "intro": "Community-promoted conventions, club days, watch parties, tournaments, and other happenings.",
+        "submit_help": "Share events that the community should know about. Admins review each submission before it appears here.",
+        "host_label": "Promoting community or organizer",
+    },
+    "meetup": {
+        "title": "Meetups",
+        "singular": "Meetup",
+        "path": "community_meetups",
+        "intro": "Individual-hosted or partner-community meetups that members may want to join.",
+        "submit_help": "Share meetups hosted by people or other communities. Admins review each submission before it appears here.",
+        "host_label": "Host or community name",
+    },
+}
+
+COMMUNITY_LISTING_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sana-Chan {{ labels.title }}</title>
+    <style>
+        :root { color-scheme: dark; --bg: #071324; --panel: rgba(13, 25, 45, 0.92); --border: #24436f; --text: #f4f7ff; --muted: #aebbd1; --accent: #18d5ff; --accent2: #8b5cff; --danger: #ff5c7a; }
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 80% 0%, rgba(139, 92, 255, 0.18), transparent 34rem), #071324; color: var(--text); font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        main { width: min(92vw, 76rem); margin: 0 auto; padding: clamp(1rem, 3vw, 2rem); }
+        h1 { margin: 0 0 0.45rem; font-size: clamp(2rem, 5vw, 4rem); }
+        h2 { margin: 0 0 1rem; }
+        a { color: var(--accent); }
+        .muted { color: var(--muted); }
+        .hero, .panel, .card { border: 1px solid var(--border); background: var(--panel); border-radius: 0.75rem; box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.22); }
+        .hero { padding: clamp(1rem, 3vw, 2rem); margin-bottom: 1rem; }
+        .panel { padding: clamp(1rem, 2vw, 1.25rem); margin: 1rem 0; }
+        .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
+        .card { padding: 1rem; }
+        .card h3 { margin: 0 0 0.35rem; }
+        .meta { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
+        .pill { border: 1px solid var(--border); border-radius: 999px; padding: 0.25rem 0.55rem; color: #dce7ff; background: rgba(255,255,255,0.04); }
+        label { display: grid; gap: 0.35rem; font-weight: 700; }
+        input, textarea, select { width: 100%; min-height: 2.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: #081122; color: var(--text); padding: 0.7rem 0.8rem; font: inherit; }
+        textarea { min-height: 7rem; resize: vertical; }
+        button { border: 0; border-radius: 0.55rem; padding: 0.8rem 1rem; color: white; font: inherit; font-weight: 800; cursor: pointer; background: linear-gradient(100deg, var(--accent2), var(--accent)); }
+        .form-grid { display: grid; gap: 0.85rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .wide { grid-column: 1 / -1; }
+        .notice { border: 1px solid var(--border); border-radius: 0.55rem; padding: 0.8rem; margin: 0 0 1rem; text-align: center; }
+        .notice.error { border-color: var(--danger); }
+        @media (max-width: 44rem) { .form-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<main>
+    <section class="hero">
+        <p class="muted">Sana-Chan Community</p>
+        <h1>{{ labels.title }}</h1>
+        <p>{{ labels.intro }}</p>
+    </section>
+    {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
+    <section class="panel">
+        <h2>Submit {{ labels.singular }}</h2>
+        <p class="muted">{{ labels.submit_help }}</p>
+        <form method="post" class="form-grid">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>Title<input name="title" maxlength="140" required placeholder="Convention, game night, watch party..."></label>
+            <label>{{ labels.host_label }}<input name="host_name" maxlength="140" placeholder="Community, organizer, or host"></label>
+            <label>Location<input name="location" maxlength="180" placeholder="City, venue, Discord, or online"></label>
+            <label>Related server<select name="guild_id"><option value="">General community</option>{% for guild in guild_options %}<option value="{{ guild.id }}">{{ guild.name }}</option>{% endfor %}</select></label>
+            <label>Starts<input type="datetime-local" name="starts_at"></label>
+            <label>Ends<input type="datetime-local" name="ends_at"></label>
+            <label>Info link<input name="contact_url" maxlength="300" placeholder="https://..."></label>
+            <label>Your name<input name="submitter_name" maxlength="120" placeholder="Shown to admins only unless approved notes include it"></label>
+            <label class="wide">Contact for admins<input name="submitter_contact" maxlength="180" placeholder="Discord handle, email, or best way to reach you"></label>
+            <label class="wide">Description<textarea name="description" maxlength="3000" required placeholder="What is it, who is it for, and what should people know?"></textarea></label>
+            <button class="wide" type="submit">Send For Admin Approval</button>
+        </form>
+    </section>
+    <section class="panel">
+        <h2>Approved {{ labels.title }}</h2>
+        {% if posts %}
+            <div class="grid">
+            {% for post in posts %}
+                <article class="card">
+                    <h3>{{ post.title }}</h3>
+                    <div class="meta">
+                        {% if post.starts_at_label %}<span class="pill">{{ post.starts_at_label }}</span>{% endif %}
+                        {% if post.location %}<span class="pill">{{ post.location }}</span>{% endif %}
+                        {% if post.guild_name %}<span class="pill">{{ post.guild_name }}</span>{% endif %}
+                    </div>
+                    <p>{{ post.description }}</p>
+                    {% if post.host_name %}<p class="muted">Hosted/promoted by {{ post.host_name }}</p>{% endif %}
+                    {% if post.contact_url %}<p><a href="{{ post.contact_url }}" rel="noopener noreferrer">More information</a></p>{% endif %}
+                </article>
+            {% endfor %}
+            </div>
+        {% else %}
+            <p class="muted">No approved {{ labels.title | lower }} yet. Submissions will appear here after admin approval.</p>
+        {% endif %}
+    </section>
+</main>
+</body>
+</html>
+"""
+
+COMMUNITY_APPROVAL_BODY = """
+<section class="panel">
+    <form class="actions" method="get" action="{{ url_for('admin_community_submissions') }}">
+        <input type="hidden" name="key" value="{{ admin_key }}">
+        <label>Status
+            <select name="status">
+                {% for option in status_options %}<option value="{{ option }}" {% if option == selected_status %}selected{% endif %}>{{ option.title() }}</option>{% endfor %}
+            </select>
+        </label>
+        <label>Type
+            <select name="post_type">
+                <option value="all" {% if selected_type == 'all' %}selected{% endif %}>All</option>
+                <option value="event" {% if selected_type == 'event' %}selected{% endif %}>Events</option>
+                <option value="meetup" {% if selected_type == 'meetup' %}selected{% endif %}>Meetups</option>
+            </select>
+        </label>
+        <button type="submit">Filter</button>
+    </form>
+</section>
+<section class="panel">
+    <h2>Submitted Events And Meetups</h2>
+    <table>
+        <thead><tr><th>ID</th><th>Type</th><th>Details</th><th>Submitter</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+            {% for post in posts %}
+                <tr>
+                    <td>#{{ post.id }}</td>
+                    <td>{{ post.post_type.title() }}</td>
+                    <td>
+                        <strong>{{ post.title }}</strong><br>
+                        <span class="muted">{{ post.description }}</span><br>
+                        {% if post.starts_at_label %}<span class="pill">{{ post.starts_at_label }}</span>{% endif %}
+                        {% if post.location %}<span class="pill">{{ post.location }}</span>{% endif %}
+                        {% if post.guild_name %}<span class="pill">{{ post.guild_name }}</span>{% endif %}
+                        {% if post.contact_url %}<br><a href="{{ post.contact_url }}" rel="noopener noreferrer">Info link</a>{% endif %}
+                    </td>
+                    <td>{{ post.submitter_name or 'Unknown' }}<br><span class="muted">{{ post.submitter_contact or 'No contact' }}</span></td>
+                    <td>{{ post.status.title() }}<br><span class="muted">{{ post.created_at_label }}</span></td>
+                    <td>
+                        <form class="stack" method="post">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="post_id" value="{{ post.id }}">
+                            <input name="review_notes" placeholder="Review notes" value="{{ post.review_notes or '' }}">
+                            <button name="action" value="approve" type="submit">Approve</button>
+                            <button name="action" value="reject" type="submit">Reject</button>
+                            <button name="action" value="delete" type="submit" onclick="return confirm('Delete this community submission?')">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="6" class="muted">No community submissions match this filter.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+"""
+
+
+def ensure_community_posts_table():
+    with database() as connection:
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS community_posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                location TEXT NOT NULL DEFAULT '',
+                starts_at TEXT NOT NULL DEFAULT '',
+                ends_at TEXT NOT NULL DEFAULT '',
+                host_name TEXT NOT NULL DEFAULT '',
+                contact_url TEXT NOT NULL DEFAULT '',
+                guild_id TEXT NOT NULL DEFAULT '',
+                submitter_name TEXT NOT NULL DEFAULT '',
+                submitter_contact TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                reviewed_at TEXT NOT NULL DEFAULT '',
+                reviewed_by TEXT NOT NULL DEFAULT '',
+                review_notes TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_type_status ON community_posts(post_type, status, starts_at)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_status_created ON community_posts(status, created_at)")
+
+
+def community_clean_text(value, limit=3000):
+    return (value or "").replace("\x00", "").strip()[:limit]
+
+
+def community_clean_url(value):
+    cleaned = community_clean_text(value, 300)
+    if not cleaned:
+        return ""
+    if not re.match(r"^https?://", cleaned, re.IGNORECASE):
+        return ""
+    return cleaned
+
+
+def community_datetime_label(value):
+    if not value:
+        return ""
+    normalized = str(value).strip()
+    try:
+        parsed = datetime.fromisoformat(normalized)
+        return parsed.strftime("%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        return normalized
+
+
+def community_guild_name_map(config_data=None):
+    config_data = config_data or load_config()
+    return {str(guild_id): cfg.get("guild_name") or str(guild_id) for guild_id, cfg in (config_data.get("guilds") or {}).items()}
+
+
+def community_post_rows(post_type=None, status="approved", limit=100):
+    ensure_community_posts_table()
+    clauses = []
+    params = []
+    if post_type and post_type != "all":
+        clauses.append("post_type = ?")
+        params.append(post_type)
+    if status and status != "all":
+        clauses.append("status = ?")
+        params.append(status)
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+    guild_names = community_guild_name_map()
+    with closing(connect_db()) as connection:
+        rows = connection.execute(
+            f"""
+            SELECT * FROM community_posts
+            {where}
+            ORDER BY COALESCE(NULLIF(starts_at, ''), created_at) ASC, id DESC
+            LIMIT ?
+            """,
+            (*params, int(limit)),
+        ).fetchall()
+    output = []
+    for row in rows:
+        item = dict(row)
+        item["guild_name"] = guild_names.get(str(row["guild_id"]), "") if row["guild_id"] else ""
+        item["starts_at_label"] = community_datetime_label(row["starts_at"])
+        item["created_at_label"] = community_datetime_label(row["created_at"])
+        output.append(item)
+    return output
+
+
+def save_community_post(post_type):
+    labels = COMMUNITY_POST_LABELS[post_type]
+    title = community_clean_text(request.form.get("title"), 140)
+    description = community_clean_text(request.form.get("description"), 3000)
+    if not title or not description:
+        raise ValueError(f"{labels['singular']} title and description are required.")
+    config_data = load_config()
+    valid_guilds = {option["id"] for option in guild_options(config_data, public_only=True)}
+    guild_id = community_clean_text(request.form.get("guild_id"), 32)
+    if guild_id and guild_id not in valid_guilds:
+        guild_id = ""
+    now = utc_now_iso()
+    with database() as connection:
+        connection.execute(
+            """
+            INSERT INTO community_posts (
+                post_type, status, title, description, location, starts_at, ends_at,
+                host_name, contact_url, guild_id, submitter_name, submitter_contact,
+                created_at, updated_at
+            ) VALUES (?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                post_type,
+                title,
+                description,
+                community_clean_text(request.form.get("location"), 180),
+                community_clean_text(request.form.get("starts_at"), 40),
+                community_clean_text(request.form.get("ends_at"), 40),
+                community_clean_text(request.form.get("host_name"), 140),
+                community_clean_url(request.form.get("contact_url")),
+                guild_id,
+                community_clean_text(request.form.get("submitter_name"), 120),
+                community_clean_text(request.form.get("submitter_contact"), 180),
+                now,
+                now,
+            ),
+        )
+
+
+def community_page(post_type):
+    labels = COMMUNITY_POST_LABELS[post_type]
+    ensure_community_posts_table()
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    if request.method == "POST":
+        require_csrf_token()
+        try:
+            save_community_post(post_type)
+            return redirect(url_for(labels["path"], notice=f"{labels['singular']} submitted for admin approval."))
+        except ValueError as exc:
+            return redirect(url_for(labels["path"], notice=str(exc), error=1))
+    return render_template_string(
+        COMMUNITY_LISTING_HTML,
+        csrf_token=get_csrf_token(),
+        error=error,
+        guild_options=guild_options(load_config(), public_only=True),
+        labels=labels,
+        notice=notice,
+        posts=community_post_rows(post_type, "approved"),
+    )
+
+
+@app.route("/events", methods=["GET", "POST"])
+def community_events():
+    return community_page("event")
+
+
+@app.route("/meetups", methods=["GET", "POST"])
+def community_meetups():
+    return community_page("meetup")
+
+
+@app.route("/admin/community-submissions", methods=["GET", "POST"])
+def admin_community_submissions():
+    login_response = require_admin_login("moderator")
+    if login_response:
+        return login_response
+    ensure_community_posts_table()
+    selected_status = request.args.get("status", "pending").strip().lower() or "pending"
+    selected_type = request.args.get("post_type", "all").strip().lower() or "all"
+    if selected_status not in {"pending", "approved", "rejected", "all"}:
+        selected_status = "pending"
+    if selected_type not in {"event", "meetup", "all"}:
+        selected_type = "all"
+    if request.method == "POST":
+        require_csrf_token()
+        actor_id, actor = web_actor()
+        action = request.form.get("action", "").strip().lower()
+        post_id = int(request.form.get("post_id") or 0)
+        review_notes = community_clean_text(request.form.get("review_notes"), 500)
+        if action not in {"approve", "reject", "delete"}:
+            return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Unknown action.", error=1, status=selected_status, post_type=selected_type))
+        with database() as connection:
+            row = connection.execute("SELECT * FROM community_posts WHERE id = ?", (post_id,)).fetchone()
+            if not row:
+                return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Community submission not found.", error=1, status=selected_status, post_type=selected_type))
+            if action == "delete":
+                connection.execute("DELETE FROM community_posts WHERE id = ?", (post_id,))
+                message = "Community submission deleted."
+            else:
+                new_status = "approved" if action == "approve" else "rejected"
+                now = utc_now_iso()
+                connection.execute(
+                    """
+                    UPDATE community_posts
+                    SET status = ?, reviewed_at = ?, reviewed_by = ?, review_notes = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (new_status, now, actor, review_notes, now, post_id),
+                )
+                message = f"Community submission {new_status}."
+            add_admin_audit_log(
+                connection,
+                row["guild_id"],
+                f"community_{action}",
+                actor_id,
+                actor,
+                f"{action.title()} {row['post_type']} submission #{post_id}: {row['title']}",
+            )
+        return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice=message, status=selected_status, post_type=selected_type))
+    return admin_tool_shell(
+        "Events And Meetups",
+        "Review community event and meetup submissions before they become public.",
+        COMMUNITY_APPROVAL_BODY,
+        posts=community_post_rows(selected_type, selected_status),
+        selected_status=selected_status,
+        selected_type=selected_type,
+        status_options=["pending", "approved", "rejected", "all"],
+    )
+
+
+@app.route("/admin/live-status")
+def admin_live_status():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    scheduled_rows = scheduled_game_dashboard_rows(config_data, limit=8)
+    return admin_tool_shell(
+        "Live Status",
+        "One place for bot, dashboard, OAuth, database, jobs, releases, and scheduler health.",
+        LIVE_STATUS_BODY,
+        status_items=dashboard_live_status_items(config_data),
+        scheduled_rows=scheduled_rows,
+    )
+
+
+@app.route("/admin/scheduled-games")
+def admin_scheduled_games_page():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    return admin_tool_shell(
+        "Scheduled Games",
+        "Inspect queued and running guessing schedules before they surprise the server.",
+        SCHEDULED_GAMES_BODY,
+        rows=scheduled_game_dashboard_rows(config_data),
+    )
+
+
+@app.route("/admin/backup-exports")
+def admin_backup_exports():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+    return admin_tool_shell(
+        "Backup Exports",
+        "Download data exports, support metadata, and recent database backups.",
+        BACKUP_EXPORTS_BODY,
+        backups=backup_download_rows(),
+    )
+
+
+@app.route("/admin/support-manifest.json")
+def admin_export_support_manifest():
+    login_response = require_admin_login("admin")
+    if login_response:
+        return login_response
+    config_data = load_config()
+    manifest = {
+        "generated_at": utc_now_iso(),
+        "dashboard_url": PUBLIC_BASE_URL,
+        "release": release_status(),
+        "database": {"path": str(DB_FILE), "size_bytes": DB_FILE.stat().st_size if DB_FILE.exists() else 0},
+        "bot_status": read_bot_status(),
+        "live_status": dashboard_live_status_items(config_data),
+        "scheduled_games": scheduled_game_dashboard_rows(config_data, limit=25),
+    }
+    return Response(
+        json.dumps(manifest, indent=2),
+        mimetype="application/json",
+        headers={"Content-Disposition": "attachment; filename=sana-support-manifest.json"},
+    )
+
 
 @app.route("/admin/health")
 def admin_health():

@@ -27,6 +27,7 @@ ADMIN_SECTIONS = [
             ("Notifications", "admin_notification_center", {}),
             ("Moderator Workspace", "admin_moderator_workspace", {}),
             ("Review Queue", "admin_moderation", {}),
+            ("Events / Meetups", "admin_community_submissions", {}),
             ("Removal Reasons", "admin_removal_reasons", {}),
             ("Users", "admin_users", {}),
             ("Polls", "admin_polls", {}),
@@ -108,6 +109,8 @@ ADMIN_SECTIONS = [
 PUBLIC_LINKS = [
     ("Home", "index", {}),
     ("Submissions", "index", {}),
+    ("Events", "community_events", {}),
+    ("Meetups", "community_meetups", {}),
     ("My Submissions", "my_submissions", {}),
     ("Servers", "servers", {}),
     ("Stats", "public_stats", {}),
@@ -142,6 +145,8 @@ PUBLIC_SIDEBAR_ENDPOINTS = {
     "account_home",
     "account_access_debug",
     "my_submissions",
+    "community_events",
+    "community_meetups",
     "user_profile",
     "report_submission",
 }

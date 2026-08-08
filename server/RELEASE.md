@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.4.16 Experimental
+
+Version 4.4.16 adds public Events and Meetups pages with admin approval before community submissions become visible.
+
+## Community Pages
+
+- adds `/events` for community-promoted conventions, clubs, watch parties, tournaments, and similar events
+- adds `/meetups` for individual-hosted or partner-community meetup submissions
+- keeps submitted events and meetups pending until a moderator approves them
+- adds a moderator Events / Meetups review page for approve, reject, and delete actions
+- adds Events and Meetups to the public sidebar and dashboard page sweep coverage
+- fixes the scheduled-games dashboard helper so it no longer references an undefined date parser
+
+---
 # Sana-Chan Version 4.4.15 Experimental
 
 Version 4.4.15 fixes `/guess` and other cooldown-protected commands that could fail before Discord received a response.
