@@ -1,3 +1,14 @@
+# Sana-Chan Version 4.4.17 Experimental
+
+Version 4.4.17 makes the Events and Meetups regression coverage part of the release package.
+
+## Release Checks
+
+- includes dashboard page sweep coverage for `/events`, `/meetups`, and `/admin/community-submissions`
+- includes public sidebar endpoint validation in the release-staged tests
+- updates experimental and official release scripts so these route tests are not left local-only
+
+---
 # Sana-Chan Version 4.4.16 Experimental
 
 Version 4.4.16 adds public Events and Meetups pages with admin approval before community submissions become visible.

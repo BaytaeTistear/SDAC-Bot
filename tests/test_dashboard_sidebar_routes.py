@@ -14,6 +14,11 @@ class DashboardSidebarRouteTests(unittest.TestCase):
         }
         self.assertFalse(sorted(linked - endpoints))
 
+    def test_public_sidebar_endpoints_exist(self):
+        endpoints = {rule.endpoint for rule in dashboard.app.url_map.iter_rules()}
+        linked = {endpoint for _, endpoint, _ in dashboard_sidebar.PUBLIC_LINKS}
+        self.assertFalse(sorted(linked - endpoints))
+
 
 if __name__ == "__main__":
     unittest.main()
