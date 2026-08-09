@@ -1012,6 +1012,12 @@ class SDACHubSelect(discord.ui.Select):
         action = self.values[0]
         if await handle_sana_instant_action(interaction, action, self.is_admin, self.section_key):
             return
+        if action == "refresh_home":
+            await interaction.response.edit_message(
+                content=sdac_hub_content(self.is_admin, "Refreshed just now."),
+                view=SDACHubView(self.is_admin),
+            )
+            return
         if action == "public_help":
             await interaction.response.edit_message(
                 content=(
@@ -2016,6 +2022,12 @@ class SDACHubButton(discord.ui.Button):
 
     async def callback(self, interaction):
         action = self.value
+        if action == "refresh_home":
+            await interaction.response.edit_message(
+                content=sdac_hub_content(self.is_admin, "Refreshed just now."),
+                view=SDACHubView(self.is_admin),
+            )
+            return
         if action == "public_help":
             await interaction.response.edit_message(
                 content=(
@@ -2324,7 +2336,9 @@ class SDACHubView(discord.ui.View):
             for value, label, _description in SDAC_HUB_ADMIN_OPTIONS:
                 style = discord.ButtonStyle.primary if value == "setup" else discord.ButtonStyle.secondary
                 self.add_item(SDACHubButton(is_admin, value, label, admin_rows.get(value, 2), style))
+        self.add_item(SDACHubButton(is_admin, "refresh_home", "Refresh", row=2, style=discord.ButtonStyle.secondary))
         self.add_item(discord.ui.Button(label="Website", style=discord.ButtonStyle.link, url=DASHBOARD_BASE_URL, row=1))
+        self.add_item(discord.ui.Button(label="Open In Browser", style=discord.ButtonStyle.link, url=DASHBOARD_BASE_URL, row=3))
         self.add_item(discord.ui.Button(label="Authenticate", style=discord.ButtonStyle.link, url=f"{DASHBOARD_BASE_URL}/account/login", row=4))
         self.add_item(discord.ui.Button(label="GitHub", style=discord.ButtonStyle.link, url=PROJECT_GITHUB_URL, row=4))
         self.add_item(discord.ui.Button(label="Wiki", style=discord.ButtonStyle.link, url=PROJECT_WIKI_URL, row=4))

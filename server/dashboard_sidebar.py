@@ -293,6 +293,7 @@ def is_native_app_view():
 
 def admin_sidebar_html(
     *,
+    health_badge=None,
     admin_key,
     role_labels,
     has_admin_role,
@@ -383,6 +384,13 @@ def admin_sidebar_html(
             '<label>Server</label><select name="guild_id" onchange="this.form.submit()">' + ''.join(options) + '</select>'
             '<button type="submit">Open</button></form>'
         )
+    badge_html = ""
+    if health_badge:
+        badge_class = "ok" if health_badge.get("state") == "Healthy" else "warn" if health_badge.get("state") != "OAuth Issue" else "bad"
+        badge_html = (
+            '<a class="sdac-sidebar-health ' + badge_class + '" href="' + html.escape(health_badge.get("url", "#"), quote=True) + '">'
+            + html.escape(health_badge.get("state", "Health")) + '</a>'
+        )
     return f"""
 <div class="sdac-sidebar-controls">
     <button class="sdac-sidebar-toggle" type="button" aria-controls="sdac-sidebar" aria-expanded="true" onclick="sdacToggleSidebar()">Menu</button>
@@ -392,6 +400,7 @@ def admin_sidebar_html(
     <div class="sdac-sidebar-scroll">
         <div class="sdac-sidebar-brand">{html.escape(brand)}</div>
         <div class="sdac-sidebar-user">{html.escape(username)}<br><span>{html.escape(role)}</span></div>
+        {badge_html}
         {switcher}
         {access_warning}
         {navigation}

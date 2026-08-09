@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.4.22 Experimental
+
+Version 4.4.22 adds a broad pre-live polish pass across Events, Meetups, dashboard status, `/sana`, and server diagnostics.
+
+## Live Polish
+
+- adds Events/Meetups tags, date filters, featured listings, report links, and clearer empty states
+- adds moderation reason presets and featured toggles for community submissions
+- adds a sidebar health badge for Healthy, Needs Setup, and OAuth Issue states
+- adds `/sana` Refresh and Open In Browser buttons for easier mobile recovery
+- adds public dashboard health checks to `sana-doctor`
+
+---
 # Sana-Chan Version 4.4.21 Experimental
 
 Version 4.4.21 simplifies the `/sana` Events menu buttons.

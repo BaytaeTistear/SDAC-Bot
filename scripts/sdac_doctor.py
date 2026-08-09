@@ -13,7 +13,17 @@ from urllib.request import urlopen
 BASE_DIR = Path(os.getenv("SDAC_BASE_DIR", Path(__file__).resolve().parents[1]))
 CONFIG_FILE = Path(os.getenv("SDAC_CONFIG_FILE", BASE_DIR / "config.json"))
 DB_FILE = Path(os.getenv("SDAC_DB_FILE", BASE_DIR / "sdac.db"))
-DASHBOARD_BIND = os.getenv("SDAC_DASHBOARD_BIND", "127.0.0.1:5000")
+DASHBOARD_BIND = os.getenv("SANA_DASHBOARD_BIND") or os.getenv("SDAC_DASHBOARD_BIND", "127.0.0.1:5000")
+PUBLIC_URL = (
+    os.getenv("SANA_PUBLIC_URL")
+    or os.getenv("SDAC_PUBLIC_URL")
+    or os.getenv("SANA_DASHBOARD_URL")
+    or os.getenv("SDAC_DASHBOARD_URL")
+    or ""
+).strip().rstrip("/")
+PUBLIC_DOMAIN = (os.getenv("SANA_DOMAIN") or os.getenv("SDAC_DOMAIN") or "").strip().strip("/")
+if not PUBLIC_URL and PUBLIC_DOMAIN:
+    PUBLIC_URL = f"https://{PUBLIC_DOMAIN}"
 DASHBOARD_HELPER_FILES = [
     "dashboard_account_templates.py",
     "dashboard_admin_roles.py",
@@ -124,20 +134,30 @@ def check_dashboard_import():
         status("Dashboard import", True, "dashboard.py imports successfully")
 
 
-def check_dashboard_health():
-    url = f"http://{DASHBOARD_BIND}/health"
+def check_url_health(label, url):
     try:
         with urlopen(url, timeout=5) as response:
             body = response.read(300).decode("utf-8", errors="replace").strip()
             ok = 200 <= response.status < 300
             detail = f"{response.status} {body}" if body else str(response.status)
     except HTTPError as error:
-        status("Dashboard health", False, f"{url} returned {error.code}")
+        status(label, False, f"{url} returned {error.code}")
         return
     except (OSError, URLError) as error:
-        status("Dashboard health", False, f"{url} unavailable: {error}")
+        status(label, False, f"{url} unavailable: {error}")
         return
-    status("Dashboard health", ok, detail)
+    status(label, ok, detail)
+
+
+def check_dashboard_health():
+    check_url_health("Dashboard health", f"http://{DASHBOARD_BIND}/health")
+
+
+def check_public_dashboard_health():
+    if not PUBLIC_URL:
+        status("Public dashboard health", False, "set SANA_PUBLIC_URL or SANA_DOMAIN to test the live site")
+        return
+    check_url_health("Public dashboard health", f"{PUBLIC_URL}/health")
 
 
 def check_dashboard_service():
@@ -178,6 +198,7 @@ def main():
     check_dashboard_import()
     check_dashboard_service()
     check_dashboard_health()
+    check_public_dashboard_health()
     check_service()
 
 

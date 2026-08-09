@@ -2981,6 +2981,26 @@ USERS_HTML = """
     <h1>Users</h1>
     {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
     <section class="panel">
+        <form class="filters" method="get">
+            <label>When
+                <select name="when">
+                    <option value="upcoming" {% if selected_when == 'upcoming' %}selected{% endif %}>Upcoming</option>
+                    <option value="this_week" {% if selected_when == 'this_week' %}selected{% endif %}>This week</option>
+                    <option value="this_month" {% if selected_when == 'this_month' %}selected{% endif %}>This month</option>
+                    <option value="past" {% if selected_when == 'past' %}selected{% endif %}>Past</option>
+                    <option value="all" {% if selected_when == 'all' %}selected{% endif %}>All</option>
+                </select>
+            </label>
+            <label>Tag
+                <select name="tag">
+                    <option value="">All tags</option>
+                    {% for tag in tags %}<option value="{{ tag }}" {% if tag == selected_tag %}selected{% endif %}>{{ tag }}</option>{% endfor %}
+                </select>
+            </label>
+            <button type="submit">Filter</button>
+        </form>
+    </section>
+    <section class="panel">
         <h2>Dashboard Accounts</h2>
         <table>
             <thead><tr><th>User</th><th>Discord</th><th>Role</th><th>Server Access</th><th>Status</th><th>Promote</th><th>Ban</th></tr></thead>
@@ -4985,6 +5005,26 @@ POLLS_HTML = """
     <h1>Polls</h1>
     {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
     <section class="panel">
+        <form class="filters" method="get">
+            <label>When
+                <select name="when">
+                    <option value="upcoming" {% if selected_when == 'upcoming' %}selected{% endif %}>Upcoming</option>
+                    <option value="this_week" {% if selected_when == 'this_week' %}selected{% endif %}>This week</option>
+                    <option value="this_month" {% if selected_when == 'this_month' %}selected{% endif %}>This month</option>
+                    <option value="past" {% if selected_when == 'past' %}selected{% endif %}>Past</option>
+                    <option value="all" {% if selected_when == 'all' %}selected{% endif %}>All</option>
+                </select>
+            </label>
+            <label>Tag
+                <select name="tag">
+                    <option value="">All tags</option>
+                    {% for tag in tags %}<option value="{{ tag }}" {% if tag == selected_tag %}selected{% endif %}>{{ tag }}</option>{% endfor %}
+                </select>
+            </label>
+            <button type="submit">Filter</button>
+        </form>
+    </section>
+    <section class="panel">
         <h2>Create Poll</h2>
         <form method="post">
             <input type="hidden" name="key" value="{{ admin_key }}">
@@ -5507,6 +5547,26 @@ APPROVALS_HTML = """
     {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
     <section class="panel">
         <form class="filters" method="get">
+            <label>When
+                <select name="when">
+                    <option value="upcoming" {% if selected_when == 'upcoming' %}selected{% endif %}>Upcoming</option>
+                    <option value="this_week" {% if selected_when == 'this_week' %}selected{% endif %}>This week</option>
+                    <option value="this_month" {% if selected_when == 'this_month' %}selected{% endif %}>This month</option>
+                    <option value="past" {% if selected_when == 'past' %}selected{% endif %}>Past</option>
+                    <option value="all" {% if selected_when == 'all' %}selected{% endif %}>All</option>
+                </select>
+            </label>
+            <label>Tag
+                <select name="tag">
+                    <option value="">All tags</option>
+                    {% for tag in tags %}<option value="{{ tag }}" {% if tag == selected_tag %}selected{% endif %}>{{ tag }}</option>{% endfor %}
+                </select>
+            </label>
+            <button type="submit">Filter</button>
+        </form>
+    </section>
+    <section class="panel">
+        <form class="filters" method="get">
             <input type="hidden" name="key" value="{{ admin_key }}">
             <select name="status">
                 {% for option in ["pending", "complete", "denied", "failed", "all"] %}
@@ -5987,6 +6047,26 @@ THEME_HTML = """
 <main>
     <h1>Theme</h1>
     {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
+    <section class="panel">
+        <form class="filters" method="get">
+            <label>When
+                <select name="when">
+                    <option value="upcoming" {% if selected_when == 'upcoming' %}selected{% endif %}>Upcoming</option>
+                    <option value="this_week" {% if selected_when == 'this_week' %}selected{% endif %}>This week</option>
+                    <option value="this_month" {% if selected_when == 'this_month' %}selected{% endif %}>This month</option>
+                    <option value="past" {% if selected_when == 'past' %}selected{% endif %}>Past</option>
+                    <option value="all" {% if selected_when == 'all' %}selected{% endif %}>All</option>
+                </select>
+            </label>
+            <label>Tag
+                <select name="tag">
+                    <option value="">All tags</option>
+                    {% for tag in tags %}<option value="{{ tag }}" {% if tag == selected_tag %}selected{% endif %}>{{ tag }}</option>{% endfor %}
+                </select>
+            </label>
+            <button type="submit">Filter</button>
+        </form>
+    </section>
     <section class="panel">
         <h2>Dashboard Colors</h2>
         <form method="post" enctype="multipart/form-data">
@@ -14581,8 +14661,24 @@ def add_body_classes(page_html, *classes):
     return re.sub(r"<body([^>]*)>", replace_body, page_html, count=1, flags=re.IGNORECASE)
 
 
+def sidebar_health_badge():
+    if not is_admin_logged_in():
+        return None
+    try:
+        production = production_health_report(load_config())
+        public_status = public_url_launch_status()
+    except Exception:
+        return {"state": "Needs Setup", "url": admin_url("admin_production_health")}
+    if not public_status.get("ok"):
+        return {"state": "OAuth Issue", "url": admin_url("admin_oauth_diagnostics")}
+    if production.get("score") == production.get("max_score"):
+        return {"state": "Healthy", "url": admin_url("admin_production_health")}
+    return {"state": "Needs Setup", "url": admin_url("admin_go_live_control_room")}
+
+
 def admin_sidebar_html():
     return build_admin_sidebar_html(
+        health_badge=sidebar_health_badge(),
         admin_key=ADMIN_KEY,
         role_labels=ROLE_LABELS,
         has_admin_role=has_admin_role,
@@ -23839,6 +23935,25 @@ def backup_download_rows(limit=20):
 
 
 
+COMMUNITY_TAGS = [
+    "Convention",
+    "Game Night",
+    "Online",
+    "Local",
+    "Anime",
+    "Community",
+    "Tournament",
+    "Watch Party",
+]
+
+COMMUNITY_REPORT_REASON_PRESETS = [
+    "Expired or incorrect date",
+    "Broken or unsafe link",
+    "Wrong category",
+    "Duplicate listing",
+    "Spam or inappropriate content",
+]
+
 COMMUNITY_POST_LABELS = {
     "event": {
         "title": "Events",
@@ -23882,8 +23997,11 @@ COMMUNITY_LISTING_HTML = """
         .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
         .card { padding: 1rem; }
         .card h3 { margin: 0 0 0.35rem; }
-        .meta { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
+        .meta, .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
         .pill { border: 1px solid var(--border); border-radius: 999px; padding: 0.25rem 0.55rem; color: #dce7ff; background: rgba(255,255,255,0.04); }
+        .pill.featured { border-color: var(--accent); box-shadow: 0 0 18px rgba(24, 213, 255, .22); }
+        .filters { align-items: end; display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); }
+        .empty-state { border: 1px dashed var(--border); border-radius: 0.75rem; padding: 1rem; text-align: center; }
         label { display: grid; gap: 0.35rem; font-weight: 700; }
         input, textarea, select { width: 100%; min-height: 2.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: #081122; color: var(--text); padding: 0.7rem 0.8rem; font: inherit; }
         textarea { min-height: 7rem; resize: vertical; }
@@ -23904,6 +24022,26 @@ COMMUNITY_LISTING_HTML = """
     </section>
     {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
     <section class="panel">
+        <form class="filters" method="get">
+            <label>When
+                <select name="when">
+                    <option value="upcoming" {% if selected_when == 'upcoming' %}selected{% endif %}>Upcoming</option>
+                    <option value="this_week" {% if selected_when == 'this_week' %}selected{% endif %}>This week</option>
+                    <option value="this_month" {% if selected_when == 'this_month' %}selected{% endif %}>This month</option>
+                    <option value="past" {% if selected_when == 'past' %}selected{% endif %}>Past</option>
+                    <option value="all" {% if selected_when == 'all' %}selected{% endif %}>All</option>
+                </select>
+            </label>
+            <label>Tag
+                <select name="tag">
+                    <option value="">All tags</option>
+                    {% for tag in tags %}<option value="{{ tag }}" {% if tag == selected_tag %}selected{% endif %}>{{ tag }}</option>{% endfor %}
+                </select>
+            </label>
+            <button type="submit">Filter</button>
+        </form>
+    </section>
+    <section class="panel">
         <h2>Submit {{ labels.singular }}</h2>
         <p class="muted">{{ labels.submit_help }}</p>
         <form id="submit" method="post" class="form-grid">
@@ -23912,6 +24050,7 @@ COMMUNITY_LISTING_HTML = """
             <label>{{ labels.host_label }}<input name="host_name" maxlength="140" placeholder="Community, organizer, or host"></label>
             <label>Location<input name="location" maxlength="180" placeholder="City, venue, Discord, or online"></label>
             <label>Related server<select name="guild_id"><option value="">General community</option>{% for guild in guild_options %}<option value="{{ guild.id }}">{{ guild.name }}</option>{% endfor %}</select></label>
+            <label>Tag<select name="tag"><option value="">Pick a tag</option>{% for tag in tags %}<option value="{{ tag }}">{{ tag }}</option>{% endfor %}</select></label>
             <label>Starts<input type="datetime-local" name="starts_at"></label>
             <label>Ends<input type="datetime-local" name="ends_at"></label>
             <label>Info link<input name="contact_url" maxlength="300" placeholder="https://..."></label>
@@ -23930,18 +24069,26 @@ COMMUNITY_LISTING_HTML = """
                     <h3>{{ post.title }}</h3>
                     <div class="meta">
                         <span class="pill">{{ post.category }}</span>
+                        {% if post.is_featured %}<span class="pill featured">Featured</span>{% endif %}
+                        {% if post.tags %}<span class="pill">{{ post.tags }}</span>{% endif %}
                         {% if post.starts_at_label %}<span class="pill">{{ post.starts_at_label }}</span>{% endif %}
                         {% if post.location %}<span class="pill">{{ post.location }}</span>{% endif %}
                         {% if post.guild_name %}<span class="pill">{{ post.guild_name }}</span>{% endif %}
                     </div>
                     <p>{{ post.description }}</p>
                     {% if post.host_name %}<p class="muted">Hosted/promoted by {{ post.host_name }}</p>{% endif %}
-                    {% if post.contact_url %}<p><a href="{{ post.contact_url }}" rel="noopener noreferrer">More information</a></p>{% endif %}
+                    <div class="actions">
+                        {% if post.contact_url %}<a href="{{ post.contact_url }}" rel="noopener noreferrer">More information</a>{% endif %}
+                        <a href="mailto:?subject=Report Sana-Chan {{ labels.singular }}&body=Please review {{ labels.singular }} #{{ post.id }}: {{ post.title }}">Report this {{ labels.singular | lower }}</a>
+                    </div>
                 </article>
             {% endfor %}
             </div>
         {% else %}
-            <p class="muted">No approved {{ labels.title | lower }} yet. Submissions will appear here after admin approval.</p>
+            <div class="empty-state">
+                <p class="muted">No approved {{ labels.title | lower }} match this filter yet.</p>
+                <a href="#submit">Create the first {{ labels.singular | lower }}</a>
+            </div>
         {% endif %}
     </section>
 </main>
@@ -23951,6 +24098,10 @@ COMMUNITY_LISTING_HTML = """
 
 COMMUNITY_APPROVAL_BODY = """
 <section class="panel">
+    <details>
+        <summary>What can I do here?</summary>
+        <p class="muted">Review pending Events and Meetups, mark strong listings as featured, use a preset reason when rejecting, and keep public pages clean before launch.</p>
+    </details>
     <form class="actions" method="get" action="{{ url_for('admin_community_submissions') }}">
         <input type="hidden" name="key" value="{{ admin_key }}">
         <label>Status
@@ -23991,7 +24142,9 @@ COMMUNITY_APPROVAL_BODY = """
                         <form class="stack" method="post">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <input type="hidden" name="post_id" value="{{ post.id }}">
+                            <select name="review_preset"><option value="">Reason preset</option>{% for reason in reason_presets %}<option value="{{ reason }}">{{ reason }}</option>{% endfor %}</select>
                             <input name="review_notes" placeholder="Review notes" value="{{ post.review_notes or '' }}">
+                            <label><input type="checkbox" name="is_featured" value="1" {% if post.is_featured %}checked{% endif %}> Featured</label>
                             <button name="action" value="approve" type="submit">Approve</button>
                             <button name="action" value="reject" type="submit">Reject</button>
                             <button name="action" value="delete" type="submit" onclick="return confirm('Delete this community submission?')">Delete</button>
@@ -23999,7 +24152,7 @@ COMMUNITY_APPROVAL_BODY = """
                     </td>
                 </tr>
             {% else %}
-                <tr><td colspan="6" class="muted">No community submissions match this filter.</td></tr>
+                <tr><td colspan="6" class="muted">No community submissions match this filter. Try Status: All, or share the public Events/Meetups links to invite new submissions.</td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -24029,15 +24182,22 @@ def ensure_community_posts_table():
                 reviewed_at TEXT NOT NULL DEFAULT '',
                 reviewed_by TEXT NOT NULL DEFAULT '',
                 review_notes TEXT NOT NULL DEFAULT '',
-                category TEXT NOT NULL DEFAULT ''
+                category TEXT NOT NULL DEFAULT '',
+                tags TEXT NOT NULL DEFAULT '',
+                is_featured INTEGER NOT NULL DEFAULT 0
             )
         """)
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(community_posts)").fetchall()}
         if "category" not in columns:
             connection.execute("ALTER TABLE community_posts ADD COLUMN category TEXT NOT NULL DEFAULT ''")
+        if "tags" not in columns:
+            connection.execute("ALTER TABLE community_posts ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+        if "is_featured" not in columns:
+            connection.execute("ALTER TABLE community_posts ADD COLUMN is_featured INTEGER NOT NULL DEFAULT 0")
         connection.execute("UPDATE community_posts SET category = 'Events' WHERE category = '' AND post_type = 'event'")
         connection.execute("UPDATE community_posts SET category = 'Meetups' WHERE category = '' AND post_type = 'meetup'")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_category_status ON community_posts(category, status, starts_at)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_tags_status ON community_posts(tags, status, starts_at)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_type_status ON community_posts(post_type, status, starts_at)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_status_created ON community_posts(status, created_at)")
 
@@ -24071,7 +24231,7 @@ def community_guild_name_map(config_data=None):
     return {str(guild_id): cfg.get("guild_name") or str(guild_id) for guild_id, cfg in (config_data.get("guilds") or {}).items()}
 
 
-def community_post_rows(post_type=None, status="approved", limit=100):
+def community_post_rows(post_type=None, status="approved", limit=100, tag="", when="all"):
     ensure_community_posts_table()
     clauses = []
     params = []
@@ -24081,6 +24241,25 @@ def community_post_rows(post_type=None, status="approved", limit=100):
     if status and status != "all":
         clauses.append("status = ?")
         params.append(status)
+    tag = community_clean_text(tag, 60)
+    if tag:
+        clauses.append("tags = ?")
+        params.append(tag)
+    now_text = datetime.now().strftime("%Y-%m-%dT%H:%M")
+    if when == "upcoming":
+        clauses.append("(starts_at = '' OR starts_at >= ?)")
+        params.append(now_text)
+    elif when == "past":
+        clauses.append("starts_at != '' AND starts_at < ?")
+        params.append(now_text)
+    elif when == "this_week":
+        end_text = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M")
+        clauses.append("starts_at != '' AND starts_at >= ? AND starts_at <= ?")
+        params.extend([now_text, end_text])
+    elif when == "this_month":
+        end_text = (datetime.now() + timedelta(days=31)).strftime("%Y-%m-%dT%H:%M")
+        clauses.append("starts_at != '' AND starts_at >= ? AND starts_at <= ?")
+        params.extend([now_text, end_text])
     where = "WHERE " + " AND ".join(clauses) if clauses else ""
     guild_names = community_guild_name_map()
     with closing(connect_db()) as connection:
@@ -24088,7 +24267,7 @@ def community_post_rows(post_type=None, status="approved", limit=100):
             f"""
             SELECT * FROM community_posts
             {where}
-            ORDER BY COALESCE(NULLIF(starts_at, ''), created_at) ASC, id DESC
+            ORDER BY is_featured DESC, COALESCE(NULLIF(starts_at, ''), created_at) ASC, id DESC
             LIMIT ?
             """,
             (*params, int(limit)),
@@ -24100,6 +24279,7 @@ def community_post_rows(post_type=None, status="approved", limit=100):
         item["category"] = row["category"] or COMMUNITY_POST_LABELS.get(row["post_type"], {}).get("category", row["post_type"].title())
         item["starts_at_label"] = community_datetime_label(row["starts_at"])
         item["created_at_label"] = community_datetime_label(row["created_at"])
+        item["is_featured"] = bool(row["is_featured"])
         output.append(item)
     return output
 
@@ -24115,6 +24295,9 @@ def save_community_post(post_type):
     guild_id = community_clean_text(request.form.get("guild_id"), 32)
     if guild_id and guild_id not in valid_guilds:
         guild_id = ""
+    tag = community_clean_text(request.form.get("tag"), 60)
+    if tag not in COMMUNITY_TAGS:
+        tag = ""
     now = utc_now_iso()
     with database() as connection:
         connection.execute(
@@ -24122,8 +24305,8 @@ def save_community_post(post_type):
             INSERT INTO community_posts (
                 post_type, category, status, title, description, location, starts_at, ends_at,
                 host_name, contact_url, guild_id, submitter_name, submitter_contact,
-                created_at, updated_at
-            ) VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                tags, created_at, updated_at
+            ) VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 post_type,
@@ -24138,6 +24321,7 @@ def save_community_post(post_type):
                 guild_id,
                 community_clean_text(request.form.get("submitter_name"), 120),
                 community_clean_text(request.form.get("submitter_contact"), 180),
+                tag,
                 now,
                 now,
             ),
@@ -24149,6 +24333,12 @@ def community_page(post_type):
     ensure_community_posts_table()
     notice = request.args.get("notice", "")
     error = request.args.get("error") == "1"
+    selected_tag = community_clean_text(request.args.get("tag"), 60)
+    if selected_tag not in COMMUNITY_TAGS:
+        selected_tag = ""
+    selected_when = community_clean_text(request.args.get("when"), 30) or "upcoming"
+    if selected_when not in {"upcoming", "this_week", "this_month", "past", "all"}:
+        selected_when = "upcoming"
     if request.method == "POST":
         require_csrf_token()
         try:
@@ -24163,7 +24353,10 @@ def community_page(post_type):
         guild_options=guild_options(load_config(), public_only=True),
         labels=labels,
         notice=notice,
-        posts=community_post_rows(post_type, "approved"),
+        posts=community_post_rows(post_type, "approved", tag=selected_tag, when=selected_when),
+        selected_tag=selected_tag,
+        selected_when=selected_when,
+        tags=COMMUNITY_TAGS,
     )
 
 
@@ -24194,7 +24387,11 @@ def admin_community_submissions():
         actor_id, actor = web_actor()
         action = request.form.get("action", "").strip().lower()
         post_id = int(request.form.get("post_id") or 0)
+        review_preset = community_clean_text(request.form.get("review_preset"), 120)
         review_notes = community_clean_text(request.form.get("review_notes"), 500)
+        if review_preset and review_preset in COMMUNITY_REPORT_REASON_PRESETS:
+            review_notes = (review_preset + (f": {review_notes}" if review_notes else ""))[:500]
+        is_featured = 1 if request.form.get("is_featured") == "1" else 0
         if action not in {"approve", "reject", "delete"}:
             return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Unknown action.", error=1, status=selected_status, post_type=selected_type))
         with database() as connection:
@@ -24210,10 +24407,10 @@ def admin_community_submissions():
                 connection.execute(
                     """
                     UPDATE community_posts
-                    SET status = ?, reviewed_at = ?, reviewed_by = ?, review_notes = ?, updated_at = ?
+                    SET status = ?, reviewed_at = ?, reviewed_by = ?, review_notes = ?, is_featured = ?, updated_at = ?
                     WHERE id = ?
                     """,
-                    (new_status, now, actor, review_notes, now, post_id),
+                    (new_status, now, actor, review_notes, is_featured, now, post_id),
                 )
                 message = f"Community submission {new_status}."
             add_admin_audit_log(
@@ -24233,6 +24430,7 @@ def admin_community_submissions():
         selected_status=selected_status,
         selected_type=selected_type,
         status_options=["pending", "approved", "rejected", "all"],
+        reason_presets=COMMUNITY_REPORT_REASON_PRESETS,
     )
 
 
