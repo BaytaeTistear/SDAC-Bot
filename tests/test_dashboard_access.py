@@ -202,6 +202,42 @@ class DashboardAccessTests(unittest.TestCase):
             self.dashboard.session["sdac_admin_role"] = "user"
             self.assertEqual(self.dashboard.current_admin_role(), "user")
 
+    def test_role_hierarchy_keeps_trusted_between_user_and_moderator(self):
+        levels = self.dashboard.ROLE_LEVELS
+        self.assertLess(levels["user"], levels["trusted"])
+        self.assertLess(levels["trusted"], levels["moderator"])
+        self.assertLess(levels["moderator"], levels["admin"])
+        self.assertLess(levels["admin"], levels["owner"])
+        self.assertLess(levels["owner"], levels["bot_owner"])
+
+    def test_admin_account_role_keeps_moderator_sidebar_sections(self):
+        with self.dashboard.database() as connection:
+            connection.execute("""
+                INSERT INTO dashboard_admin_users (
+                    username, email, display_name, password_hash, role,
+                    disabled, created_at, updated_at, guild_ids_json
+                )
+                VALUES ('admin-user', '', 'Admin User', 'x', 'admin', 0, '', '', '["111"]')
+            """)
+            self.dashboard.upsert_user_server_access(
+                connection,
+                "admin-user",
+                ["111"],
+                role="user",
+                source="oauth",
+                preserve_existing_roles=False,
+            )
+        with self.dashboard.app.test_request_context(f"/admin/bot-owner?key={self.dashboard.ADMIN_KEY}"):
+            self.dashboard.session["sdac_admin"] = True
+            self.dashboard.session["sdac_admin_username"] = "admin-user"
+            self.dashboard.session["sdac_admin_role"] = "admin"
+            sections = self.dashboard.admin_sidebar_sections()
+        labels = [section["label"] for section in sections]
+        self.assertIn("Moderator", labels)
+        self.assertNotIn("Server Owner", labels)
+        moderator = next(section for section in sections if section["label"] == "Moderator")
+        self.assertIn("Review Queue", [link["label"] for link in moderator["links"]])
+
     def test_baytae_override_gets_all_servers(self):
         with self.dashboard.app.test_request_context("/"):
             self.dashboard.session["sdac_account_username"] = "baytae"

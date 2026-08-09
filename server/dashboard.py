@@ -13512,7 +13512,11 @@ def current_admin_max_scoped_role(config_data=None):
     for guild_id, role in dashboard_user_server_access_map(current_admin_username()).items():
         if guild_id in all_ids and ROLE_LEVELS[normalize_role(role)] > ROLE_LEVELS[max_role]:
             max_role = normalize_role(role)
-    legacy_role = normalize_role(session.get("sdac_admin_role") or "user")
+    account = dashboard_user(current_admin_username())
+    stored_role = normalize_role(account["role"] if account else "user")
+    legacy_role = normalize_role(session.get("sdac_admin_role") or stored_role or "user")
+    if ROLE_LEVELS[stored_role] > ROLE_LEVELS[max_role]:
+        max_role = stored_role
     for guild_id in current_admin_legacy_scoped_ids(config_data):
         if ROLE_LEVELS[legacy_role] > ROLE_LEVELS[max_role]:
             max_role = legacy_role

@@ -1,3 +1,14 @@
+# Sana-Chan Version 4.4.20 Experimental
+
+Version 4.4.20 fixes dashboard role hierarchy and ensures Admin accounts inherit Moderator navigation.
+
+## Access Control
+
+- sets the dashboard hierarchy to User < Trusted User < Moderator < Admin < Server Owner < Bot Owner
+- keeps Moderator sidebar sections visible for Admin accounts even when a selected server row is lower access
+- adds regression coverage for role ordering and Admin-to-Moderator sidebar inheritance
+
+---
 # Sana-Chan Version 4.4.19 Experimental
 
 Version 4.4.19 adds Events and Meetups to the main user navigation and the guided `/sana` Discord menu.

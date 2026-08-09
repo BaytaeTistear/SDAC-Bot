@@ -3,11 +3,11 @@
 ROLE_LEVELS = {
     "not_added": -1,
     "user": 0,
-    "trusted": 0,
-    "moderator": 1,
-    "admin": 2,
-    "owner": 3,
-    "bot_owner": 4,
+    "trusted": 1,
+    "moderator": 2,
+    "admin": 3,
+    "owner": 4,
+    "bot_owner": 5,
 }
 
 ROLE_LABELS = {
