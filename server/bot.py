@@ -819,10 +819,8 @@ SDAC_SUBMENUS = {
         "title": "Events And Meetups",
         "placeholder": "Choose an events action",
         "options": [
-            ("events_view", "View Events", "Open approved community Events."),
-            ("meetups_view", "View Meetups", "Open approved community Meetups."),
-            ("events_submit", "Submit Event", "Open the Event submission form."),
-            ("meetups_submit", "Submit Meetup", "Open the Meetup submission form."),
+            ("events_view_create", "Create/View Events", "Open Events to browse approved posts or submit one."),
+            ("meetups_view_create", "Create/View Meetups", "Open Meetups to browse approved posts or submit one."),
         ],
     },
     "guess": {
@@ -914,10 +912,8 @@ SDAC_SUBMENUS = {
 SDAC_SUBMENU_DETAILS = {
     "submit_start": "**Start Submission**\nRun `/submit` to open the guided 3-step upload flow.",
     "submit_categories": "**View Categories**\nShow this server configuration and submission category destinations.",
-    "events_view": "**View Events**\nOpen the Events website page to browse approved community-promoted events.",
-    "meetups_view": "**View Meetups**\nOpen the Meetups website page to browse approved individual or partner-community meetups.",
-    "events_submit": "**Submit Event**\nOpen the Events form. Submissions go to admin review before appearing publicly.",
-    "meetups_submit": "**Submit Meetup**\nOpen the Meetups form. Submissions go to admin review before appearing publicly.",
+    "events_view_create": "**Create/View Events**\nOpen the Events page to browse approved community-promoted events or submit one for admin review.",
+    "meetups_view_create": "**Create/View Meetups**\nOpen the Meetups page to browse approved individual or partner-community meetups or submit one for admin review.",
     "guess_answer": "**Guess Answer**\nRun `/guess answer` in the channel where a guessing game is active.",
     "guess_hint": "**Show Hint**\nShow the currently revealed hint for the active game in this channel.",
     "guess_active": "**Active Game**\nShow the active guessing game status in this channel.",
@@ -2340,13 +2336,11 @@ class SDACSubmenuView(discord.ui.View):
         submenu = SDAC_SUBMENUS[section_key]
         if section_key == "events":
             event_links = [
-                ("View Events", f"{DASHBOARD_BASE_URL}/events"),
-                ("View Meetups", f"{DASHBOARD_BASE_URL}/meetups"),
-                ("Submit Event", f"{DASHBOARD_BASE_URL}/events#submit"),
-                ("Submit Meetup", f"{DASHBOARD_BASE_URL}/meetups#submit"),
+                ("Create/View Events", f"{DASHBOARD_BASE_URL}/events"),
+                ("Create/View Meetups", f"{DASHBOARD_BASE_URL}/meetups"),
             ]
             for index, (label, url) in enumerate(event_links):
-                self.add_item(discord.ui.Button(label=label, style=discord.ButtonStyle.link, url=url, row=index // 2))
+                self.add_item(discord.ui.Button(label=label, style=discord.ButtonStyle.link, url=url, row=index))
             self.add_item(SDACBackButton(is_admin))
             return
         for index, (value, label, _description) in enumerate(submenu["options"][:20]):

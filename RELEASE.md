@@ -1,3 +1,13 @@
+# Sana-Chan Version 4.4.21 Experimental
+
+Version 4.4.21 simplifies the `/sana` Events menu buttons.
+
+## Discord Menu
+
+- changes `/sana -> Events` to show only `Create/View Events` and `Create/View Meetups`
+- keeps each button pointed at the website page where users can browse approved posts or submit a new one
+
+---
 # Sana-Chan Version 4.4.20 Experimental
 
 Version 4.4.20 fixes dashboard role hierarchy and ensures Admin accounts inherit Moderator navigation.
