@@ -14,7 +14,7 @@ class AppReadinessTests(unittest.TestCase):
         self.assertFalse((ROOT / "apps" / "sdac-official-app").exists())
         package = json.loads((APP / "package.json").read_text(encoding="utf-8"))
         self.assertEqual(package["name"], "sana-chan")
-        self.assertEqual(package["version"], "4.4.24")
+        self.assertEqual(package["version"], "4.4.25")
         strings = (APP / "android" / "app" / "src" / "main" / "res" / "values" / "strings.xml").read_text(encoding="utf-8")
         self.assertIn("Sana-Chan", strings)
         self.assertIn("com.baytae.sanachan", strings)
@@ -23,11 +23,14 @@ class AppReadinessTests(unittest.TestCase):
     def test_app_version_is_consistent_across_build_files(self):
         main_ts = (APP / "src" / "main.ts").read_text(encoding="utf-8")
         build_gradle = (APP / "android" / "app" / "build.gradle").read_text(encoding="utf-8")
+        variables_gradle = (APP / "android" / "variables.gradle").read_text(encoding="utf-8")
         package = json.loads((APP / "package.json").read_text(encoding="utf-8"))
-        self.assertIn('APP_SHELL_VERSION = "4.4.24"', main_ts)
-        self.assertEqual(package["version"], "4.4.24")
-        self.assertRegex(build_gradle, r'versionCode\s+44024')
-        self.assertIn('versionName "4.4.24"', build_gradle)
+        self.assertIn('APP_SHELL_VERSION = "4.4.25"', main_ts)
+        self.assertEqual(package["version"], "4.4.25")
+        self.assertRegex(build_gradle, r'versionCode\s+44025')
+        self.assertIn('versionName "4.4.25"', build_gradle)
+        self.assertRegex(variables_gradle, r'compileSdkVersion\s*=\s*36')
+        self.assertRegex(variables_gradle, r'targetSdkVersion\s*=\s*36')
 
     def test_app_defaults_to_live_sana_backend(self):
         main_ts = (APP / "src" / "main.ts").read_text(encoding="utf-8")

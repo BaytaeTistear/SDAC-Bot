@@ -1,3 +1,14 @@
+# Sana-Chan Version 4.4.25 Experimental
+
+Version 4.4.25 updates the Android app target API for Google Play compliance.
+
+## Android Target API
+
+- raises the Android target SDK from API 35 to API 36 while keeping compile SDK 36
+- bumps the app shell and Android build metadata to 4.4.25 / versionCode 44025
+- rebuilds the APK/AAB assets for Play Console testing and direct app testing
+
+---
 # Sana-Chan Version 4.4.24 Experimental
 
 Version 4.4.24 completes the Sana app folder move safely after the app-readiness release.

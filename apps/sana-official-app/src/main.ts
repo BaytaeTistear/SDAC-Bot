@@ -82,7 +82,7 @@ type UpdateChannelInfo = {
   sha256: string;
 };
 
-const APP_SHELL_VERSION = "4.4.24";
+const APP_SHELL_VERSION = "4.4.25";
 const dashboardBase = (import.meta.env.VITE_SANA_DASHBOARD_URL || "https://sanachan.bot.nu").replace(/\/$/, "");
 const nativePlatform = Capacitor.getPlatform();
 const isNative = Capacitor.isNativePlatform();
