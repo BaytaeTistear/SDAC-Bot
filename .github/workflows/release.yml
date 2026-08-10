@@ -144,24 +144,24 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: apps/sdac-official-app/package-lock.json
+          cache-dependency-path: apps/sana-official-app/package-lock.json
       - uses: actions/setup-java@v4
         with:
           distribution: "temurin"
           java-version: "21"
       - name: Install app dependencies
-        working-directory: apps/sdac-official-app
+        working-directory: apps/sana-official-app
         run: npm ci
       - name: Build app web shell
-        working-directory: apps/sdac-official-app
+        working-directory: apps/sana-official-app
         run: npm run build
       - name: Sync Capacitor Android project
-        working-directory: apps/sdac-official-app
+        working-directory: apps/sana-official-app
         run: npx cap sync android
       - name: Pin Android Java compatibility
         shell: pwsh
         run: |
-          $path = "apps/sdac-official-app/android/app/capacitor.build.gradle"
+          $path = "apps/sana-official-app/android/app/capacitor.build.gradle"
           $text = Get-Content -LiteralPath $path -Raw
           $text = $text -replace "JavaVersion.VERSION_21", "JavaVersion.VERSION_17"
           Set-Content -LiteralPath $path -Value $text -NoNewline
@@ -174,7 +174,7 @@ jobs:
           "$SDKMANAGER" --version
           yes | "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
       - name: Build debug APK
-        working-directory: apps/sdac-official-app/android
+        working-directory: apps/sana-official-app/android
         run: |
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon
@@ -182,7 +182,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           mkdir -p dist
-          cp apps/sdac-official-app/android/app/build/outputs/apk/debug/app-debug.apk dist/Sana-Chan-Android-Debug.apk
+          cp apps/sana-official-app/android/app/build/outputs/apk/debug/app-debug.apk dist/Sana-Chan-Android-Debug.apk
           (cd dist && sha256sum Sana-Chan-Android-Debug.apk > Sana-Chan-Android-Debug.apk.sha256)
       - name: Upload Android app artifacts
         uses: actions/upload-artifact@v4
@@ -224,12 +224,12 @@ jobs:
           bash -n artifacts/sana-update
           bash -n artifacts/sanachan-update
           chmod +x artifacts/Sana-Chan-Linux-Installer.sh
-          export SDAC_APP_DIR="$RUNNER_TEMP/sdac-smoke"
-          export SDAC_APP_USER="$(id -un)"
+          export SANA_APP_DIR="$RUNNER_TEMP/sana-smoke"
+          export SANA_APP_USER="$(id -un)"
           export SDAC_ENV_FILE="$RUNNER_TEMP/sdac.env"
           export SDAC_SKIP_SERVICES=1
           artifacts/Sana-Chan-Linux-Installer.sh
-          find "$SDAC_APP_DIR" -type f \
+          find "$SANA_APP_DIR" -type f \
             \( -name "*.sh" -o -name "*.py" -o -name "*.template" -o -name "*.conf" -o -name "*.md" -o -name "*.yml" -o -name "*.json" \) \
             -print0 | xargs -0 grep -l $'\r' > "$RUNNER_TEMP/crlf-files.txt" || true
           cat "$RUNNER_TEMP/crlf-files.txt"

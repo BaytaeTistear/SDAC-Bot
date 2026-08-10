@@ -619,7 +619,7 @@ The app entry point is `/app`. It sends admins to the admin overview, signed-in 
 
 ## Official Native App Scaffold
 
-The official Sana-Chan app scaffold lives in `apps/sdac-official-app`. It uses Vite and Capacitor so the existing Flask dashboard remains the source of truth while mobile builds use the packaged Sana-Chan shell. The current app display name is `Sana-Chan`, and it defaults to `https://freethefishies.us.to`.
+The official Sana-Chan app scaffold lives in `apps/sana-official-app`. It uses Vite and Capacitor so the existing Flask dashboard remains the source of truth while mobile builds use the packaged Sana-Chan shell. The current app display name is `Sana-Chan`, and it defaults to `https://sanachan.bot.nu`.
 
 Recommended path:
 
@@ -632,7 +632,7 @@ The native scaffold reads `GET /api/app/bootstrap` for app metadata, current log
 
 If the app shell runs from another origin during development, set `SANA_APP_ALLOWED_ORIGINS` on the dashboard server, for example `http://localhost:5174,capacitor://localhost`.
 
-Android supports both direct APK/sideload testing and Play Store AAB builds. See `apps/sdac-official-app/README.md` for the exact Android SDK, APK, and store build commands.
+Android supports both direct APK/sideload testing and Play Store AAB builds. See `apps/sana-official-app/README.md` for the exact Android SDK, APK, and store build commands.
 
 ## Update Scope Labels
 

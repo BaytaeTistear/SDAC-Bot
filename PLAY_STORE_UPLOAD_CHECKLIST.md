@@ -7,13 +7,13 @@ Generated on 2026-07-15.
 Built release bundle:
 
 ```text
-apps/sdac-official-app/android/app/build/outputs/bundle/release/app-release.aab
+apps/sana-official-app/android/app/build/outputs/bundle/release/app-release.aab
 ```
 
 Checksum file:
 
 ```text
-apps/sdac-official-app/android/app/build/outputs/bundle/release/app-release.aab.sha256
+apps/sana-official-app/android/app/build/outputs/bundle/release/app-release.aab.sha256
 ```
 
 SHA256:
@@ -33,10 +33,10 @@ Use these values in Google Play Console:
 ```text
 App name: Sana-Chan
 Package name / application ID: com.baytae.sanachan
-Current Android versionCode: 42027
-Current Android versionName: 4.2.27
+Current Android versionCode: 44023
+Current Android versionName: 4.4.23
 Current Android target API: 35
-Default launch command inside Discord: /sdac
+Default launch command inside Discord: /sana
 Deep link scheme: sanachan://login-complete
 ```
 
@@ -66,7 +66,7 @@ You need a private upload keystore. Keep these private and do not commit them:
 
 ```text
 keystore file: C:\Users\YOUR_USER\.sana-chan\android-signing\sanachan-upload.jks
-keystore properties: apps/sdac-official-app/android/keystore.properties
+keystore properties: apps/sana-official-app/android/keystore.properties
 ```
 
 Example `keystore.properties`:
@@ -93,14 +93,14 @@ keytool -genkeypair `
 
 Keep the passwords somewhere safe. Losing the upload key/password can block future app updates until Google resets your upload key.
 
-The Android project reads `apps/sdac-official-app/android/keystore.properties` automatically during `bundleRelease`. That file is ignored by git and should never be committed.
+The Android project reads `apps/sana-official-app/android/keystore.properties` automatically during `bundleRelease`. That file is ignored by git and should never be committed.
 
 ## Build Commands
 
 From the app folder:
 
 ```powershell
-cd D:\CodexStuff\DiscordBots\SDAC\ScreenshotSubmit\apps\sdac-official-app
+cd D:\CodexStuff\DiscordBots\SDAC\ScreenshotSubmit\apps\sana-official-app
 npm run build
 npm run android:sync
 ```
@@ -108,7 +108,7 @@ npm run android:sync
 Then build the release bundle:
 
 ```powershell
-cd D:\CodexStuff\DiscordBots\SDAC\ScreenshotSubmit\apps\sdac-official-app\android
+cd D:\CodexStuff\DiscordBots\SDAC\ScreenshotSubmit\apps\sana-official-app\android
 $env:JAVA_HOME='C:\Program Files\Java\jdk-21.0.11'
 $env:Path="$env:JAVA_HOME\bin;$env:Path"
 .\gradlew.bat bundleRelease

@@ -122,12 +122,12 @@ function Convert-PayloadTextFilesToLf {
 function Copy-AppSource {
     param([string]$TargetRoot)
 
-    $appRoot = Join-Path $Root "apps\sdac-official-app"
+    $appRoot = Join-Path $Root "apps\sana-official-app"
     if (-not (Test-Path -LiteralPath $appRoot)) {
-        throw "Missing app source directory: apps\sdac-official-app"
+        throw "Missing app source directory: apps\sana-official-app"
     }
 
-    $targetAppRoot = Join-Path $TargetRoot "apps\sdac-official-app"
+    $targetAppRoot = Join-Path $TargetRoot "apps\sana-official-app"
     if (Test-Path -LiteralPath $targetAppRoot) {
         Remove-Item -LiteralPath $targetAppRoot -Recurse -Force
     }

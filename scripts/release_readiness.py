@@ -84,6 +84,7 @@ PACKAGE_FILES = [
 
 FOCUSED_TESTS = [
     "tests.test_anime_activities_seed",
+    "tests.test_app_readiness",
     "tests.test_bot_startup",
     "tests.test_dashboard_access",
     "tests.test_dashboard_packaging",

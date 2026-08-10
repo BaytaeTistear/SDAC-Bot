@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.4.23 Experimental
+
+Version 4.4.23 prepares the Android app for the next app build with Sana-only app identity, current version metadata, and app-readiness checks.
+
+## App Readiness
+
+- renames the app source folder to `apps/sana-official-app` and updates packaging, workflow, and docs to use the Sana path
+- bumps the app shell and Android build metadata to 4.4.23 / versionCode 44023
+- defaults the app shell to `https://sanachan.bot.nu` and removes app-facing SDAC env fallbacks
+- keeps dashboard navigation inside the app shell by default while Discord login and external links open intentionally in the browser
+- adds app-readiness regression coverage for app identity, backend URL, version alignment, release staging, and shell navigation
+
+---
+
 # Sana-Chan Version 4.4.22 Experimental
 
 Version 4.4.22 adds a broad pre-live polish pass across Events, Meetups, dashboard status, `/sana`, and server diagnostics.
