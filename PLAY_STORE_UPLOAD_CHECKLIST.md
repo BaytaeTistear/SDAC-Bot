@@ -33,8 +33,8 @@ Use these values in Google Play Console:
 ```text
 App name: Sana-Chan
 Package name / application ID: com.baytae.sanachan
-Current Android versionCode: 44023
-Current Android versionName: 4.4.23
+Current Android versionCode: 44024
+Current Android versionName: 4.4.24
 Current Android target API: 35
 Default launch command inside Discord: /sana
 Deep link scheme: sanachan://login-complete

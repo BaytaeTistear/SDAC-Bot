@@ -8,10 +8,10 @@ deploy-backups/
 *.db
 *.db-wal
 *.db-shm
-apps/sdac-official-app/node_modules/
-apps/sdac-official-app/dist/
-apps/sdac-official-app/icons/
-apps/sdac-official-app/public/manifest.webmanifest
-apps/sdac-official-app/android/keystore.properties
+apps/sana-official-app/node_modules/
+apps/sana-official-app/dist/
+apps/sana-official-app/icons/
+apps/sana-official-app/public/manifest.webmanifest
+apps/sana-official-app/android/keystore.properties
 .venv-win/
 .sdac_secret_key

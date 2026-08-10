@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.4.24 Experimental
+
+Version 4.4.24 completes the Sana app folder move safely after the app-readiness release.
+
+## App Packaging Fix
+
+- finishes staging the tracked Android/Capacitor app files under `apps/sana-official-app`
+- updates ignore rules so app `node_modules`, generated `dist`, local icons, and signing files stay out of git after the folder rename
+- changes release scripts to stage the app move without walking generated dependency/build folders
+- bumps app shell and Android build metadata to 4.4.24 / versionCode 44024
+
+---
+
 # Sana-Chan Version 4.4.23 Experimental
 
 Version 4.4.23 prepares the Android app for the next app build with Sana-only app identity, current version metadata, and app-readiness checks.
