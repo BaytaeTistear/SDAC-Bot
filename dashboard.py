@@ -23959,8 +23959,8 @@ COMMUNITY_POST_LABELS = {
         "title": "Events",
         "singular": "Event",
         "path": "community_events",
-        "intro": "Community-promoted conventions, club days, watch parties, tournaments, and other happenings.",
-        "submit_help": "Share events that the community should know about. Admins review each submission before it appears here.",
+        "intro": "Community-promoted conventions, club days, watch parties, tournaments, and other larger happenings.",
+        "submit_help": "Use this for events promoted by the community, such as conventions, club days, tournaments, watch parties, and larger public gatherings. Admins review each submission before it appears here.",
         "host_label": "Promoting community or organizer",
         "category": "Events",
     },
@@ -23968,8 +23968,8 @@ COMMUNITY_POST_LABELS = {
         "title": "Meetups",
         "singular": "Meetup",
         "path": "community_meetups",
-        "intro": "Individual-hosted or partner-community meetups that members may want to join.",
-        "submit_help": "Share meetups hosted by people or other communities. Admins review each submission before it appears here.",
+        "intro": "Smaller gatherings hosted by individuals, friend groups, or partner communities.",
+        "submit_help": "Use this for smaller meetups hosted by people, clubs, or other communities. Admins review each submission before it appears here.",
         "host_label": "Host or community name",
         "category": "Meetups",
     },
@@ -24002,15 +24002,17 @@ COMMUNITY_LISTING_HTML = """
         .pill.featured { border-color: var(--accent); box-shadow: 0 0 18px rgba(24, 213, 255, .22); }
         .filters { align-items: end; display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); }
         .empty-state { border: 1px dashed var(--border); border-radius: 0.75rem; padding: 1rem; text-align: center; }
-        label { display: grid; gap: 0.35rem; font-weight: 700; }
-        input, textarea, select { width: 100%; min-height: 2.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: #081122; color: var(--text); padding: 0.7rem 0.8rem; font: inherit; }
+        label { color: #b9c7dc; display: grid; font-size: 0.94rem; gap: 0.45rem; font-weight: 700; letter-spacing: 0; }
+        input, textarea, select { width: 100%; min-height: 2.65rem; border: 1px solid var(--border); border-radius: 0.55rem; background: #081122; color: var(--text); padding: 0.75rem 0.85rem; font: inherit; }
+        input::placeholder, textarea::placeholder { color: #748299; opacity: 1; }
+        select:invalid { color: #748299; }
         textarea { min-height: 7rem; resize: vertical; }
         button { border: 0; border-radius: 0.55rem; padding: 0.8rem 1rem; color: white; font: inherit; font-weight: 800; cursor: pointer; background: linear-gradient(100deg, var(--accent2), var(--accent)); }
-        .form-grid { display: grid; gap: 0.85rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .form-grid { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); max-width: 48rem; }
         .wide { grid-column: 1 / -1; }
         .notice { border: 1px solid var(--border); border-radius: 0.55rem; padding: 0.8rem; margin: 0 0 1rem; text-align: center; }
         .notice.error { border-color: var(--danger); }
-        @media (max-width: 44rem) { .form-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 44rem) { main { width: min(96vw, 76rem); } }
     </style>
 </head>
 <body>
@@ -24046,7 +24048,7 @@ COMMUNITY_LISTING_HTML = """
         <p class="muted">{{ labels.submit_help }}</p>
         <form id="submit" method="post" class="form-grid">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <label>Title<input name="title" maxlength="140" required placeholder="Convention, game night, watch party..."></label>
+            <label>Title<input name="title" maxlength="140" required placeholder="Convention, game night, watch party, tournament..."></label>
             <label>{{ labels.host_label }}<input name="host_name" maxlength="140" placeholder="Community, organizer, or host"></label>
             <label>Location<input name="location" maxlength="180" placeholder="City, venue, Discord, or online"></label>
             <label>Related server<select name="guild_id"><option value="">General community</option>{% for guild in guild_options %}<option value="{{ guild.id }}">{{ guild.name }}</option>{% endfor %}</select></label>

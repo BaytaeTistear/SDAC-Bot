@@ -1,3 +1,15 @@
+# Sana-Chan Version 4.4.26 Experimental
+
+Version 4.4.26 polishes the Events and Meetups public submission pages.
+
+## Community Page Readability
+
+- rewrites Events and Meetups helper text so each page has a clearer purpose
+- changes the submission form to a single-column layout with more breathing room
+- softens field labels and darkens placeholder text for better readability
+- keeps the release scripts from warning about the old app folder after the Sana app rename
+
+---
 # Sana-Chan Version 4.4.25 Experimental
 
 Version 4.4.25 updates the Android app target API for Google Play compliance.
