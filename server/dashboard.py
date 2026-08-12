@@ -9987,8 +9987,7 @@ def build_onboarding_rows(config_data):
 
 
 def selected_guild_id(options):
-    option_ids = [str(option["id"]) for option in options]
-    valid_ids = set(option_ids)
+    valid_ids = {str(option["id"]) for option in options}
     requested = request.values.get("guild_id", "").strip()
     if requested == "all":
         session.pop("sdac_guild_id", None)
@@ -10001,10 +10000,6 @@ def selected_guild_id(options):
     if stored in valid_ids:
         return stored
     session.pop("sdac_guild_id", None)
-    if option_ids:
-        selected = option_ids[0]
-        session["sdac_guild_id"] = selected
-        return selected
     return ""
 
 

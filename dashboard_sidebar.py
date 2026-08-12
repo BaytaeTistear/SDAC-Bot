@@ -375,8 +375,6 @@ def admin_sidebar_html(
             current_guild = requested_guild
         elif stored_guild in valid_option_ids:
             current_guild = stored_guild
-        elif option_rows:
-            current_guild = str(option_rows[0]["id"])
         options = [f'<option value="all"{(" selected" if current_guild == "all" else "")}>All Allowed Servers</option>']
         for guild in option_rows:
             selected = " selected" if current_guild == str(guild["id"]) else ""

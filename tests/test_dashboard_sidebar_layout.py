@@ -100,14 +100,14 @@ class DashboardSidebarLayoutTests(unittest.TestCase):
         self.assertIn("text-overflow: ellipsis", body)
         self.assertIn(".sdac-sidebar .sdac-server-switcher select, .sdac-sidebar .sdac-server-switcher button", body)
 
-    def test_sidebar_server_selector_defaults_to_first_allowed_server(self):
+    def test_sidebar_server_selector_defaults_to_all_allowed_servers(self):
         option_rows = [{"id": "111", "name": "Alpha"}, {"id": "222", "name": "Beta"}]
         with mock.patch.object(dashboard, "sidebar_server_options", return_value=option_rows):
             response = self.client.get(f"/admin/bot-owner?key={dashboard.ADMIN_KEY}")
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
-        self.assertIn('<option value="111" selected>Alpha</option>', body)
-        self.assertNotIn('<option value="all" selected>', body)
+        self.assertIn('<option value="all" selected>All Allowed Servers</option>', body)
+        self.assertNotIn('<option value="111" selected>Alpha</option>', body)
 
 
     def test_moderator_sidebar_keeps_full_menu_when_selected_server_role_is_lower(self):

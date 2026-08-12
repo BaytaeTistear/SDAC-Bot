@@ -112,7 +112,7 @@ class DashboardAccessTests(unittest.TestCase):
 
         self.assertEqual([row["id"] for row in rows], ["111", "222"])
 
-    def test_server_selection_defaults_to_first_allowed_server(self):
+    def test_server_selection_defaults_to_all_allowed_servers(self):
         options = [
             {"id": "111", "name": "Alpha"},
             {"id": "222", "name": "Beta"},
@@ -121,8 +121,8 @@ class DashboardAccessTests(unittest.TestCase):
             selected = self.dashboard.selected_guild_id(options)
             stored = self.dashboard.session.get("sdac_guild_id")
 
-        self.assertEqual(selected, "111")
-        self.assertEqual(stored, "111")
+        self.assertEqual(selected, "")
+        self.assertIsNone(stored)
 
     def test_server_selection_keeps_explicit_all(self):
         options = [
