@@ -112,6 +112,31 @@ class DashboardAccessTests(unittest.TestCase):
 
         self.assertEqual([row["id"] for row in rows], ["111", "222"])
 
+    def test_server_selection_defaults_to_first_allowed_server(self):
+        options = [
+            {"id": "111", "name": "Alpha"},
+            {"id": "222", "name": "Beta"},
+        ]
+        with self.dashboard.app.test_request_context("/"):
+            selected = self.dashboard.selected_guild_id(options)
+            stored = self.dashboard.session.get("sdac_guild_id")
+
+        self.assertEqual(selected, "111")
+        self.assertEqual(stored, "111")
+
+    def test_server_selection_keeps_explicit_all(self):
+        options = [
+            {"id": "111", "name": "Alpha"},
+            {"id": "222", "name": "Beta"},
+        ]
+        with self.dashboard.app.test_request_context("/?guild_id=all"):
+            self.dashboard.session["sdac_guild_id"] = "111"
+            selected = self.dashboard.selected_guild_id(options)
+            stored = self.dashboard.session.get("sdac_guild_id")
+
+        self.assertEqual(selected, "")
+        self.assertIsNone(stored)
+
     def test_discord_oauth_start_uses_configured_https_public_callback(self):
         with mock.patch.dict(self.dashboard.os.environ, {"SANA_PUBLIC_URL": "", "SDAC_PUBLIC_URL": "https://alpha-beta.trycloudflare.com"}, clear=False):
             with mock.patch.object(self.dashboard, "DISCORD_OAUTH_CLIENT_ID", "1234567890"):

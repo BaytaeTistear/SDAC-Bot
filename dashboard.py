@@ -9987,9 +9987,9 @@ def build_onboarding_rows(config_data):
 
 
 def selected_guild_id(options):
-    valid_ids = {option["id"] for option in options}
+    option_ids = [str(option["id"]) for option in options]
+    valid_ids = set(option_ids)
     requested = request.values.get("guild_id", "").strip()
-    restricted_admin = is_admin_logged_in() and current_admin_role() != "bot_owner"
     if requested == "all":
         session.pop("sdac_guild_id", None)
         return ""
@@ -9997,12 +9997,12 @@ def selected_guild_id(options):
         session["sdac_guild_id"] = requested
         return requested
 
-    stored = session.get("sdac_guild_id", "")
+    stored = str(session.get("sdac_guild_id", "") or "")
     if stored in valid_ids:
         return stored
     session.pop("sdac_guild_id", None)
-    if restricted_admin and valid_ids:
-        selected = sorted(valid_ids)[0]
+    if option_ids:
+        selected = option_ids[0]
         session["sdac_guild_id"] = selected
         return selected
     return ""

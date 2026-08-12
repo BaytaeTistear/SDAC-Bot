@@ -362,10 +362,22 @@ def admin_sidebar_html(
     if is_account_logged_in() or is_admin_logged_in():
         config_data = load_config()
         option_rows = sidebar_server_options(config_data)
-        options = ['<option value="all">All Allowed Servers</option>']
+        options = []
         if not option_rows:
             access_warning = '<div class="sdac-sidebar-warning">No linked servers. Refresh Discord servers or ask a Bot Owner to assign access.</div>'
-        current_guild = request.args.get("guild_id") or session.get("sdac_guild_id", "all") or "all"
+        requested_guild = str(request.args.get("guild_id") or "").strip()
+        stored_guild = str(session.get("sdac_guild_id", "") or "").strip()
+        valid_option_ids = {str(guild["id"]) for guild in option_rows}
+        current_guild = "all"
+        if requested_guild == "all":
+            current_guild = "all"
+        elif requested_guild in valid_option_ids:
+            current_guild = requested_guild
+        elif stored_guild in valid_option_ids:
+            current_guild = stored_guild
+        elif option_rows:
+            current_guild = str(option_rows[0]["id"])
+        options = [f'<option value="all"{(" selected" if current_guild == "all" else "")}>All Allowed Servers</option>']
         for guild in option_rows:
             selected = " selected" if current_guild == str(guild["id"]) else ""
             options.append(f'<option value="{html.escape(str(guild["id"]), quote=True)}"{selected}>{html.escape(guild["name"])}</option>')
