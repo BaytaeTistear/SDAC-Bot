@@ -116,12 +116,18 @@ with dashboard.database() as connection:
         """,
         (community_now, community_now, community_now, community_now),
     )
+all_events = client.get("/events")
 alpha_events = client.get(f"/events?guild_id=111")
 beta_events = client.get(f"/events?guild_id=222")
+assert all_events.status_code == 200
 assert alpha_events.status_code == 200
 assert beta_events.status_code == 200
+all_body = all_events.get_data(as_text=True)
 alpha_body = alpha_events.get_data(as_text=True)
 beta_body = beta_events.get_data(as_text=True)
+assert '<option value="all" selected>All Allowed Servers</option>' in all_body
+assert "Alpha Only Event" in all_body
+assert "Beta Only Event" in all_body
 assert "Alpha Only Event" in alpha_body
 assert "Beta Only Event" not in alpha_body
 assert "Beta Only Event" in beta_body

@@ -24064,7 +24064,8 @@ COMMUNITY_LISTING_HTML = """
     <section class="panel">
         <form class="filters" method="get">
             <label>Server
-                <select name="guild_id" required>
+                <select name="guild_id">
+                    <option value="all" {% if not selected_guild_id %}selected{% endif %}>All Allowed Servers</option>
                     {% for guild in guild_options %}<option value="{{ guild.id }}" {% if guild.id == selected_guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}
                 </select>
             </label>
@@ -24363,13 +24364,13 @@ def seed_san_diego_anime_club_event(connection, config_data=None):
 
 
 def default_community_guild_id(server_options):
-    if not server_options:
-        return ""
     requested = community_clean_text(request.args.get("guild_id") or request.form.get("guild_id"), 32)
+    if requested == "all":
+        return ""
     allowed = {str(option["id"]) for option in server_options}
     if requested in allowed:
         return requested
-    return str(server_options[0]["id"])
+    return ""
 
 
 def community_post_rows(post_type=None, status="approved", limit=100, tag="", when="all", guild_id=""):
@@ -24488,7 +24489,7 @@ def community_page(post_type):
     server_options = guild_options(config_data, public_only=True)
     selected_guild_id = default_community_guild_id(server_options)
     selected_guild_name = next((option["name"] for option in server_options if str(option["id"]) == selected_guild_id), "")
-    can_submit = bool(server_options and selected_guild_id)
+    can_submit = bool(server_options)
     if request.method == "POST":
         require_csrf_token()
         try:
