@@ -126,6 +126,9 @@ assert "Alpha Only Event" in alpha_body
 assert "Beta Only Event" not in alpha_body
 assert "Beta Only Event" in beta_body
 assert "Alpha Only Event" not in beta_body
+assert 'select[data-placeholder="true"], input[type="datetime-local"][data-placeholder="true"]' in alpha_body
+assert "document.querySelectorAll(\"select, input[type='datetime-local']\")" in alpha_body
+assert 'data-placeholder="{{' not in alpha_body
 
 for route in routes:
     response = client.get(f"{route}?key={dashboard.ADMIN_KEY}")

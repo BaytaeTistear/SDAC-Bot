@@ -24021,7 +24021,7 @@ COMMUNITY_LISTING_HTML = """
         :root { color-scheme: dark; --bg: #071324; --panel: rgba(13, 25, 45, 0.92); --border: #24436f; --text: #f4f7ff; --muted: #aebbd1; --accent: #18d5ff; --accent2: #8b5cff; --danger: #ff5c7a; }
         * { box-sizing: border-box; }
         body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 80% 0%, rgba(139, 92, 255, 0.18), transparent 34rem), #071324; color: var(--text); font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-        main { width: min(92vw, 76rem); margin: 0 auto; padding: clamp(1rem, 3vw, 2rem); }
+        main { width: min(92vw, 76rem); margin: 0 auto; padding: clamp(0.85rem, 2.5vw, 2rem); }
         h1 { margin: 0 0 0.45rem; font-size: clamp(2rem, 5vw, 4rem); }
         h2 { margin: 0 0 1rem; }
         a { color: var(--accent); }
@@ -24040,14 +24040,21 @@ COMMUNITY_LISTING_HTML = """
         label { color: #b9c7dc; display: grid; font-size: 0.94rem; gap: 0.45rem; font-weight: 700; letter-spacing: 0; }
         input, textarea, select { width: 100%; min-height: 2.65rem; border: 1px solid var(--border); border-radius: 0.55rem; background: #081122; color: var(--text); padding: 0.75rem 0.85rem; font: inherit; }
         input::placeholder, textarea::placeholder { color: #748299; opacity: 1; }
-        select:invalid { color: #748299; }
+        select[data-placeholder="true"], input[type="datetime-local"][data-placeholder="true"] { color: #748299; }
+        select option { background: #081122; color: var(--text); }
         textarea { min-height: 7rem; resize: vertical; }
         button { border: 0; border-radius: 0.55rem; padding: 0.8rem 1rem; color: white; font: inherit; font-weight: 800; cursor: pointer; background: linear-gradient(100deg, var(--accent2), var(--accent)); }
         .form-grid { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); max-width: 48rem; }
         .wide { grid-column: 1 / -1; }
         .notice { border: 1px solid var(--border); border-radius: 0.55rem; padding: 0.8rem; margin: 0 0 1rem; text-align: center; }
         .notice.error { border-color: var(--danger); }
-        @media (max-width: 44rem) { main { width: min(96vw, 76rem); } }
+        @media (max-width: 44rem) {
+            main { width: min(98vw, 76rem); padding: 0.55rem; }
+            .hero { padding: 1rem; }
+            .panel { margin: 0.65rem 0; padding: 0.8rem; }
+            .grid { gap: 0.75rem; }
+            .card { padding: 0.85rem; }
+        }
     </style>
 </head>
 <body>
@@ -24076,7 +24083,7 @@ COMMUNITY_LISTING_HTML = """
                 </select>
             </label>
             <label>Tag
-                <select name="tag">
+                <select name="tag" data-placeholder="{{ 'true' if not selected_tag else 'false' }}">
                     <option value="">All tags</option>
                     {% for tag in tags %}<option value="{{ tag }}" {% if tag == selected_tag %}selected{% endif %}>{{ tag }}</option>{% endfor %}
                 </select>
@@ -24111,30 +24118,47 @@ COMMUNITY_LISTING_HTML = """
         {% else %}
             <div class="empty-state">
                 <p class="muted">No approved {{ labels.title | lower }} match this filter yet.</p>
-                <a href="#submit">Create the first {{ labels.singular | lower }}</a>
+                {% if can_submit %}<a href="#submit">Create the first {{ labels.singular | lower }}</a>{% endif %}
             </div>
         {% endif %}
     </section>
     <section class="panel">
-        <h2>Submit {{ labels.singular }}</h2>
-        <p class="muted">{{ labels.submit_help }} Submissions and approved listings are shown only for the selected server.</p>
-        <form id="submit" method="post" class="form-grid">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <label>Title<input name="title" maxlength="140" required placeholder="Convention, game night, watch party, tournament..."></label>
-            <label>{{ labels.host_label }}<input name="host_name" maxlength="140" placeholder="Community, organizer, or host"></label>
-            <label>Location<input name="location" maxlength="180" placeholder="City, venue, Discord, or online"></label>
-            <label>Server<select name="guild_id" required>{% for guild in guild_options %}<option value="{{ guild.id }}" {% if guild.id == selected_guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}</select></label>
-            <label>Tag<select name="tag"><option value="">Pick a tag</option>{% for tag in tags %}<option value="{{ tag }}">{{ tag }}</option>{% endfor %}</select></label>
-            <label>Starts<input type="datetime-local" name="starts_at"></label>
-            <label>Ends<input type="datetime-local" name="ends_at"></label>
-            <label>Info link<input name="contact_url" maxlength="300" placeholder="https://..."></label>
-            <label>Your name<input name="submitter_name" maxlength="120" placeholder="Shown to admins only unless approved notes include it"></label>
-            <label class="wide">Contact for admins<input name="submitter_contact" maxlength="180" placeholder="Discord handle, email, or best way to reach you"></label>
-            <label class="wide">Description<textarea name="description" maxlength="3000" required placeholder="What is it, who is it for, and what should people know?"></textarea></label>
-            <button class="wide" type="submit">Send For Admin Approval</button>
-        </form>
+        {% if can_submit %}
+            <h2>Submit {{ labels.singular }}</h2>
+            <p class="muted">{{ labels.submit_help }} Submissions and approved listings are shown only for the selected server.</p>
+            <form id="submit" method="post" class="form-grid">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <label>Title<input name="title" maxlength="140" required placeholder="Convention, game night, watch party, tournament..."></label>
+                <label>{{ labels.host_label }}<input name="host_name" maxlength="140" placeholder="Community, organizer, or host"></label>
+                <label>Location<input name="location" maxlength="180" placeholder="City, venue, Discord, or online"></label>
+                <label>Server<select name="guild_id" required>{% for guild in guild_options %}<option value="{{ guild.id }}" {% if guild.id == selected_guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}</select></label>
+                <label>Tag<select name="tag" data-placeholder="true"><option value="">Pick a tag</option>{% for tag in tags %}<option value="{{ tag }}">{{ tag }}</option>{% endfor %}</select></label>
+                <label>Starts<input type="datetime-local" name="starts_at" data-placeholder="true"></label>
+                <label>Ends<input type="datetime-local" name="ends_at" data-placeholder="true"></label>
+                <label>Info link<input name="contact_url" maxlength="300" placeholder="https://..."></label>
+                <label>Your name<input name="submitter_name" maxlength="120" placeholder="Shown to admins only unless approved notes include it"></label>
+                <label class="wide">Contact for admins<input name="submitter_contact" maxlength="180" placeholder="Discord handle, email, or best way to reach you"></label>
+                <label class="wide">Description<textarea name="description" maxlength="3000" required placeholder="What is it, who is it for, and what should people know?"></textarea></label>
+                <button class="wide" type="submit">Send For Admin Approval</button>
+            </form>
+        {% else %}
+            <h2>Submit {{ labels.singular }}</h2>
+            <div class="empty-state">
+                <p class="muted">Sign in with Discord or refresh your server access before submitting. Sana-Chan only accepts {{ labels.title | lower }} for servers you can select here.</p>
+            </div>
+        {% endif %}
     </section>
 </main>
+<script>
+document.querySelectorAll("select, input[type='datetime-local']").forEach((field) => {
+    const syncPlaceholderState = () => {
+        field.dataset.placeholder = field.value ? "false" : "true";
+    };
+    syncPlaceholderState();
+    field.addEventListener("change", syncPlaceholderState);
+    field.addEventListener("input", syncPlaceholderState);
+});
+</script>
 </body>
 </html>
 """
@@ -24416,11 +24440,11 @@ def save_community_post(post_type):
     description = community_clean_text(request.form.get("description"), 3000)
     if not title or not description:
         raise ValueError(f"{labels['singular']} title and description are required.")
-    config_data = load_config()
-    valid_guilds = {str(option["id"]) for option in guild_options(config_data, public_only=True)}
+    server_options = guild_options(load_config(), public_only=True)
+    valid_guilds = {str(option["id"]) for option in server_options}
     guild_id = community_clean_text(request.form.get("guild_id"), 32)
     if guild_id not in valid_guilds:
-        raise ValueError(f"Choose the server this {labels['singular'].lower()} belongs to.")
+        raise ValueError(f"Choose one of your available servers before submitting this {labels['singular'].lower()}.")
     tag = community_clean_text(request.form.get("tag"), 60)
     if tag not in COMMUNITY_TAGS:
         tag = ""
@@ -24469,6 +24493,7 @@ def community_page(post_type):
     server_options = guild_options(config_data, public_only=True)
     selected_guild_id = default_community_guild_id(server_options)
     selected_guild_name = next((option["name"] for option in server_options if str(option["id"]) == selected_guild_id), "")
+    can_submit = bool(server_options and selected_guild_id)
     if request.method == "POST":
         require_csrf_token()
         try:
@@ -24486,6 +24511,7 @@ def community_page(post_type):
         posts=community_post_rows(post_type, "approved", tag=selected_tag, when=selected_when, guild_id=selected_guild_id),
         selected_guild_id=selected_guild_id,
         selected_guild_name=selected_guild_name,
+        can_submit=can_submit,
         selected_tag=selected_tag,
         selected_when=selected_when,
         tags=COMMUNITY_TAGS,
