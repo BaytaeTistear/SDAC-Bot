@@ -316,6 +316,21 @@ class BotStartupTests(unittest.TestCase):
         self.assertFalse(hasattr(bot, "AnimeProfileImportXmlModal"))
         self.assertTrue(hasattr(bot, "handle_sana_anime_action"))
 
+    def test_sana_events_menu_has_discord_posting_setup(self):
+        import bot
+
+        event_values = [value for value, _label, _description in bot.SDAC_SUBMENUS["events"]["options"]]
+        self.assertIn("events_posting_setup", event_values)
+        self.assertIn("community_event_approved", bot.NOTIFICATION_EVENT_LABELS)
+        self.assertIn("community_meetup_approved", bot.NOTIFICATION_EVENT_LABELS)
+        self.assertEqual(bot.community_posting_event_key("event"), "community_event_approved")
+        self.assertEqual(bot.community_posting_event_key("meetup"), "community_meetup_approved")
+        self.assertIn("confirm", bot.SDAC_SUBMENU_DETAILS["events_posting_setup"].lower())
+        self.assertTrue(hasattr(bot, "CommunityPostingSetupView"))
+        self.assertTrue(hasattr(bot, "CommunityPostingConfirmView"))
+        self.assertTrue(hasattr(bot, "save_community_posting_route"))
+        self.assertTrue(hasattr(bot, "handle_sana_events_action"))
+
 if __name__ == "__main__":
     unittest.main()
 

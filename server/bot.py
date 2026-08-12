@@ -485,6 +485,8 @@ NOTIFICATION_EVENT_LABELS = {
     "restore_drill_failed": "Restore Drill Failed",
     "monthly_digest": "Monthly Digest",
     "release_announcements": "Release Announcements",
+    "community_event_approved": "Approved Events",
+    "community_meetup_approved": "Approved Meetups",
 }
 
 NOTIFICATION_EVENT_CHOICES = [
@@ -821,6 +823,7 @@ SDAC_SUBMENUS = {
         "options": [
             ("events_view_create", "Create/View Events", "Open Events to browse approved posts or submit one."),
             ("meetups_view_create", "Create/View Meetups", "Open Meetups to browse approved posts or submit one."),
+            ("events_posting_setup", "Discord Posting Setup", "Choose whether approved Events or Meetups post to Discord and where."),
         ],
     },
     "guess": {
@@ -921,6 +924,7 @@ SDAC_SUBMENU_DETAILS = {
     "anime_import": "**Import MyAnimeList**\nUpload your own `.xml` export file from the guided `/sana` flow. Export your lists at https://myanimelist.net/panel.php?go=export. Username import is disabled so users cannot import someone else's public account.",
     "anime_view": "**View Anime Profile**\nChoose a server member from `/sana` to view their saved anime profile.",
     "anime_activities": "**Anime Activities**\nRun `/animeactivities` to see available activity keys and anime game/community ideas.",
+    "events_posting_setup": "**Discord Posting Setup**\nAdmins can choose Events or Meetups, pick the Discord channel, decide whether approved posts should be announced, and confirm the route.",
     "setup_bot_name": "**Bot Name**\nAdmins can set the bot nickname users see inside this server. Leave it blank to reset to the bot's global username.",
     "setup_bot_image": "**Bot Image**\nBot owners can update the global Discord bot avatar from an HTTPS image URL. This affects every server and may be rate limited by Discord.",
     "setup_command_alias": "**Command Name**\nAdmins can set a server-specific launcher like `/pepo`. `/sana` always remains available as the fallback.",
@@ -1291,6 +1295,238 @@ async def handle_sana_submission_admin_action(interaction, action, is_admin, sec
         return True
     return False
 
+
+COMMUNITY_POSTING_EVENT_KEYS = {
+    "event": "community_event_approved",
+    "meetup": "community_meetup_approved",
+}
+
+COMMUNITY_POSTING_LABELS = {
+    "event": "Events",
+    "meetup": "Meetups",
+}
+
+
+def community_posting_event_key(post_type):
+    return COMMUNITY_POSTING_EVENT_KEYS.get(str(post_type or "").strip().lower(), "")
+
+
+def community_posting_setup_content(post_type="", channel=None, enabled=None, step=1, notice=""):
+    lines = [
+        "**Events And Meetups Discord Posting**",
+        "Set where approved community posts should be announced.",
+        "",
+        "**Step 1:** choose Events or Meetups.",
+        "**Step 2:** choose the Discord channel and whether posting is enabled.",
+        "**Step 3:** confirm and save.",
+    ]
+    if post_type:
+        lines.append(f"\nSelected: `{COMMUNITY_POSTING_LABELS.get(post_type, post_type.title())}`")
+    if channel:
+        lines.append(f"Channel: {channel.mention}")
+    if enabled is not None:
+        lines.append(f"Posting: `{'enabled' if enabled else 'disabled'}`")
+    if notice:
+        lines.extend(["", notice])
+    return "\n".join(lines)[:1900]
+
+
+async def save_community_posting_route(interaction, post_type, channel, enabled):
+    event_key = community_posting_event_key(post_type)
+    if not event_key:
+        return "Choose Events or Meetups first."
+    if enabled and channel is None:
+        return "Choose a channel before enabling Discord posts."
+    now = utc_now_iso()
+    with database() as connection:
+        connection.execute("""
+            INSERT INTO admin_notifications (
+                guild_id, event_key, channel_id, enabled, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id, event_key) DO UPDATE SET
+                channel_id = excluded.channel_id,
+                enabled = excluded.enabled,
+                updated_at = excluded.updated_at
+        """, (
+            str(interaction.guild_id),
+            event_key,
+            str(channel.id) if channel else "",
+            1 if enabled else 0,
+            now,
+            now,
+        ))
+        add_admin_audit_log(
+            connection,
+            interaction.guild_id,
+            "set_community_posting_route",
+            interaction.user.id,
+            interaction.user,
+            "notification",
+            event_key,
+            f"{event_key} -> {channel.id if channel else 'disabled'}; enabled={enabled}.",
+        )
+    if enabled:
+        return f"Approved {COMMUNITY_POSTING_LABELS[post_type]} will post to {channel.mention}."
+    return f"Approved {COMMUNITY_POSTING_LABELS[post_type]} will not post to Discord."
+
+
+class CommunityPostingKindSelect(discord.ui.Select):
+    def __init__(self, owner_id):
+        options = [
+            discord.SelectOption(label="Events", value="event", description="Announcements for approved community Events."),
+            discord.SelectOption(label="Meetups", value="meetup", description="Announcements for approved community Meetups."),
+        ]
+        super().__init__(placeholder="Step 1: choose Events or Meetups", min_values=1, max_values=1, options=options, row=0)
+        self.owner_id = int(owner_id)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can configure community posting.", ephemeral=True)
+            return
+        post_type = self.values[0]
+        await interaction.response.edit_message(
+            content=community_posting_setup_content(post_type, step=2),
+            view=CommunityPostingSetupView(self.owner_id, post_type),
+        )
+
+
+class CommunityPostingChannelSelect(discord.ui.ChannelSelect):
+    def __init__(self, owner_id, post_type, selected_channel_id=None):
+        super().__init__(placeholder="Step 2: choose the announcement channel", min_values=1, max_values=1, channel_types=[discord.ChannelType.text], row=0)
+        self.owner_id = int(owner_id)
+        self.post_type = post_type
+        self.selected_channel_id = int(selected_channel_id) if selected_channel_id else None
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can configure community posting.", ephemeral=True)
+            return
+        channel = await resolve_selected_text_channel(interaction.guild, self.values[0])
+        if channel is None:
+            await interaction.response.send_message("Choose a normal text channel Sana-Chan can view.", ephemeral=True)
+            return
+        await interaction.response.edit_message(
+            content=community_posting_setup_content(self.post_type, channel=channel, step=2, notice="Now choose whether approved posts should be sent there."),
+            view=CommunityPostingSetupView(self.owner_id, self.post_type, channel.id),
+        )
+
+
+class CommunityPostingModeButton(discord.ui.Button):
+    def __init__(self, owner_id, post_type, channel_id, enabled):
+        label = "Post Messages" if enabled else "Do Not Post"
+        style = discord.ButtonStyle.primary if enabled else discord.ButtonStyle.secondary
+        super().__init__(label=label, style=style, row=1)
+        self.owner_id = int(owner_id)
+        self.post_type = post_type
+        self.channel_id = int(channel_id) if channel_id else None
+        self.enabled = bool(enabled)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can configure community posting.", ephemeral=True)
+            return
+        channel = interaction.guild.get_channel(self.channel_id) if self.channel_id else None
+        if self.enabled and channel is None:
+            await interaction.response.send_message("Choose a channel before enabling Discord posts.", ephemeral=True)
+            return
+        await interaction.response.edit_message(
+            content=community_posting_setup_content(self.post_type, channel=channel, enabled=self.enabled, step=3, notice="Confirm to save this route."),
+            view=CommunityPostingConfirmView(self.owner_id, self.post_type, self.channel_id, self.enabled),
+        )
+
+
+class CommunityPostingConfirmButton(discord.ui.Button):
+    def __init__(self, owner_id, post_type, channel_id, enabled):
+        super().__init__(label="Confirm", style=discord.ButtonStyle.primary, row=0)
+        self.owner_id = int(owner_id)
+        self.post_type = post_type
+        self.channel_id = int(channel_id) if channel_id else None
+        self.enabled = bool(enabled)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can configure community posting.", ephemeral=True)
+            return
+        channel = interaction.guild.get_channel(self.channel_id) if self.channel_id else None
+        result = await save_community_posting_route(interaction, self.post_type, channel, self.enabled)
+        await interaction.response.edit_message(
+            content=community_posting_setup_content(self.post_type, channel=channel, enabled=self.enabled, step=3, notice=result),
+            view=SDACSubmenuView(True, "events"),
+        )
+
+
+class CommunityPostingBackButton(discord.ui.Button):
+    def __init__(self, owner_id, post_type="", channel_id=None):
+        super().__init__(label="Back", style=discord.ButtonStyle.secondary, row=2)
+        self.owner_id = int(owner_id)
+        self.post_type = post_type
+        self.channel_id = int(channel_id) if channel_id else None
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        if self.post_type:
+            await interaction.response.edit_message(
+                content=community_posting_setup_content(self.post_type, step=2),
+                view=CommunityPostingSetupView(self.owner_id, self.post_type, self.channel_id),
+            )
+            return
+        await interaction.response.edit_message(
+            content=community_posting_setup_content(step=1),
+            view=CommunityPostingSetupView(self.owner_id),
+        )
+
+
+class CommunityPostingSetupView(discord.ui.View):
+    def __init__(self, owner_id, post_type="", channel_id=None):
+        super().__init__(timeout=300)
+        self.owner_id = int(owner_id)
+        self.post_type = post_type
+        self.channel_id = int(channel_id) if channel_id else None
+        if not post_type:
+            self.add_item(CommunityPostingKindSelect(owner_id))
+        else:
+            self.add_item(CommunityPostingChannelSelect(owner_id, post_type, self.channel_id))
+            self.add_item(CommunityPostingModeButton(owner_id, post_type, self.channel_id, True))
+            self.add_item(CommunityPostingModeButton(owner_id, post_type, self.channel_id, False))
+            self.add_item(CommunityPostingBackButton(owner_id))
+        self.add_item(SDACBackButton(True))
+
+
+class CommunityPostingConfirmView(discord.ui.View):
+    def __init__(self, owner_id, post_type, channel_id, enabled):
+        super().__init__(timeout=300)
+        self.add_item(CommunityPostingConfirmButton(owner_id, post_type, channel_id, enabled))
+        self.add_item(CommunityPostingBackButton(owner_id, post_type, channel_id))
+        self.add_item(SDACBackButton(True))
+
+
+async def handle_sana_events_action(interaction, action, is_admin, section_key):
+    if action != "events_posting_setup":
+        return False
+    if not admin_only(interaction):
+        await interaction.response.send_message("Only admins can configure community posting.", ephemeral=True)
+        return True
+    await interaction.response.edit_message(
+        content=community_posting_setup_content(step=1),
+        view=CommunityPostingSetupView(interaction.user.id),
+    )
+    return True
+
 class SDACSubmenuSelect(discord.ui.Select):
     def __init__(self, is_admin, section_key):
         self.is_admin = bool(is_admin)
@@ -1315,6 +1551,8 @@ class SDACSubmenuSelect(discord.ui.Select):
             if await run_sana_doctor_action(interaction, self.is_admin, self.section_key):
                 return
         if await handle_sana_submission_admin_action(interaction, action, self.is_admin, self.section_key):
+            return
+        if await handle_sana_events_action(interaction, action, self.is_admin, self.section_key):
             return
         if await handle_sana_anime_action(interaction, action, self.is_admin, self.section_key):
             return
@@ -2078,6 +2316,8 @@ class SDACSubmenuButton(discord.ui.Button):
                 return
         if await handle_sana_submission_admin_action(interaction, action, self.is_admin, self.section_key):
             return
+        if await handle_sana_events_action(interaction, action, self.is_admin, self.section_key):
+            return
         if await handle_sana_anime_action(interaction, action, self.is_admin, self.section_key):
             return
         if action == "setup_wizard":
@@ -2355,6 +2595,8 @@ class SDACSubmenuView(discord.ui.View):
             ]
             for index, (label, url) in enumerate(event_links):
                 self.add_item(discord.ui.Button(label=label, style=discord.ButtonStyle.link, url=url, row=index))
+            if is_admin:
+                self.add_item(SDACSubmenuButton(is_admin, section_key, "events_posting_setup", "Discord Posting Setup", row=2, style=discord.ButtonStyle.primary))
             self.add_item(SDACBackButton(is_admin))
             return
         for index, (value, label, _description) in enumerate(submenu["options"][:20]):

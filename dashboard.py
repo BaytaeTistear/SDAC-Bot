@@ -619,6 +619,8 @@ NOTIFICATION_EVENT_LABELS = {
     "restore_drill_failed": "Restore Drill Failed",
     "monthly_digest": "Monthly Digest",
     "release_announcements": "Release Announcements",
+    "community_event_approved": "Approved Events",
+    "community_meetup_approved": "Approved Meetups",
 }
 
 PERFORMANCE_PRESETS = {
@@ -12122,7 +12124,7 @@ def send_admin_notification(
         return 0
     NOTIFICATION_THROTTLES[throttle_id] = now
     title = NOTIFICATION_EVENT_LABELS.get(event_key, event_key)
-    content = f"**SDAC {title}**\n{message}"
+    content = f"**Sana-Chan {title}**\n{message}"
     sent = 0
     for row in route_rows:
         if post_discord_channel_message(row["channel_id"], content):
@@ -23954,6 +23956,11 @@ COMMUNITY_REPORT_REASON_PRESETS = [
     "Spam or inappropriate content",
 ]
 
+COMMUNITY_NOTIFICATION_EVENT_KEYS = {
+    "event": "community_event_approved",
+    "meetup": "community_meetup_approved",
+}
+
 COMMUNITY_POST_LABELS = {
     "event": {
         "title": "Events",
@@ -23974,6 +23981,38 @@ COMMUNITY_POST_LABELS = {
         "category": "Meetups",
     },
 }
+
+
+def community_notification_event_key(post_type):
+    return COMMUNITY_NOTIFICATION_EVENT_KEYS.get(str(post_type or "").strip().lower(), "")
+
+
+def community_discord_notification_message(row, page_url=""):
+    post_type = row["post_type"]
+    labels = COMMUNITY_POST_LABELS.get(post_type, {"singular": "Community Post", "title": "Community Posts"})
+    title = community_clean_text(row["title"], 140)
+    description = community_clean_text(row["description"], 700)
+    location = community_clean_text(row["location"], 180)
+    starts_at = community_datetime_label(row["starts_at"])
+    host_name = community_clean_text(row["host_name"], 140)
+    tags = community_clean_text(row["tags"], 120)
+    lines = [f"**New {labels['singular']}: {title}**"]
+    if description:
+        lines.append(description)
+    details = []
+    if starts_at:
+        details.append(f"When: {starts_at}")
+    if location:
+        details.append(f"Where: {location}")
+    if host_name:
+        details.append(f"Host: {host_name}")
+    if tags:
+        details.append(f"Tag: {tags}")
+    if details:
+        lines.append("\n".join(details))
+    if page_url:
+        lines.append(f"View approved {labels['title']}: {page_url}")
+    return "\n\n".join(lines)[:1800]
 
 COMMUNITY_LISTING_HTML = """
 <!DOCTYPE html>
@@ -24102,7 +24141,7 @@ COMMUNITY_APPROVAL_BODY = """
 <section class="panel">
     <details>
         <summary>What can I do here?</summary>
-        <p class="muted">Review pending Events and Meetups, mark strong listings as featured, use a preset reason when rejecting, and keep public pages clean before launch.</p>
+        <p class="muted">Review pending Events and Meetups, mark strong listings as featured, use a preset reason when rejecting, and keep public pages clean before launch. Use `/sana` -> Events -> Discord Posting Setup to choose whether approved Events and Meetups announce in Discord.</p>
     </details>
     <form class="actions" method="get" action="{{ url_for('admin_community_submissions') }}">
         <input type="hidden" name="key" value="{{ admin_key }}">
@@ -24396,6 +24435,9 @@ def admin_community_submissions():
         is_featured = 1 if request.form.get("is_featured") == "1" else 0
         if action not in {"approve", "reject", "delete"}:
             return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Unknown action.", error=1, status=selected_status, post_type=selected_type))
+        notification_event_key = ""
+        notification_message = ""
+        notification_guild_id = ""
         with database() as connection:
             row = connection.execute("SELECT * FROM community_posts WHERE id = ?", (post_id,)).fetchone()
             if not row:
@@ -24415,14 +24457,31 @@ def admin_community_submissions():
                     (new_status, now, actor, review_notes, is_featured, now, post_id),
                 )
                 message = f"Community submission {new_status}."
+                if new_status == "approved":
+                    notification_event_key = community_notification_event_key(row["post_type"])
+                    notification_guild_id = row["guild_id"]
+                    endpoint = "community_events" if row["post_type"] == "event" else "community_meetups"
+                    notification_message = community_discord_notification_message(row, url_for(endpoint, _external=True))
             add_admin_audit_log(
                 connection,
                 row["guild_id"],
                 f"community_{action}",
                 actor_id,
                 actor,
+                "community_post",
+                post_id,
                 f"{action.title()} {row['post_type']} submission #{post_id}: {row['title']}",
             )
+        if notification_event_key and notification_message:
+            sent = send_admin_notification(
+                notification_event_key,
+                notification_message,
+                guild_id=notification_guild_id,
+                throttle_key=f"{notification_event_key}:{post_id}",
+                throttle_seconds=0,
+            )
+            if sent:
+                message += f" Posted to {sent} Discord channel(s)."
         return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice=message, status=selected_status, post_type=selected_type))
     return admin_tool_shell(
         "Events And Meetups",

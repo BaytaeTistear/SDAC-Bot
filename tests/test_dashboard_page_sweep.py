@@ -71,6 +71,27 @@ routes = [
 api_routes = {"/admin/health", "/admin/game-library/example.csv"}
 redirect_ok = {"/admin/server-switcher"}
 failures = []
+
+
+assert "community_event_approved" in dashboard.NOTIFICATION_EVENT_LABELS
+assert "community_meetup_approved" in dashboard.NOTIFICATION_EVENT_LABELS
+message = dashboard.community_discord_notification_message(
+    {
+        "post_type": "event",
+        "title": "Launch Watch Party",
+        "description": "A community event for release night.",
+        "location": "Discord stage",
+        "starts_at": "2026-08-15T19:00:00+00:00",
+        "host_name": "Sana Team",
+        "tags": "Watch Party",
+    },
+    "https://sanachan.bot.nu/events",
+)
+assert "New Event: Launch Watch Party" in message
+assert "Where: Discord stage" in message
+assert "Host: Sana Team" in message
+assert "https://sanachan.bot.nu/events" in message
+
 client = dashboard.app.test_client()
 with client.session_transaction() as session:
     session["sdac_account_username"] = "baytae"
