@@ -70,6 +70,25 @@ class BackendReleaseReadinessTests(unittest.TestCase):
             self.assertIn("run_git_docker_update", script, filename)
             self.assertIn("docker compose up -d --build dashboard bot", script, filename)
             self.assertIn("Use 'docker compose', not old 'docker-compose'", script, filename)
+
+    def test_release_builds_installers_with_requested_version(self):
+        build_script = (ROOT / "tools" / "build_installers.ps1").read_text(encoding="utf-8")
+        self.assertIn('[string]$Version = ""', build_script)
+        self.assertIn('$installerVersion = $Version.Trim()', build_script)
+        self.assertIn('SANA_BUILD_VERSION', build_script)
+        for filename in ("tools/release_experimental.ps1", "tools/release_official.ps1"):
+            script = (ROOT / filename).read_text(encoding="utf-8")
+            self.assertIn('build_installers.ps1" -Version $Version', script, filename)
+
+    def test_linux_updater_falls_back_to_downloaded_installer_version(self):
+        for filename in ("scripts/update_from_github.sh", "server/scripts/update_from_github.sh"):
+            script = (ROOT / filename).read_text(encoding="utf-8")
+            self.assertIn("detect_installer_version()", script, filename)
+            self.assertIn("SANA_INSTALLER_VERSION=", script, filename)
+            self.assertIn("refresh_resolved_version_from_installer", script, filename)
+            self.assertIn('chmod +x "$INSTALLER_PATH"', script, filename)
+            self.assertIn("refresh_resolved_version_from_installer", script, filename)
+
     def test_docker_compose_uses_portable_environment_syntax(self):
         compose_text = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
         self.assertNotIn("required: false", compose_text)

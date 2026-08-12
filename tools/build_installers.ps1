@@ -1,6 +1,7 @@
 param(
     [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
-    [string]$Dist = (Join-Path $Root "dist")
+    [string]$Dist = (Join-Path $Root "dist"),
+    [string]$Version = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -216,9 +217,18 @@ function New-LinuxInstaller {
     $payloadSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
     $payloadSize = (Get-Item -LiteralPath $archive).Length
     $releaseText = Get-Content -Raw -LiteralPath (Join-Path $Root "RELEASE.md")
-    $installerVersion = "unknown"
-    if ($releaseText -match "Version\s+([0-9]+(?:\.[0-9]+){1,2})") {
+    $installerVersion = $Version.Trim()
+    if (-not $installerVersion) {
+        $envVersion = [Environment]::GetEnvironmentVariable("SANA_BUILD_VERSION")
+        if ($envVersion) {
+            $installerVersion = $envVersion.Trim()
+        }
+    }
+    if (-not $installerVersion -and $releaseText -match "Version\s+([0-9]+(?:\.[0-9]+){1,2})") {
         $installerVersion = $Matches[1]
+    }
+    if (-not $installerVersion) {
+        $installerVersion = "unknown"
     }
 
     $header = @"
@@ -1046,7 +1056,6 @@ New-WindowsInstaller `
     -OutputPath (Join-Path $Dist "Sana-Chan-Windows-Installer.exe")
 
 Copy-ReleaseHelperScripts
-New-AppSourceArchive -OutputPath (Join-Path $Dist "Sana-Chan-App-Source.zip")
 
 Remove-Item -LiteralPath $payloadRoot -Recurse -Force
 

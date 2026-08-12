@@ -46,7 +46,7 @@ Run-Step "Run release smoke tests" {
 }
 
 Run-Step "Build installers" {
-    & "$root\tools\build_installers.ps1"
+    & "$root\tools\build_installers.ps1" -Version $Version
 }
 
 if (-not $SkipCommit) {

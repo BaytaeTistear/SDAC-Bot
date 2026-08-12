@@ -192,6 +192,30 @@ if [[ "$ROLLBACK_MODE" != "1" ]]; then
     RESOLVED_VERSION="$(resolve_release_version "$RELEASE_TAG")"
 fi
 
+detect_installer_version() {
+    local installer_file="${1:-$INSTALLER_PATH}"
+    local line=""
+    if [[ -f "$installer_file" ]]; then
+        line="$(grep -m 1 '^SANA_INSTALLER_VERSION=' "$installer_file" 2>/dev/null || true)"
+        line="${line#SANA_INSTALLER_VERSION=}"
+        line="${line%\"}"
+        line="${line#\"}"
+        if [[ "$line" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            printf '%s\n' "$line"
+            return
+        fi
+    fi
+    printf '%s\n' "unknown"
+}
+
+refresh_resolved_version_from_installer() {
+    local installer_version
+    installer_version="$(detect_installer_version "$INSTALLER_PATH")"
+    if [[ -n "$installer_version" && "$installer_version" != "unknown" ]]; then
+        RESOLVED_VERSION="$installer_version"
+    fi
+}
+
 detect_installed_version() {
     local release_file="$APP_DIR/RELEASE.md"
     local first_line=""
@@ -352,6 +376,7 @@ download_installer() {
     fi
     sed -i 's/\r$//' "$INSTALLER_PATH"
     chmod +x "$INSTALLER_PATH"
+    refresh_resolved_version_from_installer
 }
 
 restart_services() {
