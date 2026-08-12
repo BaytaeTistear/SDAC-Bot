@@ -102,6 +102,31 @@ with client.session_transaction() as session:
     session["sdac_admin_auth"] = "test"
     session["sdac_admin_guild_ids"] = []
 
+
+
+community_now = dashboard.utc_now_iso()
+with dashboard.database() as connection:
+    connection.execute(
+        """
+        INSERT INTO community_posts (
+            post_type, category, status, title, description, guild_id, created_at, updated_at
+        ) VALUES
+            ('event', 'Events', 'approved', 'Alpha Only Event', 'Shown only on server 111.', '111', ?, ?),
+            ('event', 'Events', 'approved', 'Beta Only Event', 'Shown only on server 222.', '222', ?, ?)
+        """,
+        (community_now, community_now, community_now, community_now),
+    )
+alpha_events = client.get(f"/events?guild_id=111")
+beta_events = client.get(f"/events?guild_id=222")
+assert alpha_events.status_code == 200
+assert beta_events.status_code == 200
+alpha_body = alpha_events.get_data(as_text=True)
+beta_body = beta_events.get_data(as_text=True)
+assert "Alpha Only Event" in alpha_body
+assert "Beta Only Event" not in alpha_body
+assert "Beta Only Event" in beta_body
+assert "Alpha Only Event" not in beta_body
+
 for route in routes:
     response = client.get(f"{route}?key={dashboard.ADMIN_KEY}")
     if response.status_code >= 500:
@@ -156,6 +181,13 @@ class DashboardPageSweepTests(unittest.TestCase):
                                 },
                                 "categories": {
                                     "screenshots": "1234567890",
+                                },
+                            },
+                            "222": {
+                                "guild_name": "Second Sweep Server",
+                                "features": {
+                                    "public_gallery": True,
+                                    "cross_server_gallery": True,
                                 },
                             }
                         }

@@ -3,7 +3,7 @@ import sqlite3
 
 
 
-DATABASE_SCHEMA_VERSION = 22
+DATABASE_SCHEMA_VERSION = 23
 GOOGLE_PLAY_REVIEW_PASSWORD_HASH = "scrypt:32768:8:1$tpr2C1Lx7O3szQ0T$0f9b5ee8f0d5caaecaf4d69667ea93aff95365decc7108fd955590df4ef07c17680a64610805821aef23fcb86171de70c4bc0f577501ca920bb6b5bb80a4426b"
 
 
@@ -787,6 +787,47 @@ def migration_22_anime_profile_xml_metadata(connection):
     ensure_column(connection, "anime_profiles", "anime_preview_images", "TEXT")
     ensure_column(connection, "anime_profiles", "manga_preview_images", "TEXT")
 
+
+def migration_23_community_posts_per_server(connection):
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS community_posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_type TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            location TEXT NOT NULL DEFAULT '',
+            starts_at TEXT NOT NULL DEFAULT '',
+            ends_at TEXT NOT NULL DEFAULT '',
+            host_name TEXT NOT NULL DEFAULT '',
+            contact_url TEXT NOT NULL DEFAULT '',
+            guild_id TEXT NOT NULL DEFAULT '',
+            submitter_name TEXT NOT NULL DEFAULT '',
+            submitter_contact TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            reviewed_at TEXT NOT NULL DEFAULT '',
+            reviewed_by TEXT NOT NULL DEFAULT '',
+            review_notes TEXT NOT NULL DEFAULT '',
+            category TEXT NOT NULL DEFAULT '',
+            tags TEXT NOT NULL DEFAULT '',
+            is_featured INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    ensure_column(connection, "community_posts", "category", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(connection, "community_posts", "tags", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(connection, "community_posts", "is_featured", "INTEGER NOT NULL DEFAULT 0")
+    connection.execute("UPDATE community_posts SET category = 'Events' WHERE category = '' AND post_type = 'event'")
+    connection.execute("UPDATE community_posts SET category = 'Meetups' WHERE category = '' AND post_type = 'meetup'")
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_community_posts_guild_type_status
+        ON community_posts (guild_id, post_type, status, starts_at)
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_community_posts_status_created
+        ON community_posts (status, created_at)
+    """)
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -808,6 +849,7 @@ MIGRATIONS = (
     (20, migration_20_scheduled_hint_scaling_toggle),
     (21, migration_21_anime_profile_manga_sections),
     (22, migration_22_anime_profile_xml_metadata),
+    (23, migration_23_community_posts_per_server),
 )
 
 

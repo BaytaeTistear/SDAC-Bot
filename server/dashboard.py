@@ -2984,21 +2984,11 @@ USERS_HTML = """
     {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
     <section class="panel">
         <form class="filters" method="get">
-            <label>When
-                <select name="when">
-                    <option value="upcoming" {% if selected_when == 'upcoming' %}selected{% endif %}>Upcoming</option>
-                    <option value="this_week" {% if selected_when == 'this_week' %}selected{% endif %}>This week</option>
-                    <option value="this_month" {% if selected_when == 'this_month' %}selected{% endif %}>This month</option>
-                    <option value="past" {% if selected_when == 'past' %}selected{% endif %}>Past</option>
-                    <option value="all" {% if selected_when == 'all' %}selected{% endif %}>All</option>
-                </select>
-            </label>
-            <label>Tag
-                <select name="tag">
-                    <option value="">All tags</option>
-                    {% for tag in tags %}<option value="{{ tag }}" {% if tag == selected_tag %}selected{% endif %}>{{ tag }}</option>{% endfor %}
-                </select>
-            </label>
+            <input type="search" name="q" value="{{ search_query }}" placeholder="Search users, display names, or Discord IDs">
+            <select name="role">
+                <option value="">All roles</option>
+                {% for option in role_options %}<option value="{{ option }}" {% if option == selected_role %}selected{% endif %}>{{ option.replace('_', ' ').title() }}</option>{% endfor %}
+            </select>
             <button type="submit">Filter</button>
         </form>
     </section>
@@ -23961,6 +23951,12 @@ COMMUNITY_NOTIFICATION_EVENT_KEYS = {
     "meetup": "community_meetup_approved",
 }
 
+SAN_DIEGO_ANIME_CLUB_EVENT_TITLE = "SDAC Theatre Trip: Your Name in 4K!"
+SAN_DIEGO_ANIME_CLUB_EVENT_DESCRIPTION = (
+    "A San Diego Anime Club theatre trip for the 4K screening of Your Name. "
+    "Details can be updated by server moderators after the listing is seeded."
+)
+
 COMMUNITY_POST_LABELS = {
     "event": {
         "title": "Events",
@@ -24060,10 +24056,16 @@ COMMUNITY_LISTING_HTML = """
         <p class="muted">Sana-Chan Community</p>
         <h1>{{ labels.title }}</h1>
         <p>{{ labels.intro }}</p>
+        {% if selected_guild_name %}<p class="muted">Viewing {{ selected_guild_name }}</p>{% endif %}
     </section>
     {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
     <section class="panel">
         <form class="filters" method="get">
+            <label>Server
+                <select name="guild_id" required>
+                    {% for guild in guild_options %}<option value="{{ guild.id }}" {% if guild.id == selected_guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}
+                </select>
+            </label>
             <label>When
                 <select name="when">
                     <option value="upcoming" {% if selected_when == 'upcoming' %}selected{% endif %}>Upcoming</option>
@@ -24115,13 +24117,13 @@ COMMUNITY_LISTING_HTML = """
     </section>
     <section class="panel">
         <h2>Submit {{ labels.singular }}</h2>
-        <p class="muted">{{ labels.submit_help }}</p>
+        <p class="muted">{{ labels.submit_help }} Submissions and approved listings are shown only for the selected server.</p>
         <form id="submit" method="post" class="form-grid">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <label>Title<input name="title" maxlength="140" required placeholder="Convention, game night, watch party, tournament..."></label>
             <label>{{ labels.host_label }}<input name="host_name" maxlength="140" placeholder="Community, organizer, or host"></label>
             <label>Location<input name="location" maxlength="180" placeholder="City, venue, Discord, or online"></label>
-            <label>Related server<select name="guild_id"><option value="">General community</option>{% for guild in guild_options %}<option value="{{ guild.id }}">{{ guild.name }}</option>{% endfor %}</select></label>
+            <label>Server<select name="guild_id" required>{% for guild in guild_options %}<option value="{{ guild.id }}" {% if guild.id == selected_guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}</select></label>
             <label>Tag<select name="tag"><option value="">Pick a tag</option>{% for tag in tags %}<option value="{{ tag }}">{{ tag }}</option>{% endfor %}</select></label>
             <label>Starts<input type="datetime-local" name="starts_at"></label>
             <label>Ends<input type="datetime-local" name="ends_at"></label>
@@ -24240,7 +24242,9 @@ def ensure_community_posts_table():
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_category_status ON community_posts(category, status, starts_at)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_tags_status ON community_posts(tags, status, starts_at)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_type_status ON community_posts(post_type, status, starts_at)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_guild_type_status ON community_posts(guild_id, post_type, status, starts_at)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_status_created ON community_posts(status, created_at)")
+        seed_san_diego_anime_club_event(connection)
 
 
 def community_clean_text(value, limit=3000):
@@ -24272,7 +24276,84 @@ def community_guild_name_map(config_data=None):
     return {str(guild_id): cfg.get("guild_name") or str(guild_id) for guild_id, cfg in (config_data.get("guilds") or {}).items()}
 
 
-def community_post_rows(post_type=None, status="approved", limit=100, tag="", when="all"):
+def san_diego_anime_club_guild_id(config_data=None):
+    config_data = config_data or load_config()
+    for guild_id, guild_config in (config_data.get("guilds") or {}).items():
+        names = {
+            str(guild_config.get("guild_name") or "").casefold(),
+            str(guild_config.get("brand_name") or "").casefold(),
+        }
+        if "san diego anime club" in names:
+            return str(guild_id)
+    return ""
+
+
+def seed_san_diego_anime_club_event(connection, config_data=None):
+    guild_id = san_diego_anime_club_guild_id(config_data)
+    if not guild_id:
+        return False
+    existing = connection.execute(
+        """
+        SELECT id, guild_id
+        FROM community_posts
+        WHERE post_type = 'event'
+          AND lower(title) = lower(?)
+        ORDER BY CASE WHEN guild_id = ? THEN 0 ELSE 1 END, id ASC
+        LIMIT 1
+        """,
+        (SAN_DIEGO_ANIME_CLUB_EVENT_TITLE, guild_id),
+    ).fetchone()
+    now = utc_now_iso()
+    if existing:
+        connection.execute(
+            """
+            UPDATE community_posts
+            SET guild_id = ?,
+                category = 'Events',
+                status = 'approved',
+                host_name = COALESCE(NULLIF(host_name, ''), 'San Diego Anime Club'),
+                tags = COALESCE(NULLIF(tags, ''), 'Anime'),
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (guild_id, now, existing["id"]),
+        )
+        return str(existing["guild_id"] or "") != guild_id
+    connection.execute(
+        """
+        INSERT INTO community_posts (
+            post_type, category, status, title, description, location, starts_at, ends_at,
+            host_name, contact_url, guild_id, submitter_name, submitter_contact,
+            tags, created_at, updated_at, reviewed_at, reviewed_by, review_notes, is_featured
+        ) VALUES (
+            'event', 'Events', 'approved', ?, ?, 'San Diego area theatre', '', '',
+            'San Diego Anime Club', '', ?, 'Sana-Chan', '',
+            'Anime', ?, ?, ?, 'system', 'Seeded for San Diego Anime Club.', 1
+        )
+        """,
+        (
+            SAN_DIEGO_ANIME_CLUB_EVENT_TITLE,
+            SAN_DIEGO_ANIME_CLUB_EVENT_DESCRIPTION,
+            guild_id,
+            now,
+            now,
+            now,
+        ),
+    )
+    return True
+
+
+def default_community_guild_id(server_options):
+    if not server_options:
+        return ""
+    requested = community_clean_text(request.args.get("guild_id") or request.form.get("guild_id"), 32)
+    allowed = {str(option["id"]) for option in server_options}
+    if requested in allowed:
+        return requested
+    return str(server_options[0]["id"])
+
+
+def community_post_rows(post_type=None, status="approved", limit=100, tag="", when="all", guild_id=""):
     ensure_community_posts_table()
     clauses = []
     params = []
@@ -24282,6 +24363,10 @@ def community_post_rows(post_type=None, status="approved", limit=100, tag="", wh
     if status and status != "all":
         clauses.append("status = ?")
         params.append(status)
+    guild_id = community_clean_text(guild_id, 32)
+    if guild_id:
+        clauses.append("guild_id = ?")
+        params.append(guild_id)
     tag = community_clean_text(tag, 60)
     if tag:
         clauses.append("tags = ?")
@@ -24332,10 +24417,10 @@ def save_community_post(post_type):
     if not title or not description:
         raise ValueError(f"{labels['singular']} title and description are required.")
     config_data = load_config()
-    valid_guilds = {option["id"] for option in guild_options(config_data, public_only=True)}
+    valid_guilds = {str(option["id"]) for option in guild_options(config_data, public_only=True)}
     guild_id = community_clean_text(request.form.get("guild_id"), 32)
-    if guild_id and guild_id not in valid_guilds:
-        guild_id = ""
+    if guild_id not in valid_guilds:
+        raise ValueError(f"Choose the server this {labels['singular'].lower()} belongs to.")
     tag = community_clean_text(request.form.get("tag"), 60)
     if tag not in COMMUNITY_TAGS:
         tag = ""
@@ -24380,21 +24465,27 @@ def community_page(post_type):
     selected_when = community_clean_text(request.args.get("when"), 30) or "upcoming"
     if selected_when not in {"upcoming", "this_week", "this_month", "past", "all"}:
         selected_when = "upcoming"
+    config_data = load_config()
+    server_options = guild_options(config_data, public_only=True)
+    selected_guild_id = default_community_guild_id(server_options)
+    selected_guild_name = next((option["name"] for option in server_options if str(option["id"]) == selected_guild_id), "")
     if request.method == "POST":
         require_csrf_token()
         try:
             save_community_post(post_type)
-            return redirect(url_for(labels["path"], notice=f"{labels['singular']} submitted for admin approval."))
+            return redirect(url_for(labels["path"], guild_id=request.form.get("guild_id") or selected_guild_id, notice=f"{labels['singular']} submitted for admin approval."))
         except ValueError as exc:
-            return redirect(url_for(labels["path"], notice=str(exc), error=1))
+            return redirect(url_for(labels["path"], guild_id=request.form.get("guild_id") or selected_guild_id, notice=str(exc), error=1))
     return render_template_string(
         COMMUNITY_LISTING_HTML,
         csrf_token=get_csrf_token(),
         error=error,
-        guild_options=guild_options(load_config(), public_only=True),
+        guild_options=server_options,
         labels=labels,
         notice=notice,
-        posts=community_post_rows(post_type, "approved", tag=selected_tag, when=selected_when),
+        posts=community_post_rows(post_type, "approved", tag=selected_tag, when=selected_when, guild_id=selected_guild_id),
+        selected_guild_id=selected_guild_id,
+        selected_guild_name=selected_guild_name,
         selected_tag=selected_tag,
         selected_when=selected_when,
         tags=COMMUNITY_TAGS,
