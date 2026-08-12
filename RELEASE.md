@@ -1,3 +1,15 @@
+# Sana-Chan Version 4.4.27 Experimental
+
+Version 4.4.27 moves approved community listings above the submission forms.
+
+## Events And Meetups Layout
+
+- shows approved Events and Meetups immediately after the filters
+- moves the public submission form below the approved listings
+- keeps the empty-state link pointing down to the submission form
+
+---
+
 # Sana-Chan Version 4.4.26 Experimental
 
 Version 4.4.26 polishes the Events and Meetups public submission pages.

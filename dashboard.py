@@ -24044,25 +24044,6 @@ COMMUNITY_LISTING_HTML = """
         </form>
     </section>
     <section class="panel">
-        <h2>Submit {{ labels.singular }}</h2>
-        <p class="muted">{{ labels.submit_help }}</p>
-        <form id="submit" method="post" class="form-grid">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <label>Title<input name="title" maxlength="140" required placeholder="Convention, game night, watch party, tournament..."></label>
-            <label>{{ labels.host_label }}<input name="host_name" maxlength="140" placeholder="Community, organizer, or host"></label>
-            <label>Location<input name="location" maxlength="180" placeholder="City, venue, Discord, or online"></label>
-            <label>Related server<select name="guild_id"><option value="">General community</option>{% for guild in guild_options %}<option value="{{ guild.id }}">{{ guild.name }}</option>{% endfor %}</select></label>
-            <label>Tag<select name="tag"><option value="">Pick a tag</option>{% for tag in tags %}<option value="{{ tag }}">{{ tag }}</option>{% endfor %}</select></label>
-            <label>Starts<input type="datetime-local" name="starts_at"></label>
-            <label>Ends<input type="datetime-local" name="ends_at"></label>
-            <label>Info link<input name="contact_url" maxlength="300" placeholder="https://..."></label>
-            <label>Your name<input name="submitter_name" maxlength="120" placeholder="Shown to admins only unless approved notes include it"></label>
-            <label class="wide">Contact for admins<input name="submitter_contact" maxlength="180" placeholder="Discord handle, email, or best way to reach you"></label>
-            <label class="wide">Description<textarea name="description" maxlength="3000" required placeholder="What is it, who is it for, and what should people know?"></textarea></label>
-            <button class="wide" type="submit">Send For Admin Approval</button>
-        </form>
-    </section>
-    <section class="panel">
         <h2>Approved {{ labels.title }}</h2>
         {% if posts %}
             <div class="grid">
@@ -24092,6 +24073,25 @@ COMMUNITY_LISTING_HTML = """
                 <a href="#submit">Create the first {{ labels.singular | lower }}</a>
             </div>
         {% endif %}
+    </section>
+    <section class="panel">
+        <h2>Submit {{ labels.singular }}</h2>
+        <p class="muted">{{ labels.submit_help }}</p>
+        <form id="submit" method="post" class="form-grid">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>Title<input name="title" maxlength="140" required placeholder="Convention, game night, watch party, tournament..."></label>
+            <label>{{ labels.host_label }}<input name="host_name" maxlength="140" placeholder="Community, organizer, or host"></label>
+            <label>Location<input name="location" maxlength="180" placeholder="City, venue, Discord, or online"></label>
+            <label>Related server<select name="guild_id"><option value="">General community</option>{% for guild in guild_options %}<option value="{{ guild.id }}">{{ guild.name }}</option>{% endfor %}</select></label>
+            <label>Tag<select name="tag"><option value="">Pick a tag</option>{% for tag in tags %}<option value="{{ tag }}">{{ tag }}</option>{% endfor %}</select></label>
+            <label>Starts<input type="datetime-local" name="starts_at"></label>
+            <label>Ends<input type="datetime-local" name="ends_at"></label>
+            <label>Info link<input name="contact_url" maxlength="300" placeholder="https://..."></label>
+            <label>Your name<input name="submitter_name" maxlength="120" placeholder="Shown to admins only unless approved notes include it"></label>
+            <label class="wide">Contact for admins<input name="submitter_contact" maxlength="180" placeholder="Discord handle, email, or best way to reach you"></label>
+            <label class="wide">Description<textarea name="description" maxlength="3000" required placeholder="What is it, who is it for, and what should people know?"></textarea></label>
+            <button class="wide" type="submit">Send For Admin Approval</button>
+        </form>
     </section>
 </main>
 </body>
