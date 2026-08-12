@@ -24049,6 +24049,8 @@ COMMUNITY_LISTING_HTML = """
             .panel { margin: 0.65rem 0; padding: 0.8rem; }
             .grid { gap: 0.75rem; }
             .card { padding: 0.85rem; }
+            .card .meta { border-left: 2px solid var(--border); display: grid; gap: 0.25rem; margin: 0.65rem 0; padding-left: 0.7rem; }
+            .card .pill { background: transparent; border: 0; border-radius: 0; box-shadow: none; margin: 0; padding: 0; }
         }
     </style>
 </head>

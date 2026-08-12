@@ -128,6 +128,8 @@ beta_body = beta_events.get_data(as_text=True)
 assert '<option value="all" selected>All Allowed Servers</option>' in all_body
 assert "Alpha Only Event" in all_body
 assert "Beta Only Event" in all_body
+assert ".card .meta { border-left: 2px solid var(--border); display: grid;" in all_body
+assert ".card .pill { background: transparent; border: 0; border-radius: 0;" in all_body
 assert "Alpha Only Event" in alpha_body
 assert "Beta Only Event" not in alpha_body
 assert "Beta Only Event" in beta_body
