@@ -1422,7 +1422,7 @@ class CommunityPostingModeButton(discord.ui.Button):
     def __init__(self, owner_id, post_type, channel_id, enabled):
         label = "Post Messages" if enabled else "Do Not Post"
         style = discord.ButtonStyle.primary if enabled else discord.ButtonStyle.secondary
-        super().__init__(label=label, style=style, row=1)
+        super().__init__(label=label, style=style, row=2)
         self.owner_id = int(owner_id)
         self.post_type = post_type
         self.channel_id = int(channel_id) if channel_id else None
@@ -1470,7 +1470,7 @@ class CommunityPostingConfirmButton(discord.ui.Button):
 
 class CommunityPostingBackButton(discord.ui.Button):
     def __init__(self, owner_id, post_type="", channel_id=None):
-        super().__init__(label="Back", style=discord.ButtonStyle.secondary, row=2)
+        super().__init__(label="Back", style=discord.ButtonStyle.secondary, row=3)
         self.owner_id = int(owner_id)
         self.post_type = post_type
         self.channel_id = int(channel_id) if channel_id else None
@@ -1501,6 +1501,7 @@ class CommunityPostingSetupView(discord.ui.View):
             self.add_item(CommunityPostingKindSelect(owner_id))
         else:
             self.add_item(CommunityPostingChannelSelect(owner_id, post_type, self.channel_id))
+            self.add_item(ChannelIdButton("Use Channel ID", owner_id, "community_posting", row=1, post_type=post_type))
             self.add_item(CommunityPostingModeButton(owner_id, post_type, self.channel_id, True))
             self.add_item(CommunityPostingModeButton(owner_id, post_type, self.channel_id, False))
             self.add_item(CommunityPostingBackButton(owner_id))
@@ -2204,7 +2205,7 @@ class SubmissionPauseReasonModal(discord.ui.Modal, title="Pause Submissions"):
 
 class SubmissionOpenButton(discord.ui.Button):
     def __init__(self, owner_id):
-        super().__init__(label="Open Submissions", style=discord.ButtonStyle.success, row=2)
+        super().__init__(label="Open Submissions", style=discord.ButtonStyle.success, row=3)
         self.owner_id = int(owner_id)
 
     async def callback(self, interaction):
@@ -2216,7 +2217,7 @@ class SubmissionOpenButton(discord.ui.Button):
 
 class SubmissionPauseButton(discord.ui.Button):
     def __init__(self, owner_id):
-        super().__init__(label="Pause Submissions", style=discord.ButtonStyle.danger, row=2)
+        super().__init__(label="Pause Submissions", style=discord.ButtonStyle.danger, row=3)
         self.owner_id = int(owner_id)
 
     async def callback(self, interaction):
@@ -2234,6 +2235,8 @@ class SubmissionSetupView(discord.ui.View):
         super().__init__(timeout=600)
         self.add_item(SubmissionChannelSelect(owner_id, "submit", row=0))
         self.add_item(SubmissionChannelSelect(owner_id, "category", row=1))
+        self.add_item(ChannelIdButton("Submit ID", owner_id, "submission", row=2, mode="submit"))
+        self.add_item(ChannelIdButton("Category ID", owner_id, "submission", row=2, mode="category"))
         self.add_item(SubmissionOpenButton(owner_id))
         self.add_item(SubmissionPauseButton(owner_id))
         self.add_item(SDACBackButton(is_admin))
@@ -2243,14 +2246,16 @@ class SubmissionChannelOnlyView(discord.ui.View):
     def __init__(self, is_admin, owner_id):
         super().__init__(timeout=600)
         self.add_item(SubmissionChannelSelect(owner_id, "submit", row=0))
-        self.add_item(SDACBackButton(is_admin))
+        self.add_item(ChannelIdButton("Use Channel ID", owner_id, "submission", row=1, mode="submit"))
+        self.add_item(SDACBackButton(is_admin, row=4))
 
 
 class SubmissionCategoryOnlyView(discord.ui.View):
     def __init__(self, is_admin, owner_id):
         super().__init__(timeout=600)
         self.add_item(SubmissionChannelSelect(owner_id, "category", row=0))
-        self.add_item(SDACBackButton(is_admin))
+        self.add_item(ChannelIdButton("Use Channel ID", owner_id, "submission", row=1, mode="category"))
+        self.add_item(SDACBackButton(is_admin, row=4))
 
 
 class SDACHubButton(discord.ui.Button):
@@ -2890,7 +2895,7 @@ class ScheduleHintTimingView(discord.ui.View):
 
 class UseSavedScheduleChannelButton(discord.ui.Button):
     def __init__(self, owner_id, channel_id):
-        super().__init__(label="Use Saved Channel", style=discord.ButtonStyle.primary, row=1)
+        super().__init__(label="Use Saved Channel", style=discord.ButtonStyle.primary, row=2)
         self.owner_id = int(owner_id)
         self.channel_id = int(channel_id)
 
@@ -2919,6 +2924,7 @@ class ScheduleGameWizardView(discord.ui.View):
     def __init__(self, is_admin, owner_id, guild_id=None):
         super().__init__(timeout=300)
         self.add_item(ScheduleGameChannelSelect(owner_id))
+        self.add_item(ChannelIdButton("Use Channel ID", owner_id, "schedule_game", row=1))
         guild_config = get_guild_config(guild_id, create=False) if guild_id else {}
         saved_channel_id = guild_config.get("guessing_channel")
         if saved_channel_id:
@@ -3142,7 +3148,7 @@ class BulkScheduleGameChannelSelect(discord.ui.ChannelSelect):
 
 class UseSavedBulkScheduleChannelButton(discord.ui.Button):
     def __init__(self, owner_id, channel_id, is_admin):
-        super().__init__(label="Use Saved Channel", style=discord.ButtonStyle.primary, row=1)
+        super().__init__(label="Use Saved Channel", style=discord.ButtonStyle.primary, row=2)
         self.owner_id = int(owner_id)
         self.channel_id = int(channel_id)
         self.is_admin = bool(is_admin)
@@ -3173,6 +3179,7 @@ class BulkScheduleGameWizardView(discord.ui.View):
     def __init__(self, is_admin, owner_id, guild_id=None):
         super().__init__(timeout=300)
         self.add_item(BulkScheduleGameChannelSelect(owner_id, is_admin))
+        self.add_item(ChannelIdButton("Use Channel ID", owner_id, "bulk_schedule", row=1, is_admin=is_admin))
         guild_config = get_guild_config(guild_id, create=False) if guild_id else {}
         saved_channel_id = guild_config.get("guessing_channel")
         if saved_channel_id:
@@ -3239,6 +3246,189 @@ async def resolve_selected_text_channel(guild, selected_channel):
     return None
 
 
+async def resolve_text_channel_by_id(guild, raw_channel_id):
+    if guild is None:
+        return None
+    raw = str(raw_channel_id or "").strip().replace("<#", "").replace(">", "")
+    if not raw.isdigit():
+        return None
+    channel_id = int(raw)
+    cached_channel = guild.get_channel(channel_id)
+    if isinstance(cached_channel, discord.TextChannel):
+        return cached_channel
+    try:
+        fetched_channel = await guild.fetch_channel(channel_id)
+    except discord.HTTPException:
+        return None
+    if isinstance(fetched_channel, discord.TextChannel):
+        return fetched_channel
+    return None
+
+
+class ChannelIdModal(discord.ui.Modal):
+    def __init__(self, owner_id, flow, **kwargs):
+        super().__init__(title="Use Channel ID")
+        self.owner_id = int(owner_id)
+        self.flow = flow
+        self.kwargs = kwargs
+        self.channel_id_input = discord.ui.TextInput(
+            label="Channel ID or mention",
+            placeholder="123456789012345678 or #channel",
+            required=True,
+            max_length=40,
+        )
+        self.add_item(self.channel_id_input)
+        self.category_input = None
+        if flow == "submission" and kwargs.get("mode") == "category":
+            self.category_input = discord.ui.TextInput(
+                label="Category name",
+                placeholder="screenshots, clips, art, memes",
+                required=True,
+                max_length=80,
+            )
+            self.add_item(self.category_input)
+
+    async def on_submit(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        channel = await resolve_text_channel_by_id(interaction.guild, self.channel_id_input.value)
+        if channel is None:
+            await interaction.response.send_message(
+                "I could not access that channel ID. Make sure it is a text channel in this server and Sana-Chan has View Channel permission.",
+                ephemeral=True,
+            )
+            return
+
+        if self.flow == "community_posting":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can configure community posting.", ephemeral=True)
+                return
+            post_type = self.kwargs.get("post_type", "")
+            await interaction.response.edit_message(
+                content=community_posting_setup_content(post_type, channel=channel, step=2, notice="Channel selected by ID. Now choose whether approved posts should be sent there."),
+                view=CommunityPostingSetupView(self.owner_id, post_type, channel.id),
+            )
+            return
+
+        if self.flow == "submission":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can use submission setup controls.", ephemeral=True)
+                return
+            mode = self.kwargs.get("mode", "submit")
+            if mode == "category":
+                category = clean_category_name(str(self.category_input.value or "") if self.category_input else "")
+                if not category:
+                    await interaction.response.send_message("Category name cannot be empty.", ephemeral=True)
+                    return
+                guild_config = get_guild_config(interaction.guild_id)
+                guild_config.setdefault("categories", {})[category] = channel.id
+                save_config(config)
+                with database() as connection:
+                    connection.execute("""
+                        INSERT INTO category_history (
+                            guild_id, action, category, channel_id,
+                            admin_user_id, admin_username, created_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        str(interaction.guild_id),
+                        "set_from_sana_id",
+                        category,
+                        str(channel.id),
+                        str(interaction.user.id),
+                        str(interaction.user),
+                        utc_now_iso(),
+                    ))
+                    add_admin_audit_log(
+                        connection,
+                        interaction.guild_id,
+                        "set_category_from_sana_id",
+                        interaction.user.id,
+                        interaction.user,
+                        "category",
+                        category,
+                        f"Channel {channel.id}.",
+                    )
+                await interaction.response.edit_message(
+                    content=submission_admin_panel_content(interaction.guild_id, interaction.guild, f"Category `{category}` now reposts to {channel.mention}."),
+                    view=SubmissionSetupView(True, interaction.user.id),
+                )
+                return
+            guild_config = get_guild_config(interaction.guild_id)
+            guild_config["submit_channel"] = channel.id
+            save_config(config)
+            notice_message = await send_submission_channel_notice(interaction.guild_id, channel, guild_config)
+            audit_interaction(interaction, "set_submit_channel_from_sana_id", "channel", channel.id, f"Submit channel set to {channel.id} by ID from /sana.")
+            await interaction.response.edit_message(
+                content=submission_admin_panel_content(interaction.guild_id, interaction.guild, f"Submit channel set to {channel.mention}. {notice_message}"),
+                view=SubmissionSetupView(True, interaction.user.id),
+            )
+            return
+
+        if self.flow == "guessing_default":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can set the guessing channel.", ephemeral=True)
+                return
+            guild_config = get_guild_config(interaction.guild_id)
+            guild_config["guessing_channel"] = channel.id
+            save_config(config)
+            audit_interaction(interaction, "set_guessing_channel_from_sana_id", "channel", channel.id, f"Default guessing channel set to {channel.id} by ID from /sana.")
+            await interaction.response.edit_message(
+                content="**Set Guessing Channel**\n" + f"Saved {channel.mention} as the default guessing-game channel.",
+                view=SDACSubmenuView(self.kwargs.get("is_admin", False), self.kwargs.get("section_key", "games")),
+            )
+            return
+
+        if self.flow == "schedule_game":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can schedule games.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                content="**Schedule Game**\n" + f"Channel: {channel.mention}\n" + "Should Sana-Chan auto-scale hint timing to fit before the next scheduled question or auto-close time?",
+                view=ScheduleHintTimingView(interaction.user.id, channel.id, channel.mention, True),
+            )
+            return
+
+        if self.flow == "bulk_schedule":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can bulk schedule games.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                content=(
+                    "**Bulk Schedule Games**\n"
+                    f"Channel: {channel.mention}\n"
+                    "Choose hint timing, then enter the repeating cadence as `DD:HH:MM`. "
+                    "Each new scheduled question will close any older active game in that channel."
+                ),
+                view=BulkScheduleHintTimingView(interaction.user.id, channel.id, channel.mention, self.kwargs.get("is_admin", False)),
+            )
+            return
+
+        if self.flow == "start_library":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can start library games.", ephemeral=True)
+                return
+            await interaction.response.send_modal(StartLibraryGameModal(interaction.user.id, channel.id, channel.mention))
+            return
+
+        await interaction.response.send_message("Unknown channel-ID flow.", ephemeral=True)
+
+
+class ChannelIdButton(discord.ui.Button):
+    def __init__(self, label, owner_id, flow, row=1, **kwargs):
+        super().__init__(label=label, style=discord.ButtonStyle.secondary, row=row)
+        self.owner_id = int(owner_id)
+        self.flow = flow
+        self.kwargs = kwargs
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        await interaction.response.send_modal(ChannelIdModal(self.owner_id, self.flow, **self.kwargs))
+
+
 class SetGuessingChannelSelect(discord.ui.ChannelSelect):
     def __init__(self, owner_id, is_admin, section_key):
         super().__init__(placeholder="Choose the default guessing-game channel", min_values=1, max_values=1, channel_types=[discord.ChannelType.text], row=0)
@@ -3283,12 +3473,13 @@ class SetGuessingChannelView(discord.ui.View):
     def __init__(self, is_admin, section_key, owner_id):
         super().__init__(timeout=300)
         self.add_item(SetGuessingChannelSelect(owner_id, is_admin, section_key))
-        self.add_item(SDACBackButton(is_admin))
+        self.add_item(ChannelIdButton("Use Channel ID", owner_id, "guessing_default", row=1, is_admin=is_admin, section_key=section_key))
+        self.add_item(SDACBackButton(is_admin, row=4))
 
 
 class UseSavedGuessingChannelButton(discord.ui.Button):
     def __init__(self, owner_id, channel_id):
-        super().__init__(label="Use Saved Channel", style=discord.ButtonStyle.primary, row=1)
+        super().__init__(label="Use Saved Channel", style=discord.ButtonStyle.primary, row=2)
         self.owner_id = int(owner_id)
         self.channel_id = int(channel_id)
 
@@ -3332,6 +3523,7 @@ class StartLibraryGameWizardView(discord.ui.View):
     def __init__(self, is_admin, section_key, owner_id, guild_id=None):
         super().__init__(timeout=300)
         self.add_item(StartLibraryGameChannelSelect(owner_id))
+        self.add_item(ChannelIdButton("Use Channel ID", owner_id, "start_library", row=1))
         guild_config = get_guild_config(guild_id, create=False) if guild_id else {}
         saved_channel_id = guild_config.get("guessing_channel")
         if saved_channel_id:
@@ -9307,6 +9499,95 @@ class SetupPresetSelect(discord.ui.Select):
         )
 
 
+
+class SetupChannelIdModal(discord.ui.Modal, title="Setup Channel IDs"):
+    def __init__(self, owner_id, guild_id, page, actions):
+        super().__init__()
+        self.owner_id = int(owner_id)
+        self.guild_id = str(guild_id)
+        self.page = int(page or 1)
+        self.actions = list(actions)
+        labels = {
+            "submit": "Submission channel ID",
+            "category": "Category repost channel ID",
+            "approval": "Approval channel ID",
+            "weekly": "Weekly top channel ID",
+            "summary": "Game summary channel ID",
+            "error": "Error notification channel ID",
+        }
+        for action in self.actions:
+            self.add_item(discord.ui.TextInput(
+                label=labels[action],
+                placeholder="Optional channel ID or mention",
+                required=False,
+                max_length=40,
+            ))
+        self.category_name_input = None
+        if "category" in self.actions:
+            self.category_name_input = discord.ui.TextInput(
+                label="Category name if category ID is used",
+                placeholder="screenshots, clips, art, memes",
+                required=False,
+                max_length=80,
+            )
+            self.add_item(self.category_name_input)
+
+    async def on_submit(self, interaction):
+        if not setup_modal_allowed(interaction, self.owner_id, self.guild_id):
+            await interaction.response.send_message("Only the admin who opened this setup wizard can use this modal.", ephemeral=True)
+            return
+        values = []
+        for action, child in zip(self.actions, self.children):
+            raw_value = str(getattr(child, "value", "") or "").strip()
+            if raw_value:
+                values.append((action, raw_value))
+        if not values:
+            await interaction.response.send_message("Enter at least one channel ID.", ephemeral=True)
+            return
+        guild_config = get_guild_config(interaction.guild_id)
+        notices = []
+        for action, raw_value in values:
+            channel = await resolve_text_channel_by_id(interaction.guild, raw_value)
+            if channel is None:
+                notices.append(f"`{raw_value}` was not found or is not visible to Sana-Chan.")
+                continue
+            if action == "category":
+                category = clean_category_name(str(self.category_name_input.value or "") if self.category_name_input else "")
+                if not category:
+                    notices.append("Category channel ID was ignored because no category name was entered.")
+                    continue
+                guild_config.setdefault("categories", {})[category] = channel.id
+                notices.append(f"Category `{category}` now posts to {channel.mention}.")
+                audit_interaction(interaction, "setup_set_category_by_id", "category", category, f"Channel {channel.id}.")
+                continue
+            updates = {
+                "submit": ("submit_channel", "setup_set_submit_channel"),
+                "approval": ("approval_channel", "setup_set_approval_channel"),
+                "weekly": ("daily_top_channel", "setup_set_weekly_channel"),
+                "summary": ("game_summary_channel", "setup_set_game_summary_channel"),
+                "error": ("error_channel", "setup_set_error_channel"),
+            }
+            config_key, audit_action = updates[action]
+            guild_config[config_key] = channel.id
+            if action == "approval":
+                guild_config["approval_enabled"] = True
+            notices.append(f"{channel.mention} saved for `{config_key}`.")
+            audit_interaction(interaction, audit_action, "channel", channel.id, "Set by channel ID in Discord setup wizard.")
+        save_config(config)
+        if any(action == "submit" for action, _raw in values):
+            submit_channel_id = guild_config.get("submit_channel")
+            submit_channel = interaction.guild.get_channel(int(submit_channel_id)) if submit_channel_id else None
+            if submit_channel:
+                notice_message = await send_submission_channel_notice(interaction.guild_id, submit_channel, guild_config)
+                if notice_message:
+                    notices.append(notice_message)
+        await interaction.response.send_message(
+            setup_wizard_content(guild_config, self.page, "\n".join(notices)),
+            view=SetupWizardView(self.owner_id, self.guild_id, self.page),
+            ephemeral=True,
+        )
+
+
 class SetupButton(discord.ui.Button):
     def __init__(self, label, setup_action, style=discord.ButtonStyle.secondary, row=4):
         super().__init__(label=label, style=style, row=row)
@@ -9343,6 +9624,7 @@ class SetupWizardView(discord.ui.View):
                 "Optional: choose approval channel and enable approval",
                 3,
             ))
+            self.add_item(SetupButton("Channel IDs", "channel_ids", row=4))
             self.add_item(SetupButton("Disable Approval", "disable_approval", row=4))
             self.add_item(SetupButton("Next", "next", discord.ButtonStyle.primary, 4))
         elif self.page == 2:
@@ -9363,6 +9645,7 @@ class SetupWizardView(discord.ui.View):
             ))
             self.add_item(SetupButton("Weekly Schedule", "weekly_schedule", row=3))
             self.add_item(SetupButton("Timezone", "timezone", row=3))
+            self.add_item(SetupButton("Channel IDs", "channel_ids", row=3))
             self.add_item(SetupButton("Back", "back", row=4))
             self.add_item(SetupButton("Next", "next", discord.ButtonStyle.primary, 4))
         else:
@@ -9426,6 +9709,12 @@ class SetupWizardView(discord.ui.View):
             return
         if action == "refresh":
             await self.refresh(interaction, "Setup status refreshed.")
+            return
+        if action == "channel_ids":
+            actions = ["submit", "category", "approval"] if self.page == 1 else ["weekly", "summary", "error"]
+            await interaction.response.send_modal(
+                SetupChannelIdModal(interaction.user.id, interaction.guild_id, self.page, actions)
+            )
             return
         if action == "disable_approval":
             guild_config = get_guild_config(interaction.guild_id)

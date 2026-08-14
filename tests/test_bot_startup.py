@@ -246,6 +246,36 @@ class BotStartupTests(unittest.TestCase):
         self.assertTrue(hasattr(bot, "current_hint_content"))
         self.assertTrue(hasattr(bot, "sana_categories_content"))
         self.assertTrue(hasattr(bot, "resolve_selected_text_channel"))
+        self.assertTrue(hasattr(bot, "resolve_text_channel_by_id"))
+        self.assertTrue(hasattr(bot, "ChannelIdButton"))
+        self.assertTrue(hasattr(bot, "ChannelIdModal"))
+
+    def test_channel_id_fallback_buttons_exist_for_guided_channel_flows(self):
+        import bot
+
+        views = [
+            bot.SubmissionSetupView(True, 123),
+            bot.SubmissionChannelOnlyView(True, 123),
+            bot.SubmissionCategoryOnlyView(True, 123),
+            bot.CommunityPostingSetupView(123, "event"),
+            bot.SetGuessingChannelView(True, "games", 123),
+            bot.ScheduleGameWizardView(True, 123),
+            bot.BulkScheduleGameWizardView(True, 123),
+            bot.StartLibraryGameWizardView(True, "games", 123),
+        ]
+        for view in views:
+            labels = [getattr(child, "label", "") for child in view.children]
+            self.assertTrue(any("ID" in label for label in labels), labels)
+            rows = [child.row for child in view.children if child.row is not None]
+            self.assertLessEqual(max(rows), 4, labels)
+            for row in range(5):
+                self.assertLessEqual(sum(1 for child in view.children if child.row == row), 5, labels)
+        setup_page_one = bot.SetupWizardView(123, 456, 1)
+        setup_page_two = bot.SetupWizardView(123, 456, 2)
+        self.assertIn("Channel IDs", [getattr(child, "label", "") for child in setup_page_one.children])
+        self.assertIn("Channel IDs", [getattr(child, "label", "") for child in setup_page_two.children])
+        page_one_modal = bot.SetupChannelIdModal(123, 456, 1, ["submit", "category", "approval"])
+        self.assertEqual(len(page_one_modal.children), 4)
 
     def test_event_logging_inserts_have_matching_placeholders(self):
         import inspect
