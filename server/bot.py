@@ -1014,7 +1014,7 @@ class SDACHubSelect(discord.ui.Select):
 
     async def callback(self, interaction):
         action = self.values[0]
-        if await handle_sana_instant_action(interaction, action, self.is_admin, self.section_key):
+        if action in SDAC_SUBMENUS and await handle_sana_instant_action(interaction, action, self.is_admin, action):
             return
         if action == "refresh_home":
             await interaction.response.edit_message(
@@ -1528,7 +1528,7 @@ async def handle_sana_events_action(interaction, action, is_admin, section_key):
     return True
 
 class SDACSubmenuSelect(discord.ui.Select):
-    def __init__(self, is_admin, section_key):
+    def __init__(self, is_admin, section_key, row=0):
         self.is_admin = bool(is_admin)
         self.section_key = section_key
         submenu = SDAC_SUBMENUS[section_key]
@@ -1541,6 +1541,7 @@ class SDACSubmenuSelect(discord.ui.Select):
             min_values=1,
             max_values=1,
             options=options[:25],
+            row=row,
         )
 
     async def callback(self, interaction):
@@ -2065,8 +2066,8 @@ async def handle_sana_anime_action(interaction, action, is_admin, section_key):
 
 
 class SDACBackButton(discord.ui.Button):
-    def __init__(self, is_admin):
-        super().__init__(label="Back", style=discord.ButtonStyle.secondary)
+    def __init__(self, is_admin, row=None):
+        super().__init__(label="Back", style=discord.ButtonStyle.secondary, row=row)
         self.is_admin = bool(is_admin)
 
     async def callback(self, interaction):
@@ -2291,7 +2292,7 @@ class SDACHubButton(discord.ui.Button):
                 view=self.view,
             )
             return
-        if action in {"setup", "backup", "moderation", "games"} and not admin_only(interaction):
+        if action in {"setup", "submission_admin", "backup", "moderation", "games"} and not admin_only(interaction):
             await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
             return
         await interaction.response.edit_message(
@@ -2597,12 +2598,23 @@ class SDACSubmenuView(discord.ui.View):
                 self.add_item(discord.ui.Button(label=label, style=discord.ButtonStyle.link, url=url, row=index))
             if is_admin:
                 self.add_item(SDACSubmenuButton(is_admin, section_key, "events_posting_setup", "Discord Posting Setup", row=2, style=discord.ButtonStyle.primary))
-            self.add_item(SDACBackButton(is_admin))
+            self.add_item(SDACBackButton(is_admin, row=4))
             return
-        for index, (value, label, _description) in enumerate(submenu["options"][:20]):
+
+        options = submenu["options"][:25]
+        if len(options) > 8:
+            self.add_item(SDACSubmenuSelect(is_admin, section_key, row=0))
+            shortcut_options = options[:6]
+            for index, (value, label, _description) in enumerate(shortcut_options):
+                style = discord.ButtonStyle.primary if index == 0 else discord.ButtonStyle.secondary
+                self.add_item(SDACSubmenuButton(is_admin, section_key, value, label, 1 + (index // 2), style))
+            self.add_item(SDACBackButton(is_admin, row=4))
+            return
+
+        for index, (value, label, _description) in enumerate(options):
             style = discord.ButtonStyle.primary if index == 0 else discord.ButtonStyle.secondary
             self.add_item(SDACSubmenuButton(is_admin, section_key, value, label, index // 2, style))
-        self.add_item(SDACBackButton(is_admin))
+        self.add_item(SDACBackButton(is_admin, row=4))
 
 
 class ConfirmCancelActiveGameButton(discord.ui.Button):

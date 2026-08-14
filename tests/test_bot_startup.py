@@ -286,6 +286,14 @@ class BotStartupTests(unittest.TestCase):
 
         setup_values = [value for value, _label, _description in bot.SDAC_SUBMENUS["setup"]["options"]]
         self.assertIn("setup_doctor", setup_values)
+        for section_key in bot.SDAC_SUBMENUS:
+            view = bot.SDACSubmenuView(True, section_key)
+            rows = [child.row for child in view.children if child.row is not None]
+            self.assertLessEqual(max(rows), 4, section_key)
+            for row in range(5):
+                self.assertLessEqual(sum(1 for child in view.children if child.row == row), 5, section_key)
+        setup_view = bot.SDACSubmenuView(True, "setup")
+        self.assertTrue(any(isinstance(child, bot.SDACSubmenuSelect) for child in setup_view.children))
         self.assertIn("Sana-Chan Doctor", bot.SDAC_SUBMENU_DETAILS["setup_doctor"])
         self.assertTrue(hasattr(bot, "doctor_summary_lines"))
         self.assertTrue(hasattr(bot, "run_sana_doctor_action"))
