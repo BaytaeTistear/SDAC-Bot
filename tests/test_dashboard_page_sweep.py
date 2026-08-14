@@ -91,6 +91,7 @@ assert "New Event: Launch Watch Party" in message
 assert "Where: Discord stage" in message
 assert "Host: Sana Team" in message
 assert "https://sanachan.bot.nu/events" in message
+assert message.endswith("||@here||")
 
 client = dashboard.app.test_client()
 with client.session_transaction() as session:
@@ -128,8 +129,9 @@ beta_body = beta_events.get_data(as_text=True)
 assert '<option value="all" selected>All Allowed Servers</option>' in all_body
 assert "Alpha Only Event" in all_body
 assert "Beta Only Event" in all_body
-assert ".card .meta { border-left: 2px solid var(--border); display: grid;" in all_body
-assert ".card .pill { background: transparent; border: 0; border-radius: 0;" in all_body
+assert ".meta-item + .meta-item::before" in all_body
+assert 'class="meta-item"' in all_body
+assert 'class="pill">{{ post.category }}' not in all_body
 assert "Alpha Only Event" in alpha_body
 assert "Beta Only Event" not in alpha_body
 assert "Beta Only Event" in beta_body

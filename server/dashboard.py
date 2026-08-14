@@ -24003,6 +24003,7 @@ def community_discord_notification_message(row, page_url=""):
         lines.append("\n".join(details))
     if page_url:
         lines.append(f"View approved {labels['title']}: {page_url}")
+    lines.append("||@here||")
     return "\n\n".join(lines)[:1800]
 
 COMMUNITY_LISTING_HTML = """
@@ -24027,9 +24028,11 @@ COMMUNITY_LISTING_HTML = """
         .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
         .card { padding: 1rem; }
         .card h3 { margin: 0 0 0.35rem; }
-        .meta, .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
-        .pill { border: 1px solid var(--border); border-radius: 999px; padding: 0.25rem 0.55rem; color: #dce7ff; background: rgba(255,255,255,0.04); }
-        .pill.featured { border-color: var(--accent); box-shadow: 0 0 18px rgba(24, 213, 255, .22); }
+        .meta, .actions { display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.75rem 0; }
+        .meta { color: #dce7ff; font-size: 0.95rem; }
+        .meta-item { display: inline; }
+        .meta-item + .meta-item::before { color: var(--muted); content: " / "; }
+        .meta-item.featured { color: var(--accent); font-weight: 800; }
         .filters { align-items: end; display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); }
         .empty-state { border: 1px dashed var(--border); border-radius: 0.75rem; padding: 1rem; text-align: center; }
         label { color: #b9c7dc; display: grid; font-size: 0.94rem; gap: 0.45rem; font-weight: 700; letter-spacing: 0; }
@@ -24049,8 +24052,7 @@ COMMUNITY_LISTING_HTML = """
             .panel { margin: 0.65rem 0; padding: 0.8rem; }
             .grid { gap: 0.75rem; }
             .card { padding: 0.85rem; }
-            .card .meta { border-left: 2px solid var(--border); display: grid; gap: 0.25rem; margin: 0.65rem 0; padding-left: 0.7rem; }
-            .card .pill { background: transparent; border: 0; border-radius: 0; box-shadow: none; margin: 0; padding: 0; }
+            .card .meta { border-left: 2px solid var(--border); display: block; line-height: 1.45; margin: 0.65rem 0; padding-left: 0.7rem; }
         }
     </style>
 </head>
@@ -24097,12 +24099,12 @@ COMMUNITY_LISTING_HTML = """
                 <article class="card">
                     <h3>{{ post.title }}</h3>
                     <div class="meta">
-                        <span class="pill">{{ post.category }}</span>
-                        {% if post.is_featured %}<span class="pill featured">Featured</span>{% endif %}
-                        {% if post.tags %}<span class="pill">{{ post.tags }}</span>{% endif %}
-                        {% if post.starts_at_label %}<span class="pill">{{ post.starts_at_label }}</span>{% endif %}
-                        {% if post.location %}<span class="pill">{{ post.location }}</span>{% endif %}
-                        {% if post.guild_name %}<span class="pill">{{ post.guild_name }}</span>{% endif %}
+                        <span class="meta-item">{{ post.category }}</span>
+                        {% if post.is_featured %}<span class="meta-item featured">Featured</span>{% endif %}
+                        {% if post.tags %}<span class="meta-item">{{ post.tags }}</span>{% endif %}
+                        {% if post.starts_at_label %}<span class="meta-item">{{ post.starts_at_label }}</span>{% endif %}
+                        {% if post.location %}<span class="meta-item">{{ post.location }}</span>{% endif %}
+                        {% if post.guild_name %}<span class="meta-item">{{ post.guild_name }}</span>{% endif %}
                     </div>
                     <p>{{ post.description }}</p>
                     {% if post.host_name %}<p class="muted">Hosted/promoted by {{ post.host_name }}</p>{% endif %}
