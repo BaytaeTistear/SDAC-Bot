@@ -92,6 +92,12 @@ assert "Where: Discord stage" in message
 assert "Host: Sana Team" in message
 assert "https://sanachan.bot.nu/events" in message
 assert message.endswith("||@here||")
+poll_payload = dashboard.community_rsvp_poll_payload(
+    "Community announcement",
+    {"title": "Launch Watch Party"},
+)
+assert poll_payload["poll"]["question"]["text"] == "RSVP for Launch Watch Party"
+assert [answer["poll_media"]["text"] for answer in poll_payload["poll"]["answers"]] == ["Going", "Not going"]
 
 client = dashboard.app.test_client()
 with client.session_transaction() as session:
@@ -106,6 +112,7 @@ with client.session_transaction() as session:
 
 
 community_now = dashboard.utc_now_iso()
+dashboard.ensure_community_posts_table()
 with dashboard.database() as connection:
     connection.execute(
         """
@@ -116,6 +123,17 @@ with dashboard.database() as connection:
             ('event', 'Events', 'approved', 'Beta Only Event', 'Shown only on server 222.', '222', ?, ?)
         """,
         (community_now, community_now, community_now, community_now),
+    )
+    alpha_post_id = connection.execute(
+        "SELECT id FROM community_posts WHERE title = 'Alpha Only Event' ORDER BY id DESC LIMIT 1"
+    ).fetchone()["id"]
+    connection.execute(
+        """
+        INSERT INTO community_post_rsvps (
+            post_id, guild_id, user_id, username, status, source_message_id, created_at, updated_at
+        ) VALUES (?, '111', '42', 'AttendeeOne', 'going', '999', ?, ?)
+        """,
+        (alpha_post_id, community_now, community_now),
     )
 all_events = client.get("/events")
 alpha_events = client.get(f"/events?guild_id=111")
@@ -129,10 +147,14 @@ beta_body = beta_events.get_data(as_text=True)
 assert '<option value="all" selected>All Allowed Servers</option>' in all_body
 assert "Alpha Only Event" in all_body
 assert "Beta Only Event" in all_body
+assert "1 attending" in all_body
+assert "View attendee names" in all_body
+assert "AttendeeOne" in all_body
 assert ".meta-item + .meta-item::before" in all_body
 assert 'class="meta-item"' in all_body
 assert 'class="pill">{{ post.category }}' not in all_body
 assert "Alpha Only Event" in alpha_body
+assert "1 attending" in alpha_body
 assert "Beta Only Event" not in alpha_body
 assert "Beta Only Event" in beta_body
 assert "Alpha Only Event" not in beta_body

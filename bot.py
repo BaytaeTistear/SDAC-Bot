@@ -4012,6 +4012,32 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS community_post_announcements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id INTEGER NOT NULL,
+                guild_id TEXT NOT NULL DEFAULT '',
+                channel_id TEXT NOT NULL DEFAULT '',
+                message_id TEXT NOT NULL UNIQUE,
+                poll_question TEXT NOT NULL DEFAULT '',
+                going_answer_id TEXT NOT NULL DEFAULT '',
+                not_going_answer_id TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS community_post_rsvps (
+                post_id INTEGER NOT NULL,
+                guild_id TEXT NOT NULL DEFAULT '',
+                user_id TEXT NOT NULL,
+                username TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'going',
+                source_message_id TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (post_id, user_id)
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS game_seasons (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 guild_id TEXT,
@@ -4727,6 +4753,18 @@ def initialize_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_poll_votes_poll
             ON poll_votes (poll_id, option_index)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_community_post_announcements_message
+            ON community_post_announcements(message_id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_community_post_announcements_post
+            ON community_post_announcements(post_id, guild_id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_community_post_rsvps_post_status
+            ON community_post_rsvps(post_id, status, updated_at)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_game_seasons_guild_status
@@ -7267,6 +7305,88 @@ def poll_embed(poll_id, question, options, counts=None, status="active"):
     return embed
 
 
+def community_announcement_for_message(connection, message_id):
+    return connection.execute(
+        """
+        SELECT *
+        FROM community_post_announcements
+        WHERE message_id = ?
+        LIMIT 1
+        """,
+        (str(message_id),),
+    ).fetchone()
+
+
+async def poll_payload_username(payload):
+    guild = bot.get_guild(payload.guild_id) if payload.guild_id else None
+    if guild:
+        member = guild.get_member(payload.user_id)
+        if member:
+            return str(member)
+        try:
+            member = await guild.fetch_member(payload.user_id)
+            return str(member)
+        except discord.HTTPException:
+            pass
+    user = bot.get_user(payload.user_id)
+    if user:
+        return str(user)
+    try:
+        user = await bot.fetch_user(payload.user_id)
+        return str(user)
+    except discord.HTTPException:
+        return str(payload.user_id)
+
+
+async def record_community_rsvp_poll_vote(payload, added=True):
+    with database() as connection:
+        announcement = community_announcement_for_message(connection, payload.message_id)
+        if not announcement:
+            return False
+        answer_id = str(payload.answer_id)
+        going_answer_id = str(announcement["going_answer_id"] or "")
+        not_going_answer_id = str(announcement["not_going_answer_id"] or "")
+        if answer_id and not_going_answer_id and answer_id == not_going_answer_id:
+            connection.execute(
+                "DELETE FROM community_post_rsvps WHERE post_id = ? AND user_id = ?",
+                (announcement["post_id"], str(payload.user_id)),
+            )
+            return True
+        if not added:
+            if not going_answer_id or answer_id == going_answer_id:
+                connection.execute(
+                    "DELETE FROM community_post_rsvps WHERE post_id = ? AND user_id = ?",
+                    (announcement["post_id"], str(payload.user_id)),
+                )
+            return True
+        if going_answer_id and answer_id != going_answer_id:
+            return False
+        now = utc_now_iso()
+        username = await poll_payload_username(payload)
+        connection.execute(
+            """
+            INSERT INTO community_post_rsvps (
+                post_id, guild_id, user_id, username, status, source_message_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'going', ?, ?, ?)
+            ON CONFLICT(post_id, user_id) DO UPDATE SET
+                username = excluded.username,
+                status = 'going',
+                source_message_id = excluded.source_message_id,
+                updated_at = excluded.updated_at
+            """,
+            (
+                announcement["post_id"],
+                str(payload.guild_id or announcement["guild_id"] or ""),
+                str(payload.user_id),
+                username[:120],
+                str(payload.message_id),
+                now,
+                now,
+            ),
+        )
+        return True
+
+
 def admin_only(interaction):
     if not interaction.guild:
         return False
@@ -7526,9 +7646,20 @@ async def permission_drift_lines_for_guild(guild, guild_config):
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
+intents.polls = True
 
 bot = commands.Bot(command_prefix="!sdac ", intents=intents)
 tree = bot.tree
+
+
+@bot.event
+async def on_raw_poll_vote_add(payload):
+    await record_community_rsvp_poll_vote(payload, added=True)
+
+
+@bot.event
+async def on_raw_poll_vote_remove(payload):
+    await record_community_rsvp_poll_vote(payload, added=False)
 
 
 def optional_tree_command(enabled, *args, **kwargs):

@@ -12069,26 +12069,117 @@ def configured_notification_rows(event_key, guild_id=None):
         return []
 
 
-def post_discord_channel_message(channel_id, content):
+def post_discord_channel_payload(channel_id, payload):
     channel_id = str(channel_id or "")
     if not channel_id.isdigit() or not TOKEN:
-        return False
-    payload = json.dumps({"content": content[:1900]}).encode("utf-8")
+        return None
+    encoded = json.dumps(payload).encode("utf-8")
     api_request = Request(
         f"https://discord.com/api/v10/channels/{channel_id}/messages",
-        data=payload,
+        data=encoded,
         method="POST",
         headers={
             "Authorization": f"Bot {TOKEN}",
             "Content-Type": "application/json",
-            "User-Agent": "SDAC-Dashboard/2.0",
+            "User-Agent": "Sana-Dashboard/4.0",
         },
     )
     try:
         with urlopen(api_request, timeout=10) as response:
-            return response.status in {200, 201}
-    except (HTTPError, URLError, TimeoutError, OSError):
+            if response.status not in {200, 201}:
+                return None
+            body = response.read().decode("utf-8")
+            return json.loads(body) if body else {}
+    except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError):
+        return None
+
+
+def post_discord_channel_message(channel_id, content):
+    return bool(post_discord_channel_payload(channel_id, {"content": content[:1900]}))
+
+
+def community_rsvp_poll_payload(content, row):
+    title = community_clean_text(row["title"], 80) or "this community post"
+    return {
+        "content": content[:1800],
+        "poll": {
+            "question": {"text": f"RSVP for {title}"[:300]},
+            "answers": [
+                {"poll_media": {"text": "Going"}},
+                {"poll_media": {"text": "Not going"}},
+            ],
+            "duration": 168,
+            "allow_multiselect": False,
+            "layout_type": 1,
+        },
+    }
+
+
+def poll_answer_id_by_text(message_payload, answer_text):
+    wanted = str(answer_text or "").casefold()
+    for answer in (((message_payload or {}).get("poll") or {}).get("answers") or []):
+        media = answer.get("poll_media") or {}
+        if str(media.get("text") or "").casefold() == wanted:
+            return str(answer.get("answer_id") or "")
+    return ""
+
+
+def record_community_announcement(connection, post_id, guild_id, channel_id, message_payload):
+    message_id = str((message_payload or {}).get("id") or "")
+    if not message_id:
         return False
+    now = utc_now_iso()
+    connection.execute(
+        """
+        INSERT INTO community_post_announcements (
+            post_id, guild_id, channel_id, message_id, poll_question,
+            going_answer_id, not_going_answer_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(message_id) DO UPDATE SET
+            post_id = excluded.post_id,
+            guild_id = excluded.guild_id,
+            channel_id = excluded.channel_id,
+            poll_question = excluded.poll_question,
+            going_answer_id = excluded.going_answer_id,
+            not_going_answer_id = excluded.not_going_answer_id
+        """,
+        (
+            int(post_id),
+            str(guild_id or ""),
+            str(channel_id or ""),
+            message_id,
+            str((((message_payload or {}).get("poll") or {}).get("question") or {}).get("text") or ""),
+            poll_answer_id_by_text(message_payload, "Going"),
+            poll_answer_id_by_text(message_payload, "Not going"),
+            now,
+        ),
+    )
+    return True
+
+
+def send_community_notification(event_key, message, post_id, guild_id=None, throttle_key=None):
+    if event_key not in NOTIFICATION_EVENT_LABELS:
+        return 0
+    route_rows = configured_notification_rows(event_key, guild_id)
+    if not route_rows:
+        return 0
+    throttle_id = throttle_key or f"{event_key}:{post_id}:{message[:80]}"
+    now = time.time()
+    if now - NOTIFICATION_THROTTLES.get(throttle_id, 0) < 1:
+        return 0
+    NOTIFICATION_THROTTLES[throttle_id] = now
+    title = NOTIFICATION_EVENT_LABELS.get(event_key, event_key)
+    content = f"**Sana-Chan {title}**\n{message}"
+    with database() as connection:
+        post_row = connection.execute("SELECT * FROM community_posts WHERE id = ?", (int(post_id),)).fetchone()
+        if not post_row:
+            return 0
+        sent = 0
+        for route in route_rows:
+            payload = post_discord_channel_payload(route["channel_id"], community_rsvp_poll_payload(content, post_row))
+            if payload and record_community_announcement(connection, post_id, route["guild_id"], route["channel_id"], payload):
+                sent += 1
+    return sent
 
 
 def send_admin_notification(
@@ -24046,6 +24137,9 @@ COMMUNITY_LISTING_HTML = """
         .wide { grid-column: 1 / -1; }
         .notice { border: 1px solid var(--border); border-radius: 0.55rem; padding: 0.8rem; margin: 0 0 1rem; text-align: center; }
         .notice.error { border-color: var(--danger); }
+        .rsvp-list { margin: 0.4rem 0 0.8rem; color: var(--muted); }
+        .rsvp-list summary { color: var(--accent); cursor: pointer; font-weight: 800; }
+        .rsvp-list ul { margin: 0.45rem 0 0; padding-left: 1.2rem; }
         @media (max-width: 44rem) {
             main { width: min(98vw, 76rem); padding: 0.55rem; }
             .hero { padding: 1rem; }
@@ -24105,7 +24199,18 @@ COMMUNITY_LISTING_HTML = """
                         {% if post.starts_at_label %}<span class="meta-item">{{ post.starts_at_label }}</span>{% endif %}
                         {% if post.location %}<span class="meta-item">{{ post.location }}</span>{% endif %}
                         {% if post.guild_name %}<span class="meta-item">{{ post.guild_name }}</span>{% endif %}
+                        <span class="meta-item">{{ post.rsvp_count }} attending</span>
                     </div>
+                    {% if post.can_view_rsvp_names %}
+                        <details class="rsvp-list">
+                            <summary>View attendee names</summary>
+                            {% if post.rsvp_names %}
+                                <ul>{% for name in post.rsvp_names %}<li>{{ name }}</li>{% endfor %}</ul>
+                            {% else %}
+                                <p class="muted">No attendees have RSVP'd yet.</p>
+                            {% endif %}
+                        </details>
+                    {% endif %}
                     <p>{{ post.description }}</p>
                     {% if post.host_name %}<p class="muted">Hosted/promoted by {{ post.host_name }}</p>{% endif %}
                     <div class="actions">
@@ -24268,6 +24373,35 @@ def ensure_community_posts_table():
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_type_status ON community_posts(post_type, status, starts_at)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_guild_type_status ON community_posts(guild_id, post_type, status, starts_at)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_status_created ON community_posts(status, created_at)")
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS community_post_announcements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id INTEGER NOT NULL,
+                guild_id TEXT NOT NULL DEFAULT '',
+                channel_id TEXT NOT NULL DEFAULT '',
+                message_id TEXT NOT NULL UNIQUE,
+                poll_question TEXT NOT NULL DEFAULT '',
+                going_answer_id TEXT NOT NULL DEFAULT '',
+                not_going_answer_id TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS community_post_rsvps (
+                post_id INTEGER NOT NULL,
+                guild_id TEXT NOT NULL DEFAULT '',
+                user_id TEXT NOT NULL,
+                username TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'going',
+                source_message_id TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (post_id, user_id)
+            )
+        """)
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_community_post_announcements_message ON community_post_announcements(message_id)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_community_post_announcements_post ON community_post_announcements(post_id, guild_id)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_community_post_rsvps_post_status ON community_post_rsvps(post_id, status, updated_at)")
         seed_san_diego_anime_club_event(connection)
 
 
@@ -24377,6 +24511,31 @@ def default_community_guild_id(server_options):
     return ""
 
 
+def community_rsvp_summary(post_ids):
+    post_ids = [int(post_id) for post_id in post_ids if str(post_id).isdigit()]
+    if not post_ids:
+        return {}
+    placeholders = ",".join("?" for _ in post_ids)
+    with closing(connect_db()) as connection:
+        rows = connection.execute(
+            f"""
+            SELECT post_id, user_id, username, updated_at
+            FROM community_post_rsvps
+            WHERE status = 'going'
+              AND post_id IN ({placeholders})
+            ORDER BY username COLLATE NOCASE, updated_at DESC
+            """,
+            post_ids,
+        ).fetchall()
+    summary = {post_id: {"count": 0, "names": []} for post_id in post_ids}
+    for row in rows:
+        post_id = int(row["post_id"])
+        name = row["username"] or row["user_id"]
+        summary.setdefault(post_id, {"count": 0, "names": []})["names"].append(name)
+        summary[post_id]["count"] += 1
+    return summary
+
+
 def community_post_rows(post_type=None, status="approved", limit=100, tag="", when="all", guild_id=""):
     ensure_community_posts_table()
     clauses = []
@@ -24422,6 +24581,7 @@ def community_post_rows(post_type=None, status="approved", limit=100, tag="", wh
             """,
             (*params, int(limit)),
         ).fetchall()
+    rsvp_summary = community_rsvp_summary([row["id"] for row in rows])
     output = []
     for row in rows:
         item = dict(row)
@@ -24430,6 +24590,10 @@ def community_post_rows(post_type=None, status="approved", limit=100, tag="", wh
         item["starts_at_label"] = community_datetime_label(row["starts_at"])
         item["created_at_label"] = community_datetime_label(row["created_at"])
         item["is_featured"] = bool(row["is_featured"])
+        item_summary = rsvp_summary.get(int(row["id"]), {"count": 0, "names": []})
+        item["rsvp_count"] = item_summary["count"]
+        item["rsvp_names"] = item_summary["names"]
+        item["can_view_rsvp_names"] = can_admin_access_guild(row["guild_id"], minimum_role="moderator")
         output.append(item)
     return output
 
@@ -24590,12 +24754,12 @@ def admin_community_submissions():
                 f"{action.title()} {row['post_type']} submission #{post_id}: {row['title']}",
             )
         if notification_event_key and notification_message:
-            sent = send_admin_notification(
+            sent = send_community_notification(
                 notification_event_key,
                 notification_message,
+                post_id,
                 guild_id=notification_guild_id,
                 throttle_key=f"{notification_event_key}:{post_id}",
-                throttle_seconds=0,
             )
             if sent:
                 message += f" Posted to {sent} Discord channel(s)."

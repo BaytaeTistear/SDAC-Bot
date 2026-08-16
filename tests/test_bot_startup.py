@@ -368,6 +368,10 @@ class BotStartupTests(unittest.TestCase):
         self.assertTrue(hasattr(bot, "CommunityPostingConfirmView"))
         self.assertTrue(hasattr(bot, "save_community_posting_route"))
         self.assertTrue(hasattr(bot, "handle_sana_events_action"))
+        self.assertTrue(hasattr(bot, "record_community_rsvp_poll_vote"))
+        self.assertTrue(hasattr(bot, "on_raw_poll_vote_add"))
+        self.assertTrue(hasattr(bot, "on_raw_poll_vote_remove"))
+        self.assertTrue(bot.intents.polls)
 
 if __name__ == "__main__":
     unittest.main()
