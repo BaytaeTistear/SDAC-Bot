@@ -619,6 +619,8 @@ NOTIFICATION_EVENT_LABELS = {
     "restore_drill_failed": "Restore Drill Failed",
     "monthly_digest": "Monthly Digest",
     "release_announcements": "Release Announcements",
+    "community_event_submitted": "Submitted Events",
+    "community_meetup_submitted": "Submitted Meetups",
     "community_event_approved": "Approved Events",
     "community_meetup_approved": "Approved Meetups",
 }
@@ -1507,6 +1509,15 @@ ACCOUNT_HOME_HTML = """
             <tr><th>Status</th><td>{{ "Disabled" if account.disabled else "Active" }}</td></tr>
         </tbody>
     </table>
+    <section class="panel">
+        <h2>Account Details</h2>
+        <form method="post" action="{{ url_for('account_update') }}" class="stack">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>Email<input name="email" type="email" value="{{ account.email or '' }}" placeholder="optional@example.com"></label>
+            <label>Display name<input name="display_name" maxlength="120" value="{{ account.display_name or '' }}" placeholder="Name shown on Sana-Chan"></label>
+            <button type="submit">Save Account Details</button>
+        </form>
+    </section>
     <section class="panel">
         <h2>Authenticate With Code</h2>
         <form method="post" action="{{ url_for('account_auth_code') }}" class="stack">
@@ -3439,6 +3450,22 @@ SETTINGS_HTML = """
             </form>
         {% else %}
             <p class="muted">Only admins can create, promote, update, or disable dashboard users.</p>
+        {% endif %}
+        {% if can_merge_users and dashboard_users|length >= 2 %}
+            <form method="post" onsubmit="return confirm('Merge the source dashboard account into the target account? The source account will be disabled.');">
+                <input type="hidden" name="key" value="{{ admin_key }}">
+                <input type="hidden" name="action" value="merge_dashboard_users">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <table>
+                    <tbody>
+                        <tr><th>Source user</th><td><select name="source_username" required>{% for user in dashboard_users %}<option value="{{ user.username }}">{{ user.username }} - {{ role_labels.get(user.role, user.role) }}</option>{% endfor %}</select></td></tr>
+                        <tr><th>Target user</th><td><select name="target_username" required>{% for user in dashboard_users %}<option value="{{ user.username }}">{{ user.username }} - {{ role_labels.get(user.role, user.role) }}</option>{% endfor %}</select></td></tr>
+                        <tr><th>Confirm</th><td><input name="confirm_merge" placeholder="Type MERGE" required></td></tr>
+                    </tbody>
+                </table>
+                <p class="muted">This combines dashboard account details, server access, auth codes, and bot-owner flags. Discord submission and game history stay attached to the original Discord user IDs.</p>
+                <button type="submit">Merge Dashboard Users</button>
+            </form>
         {% endif %}
         <table>
             <thead><tr><th>User</th><th>Email</th><th>Discord ID</th><th>Role</th><th>Scope</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
@@ -13937,6 +13964,111 @@ def dashboard_users():
         """).fetchall()
 
 
+def merge_dashboard_users(connection, source_username, target_username, actor_username=""):
+    source_username = normalize_account_username(source_username)
+    target_username = normalize_account_username(target_username)
+    if not source_username or not target_username or source_username == target_username:
+        raise ValueError("Choose two different dashboard users to merge.")
+    source = connection.execute(
+        "SELECT * FROM dashboard_admin_users WHERE username = ? LIMIT 1",
+        (source_username,),
+    ).fetchone()
+    target = connection.execute(
+        "SELECT * FROM dashboard_admin_users WHERE username = ? LIMIT 1",
+        (target_username,),
+    ).fetchone()
+    if not source or not target:
+        raise ValueError("Both dashboard users must exist before they can be merged.")
+    if source_username == OWNER_OVERRIDE_USERNAME:
+        raise ValueError("The protected owner account cannot be merged into another account.")
+    if not can_manage_dashboard_user(source["role"], source_username):
+        abort(403)
+    if not can_manage_dashboard_user(target["role"], target_username) and target_username != current_admin_username().casefold():
+        abort(403)
+    source_level = ROLE_LEVELS[normalize_role(source["role"])]
+    target_level = ROLE_LEVELS[normalize_role(target["role"])]
+    merged_role = normalize_role(source["role"] if source_level > target_level else target["role"])
+    merged_email = target["email"] or source["email"] or ""
+    merged_display_name = target["display_name"] or source["display_name"] or target_username
+    merged_discord_user_id = target["discord_user_id"] or source["discord_user_id"] or ""
+    if source["discord_user_id"] and target["discord_user_id"] and source["discord_user_id"] != target["discord_user_id"]:
+        merged_discord_user_id = target["discord_user_id"]
+    source_scope = set(parse_guild_scope(source["guild_ids_json"]))
+    target_scope = set(parse_guild_scope(target["guild_ids_json"]))
+    source_access = connection.execute(
+        "SELECT guild_id, role, source FROM dashboard_user_server_access WHERE username = ?",
+        (source_username,),
+    ).fetchall()
+    target_access = {
+        str(row["guild_id"]): normalize_role(row["role"])
+        for row in connection.execute(
+            "SELECT guild_id, role FROM dashboard_user_server_access WHERE username = ?",
+            (target_username,),
+        ).fetchall()
+    }
+    for row in source_access:
+        guild_id = str(row["guild_id"])
+        existing_role = target_access.get(guild_id, "not_added")
+        incoming_role = normalize_role(row["role"])
+        merged_access_role = incoming_role if ROLE_LEVELS[incoming_role] > ROLE_LEVELS[existing_role] else existing_role
+        connection.execute(
+            """
+            INSERT INTO dashboard_user_server_access (
+                username, guild_id, role, source, verified_at, updated_at
+            ) VALUES (?, ?, ?, 'merged', ?, ?)
+            ON CONFLICT(username, guild_id) DO UPDATE SET
+                role = excluded.role,
+                source = 'merged',
+                updated_at = excluded.updated_at
+            """,
+            (target_username, guild_id, merged_access_role, utc_now_iso(), utc_now_iso()),
+        )
+        target_scope.add(guild_id)
+    target_scope |= source_scope
+    merged_scope_json = json.dumps(sorted(target_scope), separators=(",", ":"))
+    notes = "\n".join(filter(None, [target["notes"] or "", f"Merged dashboard user {source_username} into this account."]))[:1000]
+    now = utc_now_iso()
+    connection.execute(
+        """
+        UPDATE dashboard_admin_users
+        SET email = ?, display_name = ?, discord_user_id = ?, role = ?,
+            disabled = 0, guild_ids_json = ?, notes = ?, updated_at = ?
+        WHERE username = ?
+        """,
+        (merged_email, merged_display_name, merged_discord_user_id, merged_role, merged_scope_json, notes, now, target_username),
+    )
+    connection.execute(
+        "UPDATE dashboard_account_auth_codes SET username = ? WHERE username = ?",
+        (target_username, source_username),
+    )
+    connection.execute(
+        "UPDATE dashboard_user_server_access SET username = ? WHERE username = ? AND guild_id NOT IN (SELECT guild_id FROM dashboard_user_server_access WHERE username = ?)",
+        (target_username, source_username, target_username),
+    )
+    connection.execute("DELETE FROM dashboard_user_server_access WHERE username = ?", (source_username,))
+    if is_bot_owner_username(source_username) or normalize_role(source["role"]) == "bot_owner":
+        connection.execute(
+            """
+            INSERT INTO dashboard_bot_owners (username, source, created_at, updated_at)
+            VALUES (?, 'merged', ?, ?)
+            ON CONFLICT(username) DO UPDATE SET source = 'merged', updated_at = excluded.updated_at
+            """,
+            (target_username, now, now),
+        )
+    if source_username != OWNER_OVERRIDE_USERNAME:
+        connection.execute("DELETE FROM dashboard_bot_owners WHERE lower(username) = ?", (source_username,))
+    source_notes = "\n".join(filter(None, [source["notes"] or "", f"Merged into {target_username} by {actor_username or 'dashboard'}. "]))[:1000]
+    connection.execute(
+        """
+        UPDATE dashboard_admin_users
+        SET disabled = 1, email = '', discord_user_id = '', guild_ids_json = '[]', notes = ?, updated_at = ?
+        WHERE username = ?
+        """,
+        (source_notes, now, source_username),
+    )
+    return f"Merged {source_username} into {target_username}. Source account was disabled."
+
+
 def dashboard_user_server_access(username=""):
     raw_username = str(username or current_account_username() or "").strip()
     if not raw_username:
@@ -16106,6 +16238,69 @@ def account_access_debug():
     )
 
 
+@app.route("/account/update", methods=["POST"])
+def account_update():
+    if not is_account_logged_in():
+        return redirect(url_for("account_login", next=url_for("account_home")))
+    require_csrf_token()
+    username = current_account_username()
+    raw_email = request.form.get("email", "")
+    display_name = community_clean_text(request.form.get("display_name"), 120)
+    try:
+        email = normalize_email(raw_email)
+    except ValueError as error:
+        return redirect(url_for("account_home", notice=str(error), error=1))
+    with database() as connection:
+        account = connection.execute(
+            """
+            SELECT username, disabled
+            FROM dashboard_admin_users
+            WHERE username = ?
+            LIMIT 1
+            """,
+            (username,),
+        ).fetchone()
+        if not account or int(account["disabled"] or 0):
+            session.pop("sdac_account_username", None)
+            return redirect(url_for("account_login", notice="Please log in again.", error=1))
+        if email:
+            existing = connection.execute(
+                """
+                SELECT username
+                FROM dashboard_admin_users
+                WHERE lower(COALESCE(email, '')) = ?
+                  AND username != ?
+                LIMIT 1
+                """,
+                (email, username),
+            ).fetchone()
+            if existing:
+                return redirect(url_for(
+                    "account_home",
+                    notice="That email address already belongs to another account.",
+                    error=1,
+                ))
+        connection.execute(
+            """
+            UPDATE dashboard_admin_users
+            SET email = ?, display_name = ?, updated_at = ?
+            WHERE username = ?
+            """,
+            (email, display_name, utc_now_iso(), username),
+        )
+        add_admin_audit_log(
+            connection,
+            None,
+            "account_update_self",
+            username,
+            username,
+            "dashboard_user",
+            username,
+            "Account details updated by account owner.",
+        )
+    return redirect(url_for("account_home", notice="Account details saved."))
+
+
 @app.route("/account/auth-code", methods=["POST"])
 def account_auth_code():
     if not is_account_logged_in():
@@ -17882,6 +18077,46 @@ def admin_settings():
                 key=ADMIN_KEY,
                 notice=message,
             ))
+        if action == "merge_dashboard_users":
+            if not has_admin_role("admin"):
+                abort(403)
+            if request.form.get("confirm_merge", "").strip() != "MERGE":
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice="Type MERGE to confirm the user merge.",
+                    error=1,
+                ))
+            try:
+                with database() as connection:
+                    message = merge_dashboard_users(
+                        connection,
+                        request.form.get("source_username", ""),
+                        request.form.get("target_username", ""),
+                        actor_name,
+                    )
+                    add_admin_audit_log(
+                        connection,
+                        None,
+                        "dashboard_merge_users",
+                        actor_id,
+                        actor_name,
+                        "dashboard_user",
+                        request.form.get("target_username", ""),
+                        message,
+                    )
+            except ValueError as form_error:
+                return redirect(url_for(
+                    "admin_settings",
+                    key=ADMIN_KEY,
+                    notice=str(form_error),
+                    error=1,
+                ))
+            return redirect(url_for(
+                "admin_settings",
+                key=ADMIN_KEY,
+                notice=message,
+            ))
         if action == "set_bot_nickname":
             config_data = load_config()
             guild_id = request.form.get("guild_id", "").strip()
@@ -18658,6 +18893,7 @@ def admin_settings():
         can_manage_bot_identity=can_manage_selected_bot_identity,
         can_manage_global_bot_username=has_admin_role("bot_owner"),
         can_manage_users=has_admin_role("admin"),
+        can_merge_users=has_admin_role("admin"),
         csrf_token=get_csrf_token(),
         current_admin_role=current_admin_role(),
         current_admin_username=current_admin_username(),
@@ -24037,6 +24273,11 @@ COMMUNITY_NOTIFICATION_EVENT_KEYS = {
     "meetup": "community_meetup_approved",
 }
 
+COMMUNITY_SUBMITTED_NOTIFICATION_EVENT_KEYS = {
+    "event": "community_event_submitted",
+    "meetup": "community_meetup_submitted",
+}
+
 SAN_DIEGO_ANIME_CLUB_EVENT_TITLE = "SDAC Theatre Trip: Your Name in 4K!"
 SAN_DIEGO_ANIME_CLUB_EVENT_DESCRIPTION = (
     "A San Diego Anime Club theatre trip for the 4K screening of Your Name. "
@@ -24067,6 +24308,27 @@ COMMUNITY_POST_LABELS = {
 
 def community_notification_event_key(post_type):
     return COMMUNITY_NOTIFICATION_EVENT_KEYS.get(str(post_type or "").strip().lower(), "")
+
+
+def community_submitted_notification_event_key(post_type):
+    return COMMUNITY_SUBMITTED_NOTIFICATION_EVENT_KEYS.get(str(post_type or "").strip().lower(), "")
+
+
+def community_submission_notification_message(row):
+    post_type = row["post_type"]
+    labels = COMMUNITY_POST_LABELS.get(post_type, {"singular": "Community Post"})
+    title = community_clean_text(row["title"], 140)
+    starts_at = community_datetime_label(row["starts_at"])
+    location = community_clean_text(row["location"], 120)
+    lines = [f"A new {labels['singular'].lower()} needs review: **{title}**"]
+    details = []
+    if starts_at:
+        details.append(f"When: {starts_at}")
+    if location:
+        details.append(f"Where: {location}")
+    details.append(f"Review: {url_for('admin_community_submissions', status='pending', post_type=post_type, _external=True)}")
+    lines.append("\n".join(details))
+    return "\n\n".join(lines)[:1800]
 
 
 def community_discord_notification_message(row, page_url=""):
@@ -24614,7 +24876,7 @@ def save_community_post(post_type):
         tag = ""
     now = utc_now_iso()
     with database() as connection:
-        connection.execute(
+        cursor = connection.execute(
             """
             INSERT INTO community_posts (
                 post_type, category, status, title, description, location, starts_at, ends_at,
@@ -24640,6 +24902,7 @@ def save_community_post(post_type):
                 now,
             ),
         )
+        return int(cursor.lastrowid)
 
 
 def community_page(post_type):
@@ -24661,7 +24924,28 @@ def community_page(post_type):
     if request.method == "POST":
         require_csrf_token()
         try:
-            save_community_post(post_type)
+            post_id = save_community_post(post_type)
+            with closing(connect_db()) as connection:
+                submitted_row = connection.execute("SELECT * FROM community_posts WHERE id = ?", (post_id,)).fetchone()
+            if submitted_row:
+                message = community_submission_notification_message(submitted_row)
+                event_key = community_submitted_notification_event_key(post_type)
+                sent = send_admin_notification(
+                    event_key,
+                    message,
+                    guild_id=submitted_row["guild_id"],
+                    throttle_key=f"{event_key}:{post_id}",
+                    throttle_seconds=0,
+                )
+                if not sent:
+                    fallback_key = community_notification_event_key(post_type)
+                    send_admin_notification(
+                        fallback_key,
+                        message,
+                        guild_id=submitted_row["guild_id"],
+                        throttle_key=f"{fallback_key}:submitted:{post_id}",
+                        throttle_seconds=0,
+                    )
             return redirect(url_for(labels["path"], guild_id=request.form.get("guild_id") or selected_guild_id, notice=f"{labels['singular']} submitted for admin approval."))
         except ValueError as exc:
             return redirect(url_for(labels["path"], guild_id=request.form.get("guild_id") or selected_guild_id, notice=str(exc), error=1))

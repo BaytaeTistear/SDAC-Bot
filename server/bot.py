@@ -485,6 +485,8 @@ NOTIFICATION_EVENT_LABELS = {
     "restore_drill_failed": "Restore Drill Failed",
     "monthly_digest": "Monthly Digest",
     "release_announcements": "Release Announcements",
+    "community_event_submitted": "Submitted Events",
+    "community_meetup_submitted": "Submitted Meetups",
     "community_event_approved": "Approved Events",
     "community_meetup_approved": "Approved Meetups",
 }

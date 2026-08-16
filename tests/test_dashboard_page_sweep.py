@@ -73,6 +73,8 @@ redirect_ok = {"/admin/server-switcher"}
 failures = []
 
 
+assert "community_event_submitted" in dashboard.NOTIFICATION_EVENT_LABELS
+assert "community_meetup_submitted" in dashboard.NOTIFICATION_EVENT_LABELS
 assert "community_event_approved" in dashboard.NOTIFICATION_EVENT_LABELS
 assert "community_meetup_approved" in dashboard.NOTIFICATION_EVENT_LABELS
 message = dashboard.community_discord_notification_message(
@@ -92,6 +94,16 @@ assert "Where: Discord stage" in message
 assert "Host: Sana Team" in message
 assert "https://sanachan.bot.nu/events" in message
 assert message.endswith("||@here||")
+with dashboard.app.test_request_context("/events"):
+    submitted_message = dashboard.community_submission_notification_message({
+        "post_type": "event",
+        "title": "Launch Watch Party",
+        "starts_at": "2026-08-15T19:00:00+00:00",
+        "location": "Discord stage",
+    })
+assert "needs review" in submitted_message
+assert "Submitter:" not in submitted_message
+assert "Review:" in submitted_message
 poll_payload = dashboard.community_rsvp_poll_payload(
     "Community announcement",
     {"title": "Launch Watch Party"},

@@ -214,6 +214,78 @@ class DashboardAccessTests(unittest.TestCase):
         status = self.dashboard.google_play_test_account_status()
         self.assertFalse(status["ok"])
         self.assertEqual(status["state"], "Too much access")
+
+    def test_account_update_allows_user_to_change_own_email(self):
+        with self.dashboard.app.test_client() as client:
+            with client.session_transaction() as session:
+                session["sdac_account_username"] = "scoped-user"
+                session["sdac_account_role"] = "user"
+                session["csrf_token"] = "account-token"
+            response = client.post(
+                "/account/update",
+                data={
+                    "csrf_token": "account-token",
+                    "email": "new@example.com",
+                    "display_name": "New Display",
+                },
+                follow_redirects=False,
+            )
+        self.assertEqual(response.status_code, 302)
+        with self.dashboard.database() as connection:
+            row = connection.execute(
+                "SELECT email, display_name FROM dashboard_admin_users WHERE username = 'scoped-user'"
+            ).fetchone()
+        self.assertEqual(row["email"], "new@example.com")
+        self.assertEqual(row["display_name"], "New Display")
+
+    def test_merge_dashboard_users_combines_access_and_disables_source(self):
+        with self.dashboard.database() as connection:
+            connection.execute("""
+                INSERT INTO dashboard_admin_users (
+                    username, email, display_name, password_hash, role,
+                    disabled, created_at, updated_at, guild_ids_json, notes
+                )
+                VALUES ('duplicate-user', 'dupe@example.com', 'Duplicate', 'x', 'moderator', 0, '', '', '["222"]', '')
+            """)
+            self.dashboard.upsert_user_server_access(
+                connection,
+                "duplicate-user",
+                ["222"],
+                role="moderator",
+                source="manual",
+                preserve_existing_roles=False,
+            )
+        with self.dashboard.app.test_request_context("/admin/settings"):
+            self.dashboard.session["sdac_admin"] = True
+            self.dashboard.session["sdac_admin_username"] = "baytae"
+            self.dashboard.session["sdac_admin_role"] = "bot_owner"
+            with self.dashboard.database() as connection:
+                message = self.dashboard.merge_dashboard_users(
+                    connection,
+                    "duplicate-user",
+                    "scoped-user",
+                    "baytae",
+                )
+        self.assertIn("Merged duplicate-user into scoped-user", message)
+        with self.dashboard.database() as connection:
+            source = connection.execute(
+                "SELECT disabled, email, guild_ids_json FROM dashboard_admin_users WHERE username = 'duplicate-user'"
+            ).fetchone()
+            target = connection.execute(
+                "SELECT role, guild_ids_json FROM dashboard_admin_users WHERE username = 'scoped-user'"
+            ).fetchone()
+            access = {
+                row["guild_id"]: row["role"]
+                for row in connection.execute(
+                    "SELECT guild_id, role FROM dashboard_user_server_access WHERE username = 'scoped-user'"
+                ).fetchall()
+            }
+        self.assertEqual(source["disabled"], 1)
+        self.assertEqual(source["email"], "")
+        self.assertEqual(self.dashboard.normalize_role(target["role"]), "moderator")
+        self.assertEqual(access["111"], "owner")
+        self.assertEqual(access["222"], "moderator")
+
     def test_selected_server_role_overrides_global_role(self):
         with self.dashboard.app.test_request_context("/?guild_id=111"):
             self.dashboard.session["sdac_admin"] = True

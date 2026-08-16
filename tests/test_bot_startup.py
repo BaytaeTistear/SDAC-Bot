@@ -359,6 +359,8 @@ class BotStartupTests(unittest.TestCase):
 
         event_values = [value for value, _label, _description in bot.SDAC_SUBMENUS["events"]["options"]]
         self.assertIn("events_posting_setup", event_values)
+        self.assertIn("community_event_submitted", bot.NOTIFICATION_EVENT_LABELS)
+        self.assertIn("community_meetup_submitted", bot.NOTIFICATION_EVENT_LABELS)
         self.assertIn("community_event_approved", bot.NOTIFICATION_EVENT_LABELS)
         self.assertIn("community_meetup_approved", bot.NOTIFICATION_EVENT_LABELS)
         self.assertEqual(bot.community_posting_event_key("event"), "community_event_approved")
