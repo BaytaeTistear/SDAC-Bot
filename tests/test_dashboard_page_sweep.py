@@ -110,6 +110,20 @@ poll_payload = dashboard.community_rsvp_poll_payload(
 )
 assert poll_payload["poll"]["question"]["text"] == "RSVP for Launch Watch Party"
 assert [answer["poll_media"]["text"] for answer in poll_payload["poll"]["answers"]] == ["Going", "Not going"]
+assert dashboard.smtp_email_status()["configured"] is False
+assert "SANA_SMTP_HOST" in dashboard.smtp_email_status()["missing"]
+with dashboard.app.test_request_context("/admin/community-submissions"):
+    dm_payload = dashboard.community_admin_dm_payload({
+        "id": 55,
+        "post_type": "event",
+        "title": "Launch Watch Party",
+        "starts_at": "2026-08-15T19:00:00+00:00",
+        "location": "Discord stage",
+        "guild_id": "111",
+    })
+assert dm_payload["embeds"][0]["title"] == "New Event needs review"
+assert dm_payload["components"][0]["components"][0]["label"] == "Open review page"
+assert "/admin/community-submissions" in dm_payload["components"][0]["components"][0]["url"]
 
 client = dashboard.app.test_client()
 with client.session_transaction() as session:
@@ -156,6 +170,23 @@ with dashboard.database() as connection:
         """,
         (alpha_post_id, community_now),
     )
+    connection.execute(
+        """
+        INSERT INTO dashboard_admin_users (
+            username, email, display_name, discord_user_id, password_hash, role,
+            disabled, created_at, updated_at, guild_ids_json
+        ) VALUES ('linked-mod', 'linked@example.com', 'Linked Mod', '444444444444444444', 'x', 'user', 0, ?, ?, '[]')
+        """,
+        (community_now, community_now),
+    )
+    dashboard.upsert_user_server_access(
+        connection,
+        'linked-mod',
+        ['111'],
+        role='moderator',
+        source='test',
+        preserve_existing_roles=False,
+    )
 all_events = client.get("/events")
 alpha_events = client.get(f"/events?guild_id=111")
 beta_events = client.get(f"/events?guild_id=222")
@@ -165,14 +196,30 @@ assert beta_events.status_code == 200
 all_body = all_events.get_data(as_text=True)
 alpha_body = alpha_events.get_data(as_text=True)
 beta_body = beta_events.get_data(as_text=True)
-assert '<option value="all" selected>All Allowed Servers</option>' in all_body
-assert "Alpha Only Event" in all_body
-assert "Beta Only Event" in all_body
-assert "1 attending" in all_body
-assert "View attendee names" in all_body
-assert "AttendeeOne" in all_body
-assert "RSVP in Discord" in all_body
-assert "https://discord.com/channels/111/222/333" in all_body
+for expected, label in [
+    ("Alpha Only Event", "all events missing alpha"),
+    ("Beta Only Event", "all events missing beta"),
+    ("1 attending", "rsvp count missing"),
+    ("View attendee names", "attendee names disclosure missing"),
+    ("AttendeeOne", "attendee name missing"),
+    ("RSVP in Discord", "rsvp discord button missing"),
+    ("https://discord.com/channels/111/222/333", "discord rsvp URL missing"),
+]:
+    if expected not in all_body:
+        print(label)
+        print(all_body[:1200])
+        raise SystemExit(1)
+targets = dashboard.community_admin_notice_targets("111")
+if not any(target["email"] == "linked@example.com" for target in targets):
+    print("linked email target missing", targets)
+    raise SystemExit(1)
+if not any(target["discord_user_id"] == "444444444444444444" for target in targets):
+    print("linked discord target missing", targets)
+    raise SystemExit(1)
+approval_body = client.get(f"/admin/community-submissions?key={dashboard.ADMIN_KEY}&status=all")
+assert approval_body.status_code == 200
+assert "Resend Email" in approval_body.get_data(as_text=True)
+assert "Email Delivery" in client.get(f"/admin/settings?key={dashboard.ADMIN_KEY}").get_data(as_text=True)
 assert ".meta-item + .meta-item::before" in all_body
 assert 'class="meta-item"' in all_body
 assert 'class="pill">{{ post.category }}' not in all_body

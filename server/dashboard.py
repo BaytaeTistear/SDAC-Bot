@@ -3,6 +3,9 @@ import csv
 import gzip
 import html
 import hashlib
+import smtplib
+import ssl
+from email.message import EmailMessage
 import io
 import math
 import os
@@ -3573,6 +3576,23 @@ SETTINGS_HTML = """
                 {% endfor %}
             </tbody>
         </table>
+    </section>
+
+
+    <section class="panel">
+        <h2>Email Delivery</h2>
+        <p class="muted">
+            SMTP status: <strong>{{ "Configured" if email_status.configured else "Not configured" }}</strong>.
+            Host: <code>{{ email_status.host }}</code>, Port: <code>{{ email_status.port }}</code>, From: <code>{{ email_status.from_email }}</code>.
+            {% if email_status.missing %}Missing: <code>{{ email_status.missing|join(', ') }}</code>.{% endif %}
+        </p>
+        <form method="post" class="actions">
+            <input type="hidden" name="key" value="{{ admin_key }}">
+            <input type="hidden" name="action" value="send_test_email">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input name="recipient" type="email" placeholder="recipient@example.com" required>
+            <button type="submit">Send Test Email</button>
+        </form>
     </section>
 
     <section class="panel">
@@ -10476,6 +10496,19 @@ def initialize_database():
             )
         """)
         connection.execute("""
+            CREATE TABLE IF NOT EXISTS email_delivery_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                related_type TEXT NOT NULL DEFAULT '',
+                related_id TEXT NOT NULL DEFAULT '',
+                guild_id TEXT NOT NULL DEFAULT '',
+                recipient TEXT NOT NULL DEFAULT '',
+                subject TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT '',
+                detail TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+        """)
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS anime_profiles (
                 guild_id TEXT NOT NULL,
                 user_id TEXT NOT NULL,
@@ -12182,6 +12215,347 @@ def record_community_announcement(connection, post_id, guild_id, channel_id, mes
         ),
     )
     return True
+
+
+def first_env_value(*names):
+    for name in names:
+        value = os.getenv(name)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def env_flag(name, default=False):
+    value = os.getenv(name)
+    if value is None or str(value).strip() == "":
+        return bool(default)
+    return str(value).strip().casefold() in {"1", "true", "yes", "on"}
+
+
+def smtp_email_config():
+    host = first_env_value("SANA_SMTP_HOST", "SDAC_SMTP_HOST", "SMTP_HOST")
+    port_text = first_env_value("SANA_SMTP_PORT", "SDAC_SMTP_PORT", "SMTP_PORT") or "587"
+    try:
+        port = int(port_text)
+    except ValueError as error:
+        raise RuntimeError("SANA_SMTP_PORT must be a number.") from error
+    username = first_env_value("SANA_SMTP_USERNAME", "SDAC_SMTP_USERNAME", "SMTP_USERNAME")
+    password = first_env_value("SANA_SMTP_PASSWORD", "SDAC_SMTP_PASSWORD", "SMTP_PASSWORD")
+    from_email = first_env_value("SANA_SMTP_FROM", "SANA_EMAIL_FROM", "SDAC_SMTP_FROM", "SMTP_FROM") or username
+    from_name = first_env_value("SANA_SMTP_FROM_NAME", "SANA_EMAIL_FROM_NAME", "SMTP_FROM_NAME") or "Sana-Chan"
+    use_ssl = env_flag("SANA_SMTP_USE_SSL", port == 465)
+    use_tls = env_flag("SANA_SMTP_USE_TLS", not use_ssl)
+    return {
+        "host": host,
+        "port": port,
+        "username": username,
+        "password": password,
+        "from_email": from_email,
+        "from_name": from_name,
+        "use_ssl": use_ssl,
+        "use_tls": use_tls,
+    }
+
+
+def smtp_email_status():
+    config = smtp_email_config()
+    missing = []
+    if not config["host"]:
+        missing.append("SANA_SMTP_HOST")
+    if not config["from_email"]:
+        missing.append("SANA_SMTP_FROM")
+    if config["username"] and not config["password"]:
+        missing.append("SANA_SMTP_PASSWORD")
+    return {
+        "configured": not missing,
+        "host": config["host"] or "Not set",
+        "port": config["port"],
+        "from_email": config["from_email"] or "Not set",
+        "username_set": bool(config["username"]),
+        "password_set": bool(config["password"]),
+        "tls": config["use_tls"],
+        "ssl": config["use_ssl"],
+        "missing": missing,
+    }
+
+
+def extract_email_address(value):
+    match = re.search(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", str(value or ""), re.IGNORECASE)
+    if not match:
+        return ""
+    try:
+        return normalize_email(match.group(0))
+    except ValueError:
+        return ""
+
+
+def log_email_delivery(related_type, related_id, guild_id, recipient, subject, status, detail):
+    try:
+        with database() as connection:
+            connection.execute(
+                """
+                INSERT INTO email_delivery_log (
+                    related_type, related_id, guild_id, recipient,
+                    subject, status, detail, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(related_type or "")[:80],
+                    str(related_id or "")[:80],
+                    str(guild_id or "")[:40],
+                    str(recipient or "")[:180],
+                    str(subject or "")[:220],
+                    str(status or "")[:40],
+                    str(detail or "")[:1000],
+                    utc_now_iso(),
+                ),
+            )
+    except sqlite3.Error:
+        pass
+
+
+def send_sana_email(recipient, subject, body, related_type="", related_id="", guild_id=""):
+    recipient = normalize_email(recipient)
+    subject = community_clean_text(subject, 220)
+    body = community_clean_text(body, 6000)
+    config = smtp_email_config()
+    if not config["host"] or not config["from_email"]:
+        detail = "SMTP email is not configured. Set SANA_SMTP_HOST and SANA_SMTP_FROM in /etc/sana-bot/sana.env."
+        log_email_delivery(related_type, related_id, guild_id, recipient, subject, "failed", detail)
+        raise RuntimeError(detail)
+    if config["username"] and not config["password"]:
+        detail = "SMTP username is set but SANA_SMTP_PASSWORD is missing."
+        log_email_delivery(related_type, related_id, guild_id, recipient, subject, "failed", detail)
+        raise RuntimeError(detail)
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = f"{config['from_name']} <{config['from_email']}>"
+    message["To"] = recipient
+    message.set_content(body)
+    try:
+        context = ssl.create_default_context()
+        if config["use_ssl"]:
+            with smtplib.SMTP_SSL(config["host"], config["port"], timeout=20, context=context) as smtp:
+                if config["username"]:
+                    smtp.login(config["username"], config["password"])
+                smtp.send_message(message)
+        else:
+            with smtplib.SMTP(config["host"], config["port"], timeout=20) as smtp:
+                smtp.ehlo()
+                if config["use_tls"]:
+                    smtp.starttls(context=context)
+                    smtp.ehlo()
+                if config["username"]:
+                    smtp.login(config["username"], config["password"])
+                smtp.send_message(message)
+    except Exception as error:
+        detail = f"Email send failed: {error}"
+        log_email_delivery(related_type, related_id, guild_id, recipient, subject, "failed", detail)
+        raise RuntimeError(detail) from error
+    log_email_delivery(related_type, related_id, guild_id, recipient, subject, "sent", "Sent successfully.")
+    return True
+
+
+def dashboard_user_can_receive_guild_notice(user, access_map, guild_id):
+    username = str(user["username"] or "").casefold()
+    if is_bot_owner_username(username) or normalize_role(user["role"]) == "bot_owner":
+        return True
+    guild_id = str(guild_id or "").strip()
+    if guild_id and guild_id in access_map:
+        return ROLE_LEVELS[normalize_role(access_map[guild_id])] >= ROLE_LEVELS["moderator"]
+    scoped_ids = set(parse_guild_scope(user["guild_ids_json"]))
+    if guild_id and guild_id in scoped_ids:
+        return ROLE_LEVELS[normalize_role(user["role"])] >= ROLE_LEVELS["moderator"]
+    if not guild_id and ROLE_LEVELS[normalize_role(user["role"])] >= ROLE_LEVELS["moderator"]:
+        return True
+    return False
+
+
+def community_admin_notice_targets(guild_id):
+    targets = []
+    seen_emails = set()
+    seen_discord_ids = set()
+    with closing(connect_db()) as connection:
+        users = connection.execute(
+            """
+            SELECT username, email, display_name, discord_user_id, role, disabled, guild_ids_json
+            FROM dashboard_admin_users
+            WHERE disabled = 0
+              AND (COALESCE(email, '') != '' OR COALESCE(discord_user_id, '') != '')
+            """
+        ).fetchall()
+        access_rows = connection.execute(
+            "SELECT username, guild_id, role FROM dashboard_user_server_access"
+        ).fetchall()
+    access_by_user = {}
+    for row in access_rows:
+        access_by_user.setdefault(str(row["username"] or "").casefold(), {})[str(row["guild_id"])] = row["role"]
+    for user in users:
+        if not dashboard_user_can_receive_guild_notice(user, access_by_user.get(str(user["username"] or "").casefold(), {}), guild_id):
+            continue
+        email = extract_email_address(user["email"])
+        discord_user_id = ""
+        if user["discord_user_id"]:
+            try:
+                discord_user_id = normalize_discord_user_id(user["discord_user_id"] or "")
+            except ValueError:
+                discord_user_id = ""
+        target = {"email": "", "discord_user_id": "", "name": user["display_name"] or user["username"]}
+        if email and email not in seen_emails:
+            seen_emails.add(email)
+            target["email"] = email
+        if discord_user_id and discord_user_id not in seen_discord_ids:
+            seen_discord_ids.add(discord_user_id)
+            target["discord_user_id"] = discord_user_id
+        if target["email"] or target["discord_user_id"]:
+            targets.append(target)
+    return targets
+
+
+def community_email_subject(row, audience="admin"):
+    labels = COMMUNITY_POST_LABELS.get(row["post_type"], {"singular": "Community Post"})
+    title = community_clean_text(row["title"], 120)
+    if audience == "submitter":
+        return f"Sana-Chan received your {labels['singular'].lower()}: {title}"
+    return f"Sana-Chan {labels['singular']} needs review: {title}"
+
+
+def community_email_body(row, audience="admin", reason="submitted"):
+    labels = COMMUNITY_POST_LABELS.get(row["post_type"], {"singular": "Community Post"})
+    title = community_clean_text(row["title"], 140)
+    starts_at = community_datetime_label(row["starts_at"])
+    location = community_clean_text(row["location"], 180)
+    guild_name = community_guild_name_map().get(str(row["guild_id"]), str(row["guild_id"] or ""))
+    lines = []
+    if audience == "submitter":
+        lines.append(f"Thanks for submitting your {labels['singular'].lower()} to Sana-Chan.")
+        lines.append("An admin will review it before it appears publicly.")
+    else:
+        lines.append(f"A new {labels['singular'].lower()} needs admin review.")
+        lines.append(f"Review: {url_for('admin_community_submissions', status='pending', post_type=row['post_type'], _external=True)}")
+    lines.append("")
+    lines.append(f"Title: {title}")
+    if guild_name:
+        lines.append(f"Server: {guild_name}")
+    if starts_at:
+        lines.append(f"When: {starts_at}")
+    if location:
+        lines.append(f"Where: {location}")
+    if row["description"]:
+        lines.append("")
+        lines.append(community_clean_text(row["description"], 1200))
+    lines.append("")
+    lines.append(f"Reason: {reason}")
+    return "\n".join(lines)
+
+
+def create_discord_dm_channel(user_id):
+    user_id = normalize_discord_user_id(user_id)
+    if not user_id or not TOKEN:
+        return ""
+    api_request = Request(
+        "https://discord.com/api/v10/users/@me/channels",
+        data=json.dumps({"recipient_id": user_id}).encode("utf-8"),
+        method="POST",
+        headers={
+            "Authorization": f"Bot {TOKEN}",
+            "Content-Type": "application/json",
+            "User-Agent": "Sana-Dashboard/4.0",
+        },
+    )
+    try:
+        with urlopen(api_request, timeout=10) as response:
+            if response.status not in {200, 201}:
+                return ""
+            payload = json.loads(response.read().decode("utf-8"))
+            return str(payload.get("id") or "")
+    except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError):
+        return ""
+
+
+def community_admin_dm_payload(row):
+    labels = COMMUNITY_POST_LABELS.get(row["post_type"], {"singular": "Community Post"})
+    guild_name = community_guild_name_map().get(str(row["guild_id"]), str(row["guild_id"] or ""))
+    review_url = url_for("admin_community_submissions", status="pending", post_type=row["post_type"], _external=True)
+    fields = []
+    if guild_name:
+        fields.append({"name": "Server", "value": guild_name, "inline": False})
+    if row["starts_at"]:
+        fields.append({"name": "Starts", "value": community_datetime_label(row["starts_at"]), "inline": True})
+    if row["location"]:
+        fields.append({"name": "Location", "value": community_clean_text(row["location"], 120), "inline": True})
+    embed = {
+        "title": f"New {labels['singular']} needs review",
+        "description": community_clean_text(row["title"], 160),
+        "color": 5793266,
+        "fields": fields[:6],
+        "footer": {"text": "Sana-Chan admin notice"},
+    }
+    return {
+        "content": "A community submission is waiting for review.",
+        "embeds": [embed],
+        "components": [{
+            "type": 1,
+            "components": [{
+                "type": 2,
+                "style": 5,
+                "label": "Open review page",
+                "url": review_url,
+            }],
+        }],
+    }
+
+
+def send_community_admin_dms(row):
+    sent = 0
+    failed = []
+    payload = community_admin_dm_payload(row)
+    for target in community_admin_notice_targets(row["guild_id"]):
+        discord_user_id = target.get("discord_user_id") or ""
+        if not discord_user_id:
+            continue
+        channel_id = create_discord_dm_channel(discord_user_id)
+        if not channel_id:
+            failed.append(f"{target.get('name') or discord_user_id}: could not open DM channel")
+            continue
+        if post_discord_channel_payload(channel_id, payload):
+            sent += 1
+        else:
+            failed.append(f"{target.get('name') or discord_user_id}: DM send failed")
+    return sent, failed
+
+
+def send_community_submission_emails(row, reason="submitted"):
+    recipients = []
+    submitter_email = extract_email_address(row["submitter_contact"])
+    if submitter_email:
+        recipients.append((submitter_email, "submitter"))
+    for target in community_admin_notice_targets(row["guild_id"]):
+        if target.get("email"):
+            recipients.append((target["email"], "admin"))
+    sent = 0
+    failed = []
+    seen = set()
+    for email, audience in recipients:
+        dedupe_key = (email, audience)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        try:
+            send_sana_email(
+                email,
+                community_email_subject(row, audience),
+                community_email_body(row, audience, reason),
+                related_type="community_post",
+                related_id=row["id"],
+                guild_id=row["guild_id"],
+            )
+            sent += 1
+        except (RuntimeError, ValueError) as error:
+            failed.append(f"{email}: {error}")
+    if not recipients:
+        failed.append("No recipient emails found. Add a submitter email or dashboard account emails for this server's moderators/admins.")
+    return sent, failed
 
 
 def send_community_notification(event_key, message, post_id, guild_id=None, throttle_key=None):
@@ -15729,6 +16103,7 @@ def admin_login():
         admin_key=ADMIN_KEY,
         csrf_token=get_csrf_token(),
         error=error,
+        email_status=smtp_email_status(),
         next_url=next_url,
         oauth_enabled=False,
         username=username,
@@ -18362,6 +18737,42 @@ def admin_settings():
                 key=ADMIN_KEY,
                 notice="Notification route saved.",
             ))
+        if action == "send_test_email":
+            if not has_admin_role("admin"):
+                abort(403)
+            recipient = request.form.get("recipient", "")
+            try:
+                normalized_recipient = normalize_email(recipient)
+                send_sana_email(
+                    normalized_recipient,
+                    "Sana-Chan test email",
+                    "This is a Sana-Chan test email from the dashboard. If you received this, SMTP delivery is working.",
+                    related_type="test_email",
+                    related_id=actor_name,
+                )
+                message = f"Test email sent to {normalized_recipient}."
+                error_flag = False
+            except (RuntimeError, ValueError) as email_error:
+                normalized_recipient = recipient
+                message = str(email_error)
+                error_flag = True
+            with database() as connection:
+                add_admin_audit_log(
+                    connection,
+                    None,
+                    "dashboard_send_test_email",
+                    actor_id,
+                    actor_name,
+                    "email",
+                    normalized_recipient,
+                    message,
+                )
+            return redirect(url_for(
+                "admin_settings",
+                key=ADMIN_KEY,
+                notice=message,
+                error=1 if error_flag else None,
+            ))
         if action == "backup_now":
             label = datetime.now(timezone.utc).strftime("manual-%Y-%m-%d-%H%M%S")
             try:
@@ -18901,6 +19312,7 @@ def admin_settings():
         db_file=DB_FILE,
         db_size=db_size,
         error=error,
+        email_status=smtp_email_status(),
         global_bot_username=config_data.get("bot_username") or "",
         guilds=guilds,
         limits=limits,
@@ -24582,6 +24994,7 @@ COMMUNITY_APPROVAL_BODY = """
                             <label><input type="checkbox" name="is_featured" value="1" {% if post.is_featured %}checked{% endif %}> Featured</label>
                             <button name="action" value="approve" type="submit">Approve</button>
                             <button name="action" value="reject" type="submit">Reject</button>
+                            <button name="action" value="resend_email" type="submit">Resend Email</button>
                             <button name="action" value="delete" type="submit" onclick="return confirm('Delete this community submission?')">Delete</button>
                         </form>
                     </td>
@@ -24981,7 +25394,14 @@ def community_page(post_type):
                         throttle_key=f"{fallback_key}:submitted:{post_id}",
                         throttle_seconds=0,
                     )
-            return redirect(url_for(labels["path"], guild_id=request.form.get("guild_id") or selected_guild_id, notice=f"{labels['singular']} submitted for admin approval."))
+                email_sent, email_failed = send_community_submission_emails(submitted_row, "submitted")
+                dm_sent, dm_failed = send_community_admin_dms(submitted_row)
+            email_notice = f" Email: {email_sent} sent. Discord DMs: {dm_sent} sent."
+            if email_failed:
+                email_notice += " " + email_failed[0]
+            if dm_failed:
+                email_notice += " " + dm_failed[0]
+            return redirect(url_for(labels["path"], guild_id=request.form.get("guild_id") or selected_guild_id, notice=f"{labels['singular']} submitted for admin approval." + email_notice))
         except ValueError as exc:
             return redirect(url_for(labels["path"], guild_id=request.form.get("guild_id") or selected_guild_id, notice=str(exc), error=1))
     return render_template_string(
@@ -25033,7 +25453,7 @@ def admin_community_submissions():
         if review_preset and review_preset in COMMUNITY_REPORT_REASON_PRESETS:
             review_notes = (review_preset + (f": {review_notes}" if review_notes else ""))[:500]
         is_featured = 1 if request.form.get("is_featured") == "1" else 0
-        if action not in {"approve", "reject", "delete"}:
+        if action not in {"approve", "reject", "delete", "resend_email"}:
             return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Unknown action.", error=1, status=selected_status, post_type=selected_type))
         notification_event_key = ""
         notification_message = ""
@@ -25042,7 +25462,9 @@ def admin_community_submissions():
             row = connection.execute("SELECT * FROM community_posts WHERE id = ?", (post_id,)).fetchone()
             if not row:
                 return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Community submission not found.", error=1, status=selected_status, post_type=selected_type))
-            if action == "delete":
+            if action == "resend_email":
+                message = "Community submission email and DM resent."
+            elif action == "delete":
                 connection.execute("DELETE FROM community_posts WHERE id = ?", (post_id,))
                 message = "Community submission deleted."
             else:
@@ -25072,6 +25494,14 @@ def admin_community_submissions():
                 post_id,
                 f"{action.title()} {row['post_type']} submission #{post_id}: {row['title']}",
             )
+        if action == "resend_email":
+            email_sent, email_failed = send_community_submission_emails(row, "manual resend")
+            dm_sent, dm_failed = send_community_admin_dms(row)
+            message += f" {email_sent} email(s) sent. {dm_sent} Discord DM(s) sent."
+            if email_failed:
+                message += " " + email_failed[0]
+            if dm_failed:
+                message += " " + dm_failed[0]
         if notification_event_key and notification_message:
             sent = send_community_notification(
                 notification_event_key,
