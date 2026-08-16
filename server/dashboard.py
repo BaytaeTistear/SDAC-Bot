@@ -24476,6 +24476,7 @@ COMMUNITY_LISTING_HTML = """
                     <p>{{ post.description }}</p>
                     {% if post.host_name %}<p class="muted">Hosted/promoted by {{ post.host_name }}</p>{% endif %}
                     <div class="actions">
+                        {% if post.rsvp_url %}<a href="{{ post.rsvp_url }}" target="_blank" rel="noopener noreferrer">RSVP in Discord</a>{% endif %}
                         {% if post.contact_url %}<a href="{{ post.contact_url }}" rel="noopener noreferrer">More information</a>{% endif %}
                         <a href="mailto:?subject=Report Sana-Chan {{ labels.singular }}&body=Please review {{ labels.singular }} #{{ post.id }}: {{ post.title }}">Report this {{ labels.singular | lower }}</a>
                     </div>
@@ -24797,6 +24798,37 @@ def community_rsvp_summary(post_ids):
         summary[post_id]["count"] += 1
     return summary
 
+def discord_message_url(guild_id, channel_id, message_id):
+    guild_id = community_clean_text(guild_id, 32)
+    channel_id = community_clean_text(channel_id, 32)
+    message_id = community_clean_text(message_id, 32)
+    if not channel_id or not message_id:
+        return ""
+    return f"https://discord.com/channels/{guild_id or '@me'}/{channel_id}/{message_id}"
+
+
+def community_rsvp_links(post_ids):
+    post_ids = [int(post_id) for post_id in post_ids if str(post_id).isdigit()]
+    if not post_ids:
+        return {}
+    placeholders = ",".join("?" for _ in post_ids)
+    with closing(connect_db()) as connection:
+        rows = connection.execute(
+            f"""
+            SELECT post_id, guild_id, channel_id, message_id
+            FROM community_post_announcements
+            WHERE post_id IN ({placeholders})
+            ORDER BY id DESC
+            """,
+            post_ids,
+        ).fetchall()
+    links = {}
+    for row in rows:
+        post_id = int(row["post_id"])
+        if post_id not in links:
+            links[post_id] = discord_message_url(row["guild_id"], row["channel_id"], row["message_id"])
+    return links
+
 
 def community_post_rows(post_type=None, status="approved", limit=100, tag="", when="all", guild_id=""):
     ensure_community_posts_table()
@@ -24843,7 +24875,9 @@ def community_post_rows(post_type=None, status="approved", limit=100, tag="", wh
             """,
             (*params, int(limit)),
         ).fetchall()
-    rsvp_summary = community_rsvp_summary([row["id"] for row in rows])
+    post_ids = [row["id"] for row in rows]
+    rsvp_summary = community_rsvp_summary(post_ids)
+    rsvp_links = community_rsvp_links(post_ids)
     output = []
     for row in rows:
         item = dict(row)
@@ -24855,6 +24889,7 @@ def community_post_rows(post_type=None, status="approved", limit=100, tag="", wh
         item_summary = rsvp_summary.get(int(row["id"]), {"count": 0, "names": []})
         item["rsvp_count"] = item_summary["count"]
         item["rsvp_names"] = item_summary["names"]
+        item["rsvp_url"] = rsvp_links.get(int(row["id"]), "")
         item["can_view_rsvp_names"] = can_admin_access_guild(row["guild_id"], minimum_role="moderator")
         output.append(item)
     return output

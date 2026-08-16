@@ -147,6 +147,15 @@ with dashboard.database() as connection:
         """,
         (alpha_post_id, community_now, community_now),
     )
+    connection.execute(
+        """
+        INSERT INTO community_post_announcements (
+            post_id, guild_id, channel_id, message_id, poll_question,
+            going_answer_id, not_going_answer_id, created_at
+        ) VALUES (?, '111', '222', '333', 'RSVP for Alpha Only Event', '1', '2', ?)
+        """,
+        (alpha_post_id, community_now),
+    )
 all_events = client.get("/events")
 alpha_events = client.get(f"/events?guild_id=111")
 beta_events = client.get(f"/events?guild_id=222")
@@ -162,6 +171,8 @@ assert "Beta Only Event" in all_body
 assert "1 attending" in all_body
 assert "View attendee names" in all_body
 assert "AttendeeOne" in all_body
+assert "RSVP in Discord" in all_body
+assert "https://discord.com/channels/111/222/333" in all_body
 assert ".meta-item + .meta-item::before" in all_body
 assert 'class="meta-item"' in all_body
 assert 'class="pill">{{ post.category }}' not in all_body
