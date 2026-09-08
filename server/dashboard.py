@@ -12432,7 +12432,7 @@ def community_email_body(row, audience="admin", reason="submitted"):
         lines.append("An admin will review it before it appears publicly.")
     else:
         lines.append(f"A new {labels['singular'].lower()} needs admin review.")
-        lines.append(f"Review: {url_for('admin_community_submissions', status='pending', post_type=row['post_type'], _external=True)}")
+        lines.append(f"Review: {url_for('admin_community_submissions', status='pending', post_type=row['post_type'], key=ADMIN_KEY, _external=True)}")
     lines.append("")
     lines.append(f"Title: {title}")
     if guild_name:
@@ -12476,7 +12476,7 @@ def create_discord_dm_channel(user_id):
 def community_admin_dm_payload(row):
     labels = COMMUNITY_POST_LABELS.get(row["post_type"], {"singular": "Community Post"})
     guild_name = community_guild_name_map().get(str(row["guild_id"]), str(row["guild_id"] or ""))
-    review_url = url_for("admin_community_submissions", status="pending", post_type=row["post_type"], _external=True)
+    review_url = url_for("admin_community_submissions", status="pending", post_type=row["post_type"], key=ADMIN_KEY, _external=True)
     fields = []
     if guild_name:
         fields.append({"name": "Server", "value": guild_name, "inline": False})
@@ -24738,7 +24738,7 @@ def community_submission_notification_message(row):
         details.append(f"When: {starts_at}")
     if location:
         details.append(f"Where: {location}")
-    details.append(f"Review: {url_for('admin_community_submissions', status='pending', post_type=post_type, _external=True)}")
+    details.append(f"Review: {url_for('admin_community_submissions', status='pending', post_type=post_type, key=ADMIN_KEY, _external=True)}")
     lines.append("\n".join(details))
     return "\n\n".join(lines)[:1800]
 

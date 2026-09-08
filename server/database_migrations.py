@@ -3,7 +3,7 @@ import sqlite3
 
 
 
-DATABASE_SCHEMA_VERSION = 23
+DATABASE_SCHEMA_VERSION = 24
 GOOGLE_PLAY_REVIEW_PASSWORD_HASH = "scrypt:32768:8:1$tpr2C1Lx7O3szQ0T$0f9b5ee8f0d5caaecaf4d69667ea93aff95365decc7108fd955590df4ef07c17680a64610805821aef23fcb86171de70c4bc0f577501ca920bb6b5bb80a4426b"
 
 
@@ -828,6 +828,45 @@ def migration_23_community_posts_per_server(connection):
         ON community_posts (status, created_at)
     """)
 
+
+def migration_24_quotes(connection):
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS quotes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT NOT NULL,
+            quote_text TEXT NOT NULL,
+            speaker_name TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            submitter_id TEXT NOT NULL DEFAULT '',
+            submitter_name TEXT NOT NULL DEFAULT '',
+            submitted_at TEXT NOT NULL,
+            reviewed_by TEXT NOT NULL DEFAULT '',
+            reviewed_at TEXT NOT NULL DEFAULT '',
+            last_posted_at TEXT NOT NULL DEFAULT '',
+            times_posted INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS quote_daily_runs (
+            guild_id TEXT NOT NULL,
+            run_date TEXT NOT NULL,
+            quote_id INTEGER NOT NULL,
+            channel_id TEXT NOT NULL,
+            message_id TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, run_date)
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_quotes_guild_status
+        ON quotes (guild_id, status, times_posted, last_posted_at, id)
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_quote_daily_runs_quote
+        ON quote_daily_runs (quote_id, created_at)
+    """)
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -850,6 +889,7 @@ MIGRATIONS = (
     (21, migration_21_anime_profile_manga_sections),
     (22, migration_22_anime_profile_xml_metadata),
     (23, migration_23_community_posts_per_server),
+    (24, migration_24_quotes),
 )
 
 

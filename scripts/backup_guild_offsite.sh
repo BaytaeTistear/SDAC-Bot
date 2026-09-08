@@ -229,6 +229,8 @@ tables = (
     "moderation_history",
     "admin_audit_log",
     "admin_notifications",
+    "quotes",
+    "quote_daily_runs",
     "game_seasons",
     "guess_games",
     "guess_library_items",

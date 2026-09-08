@@ -375,6 +375,29 @@ class BotStartupTests(unittest.TestCase):
         self.assertTrue(hasattr(bot, "on_raw_poll_vote_remove"))
         self.assertTrue(bot.intents.polls)
 
+    def test_sana_quotes_flow_has_submission_review_and_daily_posting(self):
+        import bot
+
+        quote_values = [value for value, _label, _description in bot.SDAC_SUBMENUS["quotes"]["options"]]
+        self.assertIn("quote_submit", quote_values)
+        self.assertIn("quote_review", quote_values)
+        self.assertIn("quote_set_channel", quote_values)
+        self.assertIn("quote_set_time", quote_values)
+        self.assertIn("quote_post_now", quote_values)
+        self.assertIsNone(bot.DEFAULT_GUILD_CONFIG["quote_channel"])
+        self.assertEqual(bot.DEFAULT_GUILD_CONFIG["quote_post_time"], "09:00")
+        self.assertEqual(bot.normalize_quote_post_time("9:05"), "09:05")
+        with self.assertRaises(ValueError):
+            bot.normalize_quote_post_time("24:00")
+        self.assertTrue(hasattr(bot, "QuoteSubmissionModal"))
+        self.assertTrue(hasattr(bot, "QuoteReviewView"))
+        self.assertTrue(hasattr(bot, "QuoteDailyChannelView"))
+        self.assertTrue(hasattr(bot, "handle_sana_quotes_action"))
+        self.assertTrue(hasattr(bot, "post_daily_quote_for_guild"))
+        self.assertTrue(hasattr(bot, "daily_quote_scheduler"))
+        self.assertIn("quotes", bot.REQUIRED_TABLES)
+        self.assertIn("quote_daily_runs", bot.REQUIRED_TABLES)
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -190,6 +190,8 @@ DEFAULT_GUILD_CONFIG = {
     "guessing_channel": None,
     "game_summary_channel": None,
     "error_channel": None,
+    "quote_channel": None,
+    "quote_post_time": "09:00",
     "timezone": "UTC",
     "approval_enabled": False,
     "approval_channel": None,
@@ -469,6 +471,8 @@ REQUIRED_TABLES = {
     "media_quarantine",
     "monthly_digest_runs",
     "scheduled_games",
+    "quotes",
+    "quote_daily_runs",
     "user_streaks",
     "user_achievements",
     "backup_archives",
@@ -796,6 +800,7 @@ async def send_command_help_menu(interaction, title, groups, intro=""):
 SDAC_HUB_USER_OPTIONS = [
     ("submit", "Submit Media", "Start the existing guided submission flow."),
     ("events", "Events", "View or submit Events and Meetups."),
+    ("quotes", "Quotes", "Submit quotes and browse the daily quote controls."),
     ("guess", "Guessing Games", "See the small set of guessing actions users need."),
     ("anime", "Anime Profile", "Save, view, or import anime profile data."),
     ("public_help", "User Help", "Browse user commands by category."),
@@ -826,6 +831,17 @@ SDAC_SUBMENUS = {
             ("events_view_create", "Create/View Events", "Open Events to browse approved posts or submit one."),
             ("meetups_view_create", "Create/View Meetups", "Open Meetups to browse approved posts or submit one."),
             ("events_posting_setup", "Discord Posting Setup", "Choose whether approved Events or Meetups post to Discord and where."),
+        ],
+    },
+    "quotes": {
+        "title": "Quotes",
+        "placeholder": "Choose a quote action",
+        "options": [
+            ("quote_submit", "Submit Quote", "Send a quote and the person who said it for admin approval."),
+            ("quote_review", "Review Pending", "Approve or reject submitted quotes."),
+            ("quote_set_channel", "Set Daily Channel", "Choose where the approved daily quote is posted."),
+            ("quote_set_time", "Set Posting Time", "Choose the local server time for the daily quote."),
+            ("quote_post_now", "Post Today's Quote", "Post the next approved quote now."),
         ],
     },
     "guess": {
@@ -927,6 +943,11 @@ SDAC_SUBMENU_DETAILS = {
     "anime_view": "**View Anime Profile**\nChoose a server member from `/sana` to view their saved anime profile.",
     "anime_activities": "**Anime Activities**\nRun `/animeactivities` to see available activity keys and anime game/community ideas.",
     "events_posting_setup": "**Discord Posting Setup**\nAdmins can choose Events or Meetups, pick the Discord channel, decide whether approved posts should be announced, and confirm the route.",
+    "quote_submit": "**Submit Quote**\nSave the quote text and the person who said it. An admin must approve it before Sana-Chan can use it.",
+    "quote_review": "**Review Pending Quotes**\nAdmins can approve or reject submitted quotes directly inside Discord.",
+    "quote_set_channel": "**Set Daily Quote Channel**\nAdmins can choose a Discord channel or enter its channel ID as a fallback.",
+    "quote_set_time": "**Set Quote Posting Time**\nAdmins can choose the daily posting time in the server's configured timezone.",
+    "quote_post_now": "**Post Today's Quote**\nAdmins can post the next approved quote immediately without waiting for the scheduled time.",
     "setup_bot_name": "**Bot Name**\nAdmins can set the bot nickname users see inside this server. Leave it blank to reset to the bot's global username.",
     "setup_bot_image": "**Bot Image**\nBot owners can update the global Discord bot avatar from an HTTPS image URL. This affects every server and may be rate limited by Discord.",
     "setup_command_alias": "**Command Name**\nAdmins can set a server-specific launcher like `/pepo`. `/sana` always remains available as the fallback.",
@@ -1053,7 +1074,7 @@ class SDACHubSelect(discord.ui.Select):
             await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
             return
         await interaction.response.edit_message(
-            content=sdac_submenu_content(action),
+            content=quote_menu_content(interaction.guild_id) if action == "quotes" else sdac_submenu_content(action),
             view=SDACSubmenuView(self.is_admin, action),
         )
 
@@ -1530,6 +1551,303 @@ async def handle_sana_events_action(interaction, action, is_admin, section_key):
     )
     return True
 
+
+def normalize_quote_post_time(value):
+    raw = str(value or "").strip()
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})", raw)
+    if not match:
+        raise ValueError("Quote posting time must use HH:MM, for example 09:00.")
+    hour, minute = int(match.group(1)), int(match.group(2))
+    if hour > 23 or minute > 59:
+        raise ValueError("Quote posting time must be between 00:00 and 23:59.")
+    return f"{hour:02d}:{minute:02d}"
+
+
+def quote_menu_content(guild_id, notice=""):
+    guild_config = get_guild_config(guild_id, create=False)
+    channel_id = guild_config.get("quote_channel")
+    channel = bot.get_channel(int(channel_id)) if channel_id else None
+    with database() as connection:
+        pending_count = connection.execute(
+            "SELECT COUNT(*) AS count FROM quotes WHERE guild_id = ? AND status = 'pending'",
+            (str(guild_id),),
+        ).fetchone()["count"]
+        approved_count = connection.execute(
+            "SELECT COUNT(*) AS count FROM quotes WHERE guild_id = ? AND status = 'approved'",
+            (str(guild_id),),
+        ).fetchone()["count"]
+    lines = [
+        "**Quotes**",
+        "Submit a quote and the person who said it. Admin approval is required before it can be posted.",
+        "",
+        f"Pending review: `{pending_count}`",
+        f"Approved: `{approved_count}`",
+    ]
+    if channel_id:
+        destination = channel.mention if channel else f"Channel `{channel_id}`"
+        lines.extend([
+            f"Daily channel: {destination}",
+            f"Daily time: `{guild_config.get('quote_post_time', '09:00')}` `{guild_config.get('timezone', 'UTC')}`",
+        ])
+    else:
+        lines.append("Daily posting: Not configured")
+    if notice:
+        lines.extend(["", notice])
+    return "\n".join(lines)[:1900]
+
+
+def next_pending_quote(guild_id):
+    with database() as connection:
+        return connection.execute(
+            "SELECT * FROM quotes WHERE guild_id = ? AND status = 'pending' ORDER BY submitted_at ASC, id ASC LIMIT 1",
+            (str(guild_id),),
+        ).fetchone()
+
+
+def quote_review_content(row, notice=""):
+    lines = ["**Review Pending Quotes**"]
+    if notice:
+        lines.extend(["", notice])
+    if not row:
+        lines.extend(["", "There are no pending quotes for this server."])
+        return "\n".join(lines)
+    lines.extend([
+        "",
+        f"Quote ID: `{row['id']}`",
+        f"> {row['quote_text']}",
+        f"— **{row['speaker_name']}**",
+        "",
+        f"Submitted by: {row['submitter_name'] or row['submitter_id']}",
+    ])
+    return "\n".join(lines)[:1900]
+
+
+class QuoteSubmissionModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Submit a Quote")
+        self.quote_input = discord.ui.TextInput(
+            label="Quote", placeholder="Enter the quote exactly as it should appear",
+            style=discord.TextStyle.paragraph, required=True, max_length=1800,
+        )
+        self.speaker_input = discord.ui.TextInput(
+            label="Who said it?", placeholder="Person or character name",
+            required=True, max_length=120,
+        )
+        self.add_item(self.quote_input)
+        self.add_item(self.speaker_input)
+
+    async def on_submit(self, interaction):
+        quote_text = str(self.quote_input.value or "").strip()
+        speaker_name = str(self.speaker_input.value or "").strip()
+        if not quote_text or not speaker_name:
+            await interaction.response.send_message(
+                "Both the quote and the person who said it are required.", ephemeral=True
+            )
+            return
+        now = utc_now_iso()
+        with database() as connection:
+            restriction = active_user_restriction(
+                connection, interaction.guild_id, interaction.user.id, "submissions"
+            )
+            if restriction:
+                await interaction.response.send_message(
+                    user_lockout_message(restriction, "submissions"), ephemeral=True
+                )
+                return
+            cursor = connection.execute(
+                """
+                INSERT INTO quotes (
+                    guild_id, quote_text, speaker_name, status,
+                    submitter_id, submitter_name, submitted_at, updated_at
+                ) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
+                """,
+                (
+                    str(interaction.guild_id), quote_text, speaker_name,
+                    str(interaction.user.id), str(interaction.user), now, now,
+                ),
+            )
+            quote_id = cursor.lastrowid
+        await interaction.response.send_message(
+            f"Quote `{quote_id}` was submitted for admin approval.", ephemeral=True
+        )
+
+
+class QuoteReviewDecisionButton(discord.ui.Button):
+    def __init__(self, owner_id, quote_id, approve):
+        super().__init__(
+            label="Approve" if approve else "Reject",
+            style=discord.ButtonStyle.success if approve else discord.ButtonStyle.danger,
+            row=0,
+        )
+        self.owner_id, self.quote_id, self.approve = int(owner_id), int(quote_id), bool(approve)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message(
+                "Only the admin who opened this review can use it.", ephemeral=True
+            )
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message("Only admins can review quotes.", ephemeral=True)
+            return
+        new_status, now = ("approved" if self.approve else "rejected"), utc_now_iso()
+        with database() as connection:
+            row = connection.execute(
+                "SELECT * FROM quotes WHERE id = ? AND guild_id = ?",
+                (self.quote_id, str(interaction.guild_id)),
+            ).fetchone()
+            if not row or row["status"] != "pending":
+                notice = "That quote is no longer pending."
+            else:
+                connection.execute(
+                    "UPDATE quotes SET status = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?",
+                    (new_status, str(interaction.user), now, now, self.quote_id),
+                )
+                add_admin_audit_log(
+                    connection, interaction.guild_id, f"quote_{new_status}",
+                    interaction.user.id, interaction.user, "quote", self.quote_id,
+                    f"Quote by {row['speaker_name']} marked {new_status}.",
+                )
+                notice = f"Quote `{self.quote_id}` was {new_status}."
+        next_row = next_pending_quote(interaction.guild_id)
+        await interaction.response.edit_message(
+            content=quote_review_content(next_row, notice),
+            view=QuoteReviewView(self.owner_id, next_row),
+        )
+
+
+class QuoteReviewView(discord.ui.View):
+    def __init__(self, owner_id, row):
+        super().__init__(timeout=600)
+        if row:
+            self.add_item(QuoteReviewDecisionButton(owner_id, row["id"], True))
+            self.add_item(QuoteReviewDecisionButton(owner_id, row["id"], False))
+        self.add_item(SDACBackButton(True, row=4))
+
+
+class QuoteDailyChannelSelect(discord.ui.ChannelSelect):
+    def __init__(self, owner_id):
+        super().__init__(
+            placeholder="Choose the daily quote channel", min_values=1, max_values=1,
+            channel_types=[discord.ChannelType.text], row=0,
+        )
+        self.owner_id = int(owner_id)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message(
+                "Only the admin who opened this setup can use it.", ephemeral=True
+            )
+            return
+        if not admin_only(interaction):
+            await interaction.response.send_message(
+                "Only admins can configure daily quotes.", ephemeral=True
+            )
+            return
+        channel = await resolve_selected_text_channel(interaction.guild, self.values[0])
+        if channel is None:
+            await interaction.response.send_message(
+                "Choose a normal text channel Sana-Chan can view.", ephemeral=True
+            )
+            return
+        guild_config = get_guild_config(interaction.guild_id)
+        guild_config["quote_channel"] = channel.id
+        save_config(config)
+        audit_interaction(
+            interaction, "set_quote_channel_from_sana", "channel", channel.id,
+            f"Daily quote channel set to {channel.id} from /sana.",
+        )
+        await interaction.response.edit_message(
+            content=quote_menu_content(interaction.guild_id, f"Daily quotes will post to {channel.mention}."),
+            view=SDACSubmenuView(True, "quotes"),
+        )
+
+
+class QuoteDailyChannelView(discord.ui.View):
+    def __init__(self, owner_id):
+        super().__init__(timeout=600)
+        self.add_item(QuoteDailyChannelSelect(owner_id))
+        self.add_item(ChannelIdButton("Use Channel ID", owner_id, "quote_daily", row=1))
+        self.add_item(SDACBackButton(True, row=4))
+
+
+class QuotePostTimeModal(discord.ui.Modal):
+    def __init__(self, owner_id, guild_id):
+        super().__init__(title="Daily Quote Time")
+        self.owner_id = int(owner_id)
+        guild_config = get_guild_config(guild_id, create=False)
+        self.time_input = discord.ui.TextInput(
+            label="Local time (HH:MM)", placeholder="09:00",
+            default=str(guild_config.get("quote_post_time", "09:00")),
+            required=True, max_length=5,
+        )
+        self.add_item(self.time_input)
+
+    async def on_submit(self, interaction):
+        if interaction.user.id != self.owner_id or not admin_only(interaction):
+            await interaction.response.send_message(
+                "Only admins can configure daily quotes.", ephemeral=True
+            )
+            return
+        try:
+            post_time = normalize_quote_post_time(self.time_input.value)
+        except ValueError as error:
+            await interaction.response.send_message(str(error), ephemeral=True)
+            return
+        guild_config = get_guild_config(interaction.guild_id)
+        guild_config["quote_post_time"] = post_time
+        save_config(config)
+        audit_interaction(
+            interaction, "set_quote_post_time_from_sana", "guild", interaction.guild_id,
+            f"Daily quote time set to {post_time} {guild_config.get('timezone', 'UTC')}.",
+        )
+        await interaction.response.edit_message(
+            content=quote_menu_content(
+                interaction.guild_id,
+                f"Daily quote time set to `{post_time}` `{guild_config.get('timezone', 'UTC')}`.",
+            ),
+            view=SDACSubmenuView(True, "quotes"),
+        )
+
+
+async def handle_sana_quotes_action(interaction, action, is_admin, section_key):
+    if action == "quote_submit":
+        await interaction.response.send_modal(QuoteSubmissionModal())
+        return True
+    if action not in {"quote_review", "quote_set_channel", "quote_set_time", "quote_post_now"}:
+        return False
+    if not admin_only(interaction):
+        await interaction.response.send_message(
+            "Only admins can use quote administration controls.", ephemeral=True
+        )
+        return True
+    if action == "quote_review":
+        row = next_pending_quote(interaction.guild_id)
+        await interaction.response.edit_message(
+            content=quote_review_content(row),
+            view=QuoteReviewView(interaction.user.id, row),
+        )
+        return True
+    if action == "quote_set_channel":
+        await interaction.response.edit_message(
+            content="**Set Daily Quote Channel**\nChoose a text channel, or use Channel ID if the picker cannot see it.",
+            view=QuoteDailyChannelView(interaction.user.id),
+        )
+        return True
+    if action == "quote_set_time":
+        await interaction.response.send_modal(
+            QuotePostTimeModal(interaction.user.id, interaction.guild_id)
+        )
+        return True
+    await interaction.response.defer(ephemeral=True)
+    _posted, message = await post_daily_quote_for_guild(interaction.guild_id, force=True)
+    await interaction.edit_original_response(
+        content=quote_menu_content(interaction.guild_id, message),
+        view=SDACSubmenuView(True, "quotes"),
+    )
+    return True
+
+
 class SDACSubmenuSelect(discord.ui.Select):
     def __init__(self, is_admin, section_key, row=0):
         self.is_admin = bool(is_admin)
@@ -1557,6 +1875,8 @@ class SDACSubmenuSelect(discord.ui.Select):
         if await handle_sana_submission_admin_action(interaction, action, self.is_admin, self.section_key):
             return
         if await handle_sana_events_action(interaction, action, self.is_admin, self.section_key):
+            return
+        if await handle_sana_quotes_action(interaction, action, self.is_admin, self.section_key):
             return
         if await handle_sana_anime_action(interaction, action, self.is_admin, self.section_key):
             return
@@ -2303,7 +2623,7 @@ class SDACHubButton(discord.ui.Button):
             await interaction.response.send_message("Only admins can use that control.", ephemeral=True)
             return
         await interaction.response.edit_message(
-            content=sdac_submenu_content(action),
+            content=quote_menu_content(interaction.guild_id) if action == "quotes" else sdac_submenu_content(action),
             view=SDACSubmenuView(self.is_admin, action),
         )
 
@@ -2325,6 +2645,8 @@ class SDACSubmenuButton(discord.ui.Button):
         if await handle_sana_submission_admin_action(interaction, action, self.is_admin, self.section_key):
             return
         if await handle_sana_events_action(interaction, action, self.is_admin, self.section_key):
+            return
+        if await handle_sana_quotes_action(interaction, action, self.is_admin, self.section_key):
             return
         if await handle_sana_anime_action(interaction, action, self.is_admin, self.section_key):
             return
@@ -2575,7 +2897,7 @@ class SDACSubmenuButton(discord.ui.Button):
 class SDACHubView(discord.ui.View):
     def __init__(self, is_admin):
         super().__init__(timeout=600)
-        user_rows = {"submit": 0, "events": 0, "guess": 1, "anime": 1, "public_help": 2}
+        user_rows = {"submit": 0, "events": 0, "quotes": 1, "guess": 1, "anime": 2, "public_help": 2}
         for value, label, _description in SDAC_HUB_USER_OPTIONS:
             style = discord.ButtonStyle.primary if value == "submit" else discord.ButtonStyle.secondary
             self.add_item(SDACHubButton(is_admin, value, label, user_rows.get(value, 0), style))
@@ -2605,6 +2927,15 @@ class SDACSubmenuView(discord.ui.View):
                 self.add_item(discord.ui.Button(label=label, style=discord.ButtonStyle.link, url=url, row=index))
             if is_admin:
                 self.add_item(SDACSubmenuButton(is_admin, section_key, "events_posting_setup", "Discord Posting Setup", row=2, style=discord.ButtonStyle.primary))
+            self.add_item(SDACBackButton(is_admin, row=4))
+            return
+        if section_key == "quotes":
+            self.add_item(SDACSubmenuButton(is_admin, section_key, "quote_submit", "Submit Quote", row=0, style=discord.ButtonStyle.primary))
+            if is_admin:
+                self.add_item(SDACSubmenuButton(is_admin, section_key, "quote_review", "Review Pending", row=0))
+                self.add_item(SDACSubmenuButton(is_admin, section_key, "quote_set_channel", "Set Daily Channel", row=1))
+                self.add_item(SDACSubmenuButton(is_admin, section_key, "quote_set_time", "Set Posting Time", row=1))
+                self.add_item(SDACSubmenuButton(is_admin, section_key, "quote_post_now", "Post Today's Quote", row=2))
             self.add_item(SDACBackButton(is_admin, row=4))
             return
 
@@ -3310,6 +3641,23 @@ class ChannelIdModal(discord.ui.Modal):
             await interaction.response.edit_message(
                 content=community_posting_setup_content(post_type, channel=channel, step=2, notice="Channel selected by ID. Now choose whether approved posts should be sent there."),
                 view=CommunityPostingSetupView(self.owner_id, post_type, channel.id),
+            )
+            return
+
+        if self.flow == "quote_daily":
+            if not admin_only(interaction):
+                await interaction.response.send_message("Only admins can configure daily quotes.", ephemeral=True)
+                return
+            guild_config = get_guild_config(interaction.guild_id)
+            guild_config["quote_channel"] = channel.id
+            save_config(config)
+            audit_interaction(
+                interaction, "set_quote_channel_from_sana_id", "channel", channel.id,
+                f"Daily quote channel set to {channel.id} by ID from /sana.",
+            )
+            await interaction.response.edit_message(
+                content=quote_menu_content(interaction.guild_id, f"Daily quotes will post to {channel.mention}."),
+                view=SDACSubmenuView(True, "quotes"),
             )
             return
 
@@ -4037,6 +4385,34 @@ def initialize_database():
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (post_id, user_id)
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS quotes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT NOT NULL,
+                quote_text TEXT NOT NULL,
+                speaker_name TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                submitter_id TEXT NOT NULL DEFAULT '',
+                submitter_name TEXT NOT NULL DEFAULT '',
+                submitted_at TEXT NOT NULL,
+                reviewed_by TEXT NOT NULL DEFAULT '',
+                reviewed_at TEXT NOT NULL DEFAULT '',
+                last_posted_at TEXT NOT NULL DEFAULT '',
+                times_posted INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS quote_daily_runs (
+                guild_id TEXT NOT NULL,
+                run_date TEXT NOT NULL,
+                quote_id INTEGER NOT NULL,
+                channel_id TEXT NOT NULL,
+                message_id TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (guild_id, run_date)
             )
         """)
         connection.execute("""
@@ -4769,6 +5145,14 @@ def initialize_database():
             ON community_post_rsvps(post_id, status, updated_at)
         """)
         connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_quotes_guild_status
+            ON quotes (guild_id, status, times_posted, last_posted_at, id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_quote_daily_runs_quote
+            ON quote_daily_runs (quote_id, created_at)
+        """)
+        connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_game_seasons_guild_status
             ON game_seasons (guild_id, status, starts_at, ends_at)
         """)
@@ -5387,6 +5771,8 @@ BACKUP_EXPORT_TABLES = (
     "content_moderation_events",
     "privacy_actions",
     "scheduled_games",
+    "quotes",
+    "quote_daily_runs",
     "user_streaks",
     "user_achievements",
     "backup_archives",
@@ -15525,6 +15911,85 @@ async def post_due_guess_hints():
             )
 
 
+async def post_daily_quote_for_guild(guild_id, force=False):
+    guild_config = get_guild_config(guild_id, create=False)
+    channel_id = guild_config.get("quote_channel")
+    if not channel_id:
+        return False, "Set a daily quote channel first."
+    try:
+        post_time = normalize_quote_post_time(guild_config.get("quote_post_time", "09:00"))
+    except ValueError:
+        post_time = "09:00"
+    now = guild_now(guild_config)
+    run_date = now.date().isoformat()
+    if not force and now.strftime("%H:%M") < post_time:
+        return False, "The daily quote is not due yet."
+    with database() as connection:
+        if connection.execute(
+            "SELECT 1 FROM quote_daily_runs WHERE guild_id = ? AND run_date = ?",
+            (str(guild_id), run_date),
+        ).fetchone():
+            return False, "Today's quote has already been posted."
+        row = connection.execute(
+            """
+            SELECT * FROM quotes
+            WHERE guild_id = ? AND status = 'approved'
+            ORDER BY times_posted ASC, last_posted_at ASC, id ASC
+            LIMIT 1
+            """,
+            (str(guild_id),),
+        ).fetchone()
+    if not row:
+        return False, "There are no approved quotes available."
+    channel = bot.get_channel(int(channel_id))
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(int(channel_id))
+        except (discord.HTTPException, ValueError):
+            channel = None
+    if channel is None:
+        return False, f"I could not access the configured quote channel `{channel_id}`."
+    embed = discord.Embed(title="Daily Quote", description=f"> {row['quote_text']}", color=5793266)
+    embed.set_footer(text=f"— {row['speaker_name']}")
+    try:
+        message = await channel.send(embed=embed)
+    except discord.HTTPException as error:
+        return False, f"Daily quote could not be posted: {error}"
+    posted_at = utc_now_iso()
+    with database() as connection:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO quote_daily_runs (
+                guild_id, run_date, quote_id, channel_id, message_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (str(guild_id), run_date, row["id"], str(channel_id), str(message.id), posted_at),
+        )
+        connection.execute(
+            """
+            UPDATE quotes
+            SET last_posted_at = ?, times_posted = times_posted + 1, updated_at = ?
+            WHERE id = ?
+            """,
+            (posted_at, posted_at, row["id"]),
+        )
+    return True, f"Posted quote `{row['id']}` to {channel.mention}."
+
+
+@tasks.loop(minutes=1)
+async def daily_quote_scheduler():
+    try:
+        for guild_id in config.get("guilds", {}):
+            await post_daily_quote_for_guild(guild_id)
+    except Exception as error:
+        await report_background_error("daily_quote_scheduler", error)
+
+
+@daily_quote_scheduler.before_loop
+async def before_daily_quote_scheduler():
+    await bot.wait_until_ready()
+
+
 @tasks.loop(minutes=1)
 async def weekly_top_scheduler():
     try:
@@ -16064,6 +16529,8 @@ async def on_ready():
                 f"Slash command sync failed: `{error}`",
                 "system_errors",
             )
+    if not daily_quote_scheduler.is_running():
+        daily_quote_scheduler.start()
     if not weekly_top_scheduler.is_running():
         weekly_top_scheduler.start()
     if not backup_scheduler.is_running():

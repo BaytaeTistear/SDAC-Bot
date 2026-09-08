@@ -104,6 +104,8 @@ with dashboard.app.test_request_context("/events"):
 assert "needs review" in submitted_message
 assert "Submitter:" not in submitted_message
 assert "Review:" in submitted_message
+assert "key=" in submitted_message
+assert "post_type=event" in submitted_message
 poll_payload = dashboard.community_rsvp_poll_payload(
     "Community announcement",
     {"title": "Launch Watch Party"},
@@ -124,6 +126,8 @@ with dashboard.app.test_request_context("/admin/community-submissions"):
 assert dm_payload["embeds"][0]["title"] == "New Event needs review"
 assert dm_payload["components"][0]["components"][0]["label"] == "Open review page"
 assert "/admin/community-submissions" in dm_payload["components"][0]["components"][0]["url"]
+assert "key=" in dm_payload["components"][0]["components"][0]["url"]
+assert "post_type=event" in dm_payload["components"][0]["components"][0]["url"]
 
 client = dashboard.app.test_client()
 with client.session_transaction() as session:
