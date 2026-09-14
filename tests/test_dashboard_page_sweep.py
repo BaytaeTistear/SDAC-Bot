@@ -123,7 +123,11 @@ with dashboard.app.test_request_context("/admin/community-submissions"):
     })
 assert dm_payload["embeds"][0]["title"] == "New Event needs review"
 assert dm_payload["components"][0]["components"][0]["label"] == "Open review page"
-assert "/admin/community-submissions" in dm_payload["components"][0]["components"][0]["url"]
+review_url = dm_payload["components"][0]["components"][0]["url"]
+assert "/account/login" in review_url
+assert "next=" in review_url
+assert "/admin/community-submissions" in review_url
+assert "key=" not in review_url
 
 client = dashboard.app.test_client()
 with client.session_transaction() as session:
@@ -216,7 +220,7 @@ if not any(target["email"] == "linked@example.com" for target in targets):
 if not any(target["discord_user_id"] == "444444444444444444" for target in targets):
     print("linked discord target missing", targets)
     raise SystemExit(1)
-approval_body = client.get(f"/admin/community-submissions?key={dashboard.ADMIN_KEY}&status=all")
+approval_body = client.get("/admin/community-submissions?status=all")
 assert approval_body.status_code == 200
 assert "Resend Email" in approval_body.get_data(as_text=True)
 assert "Email Delivery" in client.get(f"/admin/settings?key={dashboard.ADMIN_KEY}").get_data(as_text=True)

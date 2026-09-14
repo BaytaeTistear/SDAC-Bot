@@ -765,6 +765,8 @@ DEFAULT_GUILD_FIELDS = {
     "weekly_top_day": "sunday",
     "game_summary_channel": None,
     "error_channel": None,
+    "quote_channel": None,
+    "quote_time_local": "09:00",
     "timezone": "UTC",
     "approval_enabled": False,
     "approval_channel": None,
@@ -12432,7 +12434,7 @@ def community_email_body(row, audience="admin", reason="submitted"):
         lines.append("An admin will review it before it appears publicly.")
     else:
         lines.append(f"A new {labels['singular'].lower()} needs admin review.")
-        lines.append(f"Review: {url_for('admin_community_submissions', status='pending', post_type=row['post_type'], _external=True)}")
+        lines.append(f"Review: {community_admin_review_url(row['post_type'])}")
     lines.append("")
     lines.append(f"Title: {title}")
     if guild_name:
@@ -12476,7 +12478,7 @@ def create_discord_dm_channel(user_id):
 def community_admin_dm_payload(row):
     labels = COMMUNITY_POST_LABELS.get(row["post_type"], {"singular": "Community Post"})
     guild_name = community_guild_name_map().get(str(row["guild_id"]), str(row["guild_id"] or ""))
-    review_url = url_for("admin_community_submissions", status="pending", post_type=row["post_type"], _external=True)
+    review_url = community_admin_review_url(row["post_type"])
     fields = []
     if guild_name:
         fields.append({"name": "Server", "value": guild_name, "inline": False})
@@ -24726,6 +24728,15 @@ def community_submitted_notification_event_key(post_type):
     return COMMUNITY_SUBMITTED_NOTIFICATION_EVENT_KEYS.get(str(post_type or "").strip().lower(), "")
 
 
+def community_admin_review_url(post_type):
+    review_path = url_for(
+        "admin_community_submissions",
+        status="pending",
+        post_type=str(post_type or "").strip().lower(),
+    )
+    return url_for("account_login", next=review_path, _external=True)
+
+
 def community_submission_notification_message(row):
     post_type = row["post_type"]
     labels = COMMUNITY_POST_LABELS.get(post_type, {"singular": "Community Post"})
@@ -24738,7 +24749,7 @@ def community_submission_notification_message(row):
         details.append(f"When: {starts_at}")
     if location:
         details.append(f"Where: {location}")
-    details.append(f"Review: {url_for('admin_community_submissions', status='pending', post_type=post_type, _external=True)}")
+    details.append(f"Review: {community_admin_review_url(post_type)}")
     lines.append("\n".join(details))
     return "\n\n".join(lines)[:1800]
 
@@ -25433,9 +25444,13 @@ def community_meetups():
 
 @app.route("/admin/community-submissions", methods=["GET", "POST"])
 def admin_community_submissions():
-    login_response = require_admin_login("moderator")
-    if login_response:
-        return login_response
+    if is_admin_logged_in():
+        if not has_admin_role("moderator"):
+            abort(403)
+    else:
+        login_response = require_admin_login("moderator")
+        if login_response:
+            return login_response
     ensure_community_posts_table()
     selected_status = request.args.get("status", "pending").strip().lower() or "pending"
     selected_type = request.args.get("post_type", "all").strip().lower() or "all"

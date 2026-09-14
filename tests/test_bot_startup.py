@@ -258,6 +258,7 @@ class BotStartupTests(unittest.TestCase):
             bot.SubmissionChannelOnlyView(True, 123),
             bot.SubmissionCategoryOnlyView(True, 123),
             bot.CommunityPostingSetupView(123, "event"),
+            bot.QuoteSetupView(123),
             bot.SetGuessingChannelView(True, "games", 123),
             bot.ScheduleGameWizardView(True, 123),
             bot.BulkScheduleGameWizardView(True, 123),
@@ -276,6 +277,20 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("Channel IDs", [getattr(child, "label", "") for child in setup_page_two.children])
         page_one_modal = bot.SetupChannelIdModal(123, 456, 1, ["submit", "category", "approval"])
         self.assertEqual(len(page_one_modal.children), 4)
+
+    def test_quotes_are_available_from_sana_with_moderation_and_daily_setup(self):
+        import bot
+
+        self.assertIn("quotes", {value for value, _label, _description in bot.SDAC_HUB_USER_OPTIONS})
+        quote_actions = {value for value, _label, _description in bot.SDAC_SUBMENUS["quotes"]["options"]}
+        self.assertEqual(
+            quote_actions,
+            {"quote_submit", "quote_random", "quote_queue", "quote_review", "quote_channel_setup"},
+        )
+        self.assertIsNone(bot.DEFAULT_GUILD_CONFIG["quote_channel"])
+        self.assertEqual(bot.DEFAULT_GUILD_CONFIG["quote_time_local"], "09:00")
+        self.assertTrue(hasattr(bot, "post_daily_quote"))
+        self.assertTrue(hasattr(bot, "daily_quote_scheduler"))
 
     def test_event_logging_inserts_have_matching_placeholders(self):
         import inspect
