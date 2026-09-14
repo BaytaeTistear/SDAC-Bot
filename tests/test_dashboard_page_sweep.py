@@ -58,6 +58,7 @@ routes = [
     "/my-submissions",
     "/events",
     "/meetups",
+    "/quotes",
     "/servers",
     "/stats",
     "/guessing",
@@ -75,6 +76,7 @@ failures = []
 
 assert "community_event_submitted" in dashboard.NOTIFICATION_EVENT_LABELS
 assert "community_meetup_submitted" in dashboard.NOTIFICATION_EVENT_LABELS
+assert "community_quote_submitted" in dashboard.NOTIFICATION_EVENT_LABELS
 assert "community_event_approved" in dashboard.NOTIFICATION_EVENT_LABELS
 assert "community_meetup_approved" in dashboard.NOTIFICATION_EVENT_LABELS
 message = dashboard.community_discord_notification_message(
@@ -130,6 +132,30 @@ assert "/admin/community-submissions" in review_url
 assert "key=" not in review_url
 
 client = dashboard.app.test_client()
+quotes_page = client.get("/quotes")
+assert quotes_page.status_code == 200
+assert "Submit A Quote" in quotes_page.get_data(as_text=True)
+with client.session_transaction() as session:
+    quote_csrf_token = session["csrf_token"]
+quote_submit = client.post(
+    "/quotes",
+    data={
+        "csrf_token": quote_csrf_token,
+        "guild_id": "111",
+        "quote_text": "Website quote submission",
+        "speaker": "Website Speaker",
+        "submitter_name": "Website User",
+    },
+)
+assert quote_submit.status_code == 302
+with dashboard.database() as connection:
+    website_quote = connection.execute(
+        "SELECT quote_text, speaker, status FROM community_quotes WHERE guild_id = '111' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+assert website_quote["quote_text"] == "Website quote submission"
+assert website_quote["speaker"] == "Website Speaker"
+assert website_quote["status"] == "pending"
+
 with client.session_transaction() as session:
     session["sdac_account_username"] = "baytae"
     session["sdac_account_role"] = "bot_owner"

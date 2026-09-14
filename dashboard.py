@@ -624,6 +624,7 @@ NOTIFICATION_EVENT_LABELS = {
     "release_announcements": "Release Announcements",
     "community_event_submitted": "Submitted Events",
     "community_meetup_submitted": "Submitted Meetups",
+    "community_quote_submitted": "Submitted Quotes",
     "community_event_approved": "Approved Events",
     "community_meetup_approved": "Approved Meetups",
 }
@@ -25429,6 +25430,259 @@ def community_page(post_type):
         selected_tag=selected_tag,
         selected_when=selected_when,
         tags=COMMUNITY_TAGS,
+    )
+
+
+COMMUNITY_QUOTES_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sana-Chan Community Quotes</title>
+    <style>
+        :root { color-scheme: dark; --bg: #071324; --panel: rgba(13, 25, 45, 0.92); --border: #24436f; --text: #f4f7ff; --muted: #aebbd1; --accent: #18d5ff; --accent2: #8b5cff; --danger: #ff5c7a; }
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 80% 0%, rgba(139, 92, 255, 0.18), transparent 34rem), var(--bg); color: var(--text); font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        main { width: min(92vw, 76rem); margin: 0 auto; padding: clamp(0.85rem, 2.5vw, 2rem); }
+        h1 { margin: 0 0 0.45rem; font-size: clamp(2rem, 5vw, 4rem); }
+        h2 { margin: 0 0 1rem; }
+        .muted { color: var(--muted); }
+        .hero, .panel, .quote-card { border: 1px solid var(--border); background: var(--panel); border-radius: 0.75rem; box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.22); }
+        .hero { padding: clamp(1rem, 3vw, 2rem); margin-bottom: 1rem; }
+        .panel { padding: clamp(1rem, 2vw, 1.25rem); margin: 1rem 0; }
+        .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
+        .quote-card { padding: 1.1rem; }
+        .quote-text { font-size: 1.08rem; line-height: 1.6; margin: 0 0 0.8rem; white-space: pre-wrap; }
+        .speaker { color: var(--accent); font-weight: 800; margin: 0; }
+        .filters, .form-grid { display: grid; gap: 0.85rem; grid-template-columns: minmax(0, 1fr); max-width: 48rem; }
+        .filters { align-items: end; grid-template-columns: minmax(0, 1fr) auto; max-width: none; }
+        label { color: #b9c7dc; display: grid; font-size: 0.94rem; gap: 0.45rem; font-weight: 700; }
+        input, textarea, select { width: 100%; min-height: 2.65rem; border: 1px solid var(--border); border-radius: 0.55rem; background: #081122; color: var(--text); padding: 0.75rem 0.85rem; font: inherit; }
+        textarea { min-height: 8rem; resize: vertical; }
+        button { border: 0; border-radius: 0.55rem; padding: 0.8rem 1rem; color: white; font: inherit; font-weight: 800; cursor: pointer; background: linear-gradient(100deg, var(--accent2), var(--accent)); }
+        .notice, .empty-state { border: 1px solid var(--border); border-radius: 0.55rem; padding: 0.9rem; }
+        .notice.error { border-color: var(--danger); }
+        @media (max-width: 44rem) {
+            main { width: min(98vw, 76rem); padding: 0.55rem; }
+            .filters { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <section class="hero">
+        <p class="muted">Sana-Chan Community</p>
+        <h1>Quotes</h1>
+        <p>Save memorable quotes and the people who said them. Every submission is reviewed before it can appear here or be selected for the daily Discord quote.</p>
+        {% if selected_guild_name %}<p class="muted">Viewing {{ selected_guild_name }}</p>{% endif %}
+    </section>
+    {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
+    <section class="panel">
+        <form class="filters" method="get">
+            <label>Server
+                <select name="guild_id">
+                    <option value="all" {% if not selected_guild_id %}selected{% endif %}>All Allowed Servers</option>
+                    {% for guild in guild_options %}<option value="{{ guild.id }}" {% if guild.id == selected_guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}
+                </select>
+            </label>
+            <button type="submit">Filter</button>
+        </form>
+    </section>
+    <section class="panel">
+        <h2>Approved Quotes</h2>
+        {% if quotes %}
+            <div class="grid">
+                {% for quote in quotes %}
+                    <article class="quote-card">
+                        <p class="quote-text">“{{ quote.quote_text }}”</p>
+                        <p class="speaker">— {{ quote.speaker }}</p>
+                        {% if quote.guild_name %}<p class="muted">{{ quote.guild_name }}</p>{% endif %}
+                    </article>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state"><p class="muted">No approved quotes match this server yet.</p></div>
+        {% endif %}
+    </section>
+    <section class="panel" id="submit">
+        {% if can_submit %}
+            <h2>Submit A Quote</h2>
+            <p class="muted">Include the quote itself and the person who said it. A server admin must approve it before Sana-Chan can use it.</p>
+            <form method="post" class="form-grid">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <label>Server
+                    <select name="guild_id" required>
+                        {% for guild in guild_options %}<option value="{{ guild.id }}" {% if guild.id == selected_guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label>Who said it?
+                    <input name="speaker" maxlength="160" required placeholder="Person or character name">
+                </label>
+                <label>Your name
+                    <input name="submitter_name" maxlength="120" placeholder="Optional; shown only to reviewers">
+                </label>
+                <label>Quote
+                    <textarea name="quote_text" maxlength="1000" required placeholder="Enter the quote exactly as it should appear"></textarea>
+                </label>
+                <button type="submit">Send For Admin Approval</button>
+            </form>
+        {% else %}
+            <h2>Submit A Quote</h2>
+            <div class="empty-state"><p class="muted">No public server is currently available for quote submissions.</p></div>
+        {% endif %}
+    </section>
+</main>
+</body>
+</html>
+"""
+
+
+def ensure_community_quotes_table():
+    with database() as connection:
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS community_quotes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT NOT NULL,
+                quote_text TEXT NOT NULL,
+                speaker TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                submitter_user_id TEXT NOT NULL DEFAULT '',
+                submitter_name TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                reviewed_at TEXT NOT NULL DEFAULT '',
+                reviewed_by TEXT NOT NULL DEFAULT '',
+                review_notes TEXT NOT NULL DEFAULT '',
+                last_posted_at TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_community_quotes_guild_status
+            ON community_quotes (guild_id, status, last_posted_at, id)
+        """)
+
+
+def community_quote_rows(guild_id="", status="approved", limit=100):
+    ensure_community_quotes_table()
+    clauses = []
+    params = []
+    guild_id = community_clean_text(guild_id, 32)
+    if guild_id:
+        clauses.append("guild_id = ?")
+        params.append(guild_id)
+    if status and status != "all":
+        clauses.append("status = ?")
+        params.append(status)
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+    guild_names = community_guild_name_map()
+    with closing(connect_db()) as connection:
+        rows = connection.execute(
+            f"""
+            SELECT id, guild_id, quote_text, speaker, status, created_at
+            FROM community_quotes
+            {where}
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (*params, int(limit)),
+        ).fetchall()
+    output = []
+    for row in rows:
+        item = dict(row)
+        item["guild_name"] = guild_names.get(str(row["guild_id"]), str(row["guild_id"]))
+        output.append(item)
+    return output
+
+
+def save_community_quote():
+    quote_text = community_clean_text(request.form.get("quote_text"), 1000)
+    speaker = community_clean_text(request.form.get("speaker"), 160)
+    if not quote_text or not speaker:
+        raise ValueError("The quote and the person who said it are required.")
+    server_options = guild_options(load_config(), public_only=True)
+    valid_guilds = {str(option["id"]) for option in server_options}
+    guild_id = community_clean_text(request.form.get("guild_id"), 32)
+    if guild_id not in valid_guilds:
+        raise ValueError("Choose one of the available servers before submitting this quote.")
+    submitter_name = community_clean_text(request.form.get("submitter_name"), 120)
+    if not submitter_name:
+        submitter_name = community_clean_text(current_account_username(), 120)
+    submitter_user_id = community_clean_text(session.get("sdac_discord_user_id"), 32)
+    now = utc_now_iso()
+    with database() as connection:
+        cursor = connection.execute("""
+            INSERT INTO community_quotes (
+                guild_id, quote_text, speaker, status,
+                submitter_user_id, submitter_name, created_at, updated_at
+            )
+            VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
+        """, (
+            guild_id,
+            quote_text,
+            speaker,
+            submitter_user_id,
+            submitter_name,
+            now,
+            now,
+        ))
+        return int(cursor.lastrowid), guild_id, quote_text, speaker, submitter_name
+
+
+@app.route("/quotes", methods=["GET", "POST"])
+def community_quotes():
+    ensure_community_quotes_table()
+    notice = request.args.get("notice", "")
+    error = request.args.get("error") == "1"
+    config_data = load_config()
+    server_options = guild_options(config_data, public_only=True)
+    selected_guild_id = default_community_guild_id(server_options)
+    selected_guild_name = next(
+        (option["name"] for option in server_options if str(option["id"]) == selected_guild_id),
+        "",
+    )
+    if request.method == "POST":
+        require_csrf_token()
+        try:
+            quote_id, guild_id, quote_text, speaker, submitter_name = save_community_quote()
+            preview = quote_text.replace("\n", " ").strip()
+            if len(preview) > 300:
+                preview = preview[:297] + "..."
+            submitter_label = submitter_name or "Website visitor"
+            send_admin_notification(
+                "community_quote_submitted",
+                (
+                    f"A new quote needs review: **{preview}**\n"
+                    f"Speaker: **{speaker}**\n"
+                    f"Submitted by: {submitter_label}\n"
+                    "Review in Discord: `/sana` -> Quotes -> Approval Queue"
+                ),
+                guild_id=guild_id,
+                throttle_key=f"community_quote_submitted:{quote_id}",
+                throttle_seconds=0,
+            )
+            return redirect(url_for(
+                "community_quotes",
+                guild_id=guild_id,
+                notice=f"Quote #{quote_id} was submitted for admin approval.",
+            ))
+        except ValueError as exc:
+            return redirect(url_for(
+                "community_quotes",
+                guild_id=request.form.get("guild_id") or selected_guild_id,
+                notice=str(exc),
+                error=1,
+            ))
+    return render_template_string(
+        COMMUNITY_QUOTES_HTML,
+        csrf_token=get_csrf_token(),
+        error=error,
+        guild_options=server_options,
+        notice=notice,
+        quotes=community_quote_rows(selected_guild_id, "approved"),
+        selected_guild_id=selected_guild_id,
+        selected_guild_name=selected_guild_name,
+        can_submit=bool(server_options),
     )
 
 

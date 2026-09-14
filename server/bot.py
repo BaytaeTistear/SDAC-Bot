@@ -489,6 +489,7 @@ NOTIFICATION_EVENT_LABELS = {
     "release_announcements": "Release Announcements",
     "community_event_submitted": "Submitted Events",
     "community_meetup_submitted": "Submitted Meetups",
+    "community_quote_submitted": "Submitted Quotes",
     "community_event_approved": "Approved Events",
     "community_meetup_approved": "Approved Meetups",
 }

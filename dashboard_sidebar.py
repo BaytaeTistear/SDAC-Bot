@@ -14,6 +14,7 @@ ADMIN_SECTIONS = [
             ("Submissions", "index", {}),
             ("Events", "community_events", {}),
             ("Meetups", "community_meetups", {}),
+            ("Quotes", "community_quotes", {}),
             ("My Submissions", "my_submissions", {}),
             ("Guessing", "guessing_leaderboard", {}),
             ("Servers", "servers", {}),
@@ -113,6 +114,7 @@ PUBLIC_LINKS = [
     ("Submissions", "index", {}),
     ("Events", "community_events", {}),
     ("Meetups", "community_meetups", {}),
+    ("Quotes", "community_quotes", {}),
     ("My Submissions", "my_submissions", {}),
     ("Servers", "servers", {}),
     ("Stats", "public_stats", {}),
@@ -149,6 +151,7 @@ PUBLIC_SIDEBAR_ENDPOINTS = {
     "my_submissions",
     "community_events",
     "community_meetups",
+    "community_quotes",
     "user_profile",
     "report_submission",
 }
