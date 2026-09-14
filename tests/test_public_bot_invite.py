@@ -45,7 +45,7 @@ class PublicBotInviteTests(unittest.TestCase):
         self.assertIn("Guided Setup Flow", body)
         self.assertIn("OAuth Details", body)
         self.assertIn("Release Checklist", body)
-        self.assertNotIn(dashboard.ADMIN_KEY, body)
+        self.assertNotIn("?key=", body)
 
     def test_sidebar_exposes_invite_bot_action(self):
         with self.client.session_transaction() as session:

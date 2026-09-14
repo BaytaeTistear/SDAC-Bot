@@ -163,13 +163,13 @@ curl http://127.0.0.1:5000/health
 Detailed health is available in the dashboard after admin login at:
 
 ```text
-/admin/health?key=ImTheBestAdmin
+/admin/health
 ```
 
 Human-friendly maintenance, backups, restore tests, and storage warnings are at:
 
 ```text
-/admin/maintenance?key=ImTheBestAdmin
+/admin/maintenance
 ```
 
 Run the bundled production check:
@@ -196,13 +196,13 @@ dashboard Settings page.
 Use this page to see what each Discord server still needs configured:
 
 ```text
-https://freethefishies.us.to/admin/onboarding?key=ImTheBestAdmin
+https://freethefishies.us.to/admin/onboarding
 ```
 
 Use this page to watch pending submissions and recent moderation decisions:
 
 ```text
-https://freethefishies.us.to/admin/moderation?key=ImTheBestAdmin
+https://freethefishies.us.to/admin/moderation
 ```
 
 In Discord, admins can run this command after permission changes:

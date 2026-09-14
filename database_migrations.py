@@ -3,7 +3,7 @@ import sqlite3
 
 
 
-DATABASE_SCHEMA_VERSION = 24
+DATABASE_SCHEMA_VERSION = 25
 GOOGLE_PLAY_REVIEW_PASSWORD_HASH = "scrypt:32768:8:1$tpr2C1Lx7O3szQ0T$0f9b5ee8f0d5caaecaf4d69667ea93aff95365decc7108fd955590df4ef07c17680a64610805821aef23fcb86171de70c4bc0f577501ca920bb6b5bb80a4426b"
 
 
@@ -862,6 +862,54 @@ def migration_24_community_quotes(connection):
         )
     """)
 
+
+def migration_25_security_quotes_and_scheduler_leases(connection):
+    ensure_column(connection, "community_posts", "submitter_user_id", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(connection, "community_quotes", "source_text", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(connection, "community_quotes", "context_text", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(connection, "community_quotes", "category", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(connection, "community_quotes", "normalized_hash", "TEXT NOT NULL DEFAULT ''")
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_community_quotes_duplicate
+        ON community_quotes (guild_id, normalized_hash, status)
+    """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS public_form_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bucket TEXT NOT NULL,
+            remote_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_public_form_attempts_lookup
+        ON public_form_attempts (bucket, remote_hash, created_at)
+    """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS scheduler_leases (
+            lease_key TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            acquired_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        )
+    """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS notification_deliveries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_key TEXT NOT NULL,
+            guild_id TEXT NOT NULL DEFAULT '',
+            channel_id TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL,
+            error_text TEXT NOT NULL DEFAULT '',
+            response_message_id TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_notification_deliveries_recent
+        ON notification_deliveries (created_at, event_key, guild_id)
+    """)
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -885,6 +933,7 @@ MIGRATIONS = (
     (22, migration_22_anime_profile_xml_metadata),
     (23, migration_23_community_posts_per_server),
     (24, migration_24_community_quotes),
+    (25, migration_25_security_quotes_and_scheduler_leases),
 )
 
 

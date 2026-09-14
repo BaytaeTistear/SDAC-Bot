@@ -101,35 +101,35 @@ class PreReleaseSmokeTests(unittest.TestCase):
             session["sdac_admin_role"] = "bot_owner"
         for path in [
             "/account/access",
-            "/admin/preview-as?key=ImTheBestAdmin&username=baytae&guild_id=111",
-            "/admin/users?key=ImTheBestAdmin",
-            "/admin/server-health?key=ImTheBestAdmin",
-            "/admin/settings?key=ImTheBestAdmin&guild_id=111",
-            "/admin/anime-activities?key=ImTheBestAdmin",
-            "/admin/owner-portal?key=ImTheBestAdmin",
-            "/admin/go-live-control?key=ImTheBestAdmin",
-            "/admin/release-notes-preview?key=ImTheBestAdmin",
-            "/admin/self-tests?key=ImTheBestAdmin",
-            "/admin/command-audit?key=ImTheBestAdmin",
-            "/admin/app-store-readiness?key=ImTheBestAdmin",
-            "/admin/mobile-pass?key=ImTheBestAdmin",
-            "/admin/empty-states?key=ImTheBestAdmin",
-            "/admin/permission-simulator?key=ImTheBestAdmin",
-            "/admin/install-success?key=ImTheBestAdmin",
-            "/admin/activity-digest?key=ImTheBestAdmin",
+            "/admin/preview-as?username=baytae&guild_id=111",
+            "/admin/users",
+            "/admin/server-health",
+            "/admin/settings?guild_id=111",
+            "/admin/anime-activities",
+            "/admin/owner-portal",
+            "/admin/go-live-control",
+            "/admin/release-notes-preview",
+            "/admin/self-tests",
+            "/admin/command-audit",
+            "/admin/app-store-readiness",
+            "/admin/mobile-pass",
+            "/admin/empty-states",
+            "/admin/permission-simulator",
+            "/admin/install-success",
+            "/admin/activity-digest",
         ]:
             response = client.get(path)
             self.assertLess(response.status_code, 500, path)
-        anime_page = client.get("/admin/anime-activities?key=ImTheBestAdmin").get_data(as_text=True)
+        anime_page = client.get("/admin/anime-activities").get_data(as_text=True)
         self.assertIn("/animeevent", anime_page)
         self.assertIn("screenshot-guess", anime_page)
         self.assertIn("seed_anime_library", anime_page)
         self.assertIn("/sana -> Anime Profile -> Import MyAnimeList", anime_page)
         self.assertNotIn("/animeprofileimport", anime_page)
-        example_response = client.get("/admin/game-library/example.csv?key=ImTheBestAdmin")
+        example_response = client.get("/admin/game-library/example.csv")
         self.assertEqual(example_response.status_code, 200)
         self.assertIn("title,answer,aliases,category", example_response.get_data(as_text=True))
-        owner_page = client.get("/admin/owner-portal?key=ImTheBestAdmin").get_data(as_text=True)
+        owner_page = client.get("/admin/owner-portal").get_data(as_text=True)
         self.assertIn("Bot Owner Access Control", owner_page)
 
 if __name__ == "__main__":

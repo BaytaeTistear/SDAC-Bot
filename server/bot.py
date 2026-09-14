@@ -35,6 +35,12 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from config import TOKEN
+from community_quotes import (
+    find_duplicate_quote,
+    normalized_quote_category,
+    quote_display_text,
+    quote_fingerprint,
+)
 from database_backend import connect_database, using_postgres
 from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
 from observability import capture_exception, init_sentry
@@ -1552,16 +1558,11 @@ async def handle_sana_events_action(interaction, action, is_admin, section_key):
 
 
 
-def quote_display_text(row):
-    quote_text = str(row["quote_text"] or "").strip()
-    speaker = str(row["speaker"] or "").strip()
-    return f"“{quote_text}”\n— **{speaker}**"
-
-
 def quote_queue_content(guild_id, notice=""):
     with database() as connection:
         rows = connection.execute("""
-            SELECT id, quote_text, speaker, submitter_name, created_at
+            SELECT id, quote_text, speaker, category, source_text,
+                   submitter_name, created_at
             FROM community_quotes
             WHERE guild_id = ? AND status = 'pending'
             ORDER BY id ASC
@@ -1578,8 +1579,11 @@ def quote_queue_content(guild_id, notice=""):
             quote_text = quote_text[:177] + "..."
         lines.append(
             f"`#{row['id']}` “{quote_text}” — **{row['speaker']}** "
+            f"[{row['category'] or 'Community'}] "
             f"(submitted by {row['submitter_name'] or 'unknown'})"
         )
+        if row["source_text"]:
+            lines.append(f"Source: {row['source_text']}")
     lines.append("\nUse **Approve Or Reject** and enter the quote ID.")
     return "\n".join(lines)[:1900]
 
@@ -1587,7 +1591,7 @@ def quote_queue_content(guild_id, notice=""):
 def approved_quote_content(guild_id):
     with database() as connection:
         row = connection.execute("""
-            SELECT id, quote_text, speaker
+            SELECT id, quote_text, speaker, category, source_text, context_text
             FROM community_quotes
             WHERE guild_id = ? AND status = 'approved'
             ORDER BY RANDOM()
@@ -1642,6 +1646,25 @@ class QuoteSubmissionModal(discord.ui.Modal, title="Submit A Quote"):
         required=True,
         max_length=160,
     )
+    category_input = discord.ui.TextInput(
+        label="Category",
+        placeholder="Community, Funny, Inspirational, Anime...",
+        required=False,
+        max_length=40,
+    )
+    source_input = discord.ui.TextInput(
+        label="Source",
+        placeholder="Episode, event, stream, or conversation",
+        required=False,
+        max_length=200,
+    )
+    context_input = discord.ui.TextInput(
+        label="Context",
+        placeholder="Optional context for reviewers",
+        style=discord.TextStyle.paragraph,
+        required=False,
+        max_length=500,
+    )
 
     async def on_submit(self, interaction):
         quote_text = str(self.quote_input.value or "").strip()
@@ -1649,20 +1672,36 @@ class QuoteSubmissionModal(discord.ui.Modal, title="Submit A Quote"):
         if not quote_text or not speaker:
             await interaction.response.send_message("The quote and speaker are required.", ephemeral=True)
             return
+        category = normalized_quote_category(self.category_input.value)
+        source_text = str(self.source_input.value or "").strip()[:200]
+        context_text = str(self.context_input.value or "").strip()[:500]
+        normalized_hash = quote_fingerprint(quote_text, speaker)
         now = utc_now_iso()
         with database() as connection:
+            duplicate = find_duplicate_quote(connection, interaction.guild_id, normalized_hash)
+            if duplicate:
+                await interaction.response.send_message(
+                    f"That quote is already {duplicate['status']} as quote `#{duplicate['id']}`.",
+                    ephemeral=True,
+                )
+                return
             cursor = connection.execute("""
                 INSERT INTO community_quotes (
                     guild_id, quote_text, speaker, status,
-                    submitter_user_id, submitter_name, created_at, updated_at
+                    submitter_user_id, submitter_name, source_text, context_text,
+                    category, normalized_hash, created_at, updated_at
                 )
-                VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
+                VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 str(interaction.guild_id),
                 quote_text,
                 speaker,
                 str(interaction.user.id),
                 str(interaction.user),
+                source_text,
+                context_text,
+                category,
+                normalized_hash,
                 now,
                 now,
             ))
@@ -1699,7 +1738,8 @@ class QuoteReviewModal(discord.ui.Modal, title="Review A Quote"):
         now = utc_now_iso()
         with database() as connection:
             row = connection.execute("""
-                SELECT id FROM community_quotes
+                SELECT id, quote_text, speaker, submitter_user_id
+                FROM community_quotes
                 WHERE id = ? AND guild_id = ? AND status = 'pending'
             """, (int(raw_id), str(interaction.guild_id))).fetchone()
             if not row:
@@ -5280,6 +5320,52 @@ def startup_health_check():
 
 def utc_now_iso():
     return datetime.now(timezone.utc).isoformat()
+
+
+def acquire_scheduler_lease(lease_key, duration_seconds=300, now=None):
+    now = now or datetime.now(timezone.utc)
+    acquired_at = now.isoformat()
+    expires_at = (now + timedelta(seconds=max(30, int(duration_seconds)))).isoformat()
+    with database() as connection:
+        connection.execute(
+            """
+            INSERT INTO scheduler_leases (lease_key, owner_id, acquired_at, expires_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (lease_key) DO UPDATE SET
+                owner_id = excluded.owner_id,
+                acquired_at = excluded.acquired_at,
+                expires_at = excluded.expires_at
+            WHERE scheduler_leases.expires_at <= excluded.acquired_at
+               OR scheduler_leases.owner_id = excluded.owner_id
+            """,
+            (str(lease_key)[:180], BOT_INSTANCE_ID, acquired_at, expires_at),
+        )
+        lease = connection.execute(
+            """
+            SELECT owner_id, acquired_at
+            FROM scheduler_leases
+            WHERE lease_key = ?
+            """,
+            (str(lease_key)[:180],),
+        ).fetchone()
+    return bool(
+        lease
+        and lease["owner_id"] == BOT_INSTANCE_ID
+        and lease["acquired_at"] == acquired_at
+    )
+
+
+async def run_with_retries(operation, attempts=3, base_delay_seconds=0.5):
+    last_error = None
+    for attempt in range(max(1, int(attempts))):
+        try:
+            return await operation()
+        except Exception as error:
+            last_error = error
+            if attempt + 1 >= max(1, int(attempts)):
+                raise
+            await asyncio.sleep(float(base_delay_seconds) * (2 ** attempt))
+    raise last_error
 
 
 def utc_now_display():
@@ -15934,7 +16020,7 @@ async def post_daily_quote(guild_id, guild_config, now=None):
         if already_posted:
             return False
         quote_row = connection.execute("""
-            SELECT id, quote_text, speaker
+            SELECT id, quote_text, speaker, category, source_text, context_text
             FROM community_quotes
             WHERE guild_id = ? AND status = 'approved'
             ORDER BY CASE WHEN last_posted_at = '' THEN 0 ELSE 1 END,
@@ -15977,6 +16063,11 @@ async def daily_quote_scheduler():
             now = guild_now(guild_config)
             if guild_config.get("quote_time_local", "09:00") != now.strftime("%H:%M"):
                 continue
+            if not acquire_scheduler_lease(
+                f"daily_quote:{guild_id}:{now.date().isoformat()}",
+                duration_seconds=5 * 60,
+            ):
+                continue
             await post_daily_quote(guild_id, guild_config, now)
         except Exception as error:
             await report_background_error(f"daily_quote_scheduler:{guild_id}", error)
@@ -15996,6 +16087,11 @@ async def weekly_top_scheduler():
             if now.weekday() != weekly_top_day_index(guild_config):
                 continue
             if guild_config.get("daily_top_time_utc", "00:00") == current_time:
+                if not acquire_scheduler_lease(
+                    f"weekly_top:{guild_id}:{now.date().isoformat()}",
+                    duration_seconds=5 * 60,
+                ):
+                    continue
                 await post_weekly_top(guild_id, guild_config, now)
     except Exception as error:
         await report_background_error("weekly_top_scheduler", error)
@@ -16281,6 +16377,12 @@ async def close_due_scheduled_games():
 @tasks.loop(minutes=1)
 async def scheduled_games_scheduler():
     try:
+        now = datetime.now(timezone.utc)
+        if not acquire_scheduler_lease(
+            f"scheduled_games:{now.strftime('%Y-%m-%dT%H:%M')}",
+            duration_seconds=2 * 60,
+        ):
+            return
         await start_due_scheduled_games()
         await close_due_scheduled_games()
     except Exception as error:
@@ -16295,6 +16397,12 @@ async def before_scheduled_games_scheduler():
 @tasks.loop(hours=1)
 async def monthly_leaderboard_scheduler():
     try:
+        now = datetime.now(timezone.utc)
+        if not acquire_scheduler_lease(
+            f"monthly_leaderboards:{now.strftime('%Y-%m-%dT%H')}",
+            duration_seconds=70 * 60,
+        ):
+            return
         await post_monthly_guess_leaderboards()
         await post_monthly_digests()
         await post_notification_digests()
@@ -16412,7 +16520,14 @@ async def before_permission_drift_scheduler():
 @tasks.loop(hours=6)
 async def official_release_announcement_scheduler():
     try:
-        await announce_official_release_if_changed()
+        now = datetime.now(timezone.utc)
+        bucket_hour = now.hour - (now.hour % 6)
+        if not acquire_scheduler_lease(
+            f"official_release:{now.date().isoformat()}:{bucket_hour:02d}",
+            duration_seconds=5 * 60 * 60,
+        ):
+            return
+        await run_with_retries(announce_official_release_if_changed, attempts=3)
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, OSError) as error:
         print(f"official_release_announcement_scheduler skipped: {error}", flush=True)
     except Exception as error:

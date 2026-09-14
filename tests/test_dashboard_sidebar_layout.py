@@ -47,8 +47,10 @@ class DashboardSidebarLayoutTests(unittest.TestCase):
         self.assertIn('class="sdac-sidebar-section-caret"', body)
         self.assertIn('class="sdac-server-switcher"', body)
         self.assertIn('action="/admin/bot-owner"', body)
-        self.assertIn('name="key"', body)
-        self.assertIn('value="ImTheBestAdmin"', body)
+        switcher = re.search(
+            r'<form class="sdac-server-switcher".*?</form>', body, re.DOTALL
+        ).group(0)
+        self.assertNotIn('name="key"', switcher)
         self.assertIn('name="notice"', body)
         self.assertNotIn('sdacSidebarCollapsed";\n    var collapsed', body)
 

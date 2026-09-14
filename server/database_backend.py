@@ -30,6 +30,10 @@ ID_TABLES = {
     "scheduled_games",
     "user_achievements",
     "backup_archives",
+    "community_posts",
+    "community_quotes",
+    "public_form_attempts",
+    "notification_deliveries",
 }
 
 

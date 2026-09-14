@@ -37,6 +37,7 @@ class DashboardAccessTests(unittest.TestCase):
             connection.execute("DELETE FROM guess_library_items")
             connection.execute("DELETE FROM background_jobs")
             connection.execute("DELETE FROM dashboard_admin_users")
+            connection.execute("DELETE FROM public_form_attempts")
             connection.execute("""
                 INSERT INTO dashboard_admin_users (
                     username, email, display_name, password_hash, role,
@@ -103,6 +104,20 @@ class DashboardAccessTests(unittest.TestCase):
         self.assertIn("Expires=", cookie_header)
         self.assertIn("HttpOnly", cookie_header)
         self.assertIn("SameSite=Lax", cookie_header)
+
+    def test_public_form_rate_limit_is_persistent_and_hashes_address(self):
+        with self.dashboard.app.test_request_context(
+            "/quotes", environ_base={"REMOTE_ADDR": "203.0.113.44"}
+        ):
+            for _ in range(5):
+                self.assertFalse(self.dashboard.public_form_rate_limited("quote-test"))
+            self.assertTrue(self.dashboard.public_form_rate_limited("quote-test"))
+        with self.dashboard.database() as connection:
+            row = connection.execute(
+                "SELECT remote_hash FROM public_form_attempts WHERE bucket = 'quote-test' LIMIT 1"
+            ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertNotEqual(row["remote_hash"], "203.0.113.44")
 
     def test_account_selector_uses_access_rows_not_public_gallery(self):
         with self.dashboard.app.test_request_context("/"):

@@ -267,9 +267,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
     fi
 
     if [[ -z "$ADMIN_KEY_INPUT" ]]; then
-        read -r -p "Dashboard admin key [ImTheBestAdmin]: " ADMIN_KEY_INPUT
+        read -r -p "Legacy dashboard admin key (optional; press Enter to disable): " ADMIN_KEY_INPUT
     fi
-    ADMIN_KEY_INPUT="${ADMIN_KEY_INPUT:-ImTheBestAdmin}"
 
     if [[ -z "$ADMIN_USERNAME_INPUT" ]]; then
         read -r -p "Initial dashboard owner username [baytae]: " ADMIN_USERNAME_INPUT

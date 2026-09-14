@@ -31,6 +31,7 @@ ADMIN_SECTIONS = [
             ("Moderator Workspace", "admin_moderator_workspace", {}),
             ("Review Queue", "admin_moderation", {}),
             ("Events / Meetups", "admin_community_submissions", {}),
+            ("Quote Moderation", "admin_quote_submissions", {}),
             ("Removal Reasons", "admin_removal_reasons", {}),
             ("Users", "admin_users", {}),
             ("Polls", "admin_polls", {}),
@@ -278,7 +279,7 @@ def should_render_admin_sidebar(is_admin_logged_in, admin_key):
         return should_render_public_sidebar()
     if request.path == "/admin" or request.path.startswith("/admin/"):
         return True
-    if request.endpoint in ADMIN_KEY_PUBLIC_ENDPOINTS and request.args.get("key") == admin_key:
+    if admin_key and request.endpoint in ADMIN_KEY_PUBLIC_ENDPOINTS and request.args.get("key") == admin_key:
         return True
     return should_render_public_sidebar()
 
@@ -312,7 +313,7 @@ def admin_sidebar_html(
     admin_url,
 ):
     account_url = (
-        url_for("account_home", key=admin_key)
+        url_for("account_home")
         if is_account_logged_in()
         else url_for("account_login", next=request.full_path)
     )
@@ -389,7 +390,7 @@ def admin_sidebar_html(
             hidden_fields.append(
                 '<input type="hidden" name="' + html.escape(key, quote=True) + '" value="' + html.escape(value, quote=True) + '">'
             )
-        if is_admin_logged_in():
+        if is_admin_logged_in() and admin_key:
             hidden_fields.append('<input type="hidden" name="key" value="' + html.escape(admin_key, quote=True) + '">')
         switcher = (
             '<form class="sdac-server-switcher" method="get" action="' + html.escape(request.path or url_for("index"), quote=True) + '">'

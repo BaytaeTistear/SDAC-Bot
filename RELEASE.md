@@ -1,3 +1,36 @@
+# Sana-Chan Version 4.4.45 Experimental
+
+Version 4.4.45 is a security, reliability, moderation, and quality hardening release.
+
+## Security And Abuse Protection
+
+- removes the built-in `ImTheBestAdmin` URL key and makes account login the primary admin path
+- keeps `SDAC_ADMIN_KEY` only as optional temporary compatibility access
+- adds persistent hashed-IP rate limiting and optional Cloudflare Turnstile to public Events, Meetups, and Quotes forms
+- resolves all currently reported npm vulnerabilities and adds blocking Python/npm security audits plus Dependabot
+
+## Quotes And User Feedback
+
+- adds full website quote moderation with edit, approve, reject, delete, and post-now controls
+- adds quote category, source, context, normalized duplicate detection, and fair least-recently-posted rotation
+- lets signed-in submitters track pending, approved, and rejected quote status privately
+- adds quote backlog, outcome, daily-post, and median-review-time analytics
+
+## Scheduler, Notifications, And Releases
+
+- adds database-backed scheduler leases for daily quotes, weekly highlights, scheduled games, monthly jobs, and release checks
+- adds bounded exponential retry for safe release polling
+- records notification delivery success, failure, and Discord message IDs in the Notification Center
+- adds real PostgreSQL migration coverage in CI and fixes PostgreSQL insert IDs for community tables
+- adds prebuilt-installer reuse to avoid dirty post-release rebuilds
+
+## Maintainability And Accessibility
+
+- extracts shared quote validation, deduplication, and formatting into a reusable service module
+- adds keyboard focus indicators, live form feedback, responsive moderation tables, and public mobile layout checks
+
+---
+
 # Sana-Chan Version 4.4.27 Experimental
 
 Version 4.4.27 moves approved community listings above the submission forms.

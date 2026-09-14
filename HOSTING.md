@@ -209,19 +209,19 @@ curl http://127.0.0.1:5000/health
 Admin-only detailed health check after logging in through the dashboard:
 
 ```text
-https://freethefishies.us.to/admin/health?key=ImTheBestAdmin
+https://freethefishies.us.to/admin/health
 ```
 
 Human-friendly maintenance page:
 
 ```text
-https://freethefishies.us.to/admin/maintenance?key=ImTheBestAdmin
+https://freethefishies.us.to/admin/maintenance
 ```
 
 Moderation queue and recent decisions:
 
 ```text
-https://freethefishies.us.to/admin/moderation?key=ImTheBestAdmin
+https://freethefishies.us.to/admin/moderation
 ```
 
 ## 11. Future Updates
@@ -325,12 +325,14 @@ sudo systemctl restart sdac-bot sdac-dashboard
 Required values:
 
 - `DISCORD_TOKEN`
-- `SDAC_ADMIN_KEY`
 - `SDAC_ADMIN_PASSWORD`
 - `SDAC_SECRET_KEY`
 
 Optional values:
 
+- `SDAC_ADMIN_KEY` for temporary legacy URL-key compatibility only
+- `SDAC_TURNSTILE_SITE_KEY` and `SDAC_TURNSTILE_SECRET_KEY`
+- `SDAC_TRUST_PROXY=true` when requests arrive only through the configured reverse proxy
 - `SENTRY_DSN`
 - `SENTRY_ENVIRONMENT`
 - `SENTRY_TRACES_SAMPLE_RATE`
@@ -372,7 +374,7 @@ Set a private staff channel for bot error notices:
 Admins can check new-server setup progress at:
 
 ```text
-https://freethefishies.us.to/admin/onboarding?key=ImTheBestAdmin
+https://freethefishies.us.to/admin/onboarding
 ```
 
 ## 14. Off-Server Backups

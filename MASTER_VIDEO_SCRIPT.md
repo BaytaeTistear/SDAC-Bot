@@ -10,7 +10,7 @@ Suggested line:
 Show/find it:
 - Discord server: show the bot in the member list and slash commands.
 - Website: open the public dashboard homepage.
-- Dashboard admin: open `/admin?key=ImTheBestAdmin` and log in.
+- Dashboard admin: open `/admin` and log in.
 - App: open the SDAC app or `/app` page.
 
 ## 2. What Problem SDAC Solves
@@ -65,7 +65,7 @@ Show:
 - User/profile or leaderboard links if relevant
 
 Mention:
-- Admin mode uses `?key=ImTheBestAdmin` plus dashboard login.
+- Admin mode uses `` plus dashboard login.
 - Public users can browse without a key.
 
 Where to find it:

@@ -28,6 +28,7 @@ function Copy-PayloadFiles {
         "MONITORING.md",
         "POSTGRESQL.md",
         "bot.py",
+        "community_quotes.py",
         "dashboard.py",
         "dashboard_account_templates.py",
         "dashboard_admin_roles.py",
@@ -801,7 +802,7 @@ $chunkLiteral
         }
 
         string token = PromptRequired("Discord bot token");
-        string adminKey = Prompt("Dashboard admin key", "ImTheBestAdmin");
+        string adminKey = Prompt("Legacy dashboard admin key (optional)", "");
         InitialAdminUsername = Prompt("Initial dashboard owner username", "owner");
         InitialAdminPassword = PromptSecret("Initial dashboard owner password");
         while (String.IsNullOrWhiteSpace(InitialAdminPassword) || InitialAdminPassword.Length < 10)
@@ -858,7 +859,7 @@ if not exist ""venv\Scripts\python.exe"" (
 )
 ""%~dp0venv\Scripts\python.exe"" -m pip install --upgrade pip
 ""%~dp0venv\Scripts\python.exe"" -m pip install -r requirements.txt
-""%~dp0venv\Scripts\python.exe"" -m py_compile bot.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py scripts\migrate_database.py scripts\export_sqlite_to_postgres.py
+""%~dp0venv\Scripts\python.exe"" -m py_compile bot.py community_quotes.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py scripts\migrate_database.py scripts\export_sqlite_to_postgres.py
 pause
 ", new UTF8Encoding(false));
 
@@ -889,7 +890,7 @@ pause
         Run(pythonCommand, "-m venv \"" + Path.Combine(appDir, "venv") + "\"", appDir, true);
         Run(venvPython, "-m pip install --upgrade pip", appDir, false);
         Run(venvPython, "-m pip install \"discord.py>=2.3.2\" \"Flask>=3.0.0\" \"sentry-sdk>=2.0.0\"", appDir, false);
-        Run(venvPython, "-m py_compile bot.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py observability.py scripts\\migrate_database.py scripts\\export_sqlite_to_postgres.py", appDir, false);
+        Run(venvPython, "-m py_compile bot.py community_quotes.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py observability.py scripts\\migrate_database.py scripts\\export_sqlite_to_postgres.py", appDir, false);
         if (!String.IsNullOrWhiteSpace(InitialAdminUsername) && !String.IsNullOrWhiteSpace(InitialAdminPassword))
         {
             string script = Path.Combine(appDir, "scripts", "reset_admin_login.py");

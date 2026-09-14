@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 import database_migrations
+from community_quotes import quote_fingerprint
 
 
 class CommunityQuoteMigrationTests(unittest.TestCase):
@@ -18,7 +19,7 @@ class CommunityQuoteMigrationTests(unittest.TestCase):
             version = connection.execute(
                 "SELECT version FROM schema_version WHERE id = 1"
             ).fetchone()["version"]
-            self.assertEqual(version, 24)
+            self.assertEqual(version, 25)
             quote_columns = {
                 row["name"]
                 for row in connection.execute(
@@ -33,8 +34,18 @@ class CommunityQuoteMigrationTests(unittest.TestCase):
                     "status",
                     "reviewed_by",
                     "last_posted_at",
+                    "source_text",
+                    "context_text",
+                    "category",
+                    "normalized_hash",
                 }.issubset(quote_columns)
             )
+            self.assertIsNotNone(connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'public_form_attempts'"
+            ).fetchone())
+            self.assertIsNotNone(connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'scheduler_leases'"
+            ).fetchone())
             run_columns = {
                 row["name"]
                 for row in connection.execute(
@@ -94,6 +105,38 @@ class CommunityQuoteMigrationTests(unittest.TestCase):
         finally:
             bot.DB_FILE = original_db_file
             bot.bot.get_channel = original_get_channel
+            try:
+                os.unlink(temp_file.name)
+            except OSError:
+                pass
+
+    def test_quote_fingerprint_normalizes_spacing_case_and_curly_quotes(self):
+        first = quote_fingerprint("  Stay curious.  ", "Sana")
+        second = quote_fingerprint("stay   curious.", "SANA")
+        self.assertEqual(first, second)
+
+    def test_scheduler_lease_blocks_a_second_instance_until_expiry(self):
+        import bot
+
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        temp_file.close()
+        original_db_file = bot.DB_FILE
+        original_instance_id = bot.BOT_INSTANCE_ID
+        try:
+            bot.DB_FILE = Path(temp_file.name)
+            with bot.database() as connection:
+                database_migrations.apply_database_migrations(connection)
+            instant = datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc)
+            bot.BOT_INSTANCE_ID = "instance-a"
+            self.assertTrue(bot.acquire_scheduler_lease("daily:test", 300, instant))
+            bot.BOT_INSTANCE_ID = "instance-b"
+            self.assertFalse(bot.acquire_scheduler_lease("daily:test", 300, instant))
+            self.assertTrue(bot.acquire_scheduler_lease(
+                "daily:test", 300, instant.replace(minute=6)
+            ))
+        finally:
+            bot.DB_FILE = original_db_file
+            bot.BOT_INSTANCE_ID = original_instance_id
             try:
                 os.unlink(temp_file.name)
             except OSError:

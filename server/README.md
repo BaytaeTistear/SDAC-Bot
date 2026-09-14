@@ -1,6 +1,6 @@
-# SDAC Bot
+# Sana-Chan Bot
 
-SDAC Bot is a Discord media submission and guessing-game system with a web dashboard. Discord users submit images, audio, or video through `/submit`. Admins configure categories, review pending submissions, run guessing games, and view submissions, votes, leaderboards, maintenance status, and moderation history from the dashboard.
+Sana-Chan Bot is a Discord media submission and guessing-game system with a web dashboard. Discord users submit images, audio, or video through `/submit`. Admins configure categories, review pending submissions, run guessing games, and view submissions, votes, leaderboards, maintenance status, and moderation history from the dashboard.
 
 ## What It Does
 
@@ -281,13 +281,13 @@ curl -I https://freethefishies.us.to/health
 Admin JSON health:
 
 ```text
-https://freethefishies.us.to/admin/health?key=ImTheBestAdmin
+https://freethefishies.us.to/admin/health
 ```
 
 Human-friendly maintenance page:
 
 ```text
-https://freethefishies.us.to/admin/maintenance?key=ImTheBestAdmin
+https://freethefishies.us.to/admin/maintenance
 ```
 
 ### Nginx And HTTPS
@@ -379,8 +379,8 @@ venv/bin/python scripts/archive_old_history.py --months 18 --delete-exported
 The dashboard also exposes these operations under:
 
 ```text
-/admin/media?key=ImTheBestAdmin
-/admin/maintenance?key=ImTheBestAdmin
+/admin/media
+/admin/maintenance
 /my-submissions
 ```
 
@@ -514,7 +514,7 @@ Project links are also available inside the `/sana` panel:
 
 Admins should start with `/sana`. The panel opens button-based menus for setup, command launcher naming, setup status, setup tests, diagnostics, backups, moderation, and advanced help.### Server Owner Quick Setup
 
-1. Invite SDAC with the bot and application command scopes.
+1. Invite Sana-Chan with the bot and application command scopes.
 2. Run `/sana` in Discord and open Setup.
 3. Pick the admin role, submit channel, category repost channels, and optional approval channel.
 4. On the final setup page, optionally set a server command name like `/pepo`.
@@ -534,35 +534,36 @@ Admins should start with `/sana`. The panel opens button-based menus for setup, 
 /account/register               Create a dashboard account
 /account/login                  Dashboard account login
 /account                        Dashboard account profile
-/admin/login?key=ImTheBestAdmin Admin login
-/admin?key=ImTheBestAdmin       Role-aware Staff Home
-/admin/moderator?key=ImTheBestAdmin Moderator workbench
-/admin/server-owner?key=ImTheBestAdmin Server Owner workbench
-/admin/bot-owner?key=ImTheBestAdmin Bot Owner workbench
-/admin/overview?key=ImTheBestAdmin Metrics overview
-/admin/settings?key=ImTheBestAdmin
-/admin/game-library?key=ImTheBestAdmin
-/admin/seasons?key=ImTheBestAdmin
-/admin/onboarding?key=ImTheBestAdmin
-/admin/maintenance?key=ImTheBestAdmin
-/admin/install-doctor?key=ImTheBestAdmin
-/admin/approvals?key=ImTheBestAdmin
-/admin/owner-portal?key=ImTheBestAdmin
-/admin/server-health?key=ImTheBestAdmin
-/admin/media?key=ImTheBestAdmin
-/admin/jobs?key=ImTheBestAdmin
-/admin/privacy?key=ImTheBestAdmin
-/admin/analytics?key=ImTheBestAdmin
-/admin/monthly-report?key=ImTheBestAdmin
-/admin/releases?key=ImTheBestAdmin
-/admin/production-health?key=ImTheBestAdmin
-/admin/moderation?key=ImTheBestAdmin
-/admin/guild/GUILD_ID/config.json?key=ImTheBestAdmin
-/audit?key=ImTheBestAdmin
-/admin/audit?key=ImTheBestAdmin
-/export/audit.csv?key=ImTheBestAdmin
-/export/monthly-report.csv?key=ImTheBestAdmin
-/admin/health?key=ImTheBestAdmin
+/admin/login                   Admin login
+/admin                         Role-aware Staff Home
+/admin/moderator               Moderator workbench
+/admin/server-owner            Server Owner workbench
+/admin/bot-owner               Bot Owner workbench
+/admin/overview                Metrics overview
+/admin/quotes                  Quote moderation
+/admin/settings
+/admin/game-library
+/admin/seasons
+/admin/onboarding
+/admin/maintenance
+/admin/install-doctor
+/admin/approvals
+/admin/owner-portal
+/admin/server-health
+/admin/media
+/admin/jobs
+/admin/privacy
+/admin/analytics
+/admin/monthly-report
+/admin/releases
+/admin/production-health
+/admin/moderation
+/admin/guild/GUILD_ID/config.json
+/audit
+/admin/audit
+/export/audit.csv
+/export/monthly-report.csv
+/admin/health
 /api/stats
 /api/servers
 /api/leaderboard
@@ -611,7 +612,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Sana-Chan-Windows-Update.p
 
 The local `server/` folder is the clean upload folder for manual Ubuntu updates.
 
-## Sana-Chan App Install
+## Sana-Chan app Install
 
 The dashboard also works as an installable web app. Open the dashboard in a modern mobile or desktop browser and use the browser install prompt, or tap the in-page **Install App** button when it appears. This uses the existing website, Discord login, server selector, submissions, games, and admin pages; no app-store install is required.
 
@@ -619,7 +620,7 @@ The app entry point is `/app`. It sends admins to the admin overview, signed-in 
 
 ## Official Native App Scaffold
 
-The official Sana-Chan app scaffold lives in `apps/sdac-official-app`. It uses Vite and Capacitor so the existing Flask dashboard remains the source of truth while mobile builds use the packaged Sana-Chan shell. The current app display name is `Sana-Chan`, and it defaults to `https://freethefishies.us.to`.
+The official Sana-Chan app scaffold lives in `apps/sana-official-app`. It uses Vite and Capacitor so the existing Flask dashboard remains the source of truth while mobile builds use the packaged Sana-Chan shell. The current app display name is `Sana-Chan`, and it defaults to `https://sanachan.bot.nu`.
 
 Recommended path:
 
@@ -632,15 +633,15 @@ The native scaffold reads `GET /api/app/bootstrap` for app metadata, current log
 
 If the app shell runs from another origin during development, set `SANA_APP_ALLOWED_ORIGINS` on the dashboard server, for example `http://localhost:5174,capacitor://localhost`.
 
-Android supports both direct APK/sideload testing and Play Store AAB builds. See `apps/sdac-official-app/README.md` for the exact Android SDK, APK, and store build commands.
+Android supports both direct APK/sideload testing and Play Store AAB builds. See `apps/sana-official-app/README.md` for the exact Android SDK, APK, and store build commands.
 
 ## Update Scope Labels
 
-SDAC keeps the bot, dashboard, and companion app in one repository while the app depends on the dashboard backend. Every release note should identify the affected product scope:
+Sana-Chan keeps the bot, dashboard, and companion app in one repository while the app depends on the dashboard backend. Every release note should identify the affected product scope:
 
 - `Bot update` for bot/dashboard/server-only changes.
-- `App update` for Sana-Chan app-only changes.
-- `Bot and App update` for changes that affect both the server/dashboard and Sana-Chan app.
+- `App update` for Sana-Chan-only changes.
+- `Bot and App update` for changes that affect both the server/dashboard and Sana-Chan.
 
 Use the same scope wording in GitHub release titles, Discord update announcements, and `RELEASE.md` entries so server owners know whether they need to update the server, the Android app, or both.
 

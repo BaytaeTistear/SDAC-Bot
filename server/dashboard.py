@@ -46,6 +46,13 @@ from flask import (
 )
 
 from config import TOKEN
+from community_quotes import (
+    QUOTE_CATEGORIES,
+    find_duplicate_quote,
+    normalized_quote_category,
+    quote_display_text,
+    quote_fingerprint,
+)
 from database_backend import connect_database, using_postgres
 from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
 from dashboard_account_templates import (
@@ -76,7 +83,9 @@ from observability import init_sentry
 app = Flask(__name__)
 init_sentry("sdac-dashboard")
 
-ADMIN_KEY = os.getenv("SDAC_ADMIN_KEY", "ImTheBestAdmin")
+ADMIN_KEY = os.getenv("SDAC_ADMIN_KEY", "").strip()
+TURNSTILE_SITE_KEY = os.getenv("SDAC_TURNSTILE_SITE_KEY", "").strip()
+TURNSTILE_SECRET_KEY = os.getenv("SDAC_TURNSTILE_SECRET_KEY", "").strip()
 DISCORD_OAUTH_CLIENT_ID = (
     os.getenv("SANA_DISCORD_CLIENT_ID")
     or os.getenv("SDAC_DISCORD_CLIENT_ID")
@@ -5964,6 +5973,7 @@ COMMAND_CENTER_BODY = """
 NOTIFICATION_CENTER_BODY = """
 <section class="panel"><h2>Notification Center</h2><div class="grid"><div class="metric"><strong>{{ totals.critical }}</strong><span>Critical</span></div><div class="metric"><strong>{{ totals.warning }}</strong><span>Warnings</span></div><div class="metric"><strong>{{ totals.info }}</strong><span>Info</span></div><div class="metric"><strong>{{ totals.total }}</strong><span>Total</span></div></div></section>
 <section class="panel"><h2>Alerts</h2><table><thead><tr><th>Severity</th><th>Area</th><th>Message</th><th>Action</th></tr></thead><tbody>{% for item in notifications %}<tr><td class="{{ item.class }}">{{ item.severity }}</td><td>{{ item.area }}</td><td>{{ item.message }}</td><td><a class="button secondary" href="{{ item.url }}">Open</a></td></tr>{% else %}<tr><td colspan="4" class="muted">No dashboard notifications are active.</td></tr>{% endfor %}</tbody></table></section>
+<section class="panel"><h2>Recent Deliveries</h2><div style="overflow-x:auto"><table><thead><tr><th>When</th><th>Event</th><th>Server</th><th>Channel</th><th>Status</th><th>Result</th></tr></thead><tbody>{% for row in deliveries %}<tr><td>{{ row.created_at }}</td><td>{{ row.event_key }}</td><td>{{ row.guild_id or 'Global' }}</td><td>{{ row.channel_id }}</td><td class="{{ 'ok' if row.status == 'sent' else 'bad' }}">{{ row.status.title() }}</td><td>{{ row.response_message_id or row.error_text }}</td></tr>{% else %}<tr><td colspan="6" class="muted">No notification attempts have been recorded yet.</td></tr>{% endfor %}</tbody></table></div></section>
 """
 
 LAUNCH_SCORES_BODY = """
@@ -8273,9 +8283,10 @@ def apply_notification_preset(preset_key, guild_id, channel_id, actor_id="", act
 
 def security_warnings():
     warnings = []
-    if ADMIN_KEY == "ImTheBestAdmin":
+    if ADMIN_KEY:
         warnings.append(
-            "SDAC_ADMIN_KEY is still using the development default."
+            "Legacy URL-key admin access is enabled. Prefer account login and remove "
+            "SDAC_ADMIN_KEY after confirming your owner account works."
         )
     if not os.getenv("SDAC_SECRET_KEY"):
         warnings.append(
@@ -12161,6 +12172,27 @@ def post_discord_channel_message(channel_id, content):
     return bool(post_discord_channel_payload(channel_id, {"content": content[:1900]}))
 
 
+def record_notification_delivery(connection, event_key, guild_id, channel_id, payload):
+    success = bool(payload)
+    connection.execute(
+        """
+        INSERT INTO notification_deliveries (
+            event_key, guild_id, channel_id, status, error_text,
+            response_message_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            str(event_key or "")[:80],
+            str(guild_id or "")[:32],
+            str(channel_id or "")[:32],
+            "sent" if success else "failed",
+            "" if success else "Discord API request failed or was not configured.",
+            str(payload.get("id") or "")[:32] if isinstance(payload, dict) else "",
+            utc_now_iso(),
+        ),
+    )
+
+
 def community_rsvp_poll_payload(content, row):
     title = community_clean_text(row["title"], 80) or "this community post"
     return {
@@ -12581,6 +12613,9 @@ def send_community_notification(event_key, message, post_id, guild_id=None, thro
         sent = 0
         for route in route_rows:
             payload = post_discord_channel_payload(route["channel_id"], community_rsvp_poll_payload(content, post_row))
+            record_notification_delivery(
+                connection, event_key, route["guild_id"], route["channel_id"], payload
+            )
             if payload and record_community_announcement(connection, post_id, route["guild_id"], route["channel_id"], payload):
                 sent += 1
     return sent
@@ -12606,9 +12641,14 @@ def send_admin_notification(
     title = NOTIFICATION_EVENT_LABELS.get(event_key, event_key)
     content = f"**Sana-Chan {title}**\n{message}"
     sent = 0
-    for row in route_rows:
-        if post_discord_channel_message(row["channel_id"], content):
-            sent += 1
+    with database() as connection:
+        for row in route_rows:
+            payload = post_discord_channel_payload(row["channel_id"], {"content": content[:1900]})
+            record_notification_delivery(
+                connection, event_key, row["guild_id"], row["channel_id"], payload
+            )
+            if payload:
+                sent += 1
     return sent
 
 
@@ -13854,7 +13894,7 @@ def resolve_pending_admin_action(action_id, decision, actor_id, actor_name):
 
 
 def has_valid_key():
-    return (
+    return bool(ADMIN_KEY) and (
         request.args.get("key") == ADMIN_KEY
         or request.form.get("key") == ADMIN_KEY
     )
@@ -13877,6 +13917,79 @@ def require_csrf_token():
 
 def login_remote_key():
     return request.remote_addr or "unknown"
+
+
+def public_remote_address():
+    trust_proxy = os.getenv("SDAC_TRUST_PROXY", "false").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+    if trust_proxy:
+        forwarded_for = request.headers.get("X-Forwarded-For", "")
+        if forwarded_for:
+            return forwarded_for.split(",", 1)[0].strip() or "unknown"
+    return request.remote_addr or "unknown"
+
+
+def public_form_rate_limited(bucket, max_attempts=5, window_seconds=600):
+    bucket = re.sub(r"[^a-z0-9_.-]+", "-", str(bucket or "public").casefold())[:80]
+    remote_hash = hashlib.sha256(public_remote_address().encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(seconds=max(1, int(window_seconds)))).isoformat()
+    with database() as connection:
+        connection.execute(
+            "DELETE FROM public_form_attempts WHERE created_at < ?",
+            (cutoff,),
+        )
+        attempts = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM public_form_attempts
+            WHERE bucket = ? AND remote_hash = ? AND created_at >= ?
+            """,
+            (bucket, remote_hash, cutoff),
+        ).fetchone()[0]
+        if int(attempts) >= max(1, int(max_attempts)):
+            return True
+        connection.execute(
+            """
+            INSERT INTO public_form_attempts (bucket, remote_hash, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (bucket, remote_hash, now.isoformat()),
+        )
+    return False
+
+
+def verify_turnstile_response():
+    if not TURNSTILE_SECRET_KEY:
+        return True
+    token = str(request.form.get("cf-turnstile-response") or "").strip()
+    if not token:
+        return False
+    payload = urlencode({
+        "secret": TURNSTILE_SECRET_KEY,
+        "response": token,
+        "remoteip": public_remote_address(),
+    }).encode("utf-8")
+    verification_request = Request(
+        "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+        data=payload,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urlopen(verification_request, timeout=8) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        return bool(result.get("success"))
+    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+        return False
+
+
+def require_public_form_protection(bucket):
+    if not verify_turnstile_response():
+        raise ValueError("Please complete the anti-spam check and try again.")
+    if public_form_rate_limited(bucket):
+        raise ValueError("Too many submissions were received. Please wait ten minutes and try again.")
 
 
 def prune_login_attempts(remote_key):
@@ -15196,7 +15309,8 @@ def recent_release_rows(limit=8):
 
 
 def admin_url(endpoint, **values):
-    values.setdefault("key", ADMIN_KEY)
+    if ADMIN_KEY and not is_admin_logged_in():
+        values.setdefault("key", ADMIN_KEY)
     return url_for(endpoint, **values)
 
 
@@ -15297,6 +15411,12 @@ def inject_admin_sidebar(response):
         page_html = page_html.replace("</head>", PWA_HEAD_HTML.replace("<link", "<link id=\"sdac-pwa-head\"", 1) + "\n</head>", 1)
     if "sdac-theme-vars" not in page_html:
         page_html = page_html.replace("</head>", dashboard_theme_css() + "\n</head>", 1)
+    if TURNSTILE_SITE_KEY and "cf-turnstile" in page_html and "turnstile/v0/api.js" not in page_html:
+        page_html = page_html.replace(
+            "</head>",
+            '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>\n</head>',
+            1,
+        )
     page_html = add_body_classes(page_html, "sdac-theme")
     if should_render_admin_sidebar() and request.args.get("embed") != "1" and 'class="sdac-sidebar"' not in page_html:
         if "sdac-sidebar-style" not in page_html:
@@ -15368,21 +15488,22 @@ def add_vary_header(current, value):
 
 
 def require_admin_key():
-    if not has_valid_key():
+    if not is_admin_logged_in() and not has_valid_key():
         abort(403)
 
 
 def require_admin_login(required_role="moderator"):
-    require_admin_key()
-    if not is_admin_logged_in():
+    if is_admin_logged_in():
+        if not has_admin_role(required_role):
+            abort(403)
+        return None
+    if has_valid_key():
         return redirect(url_for(
             "admin_login",
             key=ADMIN_KEY,
             next=request.full_path,
         ))
-    if not has_admin_role(required_role):
-        abort(403)
-    return None
+    return redirect(url_for("account_login", next=request.full_path))
 
 
 def positive_page(raw_value):
@@ -16002,13 +16123,7 @@ def admin_oauth_callback():
 
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
-    if not has_valid_key():
-        abort(403)
-
-    next_url = safe_next_url(request.values.get("next"), url_for(
-        "index",
-        key=ADMIN_KEY,
-    ))
+    next_url = safe_next_url(request.values.get("next"), url_for("index"))
     error = request.args.get("error", "")
     username = request.values.get("username", "").strip()
 
@@ -20108,6 +20223,45 @@ def admin_analytics():
                 scope_params,
             ).fetchone()[0],
         }
+        quote_status_rows = connection.execute(
+            f"""
+            SELECT status, COUNT(*) AS count
+            FROM community_quotes
+            WHERE {scope_sql}
+            GROUP BY status
+            """,
+            scope_params,
+        ).fetchall()
+        quote_counts = {row["status"]: int(row["count"]) for row in quote_status_rows}
+        totals["Quotes Pending"] = quote_counts.get("pending", 0)
+        totals["Quotes Approved"] = quote_counts.get("approved", 0)
+        totals["Quotes Rejected"] = quote_counts.get("rejected", 0)
+        totals["Daily Quotes Posted"] = connection.execute(
+            f"SELECT COUNT(*) FROM community_quote_daily_runs WHERE {scope_sql}",
+            scope_params,
+        ).fetchone()[0]
+        reviewed_quotes = connection.execute(
+            f"""
+            SELECT created_at, reviewed_at
+            FROM community_quotes
+            WHERE reviewed_at != '' AND {scope_sql}
+            """,
+            scope_params,
+        ).fetchall()
+        review_hours = []
+        for quote in reviewed_quotes:
+            try:
+                elapsed = datetime.fromisoformat(quote["reviewed_at"]) - datetime.fromisoformat(quote["created_at"])
+                review_hours.append(max(0.0, elapsed.total_seconds() / 3600))
+            except (TypeError, ValueError):
+                continue
+        review_hours.sort()
+        if review_hours:
+            middle = len(review_hours) // 2
+            median_hours = review_hours[middle] if len(review_hours) % 2 else (review_hours[middle - 1] + review_hours[middle]) / 2
+            totals["Median Quote Review"] = f"{median_hours:.1f} hours"
+        else:
+            totals["Median Quote Review"] = "No reviewed quotes"
         submissions_by_month = connection.execute(f"""
             SELECT substr(COALESCE(created_at, submitted_at, ''), 1, 7) AS month,
                    COUNT(*) AS count
@@ -20823,7 +20977,21 @@ def admin_notification_center():
         return login_response
     notifications = dashboard_notifications()
     totals = {"critical": sum(1 for item in notifications if item["severity"] == "Critical"), "warning": sum(1 for item in notifications if item["severity"] == "Warning"), "info": sum(1 for item in notifications if item["severity"] == "Info"), "total": len(notifications)}
-    return admin_tool_shell("Notification Center", "Actionable alerts for review queues, releases, backups, security, and bot health.", NOTIFICATION_CENTER_BODY, notifications=notifications, totals=totals)
+    allowed_ids = current_admin_allowed_guild_ids(load_config())
+    scope_sql, scope_params = guild_id_filter("guild_id", allowed_ids)
+    with closing(connect_db()) as connection:
+        deliveries = connection.execute(
+            f"""
+            SELECT event_key, guild_id, channel_id, status, error_text,
+                   response_message_id, created_at
+            FROM notification_deliveries
+            WHERE {scope_sql}
+            ORDER BY id DESC
+            LIMIT 25
+            """,
+            scope_params,
+        ).fetchall()
+    return admin_tool_shell("Notification Center", "Actionable alerts for review queues, releases, backups, security, and bot health.", NOTIFICATION_CENTER_BODY, notifications=notifications, totals=totals, deliveries=deliveries)
 
 
 @app.route("/admin/launch-scores")
@@ -24738,6 +24906,11 @@ def community_admin_review_url(post_type):
     return url_for("account_login", next=review_path, _external=True)
 
 
+def community_quote_admin_review_url():
+    review_path = url_for("admin_quote_submissions", status="pending")
+    return url_for("account_login", next=review_path, _external=True)
+
+
 def community_submission_notification_message(row):
     post_type = row["post_type"]
     labels = COMMUNITY_POST_LABELS.get(post_type, {"singular": "Community Post"})
@@ -24931,6 +25104,7 @@ COMMUNITY_LISTING_HTML = """
                 <label>Your name<input name="submitter_name" maxlength="120" placeholder="Shown to admins only unless approved notes include it"></label>
                 <label class="wide">Contact for admins<input name="submitter_contact" maxlength="180" placeholder="Discord handle, email, or best way to reach you"></label>
                 <label class="wide">Description<textarea name="description" maxlength="3000" required placeholder="What is it, who is it for, and what should people know?"></textarea></label>
+                {% if turnstile_site_key %}<div class="cf-turnstile wide" data-sitekey="{{ turnstile_site_key }}"></div>{% endif %}
                 <button class="wide" type="submit">Send For Admin Approval</button>
             </form>
         {% else %}
@@ -25037,6 +25211,7 @@ def ensure_community_posts_table():
                 guild_id TEXT NOT NULL DEFAULT '',
                 submitter_name TEXT NOT NULL DEFAULT '',
                 submitter_contact TEXT NOT NULL DEFAULT '',
+                submitter_user_id TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 reviewed_at TEXT NOT NULL DEFAULT '',
@@ -25054,6 +25229,8 @@ def ensure_community_posts_table():
             connection.execute("ALTER TABLE community_posts ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
         if "is_featured" not in columns:
             connection.execute("ALTER TABLE community_posts ADD COLUMN is_featured INTEGER NOT NULL DEFAULT 0")
+        if "submitter_user_id" not in columns:
+            connection.execute("ALTER TABLE community_posts ADD COLUMN submitter_user_id TEXT NOT NULL DEFAULT ''")
         connection.execute("UPDATE community_posts SET category = 'Events' WHERE category = '' AND post_type = 'event'")
         connection.execute("UPDATE community_posts SET category = 'Meetups' WHERE category = '' AND post_type = 'meetup'")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_posts_category_status ON community_posts(category, status, starts_at)")
@@ -25341,8 +25518,8 @@ def save_community_post(post_type):
             INSERT INTO community_posts (
                 post_type, category, status, title, description, location, starts_at, ends_at,
                 host_name, contact_url, guild_id, submitter_name, submitter_contact,
-                tags, created_at, updated_at
-            ) VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                submitter_user_id, tags, created_at, updated_at
+            ) VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 post_type,
@@ -25357,6 +25534,7 @@ def save_community_post(post_type):
                 guild_id,
                 community_clean_text(request.form.get("submitter_name"), 120),
                 community_clean_text(request.form.get("submitter_contact"), 180),
+                community_clean_text(session.get("sdac_discord_user_id"), 32),
                 tag,
                 now,
                 now,
@@ -25384,6 +25562,7 @@ def community_page(post_type):
     if request.method == "POST":
         require_csrf_token()
         try:
+            require_public_form_protection(f"community_{post_type}")
             post_id = save_community_post(post_type)
             with closing(connect_db()) as connection:
                 submitted_row = connection.execute("SELECT * FROM community_posts WHERE id = ?", (post_id,)).fetchone()
@@ -25430,6 +25609,7 @@ def community_page(post_type):
         selected_tag=selected_tag,
         selected_when=selected_when,
         tags=COMMUNITY_TAGS,
+        turnstile_site_key=TURNSTILE_SITE_KEY,
     )
 
 
@@ -25459,6 +25639,7 @@ COMMUNITY_QUOTES_HTML = """
         .filters { align-items: end; grid-template-columns: minmax(0, 1fr) auto; max-width: none; }
         label { color: #b9c7dc; display: grid; font-size: 0.94rem; gap: 0.45rem; font-weight: 700; }
         input, textarea, select { width: 100%; min-height: 2.65rem; border: 1px solid var(--border); border-radius: 0.55rem; background: #081122; color: var(--text); padding: 0.75rem 0.85rem; font: inherit; }
+        input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
         textarea { min-height: 8rem; resize: vertical; }
         button { border: 0; border-radius: 0.55rem; padding: 0.8rem 1rem; color: white; font: inherit; font-weight: 800; cursor: pointer; background: linear-gradient(100deg, var(--accent2), var(--accent)); }
         .notice, .empty-state { border: 1px solid var(--border); border-radius: 0.55rem; padding: 0.9rem; }
@@ -25477,7 +25658,7 @@ COMMUNITY_QUOTES_HTML = """
         <p>Save memorable quotes and the people who said them. Every submission is reviewed before it can appear here or be selected for the daily Discord quote.</p>
         {% if selected_guild_name %}<p class="muted">Viewing {{ selected_guild_name }}</p>{% endif %}
     </section>
-    {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
+    {% if notice %}<div class="notice {{ 'error' if error else '' }}" role="{{ 'alert' if error else 'status' }}" aria-live="polite">{{ notice }}</div>{% endif %}
     <section class="panel">
         <form class="filters" method="get">
             <label>Server
@@ -25497,12 +25678,33 @@ COMMUNITY_QUOTES_HTML = """
                     <article class="quote-card">
                         <p class="quote-text">“{{ quote.quote_text }}”</p>
                         <p class="speaker">— {{ quote.speaker }}</p>
+                        {% if quote.category %}<p class="muted">{{ quote.category }}</p>{% endif %}
+                        {% if quote.source_text %}<p class="muted">Source: {{ quote.source_text }}</p>{% endif %}
+                        {% if quote.context_text %}<p class="muted">Context: {{ quote.context_text }}</p>{% endif %}
                         {% if quote.guild_name %}<p class="muted">{{ quote.guild_name }}</p>{% endif %}
                     </article>
                 {% endfor %}
             </div>
         {% else %}
             <div class="empty-state"><p class="muted">No approved quotes match this server yet.</p></div>
+        {% endif %}
+    </section>
+    <section class="panel" id="my-quotes">
+        <h2>My Quote Status</h2>
+        {% if account_logged_in %}
+            {% if my_quotes %}
+                <div class="grid">
+                {% for quote in my_quotes %}
+                    <article class="quote-card">
+                        <p class="quote-text">“{{ quote.quote_text }}”</p>
+                        <p class="speaker">— {{ quote.speaker }}</p>
+                        <p class="muted">Status: {{ quote.status.title() }}{% if quote.review_notes %} · {{ quote.review_notes }}{% endif %}</p>
+                    </article>
+                {% endfor %}
+                </div>
+            {% else %}<p class="muted">You have not submitted a quote from this Discord account yet.</p>{% endif %}
+        {% else %}
+            <p class="muted"><a href="{{ url_for('account_login', next=url_for('community_quotes') + '#my-quotes') }}">Sign in with Discord</a> to track review status.</p>
         {% endif %}
     </section>
     <section class="panel" id="submit">
@@ -25519,12 +25721,22 @@ COMMUNITY_QUOTES_HTML = """
                 <label>Who said it?
                     <input name="speaker" maxlength="160" required placeholder="Person or character name">
                 </label>
+                <label>Category
+                    <select name="category">{% for category in quote_categories %}<option value="{{ category }}">{{ category }}</option>{% endfor %}</select>
+                </label>
+                <label>Source
+                    <input name="source_text" maxlength="200" placeholder="Episode, event, stream, conversation, or other source">
+                </label>
+                <label>Context
+                    <textarea name="context_text" maxlength="500" placeholder="Optional context that helps reviewers understand the quote"></textarea>
+                </label>
                 <label>Your name
                     <input name="submitter_name" maxlength="120" placeholder="Optional; shown only to reviewers">
                 </label>
                 <label>Quote
                     <textarea name="quote_text" maxlength="1000" required placeholder="Enter the quote exactly as it should appear"></textarea>
                 </label>
+                {% if turnstile_site_key %}<div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>{% endif %}
                 <button type="submit">Send For Admin Approval</button>
             </form>
         {% else %}
@@ -25535,6 +25747,56 @@ COMMUNITY_QUOTES_HTML = """
 </main>
 </body>
 </html>
+"""
+
+QUOTE_APPROVAL_BODY = """
+<section class="panel">
+    <form class="actions" method="get" action="{{ url_for('admin_quote_submissions') }}">
+        <label>Status
+            <select name="status">{% for option in status_options %}<option value="{{ option }}" {% if option == selected_status %}selected{% endif %}>{{ option.title() }}</option>{% endfor %}</select>
+        </label>
+        <label>Server
+            <select name="guild_id"><option value="">All accessible servers</option>{% for guild in guild_options %}<option value="{{ guild.id }}" {% if guild.id == selected_guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}</select>
+        </label>
+        <button type="submit">Filter</button>
+    </form>
+</section>
+<section class="panel">
+    <h2>Community Quote Review</h2>
+    <div style="overflow-x:auto">
+    <table>
+        <thead><tr><th>ID</th><th>Quote</th><th>Submitter</th><th>Status</th><th>Review</th></tr></thead>
+        <tbody>
+        {% for quote in quotes %}
+            <tr>
+                <td>#{{ quote.id }}<br><span class="muted">{{ quote.guild_name }}</span></td>
+                <td><strong>“{{ quote.quote_text }}”</strong><br>— {{ quote.speaker }}{% if quote.source_text %}<br><span class="muted">Source: {{ quote.source_text }}</span>{% endif %}{% if quote.context_text %}<br><span class="muted">Context: {{ quote.context_text }}</span>{% endif %}</td>
+                <td>{{ quote.submitter_name or 'Unknown' }}{% if quote.submitter_user_id %}<br><span class="muted">Discord {{ quote.submitter_user_id }}</span>{% endif %}</td>
+                <td>{{ quote.status.title() }}<br><span class="muted">{{ quote.created_at }}</span></td>
+                <td>
+                    <form class="stack" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="quote_id" value="{{ quote.id }}">
+                        <label>Quote<textarea name="quote_text" maxlength="1000" required>{{ quote.quote_text }}</textarea></label>
+                        <label>Speaker<input name="speaker" maxlength="160" required value="{{ quote.speaker }}"></label>
+                        <label>Category<select name="category">{% for category in quote_categories %}<option value="{{ category }}" {% if quote.category == category %}selected{% endif %}>{{ category }}</option>{% endfor %}</select></label>
+                        <label>Source<input name="source_text" maxlength="200" value="{{ quote.source_text or '' }}"></label>
+                        <label>Context<textarea name="context_text" maxlength="500">{{ quote.context_text or '' }}</textarea></label>
+                        <label>Review notes<input name="review_notes" maxlength="500" value="{{ quote.review_notes or '' }}"></label>
+                        <button name="action" value="approve" type="submit">Approve</button>
+                        <button name="action" value="reject" type="submit">Reject</button>
+                        {% if quote.status == 'approved' %}<button name="action" value="post_now" type="submit">Post Now</button>{% endif %}
+                        <button name="action" value="delete" type="submit" onclick="return confirm('Delete quote #{{ quote.id }}?')">Delete</button>
+                    </form>
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="5" class="muted">No quotes match this filter.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
 """
 
 
@@ -25563,7 +25825,10 @@ def ensure_community_quotes_table():
         """)
 
 
-def community_quote_rows(guild_id="", status="approved", limit=100):
+def community_quote_rows(
+    guild_id="", status="approved", limit=100, allowed_guild_ids=None,
+    submitter_user_id="",
+):
     ensure_community_quotes_table()
     clauses = []
     params = []
@@ -25571,15 +25836,27 @@ def community_quote_rows(guild_id="", status="approved", limit=100):
     if guild_id:
         clauses.append("guild_id = ?")
         params.append(guild_id)
+    if allowed_guild_ids is not None:
+        allowed_guild_ids = [str(item) for item in allowed_guild_ids]
+        if not allowed_guild_ids:
+            return []
+        clauses.append("guild_id IN (" + ",".join("?" for _ in allowed_guild_ids) + ")")
+        params.extend(allowed_guild_ids)
     if status and status != "all":
         clauses.append("status = ?")
         params.append(status)
+    submitter_user_id = community_clean_text(submitter_user_id, 32)
+    if submitter_user_id:
+        clauses.append("submitter_user_id = ?")
+        params.append(submitter_user_id)
     where = "WHERE " + " AND ".join(clauses) if clauses else ""
     guild_names = community_guild_name_map()
     with closing(connect_db()) as connection:
         rows = connection.execute(
             f"""
-            SELECT id, guild_id, quote_text, speaker, status, created_at
+            SELECT id, guild_id, quote_text, speaker, source_text, context_text,
+                   category, status, submitter_user_id, submitter_name, created_at,
+                   reviewed_at, reviewed_by, review_notes, last_posted_at
             FROM community_quotes
             {where}
             ORDER BY id DESC
@@ -25609,20 +25886,34 @@ def save_community_quote():
     if not submitter_name:
         submitter_name = community_clean_text(current_account_username(), 120)
     submitter_user_id = community_clean_text(session.get("sdac_discord_user_id"), 32)
+    source_text = community_clean_text(request.form.get("source_text"), 200)
+    context_text = community_clean_text(request.form.get("context_text"), 500)
+    category = normalized_quote_category(request.form.get("category"))
+    normalized_hash = quote_fingerprint(quote_text, speaker)
     now = utc_now_iso()
     with database() as connection:
+        duplicate = find_duplicate_quote(connection, guild_id, normalized_hash)
+        if duplicate:
+            raise ValueError(
+                f"That quote is already in the {duplicate['status']} queue as quote #{duplicate['id']}."
+            )
         cursor = connection.execute("""
             INSERT INTO community_quotes (
                 guild_id, quote_text, speaker, status,
-                submitter_user_id, submitter_name, created_at, updated_at
+                submitter_user_id, submitter_name, source_text, context_text,
+                category, normalized_hash, created_at, updated_at
             )
-            VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
+            VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             guild_id,
             quote_text,
             speaker,
             submitter_user_id,
             submitter_name,
+            source_text,
+            context_text,
+            category,
+            normalized_hash,
             now,
             now,
         ))
@@ -25641,9 +25932,11 @@ def community_quotes():
         (option["name"] for option in server_options if str(option["id"]) == selected_guild_id),
         "",
     )
+    submitter_user_id = community_clean_text(session.get("sdac_discord_user_id"), 32)
     if request.method == "POST":
         require_csrf_token()
         try:
+            require_public_form_protection("community_quote")
             quote_id, guild_id, quote_text, speaker, submitter_name = save_community_quote()
             preview = quote_text.replace("\n", " ").strip()
             if len(preview) > 300:
@@ -25655,7 +25948,8 @@ def community_quotes():
                     f"A new quote needs review: **{preview}**\n"
                     f"Speaker: **{speaker}**\n"
                     f"Submitted by: {submitter_label}\n"
-                    "Review in Discord: `/sana` -> Quotes -> Approval Queue"
+                    f"Website review: {community_quote_admin_review_url()}\n"
+                    "Discord review: `/sana` -> Quotes -> Approval Queue"
                 ),
                 guild_id=guild_id,
                 throttle_key=f"community_quote_submitted:{quote_id}",
@@ -25683,6 +25977,122 @@ def community_quotes():
         selected_guild_id=selected_guild_id,
         selected_guild_name=selected_guild_name,
         can_submit=bool(server_options),
+        quote_categories=QUOTE_CATEGORIES,
+        turnstile_site_key=TURNSTILE_SITE_KEY,
+        account_logged_in=is_account_logged_in(),
+        my_quotes=community_quote_rows(
+            selected_guild_id,
+            "all",
+            limit=25,
+            submitter_user_id=submitter_user_id,
+        ) if submitter_user_id else [],
+    )
+
+
+@app.route("/admin/quotes", methods=["GET", "POST"])
+def admin_quote_submissions():
+    login_response = require_admin_login("moderator")
+    if login_response:
+        return login_response
+    ensure_community_quotes_table()
+    selected_status = community_clean_text(request.args.get("status"), 20).casefold() or "pending"
+    if selected_status not in {"pending", "approved", "rejected", "all"}:
+        selected_status = "pending"
+    config_data = load_config()
+    server_options = guild_options(config_data, minimum_role="moderator")
+    allowed_guild_ids = {str(option["id"]) for option in server_options}
+    selected_guild_id = community_clean_text(
+        request.args.get("guild_id") or request.form.get("guild_id"), 32
+    )
+    if selected_guild_id not in allowed_guild_ids:
+        selected_guild_id = ""
+    if request.method == "POST":
+        require_csrf_token()
+        action = community_clean_text(request.form.get("action"), 20).casefold()
+        raw_quote_id = community_clean_text(request.form.get("quote_id"), 20)
+        if action not in {"approve", "reject", "delete", "post_now"} or not raw_quote_id.isdigit():
+            return redirect(url_for("admin_quote_submissions", notice="Invalid quote action.", error=1, status=selected_status))
+        quote_id = int(raw_quote_id)
+        actor_id, actor = web_actor()
+        with database() as connection:
+            row = connection.execute("SELECT * FROM community_quotes WHERE id = ?", (quote_id,)).fetchone()
+            if not row or str(row["guild_id"]) not in allowed_guild_ids:
+                abort(404)
+            if action == "delete":
+                connection.execute("DELETE FROM community_quotes WHERE id = ?", (quote_id,))
+                message = f"Quote #{quote_id} deleted."
+            elif action == "post_now":
+                if row["status"] != "approved":
+                    message = "Only approved quotes can be posted."
+                else:
+                    channel_id = str((config_data.get("guilds") or {}).get(str(row["guild_id"]), {}).get("quote_channel") or "")
+                    posted = post_discord_channel_message(
+                        channel_id,
+                        f"**Community Quote**\n{quote_display_text(row)}",
+                    )
+                    message = "Quote posted to Discord." if posted else "Quote could not be posted. Check the quote channel and bot permissions."
+            else:
+                quote_text = community_clean_text(request.form.get("quote_text"), 1000)
+                speaker = community_clean_text(request.form.get("speaker"), 160)
+                if not quote_text or not speaker:
+                    return redirect(url_for("admin_quote_submissions", notice="Quote and speaker are required.", error=1, status=selected_status))
+                normalized_hash = quote_fingerprint(quote_text, speaker)
+                duplicate = find_duplicate_quote(connection, row["guild_id"], normalized_hash, exclude_id=quote_id)
+                if duplicate:
+                    return redirect(url_for("admin_quote_submissions", notice=f"Duplicate of quote #{duplicate['id']}.", error=1, status=selected_status))
+                new_status = "approved" if action == "approve" else "rejected"
+                review_notes = community_clean_text(request.form.get("review_notes"), 500)
+                now = utc_now_iso()
+                connection.execute(
+                    """
+                    UPDATE community_quotes
+                    SET quote_text = ?, speaker = ?, source_text = ?, context_text = ?,
+                        category = ?, normalized_hash = ?, status = ?, reviewed_at = ?,
+                        reviewed_by = ?, review_notes = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        quote_text,
+                        speaker,
+                        community_clean_text(request.form.get("source_text"), 200),
+                        community_clean_text(request.form.get("context_text"), 500),
+                        normalized_quote_category(request.form.get("category")),
+                        normalized_hash,
+                        new_status,
+                        now,
+                        actor,
+                        review_notes,
+                        now,
+                        quote_id,
+                    ),
+                )
+                row = connection.execute("SELECT * FROM community_quotes WHERE id = ?", (quote_id,)).fetchone()
+                message = f"Quote #{quote_id} {new_status}."
+            add_admin_audit_log(
+                connection,
+                row["guild_id"],
+                f"community_quote_{action}",
+                actor_id,
+                actor,
+                "community_quote",
+                quote_id,
+                message,
+            )
+        return redirect(url_for("admin_quote_submissions", notice=message, status=selected_status, guild_id=selected_guild_id))
+    return admin_tool_shell(
+        "Quote Moderation",
+        "Review, edit, reject, delete, or immediately post community quotes.",
+        QUOTE_APPROVAL_BODY,
+        quotes=community_quote_rows(
+            selected_guild_id,
+            selected_status,
+            allowed_guild_ids=allowed_guild_ids,
+        ),
+        selected_status=selected_status,
+        selected_guild_id=selected_guild_id,
+        status_options=["pending", "approved", "rejected", "all"],
+        guild_options=server_options,
+        quote_categories=QUOTE_CATEGORIES,
     )
 
 

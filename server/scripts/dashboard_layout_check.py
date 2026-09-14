@@ -23,8 +23,8 @@ DEFAULT_PATHS = [
     "/servers",
     "/stats",
     "/guessing",
-    "/admin/ui-preview?key=ImTheBestAdmin",
-    "/admin/ui-health?key=ImTheBestAdmin",
+    "/events",
+    "/quotes",
 ]
 VIEWPORTS = {
     "desktop": {"width": 1440, "height": 1000},

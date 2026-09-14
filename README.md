@@ -281,13 +281,13 @@ curl -I https://freethefishies.us.to/health
 Admin JSON health:
 
 ```text
-https://freethefishies.us.to/admin/health?key=ImTheBestAdmin
+https://freethefishies.us.to/admin/health
 ```
 
 Human-friendly maintenance page:
 
 ```text
-https://freethefishies.us.to/admin/maintenance?key=ImTheBestAdmin
+https://freethefishies.us.to/admin/maintenance
 ```
 
 ### Nginx And HTTPS
@@ -379,8 +379,8 @@ venv/bin/python scripts/archive_old_history.py --months 18 --delete-exported
 The dashboard also exposes these operations under:
 
 ```text
-/admin/media?key=ImTheBestAdmin
-/admin/maintenance?key=ImTheBestAdmin
+/admin/media
+/admin/maintenance
 /my-submissions
 ```
 
@@ -534,35 +534,36 @@ Admins should start with `/sana`. The panel opens button-based menus for setup, 
 /account/register               Create a dashboard account
 /account/login                  Dashboard account login
 /account                        Dashboard account profile
-/admin/login?key=ImTheBestAdmin Admin login
-/admin?key=ImTheBestAdmin       Role-aware Staff Home
-/admin/moderator?key=ImTheBestAdmin Moderator workbench
-/admin/server-owner?key=ImTheBestAdmin Server Owner workbench
-/admin/bot-owner?key=ImTheBestAdmin Bot Owner workbench
-/admin/overview?key=ImTheBestAdmin Metrics overview
-/admin/settings?key=ImTheBestAdmin
-/admin/game-library?key=ImTheBestAdmin
-/admin/seasons?key=ImTheBestAdmin
-/admin/onboarding?key=ImTheBestAdmin
-/admin/maintenance?key=ImTheBestAdmin
-/admin/install-doctor?key=ImTheBestAdmin
-/admin/approvals?key=ImTheBestAdmin
-/admin/owner-portal?key=ImTheBestAdmin
-/admin/server-health?key=ImTheBestAdmin
-/admin/media?key=ImTheBestAdmin
-/admin/jobs?key=ImTheBestAdmin
-/admin/privacy?key=ImTheBestAdmin
-/admin/analytics?key=ImTheBestAdmin
-/admin/monthly-report?key=ImTheBestAdmin
-/admin/releases?key=ImTheBestAdmin
-/admin/production-health?key=ImTheBestAdmin
-/admin/moderation?key=ImTheBestAdmin
-/admin/guild/GUILD_ID/config.json?key=ImTheBestAdmin
-/audit?key=ImTheBestAdmin
-/admin/audit?key=ImTheBestAdmin
-/export/audit.csv?key=ImTheBestAdmin
-/export/monthly-report.csv?key=ImTheBestAdmin
-/admin/health?key=ImTheBestAdmin
+/admin/login                   Admin login
+/admin                         Role-aware Staff Home
+/admin/moderator               Moderator workbench
+/admin/server-owner            Server Owner workbench
+/admin/bot-owner               Bot Owner workbench
+/admin/overview                Metrics overview
+/admin/quotes                  Quote moderation
+/admin/settings
+/admin/game-library
+/admin/seasons
+/admin/onboarding
+/admin/maintenance
+/admin/install-doctor
+/admin/approvals
+/admin/owner-portal
+/admin/server-health
+/admin/media
+/admin/jobs
+/admin/privacy
+/admin/analytics
+/admin/monthly-report
+/admin/releases
+/admin/production-health
+/admin/moderation
+/admin/guild/GUILD_ID/config.json
+/audit
+/admin/audit
+/export/audit.csv
+/export/monthly-report.csv
+/admin/health
 /api/stats
 /api/servers
 /api/leaderboard

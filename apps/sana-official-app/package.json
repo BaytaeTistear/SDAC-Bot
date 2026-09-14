@@ -28,5 +28,9 @@
     "@capacitor/cli": "^8.4.1",
     "typescript": "^5.9.3",
     "vite": "^8.1.4"
+  },
+  "overrides": {
+    "@xmldom/xmldom": "^0.9.12",
+    "nanoid": "^3.3.18"
   }
 }
