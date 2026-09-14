@@ -174,7 +174,7 @@ jobs:
         shell: pwsh
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\build_installers.ps1
       - name: Upload installer artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sana-installers
           path: |
@@ -238,7 +238,7 @@ jobs:
           cp apps/sana-official-app/android/app/build/outputs/apk/debug/app-debug.apk dist/Sana-Chan-Android-Debug.apk
           (cd dist && sha256sum Sana-Chan-Android-Debug.apk > Sana-Chan-Android-Debug.apk.sha256)
       - name: Upload Android app artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sana-app-android
           path: |
