@@ -521,6 +521,10 @@ Admins should start with `/sana`. The panel opens button-based menus for setup, 
 5. Use Sync Commands if Discord still shows old duplicate commands or the new alias has not appeared.
 6. Run the setup test and check Bot Owner Home after updates for restart warnings.
 
+### Quote Status Notifications
+
+Website quote submissions are available at `/quotes`, and moderators review them at `/admin/quotes`. Discord-linked submitters receive private DM updates when a quote is submitted, approved, or rejected. Website submitters can also provide an optional email address; configure the `SANA_SMTP_*` environment variables to enable private email updates.
+
 ### Dashboard Pages
 
 ```text

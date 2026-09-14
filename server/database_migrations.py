@@ -3,7 +3,7 @@ import sqlite3
 
 
 
-DATABASE_SCHEMA_VERSION = 25
+DATABASE_SCHEMA_VERSION = 26
 GOOGLE_PLAY_REVIEW_PASSWORD_HASH = "scrypt:32768:8:1$tpr2C1Lx7O3szQ0T$0f9b5ee8f0d5caaecaf4d69667ea93aff95365decc7108fd955590df4ef07c17680a64610805821aef23fcb86171de70c4bc0f577501ca920bb6b5bb80a4426b"
 
 
@@ -910,6 +910,16 @@ def migration_25_security_quotes_and_scheduler_leases(connection):
         ON notification_deliveries (created_at, event_key, guild_id)
     """)
 
+
+def migration_26_quote_submitter_email(connection):
+    ensure_column(
+        connection,
+        "community_quotes",
+        "submitter_email",
+        "TEXT NOT NULL DEFAULT ''",
+    )
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -934,6 +944,7 @@ MIGRATIONS = (
     (23, migration_23_community_posts_per_server),
     (24, migration_24_community_quotes),
     (25, migration_25_security_quotes_and_scheduler_leases),
+    (26, migration_26_quote_submitter_email),
 )
 
 

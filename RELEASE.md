@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.4.46 Experimental
+
+Version 4.4.46 adds opt-in private delivery updates for community quotes.
+
+## Quote Notifications
+
+- sends a private Discord DM when a Discord-linked quote is submitted, approved, or rejected
+- lets website submitters optionally provide an email address for private submission and review-status updates
+- includes the quote, speaker, review notes, and secure status-page link in those updates
+- records Discord DM outcomes and email delivery results for operational troubleshooting
+- documents optional SMTP provider settings in both environment templates and the Ubuntu installer
+
+---
+
 # Sana-Chan Version 4.4.45 Experimental
 
 Version 4.4.45 is a security, reliability, moderation, and quality hardening release.

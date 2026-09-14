@@ -1632,6 +1632,33 @@ def save_quote_channel(interaction, channel):
     )
 
 
+def quote_submitter_dm_text(row, status, review_notes=""):
+    status = str(status or "").strip().casefold()
+    if status == "submitted":
+        heading = f"Sana-Chan received community quote #{row['id']}."
+        status_line = "Status: Pending admin review"
+    else:
+        heading = f"Community quote #{row['id']} was {status}."
+        status_line = f"Status: {status.title()}"
+    lines = [heading, status_line, quote_display_text(row)]
+    if review_notes:
+        lines.append(f"Reviewer note: {str(review_notes).strip()[:500]}")
+    lines.append(f"Track your quotes: {DASHBOARD_BASE_URL}/quotes#my-quotes")
+    return "\n".join(lines)[:1900]
+
+
+async def send_quote_submitter_dm(client, row, status, review_notes=""):
+    user_id = str(row["submitter_user_id"] or "").strip()
+    if not user_id.isdigit():
+        return False
+    try:
+        user = client.get_user(int(user_id)) or await client.fetch_user(int(user_id))
+        await user.send(quote_submitter_dm_text(row, status, review_notes))
+        return True
+    except (discord.Forbidden, discord.HTTPException, discord.NotFound):
+        return False
+
+
 class QuoteSubmissionModal(discord.ui.Modal, title="Submit A Quote"):
     quote_input = discord.ui.TextInput(
         label="Quote",
@@ -1706,10 +1733,15 @@ class QuoteSubmissionModal(discord.ui.Modal, title="Submit A Quote"):
                 now,
             ))
             quote_id = int(cursor.lastrowid)
+            submitted_row = connection.execute(
+                "SELECT * FROM community_quotes WHERE id = ?",
+                (quote_id,),
+            ).fetchone()
         await interaction.response.send_message(
             f"Quote `#{quote_id}` was submitted for admin approval.",
             ephemeral=True,
         )
+        await send_quote_submitter_dm(interaction.client, submitted_row, "submitted")
 
 
 class QuoteReviewModal(discord.ui.Modal, title="Review A Quote"):
@@ -1738,7 +1770,7 @@ class QuoteReviewModal(discord.ui.Modal, title="Review A Quote"):
         now = utc_now_iso()
         with database() as connection:
             row = connection.execute("""
-                SELECT id, quote_text, speaker, submitter_user_id
+                SELECT *
                 FROM community_quotes
                 WHERE id = ? AND guild_id = ? AND status = 'pending'
             """, (int(raw_id), str(interaction.guild_id))).fetchone()
@@ -1773,6 +1805,12 @@ class QuoteReviewModal(discord.ui.Modal, title="Review A Quote"):
                 str(self.notes_input.value or "").strip(),
             )
         await interaction.response.send_message(f"Quote `#{raw_id}` is now **{status}**.", ephemeral=True)
+        await send_quote_submitter_dm(
+            interaction.client,
+            row,
+            status,
+            str(self.notes_input.value or "").strip(),
+        )
 
 
 class QuoteChannelSelect(discord.ui.ChannelSelect):

@@ -12508,6 +12508,87 @@ def create_discord_dm_channel(user_id):
         return ""
 
 
+def quote_submitter_status_url(row):
+    status_path = url_for(
+        "community_quotes",
+        guild_id=str(row["guild_id"] or ""),
+    ) + "#my-quotes"
+    return url_for("account_login", next=status_path, _external=True)
+
+
+def quote_submitter_notification_text(row, status, review_notes=""):
+    status = community_clean_text(status, 20).casefold()
+    guild_name = community_guild_name_map().get(
+        str(row["guild_id"]),
+        str(row["guild_id"] or ""),
+    )
+    if status == "submitted":
+        heading = f"Sana-Chan received community quote #{row['id']}."
+        status_line = "Status: Pending admin review"
+    else:
+        heading = f"Community quote #{row['id']} was {status}."
+        status_line = f"Status: {status.title()}"
+    lines = [
+        heading,
+        status_line,
+        f'Quote: “{community_clean_text(row["quote_text"], 1000)}”',
+        f'Speaker: {community_clean_text(row["speaker"], 160)}',
+    ]
+    if guild_name:
+        lines.append(f"Server: {guild_name}")
+    if row["category"]:
+        lines.append(f'Category: {community_clean_text(row["category"], 40)}')
+    if row["source_text"]:
+        lines.append(f'Source: {community_clean_text(row["source_text"], 200)}')
+    if review_notes:
+        lines.append(f"Reviewer note: {community_clean_text(review_notes, 500)}")
+    lines.extend(["", f"Track your quote: {quote_submitter_status_url(row)}"])
+    return "\n".join(lines)
+
+
+def send_quote_submitter_notifications(row, status, review_notes=""):
+    email_sent = 0
+    dm_sent = 0
+    failures = []
+    content = quote_submitter_notification_text(row, status, review_notes)
+    submitter_email = extract_email_address(row["submitter_email"])
+    if submitter_email:
+        subject_status = "received" if status == "submitted" else community_clean_text(status, 20)
+        try:
+            send_sana_email(
+                submitter_email,
+                f"Sana-Chan quote #{row['id']} {subject_status}",
+                content,
+                related_type="community_quote",
+                related_id=row["id"],
+                guild_id=row["guild_id"],
+            )
+            email_sent = 1
+        except (RuntimeError, ValueError) as error:
+            failures.append(f"Email update failed: {error}")
+    submitter_user_id = str(row["submitter_user_id"] or "").strip()
+    if submitter_user_id:
+        channel_id = create_discord_dm_channel(submitter_user_id)
+        payload = (
+            post_discord_channel_payload(channel_id, {"content": content[:1900]})
+            if channel_id
+            else None
+        )
+        with database() as connection:
+            record_notification_delivery(
+                connection,
+                f"community_quote_{status}_submitter",
+                row["guild_id"],
+                channel_id,
+                payload,
+            )
+        if payload:
+            dm_sent = 1
+        else:
+            failures.append("Discord DM update failed or the submitter has DMs disabled.")
+    return email_sent, dm_sent, failures
+
+
 def community_admin_dm_payload(row):
     labels = COMMUNITY_POST_LABELS.get(row["post_type"], {"singular": "Community Post"})
     guild_name = community_guild_name_map().get(str(row["guild_id"]), str(row["guild_id"] or ""))
@@ -25733,6 +25814,9 @@ COMMUNITY_QUOTES_HTML = """
                 <label>Your name
                     <input name="submitter_name" maxlength="120" placeholder="Optional; shown only to reviewers">
                 </label>
+                <label>Email for private status updates
+                    <input name="submitter_email" type="email" maxlength="180" autocomplete="email" placeholder="Optional">
+                </label>
                 <label>Quote
                     <textarea name="quote_text" maxlength="1000" required placeholder="Enter the quote exactly as it should appear"></textarea>
                 </label>
@@ -25771,7 +25855,7 @@ QUOTE_APPROVAL_BODY = """
             <tr>
                 <td>#{{ quote.id }}<br><span class="muted">{{ quote.guild_name }}</span></td>
                 <td><strong>“{{ quote.quote_text }}”</strong><br>— {{ quote.speaker }}{% if quote.source_text %}<br><span class="muted">Source: {{ quote.source_text }}</span>{% endif %}{% if quote.context_text %}<br><span class="muted">Context: {{ quote.context_text }}</span>{% endif %}</td>
-                <td>{{ quote.submitter_name or 'Unknown' }}{% if quote.submitter_user_id %}<br><span class="muted">Discord {{ quote.submitter_user_id }}</span>{% endif %}</td>
+                <td>{{ quote.submitter_name or 'Unknown' }}{% if quote.submitter_user_id %}<br><span class="muted">Discord {{ quote.submitter_user_id }}</span>{% endif %}{% if quote.submitter_email %}<br><span class="muted">{{ quote.submitter_email }}</span>{% endif %}</td>
                 <td>{{ quote.status.title() }}<br><span class="muted">{{ quote.created_at }}</span></td>
                 <td>
                     <form class="stack" method="post">
@@ -25811,6 +25895,7 @@ def ensure_community_quotes_table():
                 status TEXT NOT NULL DEFAULT 'pending',
                 submitter_user_id TEXT NOT NULL DEFAULT '',
                 submitter_name TEXT NOT NULL DEFAULT '',
+                submitter_email TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 reviewed_at TEXT NOT NULL DEFAULT '',
@@ -25855,7 +25940,7 @@ def community_quote_rows(
         rows = connection.execute(
             f"""
             SELECT id, guild_id, quote_text, speaker, source_text, context_text,
-                   category, status, submitter_user_id, submitter_name, created_at,
+                   category, status, submitter_user_id, submitter_name, submitter_email, created_at,
                    reviewed_at, reviewed_by, review_notes, last_posted_at
             FROM community_quotes
             {where}
@@ -25886,6 +25971,10 @@ def save_community_quote():
     if not submitter_name:
         submitter_name = community_clean_text(current_account_username(), 120)
     submitter_user_id = community_clean_text(session.get("sdac_discord_user_id"), 32)
+    submitter_email_raw = community_clean_text(request.form.get("submitter_email"), 180)
+    submitter_email = extract_email_address(submitter_email_raw)
+    if submitter_email_raw and not submitter_email:
+        raise ValueError("Enter a valid email address or leave the email field blank.")
     source_text = community_clean_text(request.form.get("source_text"), 200)
     context_text = community_clean_text(request.form.get("context_text"), 500)
     category = normalized_quote_category(request.form.get("category"))
@@ -25900,16 +25989,17 @@ def save_community_quote():
         cursor = connection.execute("""
             INSERT INTO community_quotes (
                 guild_id, quote_text, speaker, status,
-                submitter_user_id, submitter_name, source_text, context_text,
+                submitter_user_id, submitter_name, submitter_email, source_text, context_text,
                 category, normalized_hash, created_at, updated_at
             )
-            VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             guild_id,
             quote_text,
             speaker,
             submitter_user_id,
             submitter_name,
+            submitter_email,
             source_text,
             context_text,
             category,
@@ -25917,7 +26007,10 @@ def save_community_quote():
             now,
             now,
         ))
-        return int(cursor.lastrowid), guild_id, quote_text, speaker, submitter_name
+        return connection.execute(
+            "SELECT * FROM community_quotes WHERE id = ?",
+            (int(cursor.lastrowid),),
+        ).fetchone()
 
 
 @app.route("/quotes", methods=["GET", "POST"])
@@ -25937,7 +26030,12 @@ def community_quotes():
         require_csrf_token()
         try:
             require_public_form_protection("community_quote")
-            quote_id, guild_id, quote_text, speaker, submitter_name = save_community_quote()
+            submitted_quote = save_community_quote()
+            quote_id = int(submitted_quote["id"])
+            guild_id = str(submitted_quote["guild_id"])
+            quote_text = submitted_quote["quote_text"]
+            speaker = submitted_quote["speaker"]
+            submitter_name = submitted_quote["submitter_name"]
             preview = quote_text.replace("\n", " ").strip()
             if len(preview) > 300:
                 preview = preview[:297] + "..."
@@ -25955,10 +26053,17 @@ def community_quotes():
                 throttle_key=f"community_quote_submitted:{quote_id}",
                 throttle_seconds=0,
             )
+            email_sent, dm_sent, delivery_failures = send_quote_submitter_notifications(
+                submitted_quote,
+                "submitted",
+            )
+            delivery_notice = f" Private updates: {email_sent} email(s), {dm_sent} Discord DM(s) sent."
+            if delivery_failures:
+                delivery_notice += " " + delivery_failures[0]
             return redirect(url_for(
                 "community_quotes",
                 guild_id=guild_id,
-                notice=f"Quote #{quote_id} was submitted for admin approval.",
+                notice=f"Quote #{quote_id} was submitted for admin approval." + delivery_notice,
             ))
         except ValueError as exc:
             return redirect(url_for(
@@ -26078,6 +26183,15 @@ def admin_quote_submissions():
                 quote_id,
                 message,
             )
+        if action in {"approve", "reject"}:
+            email_sent, dm_sent, delivery_failures = send_quote_submitter_notifications(
+                row,
+                new_status,
+                review_notes,
+            )
+            message += f" Submitter updates: {email_sent} email(s), {dm_sent} Discord DM(s)."
+            if delivery_failures:
+                message += " " + delivery_failures[0]
         return redirect(url_for("admin_quote_submissions", notice=message, status=selected_status, guild_id=selected_guild_id))
     return admin_tool_shell(
         "Quote Moderation",

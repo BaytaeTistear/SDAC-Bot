@@ -19,7 +19,7 @@ class CommunityQuoteMigrationTests(unittest.TestCase):
             version = connection.execute(
                 "SELECT version FROM schema_version WHERE id = 1"
             ).fetchone()["version"]
-            self.assertEqual(version, 25)
+            self.assertEqual(version, 26)
             quote_columns = {
                 row["name"]
                 for row in connection.execute(
@@ -38,6 +38,7 @@ class CommunityQuoteMigrationTests(unittest.TestCase):
                     "context_text",
                     "category",
                     "normalized_hash",
+                    "submitter_email",
                 }.issubset(quote_columns)
             )
             self.assertIsNotNone(connection.execute(
@@ -114,6 +115,28 @@ class CommunityQuoteMigrationTests(unittest.TestCase):
         first = quote_fingerprint("  Stay curious.  ", "Sana")
         second = quote_fingerprint("stay   curious.", "SANA")
         self.assertEqual(first, second)
+
+    def test_discord_quote_status_message_contains_private_tracking_details(self):
+        import bot
+
+        message = bot.quote_submitter_dm_text(
+            {
+                "id": 44,
+                "guild_id": "111",
+                "quote_text": "Keep going.",
+                "speaker": "Sana",
+                "category": "Inspirational",
+                "source_text": "Episode 1",
+                "context_text": "",
+                "submitter_user_id": "222",
+            },
+            "approved",
+            "Looks good.",
+        )
+        self.assertIn("quote #44 was approved", message)
+        self.assertIn("Keep going.", message)
+        self.assertIn("Looks good.", message)
+        self.assertIn("/quotes#my-quotes", message)
 
     def test_scheduler_lease_blocks_a_second_instance_until_expiry(self):
         import bot

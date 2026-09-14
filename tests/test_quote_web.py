@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import dashboard
 from database_migrations import apply_database_migrations
@@ -34,8 +35,15 @@ class QuoteWebsiteTests(unittest.TestCase):
                 source="test",
                 preserve_existing_roles=False,
             )
+        self.notification_patcher = patch.object(
+            dashboard,
+            "send_quote_submitter_notifications",
+            return_value=(1, 1, []),
+        )
+        self.notification_mock = self.notification_patcher.start()
 
     def tearDown(self):
+        self.notification_patcher.stop()
         dashboard.DB_FILE = self.original_db_file
         dashboard.CONFIG_FILE = self.original_config_file
         self.temp_dir.cleanup()
@@ -60,6 +68,7 @@ class QuoteWebsiteTests(unittest.TestCase):
             "category": "Inspirational",
             "source_text": "Test episode",
             "context_text": "Regression test context",
+            "submitter_email": "quote-user@example.com",
         }
         response = client.post("/quotes", data=quote_form)
         self.assertEqual(response.status_code, 302)
@@ -74,6 +83,7 @@ class QuoteWebsiteTests(unittest.TestCase):
             row = connection.execute(
                 "SELECT * FROM community_quotes WHERE guild_id = '111'"
             ).fetchone()
+        self.assertEqual(row["submitter_email"], "quote-user@example.com")
         with client.session_transaction() as session:
             session["sdac_admin"] = True
             session["sdac_admin_username"] = "baytae"
@@ -100,6 +110,7 @@ class QuoteWebsiteTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(approved["status"], "approved")
         self.assertEqual(approved["review_notes"], "Looks good.")
+        self.assertEqual(self.notification_mock.call_count, 2)
 
         with client.session_transaction() as session:
             session.pop("sdac_admin", None)
