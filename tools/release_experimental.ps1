@@ -35,7 +35,7 @@ Update with:
 "@
 
 Run-Step "Compile dashboard and bot" {
-    py -3.12 -m py_compile dashboard.py community_quotes.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py server\dashboard.py server\community_quotes.py server\dashboard_account_templates.py server\dashboard_admin_roles.py server\dashboard_shell_assets.py server\dashboard_sidebar.py bot.py scripts\pre_release_smoke.py scripts\release_readiness.py scripts\dashboard_layout_check.py
+    py -3.12 -m py_compile dashboard.py community_quotes.py community_extensions.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py server\dashboard.py server\community_quotes.py server\community_extensions.py server\dashboard_account_templates.py server\dashboard_admin_roles.py server\dashboard_shell_assets.py server\dashboard_sidebar.py bot.py scripts\pre_release_smoke.py scripts\release_readiness.py scripts\dashboard_layout_check.py
 }
 
 Run-Step "Run backend release readiness" {

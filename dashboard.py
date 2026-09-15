@@ -26755,6 +26755,12 @@ def admin_quote_submissions():
             message += f" Submitter updates: {email_sent} email(s), {dm_sent} Discord DM(s)."
             if delivery_failures:
                 message += " " + delivery_failures[0]
+            if action == "approve":
+                queue_webhook_event(
+                    "quote.approved",
+                    row["guild_id"],
+                    {"id": quote_id, "status": "approved"},
+                )
         return redirect(url_for("admin_quote_submissions", notice=message, status=selected_status, guild_id=selected_guild_id))
     return admin_tool_shell(
         "Quote Moderation",
@@ -26868,6 +26874,15 @@ def admin_community_submissions():
             )
             if sent:
                 message += f" Posted to {sent} Discord channel(s)."
+            queue_webhook_event(
+                "community.approved",
+                notification_guild_id,
+                {
+                    "id": post_id,
+                    "type": row["post_type"],
+                    "status": "approved",
+                },
+            )
         return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice=message, status=selected_status, post_type=selected_type))
     return admin_tool_shell(
         "Events And Meetups",

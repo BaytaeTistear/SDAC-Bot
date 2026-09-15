@@ -56,8 +56,11 @@ class QuoteWebsiteTests(unittest.TestCase):
             return_value=(1, 1, []),
         )
         self.notification_mock = self.notification_patcher.start()
+        self.webhook_patcher = patch.object(dashboard, "queue_webhook_event")
+        self.webhook_mock = self.webhook_patcher.start()
 
     def tearDown(self):
+        self.webhook_patcher.stop()
         self.notification_patcher.stop()
         dashboard.DB_FILE = self.original_db_file
         dashboard.CONFIG_FILE = self.original_config_file
@@ -126,6 +129,11 @@ class QuoteWebsiteTests(unittest.TestCase):
         self.assertEqual(approved["status"], "approved")
         self.assertEqual(approved["review_notes"], "Looks good.")
         self.assertEqual(self.notification_mock.call_count, 2)
+        self.webhook_mock.assert_called_once_with(
+            "quote.approved",
+            "111",
+            {"id": row["id"], "status": "approved"},
+        )
 
         with client.session_transaction() as session:
             session.pop("sdac_admin", None)
