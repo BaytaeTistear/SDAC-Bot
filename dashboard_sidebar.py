@@ -69,6 +69,7 @@ ADMIN_SECTIONS = [
         "required_role": "bot_owner",
         "links": [
             ("Release Center", "admin_release_center", {}),
+            ("Operations Dashboard", "admin_operations_dashboard", {}),
             ("Go Live Control", "admin_go_live_control_room", {}),
             ("OAuth Diagnostics", "admin_oauth_diagnostics", {}),
             ("Release Notes Preview", "admin_release_notes_preview", {}),

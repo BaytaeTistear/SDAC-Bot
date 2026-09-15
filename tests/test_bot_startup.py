@@ -23,7 +23,7 @@ class BotStartupTests(unittest.TestCase):
         import bot
 
         command_names = {command.name for command in bot.tree.get_commands()}
-        self.assertEqual(command_names, {"sana", "submit", "guess", "hint"})
+        self.assertEqual(command_names, {"sana", "submit", "mysubmissions", "guess", "hint"})
         self.assertTrue(bot.SIMPLIFIED_SLASH_COMMANDS)
         self.assertNotIn("animeprofileimport", bot.LOW_COST_COMMAND_COOLDOWNS)
         self.assertIn("animeactivities", bot.PRUNED_SLASH_COMMANDS)

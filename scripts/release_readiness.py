@@ -17,6 +17,7 @@ SERVER = ROOT / "server"
 
 CORE_PYTHON_FILES = [
     "bot.py",
+    "community_extensions.py",
     "config.py",
     "dashboard.py",
     "dashboard_account_templates.py",
@@ -37,6 +38,7 @@ CORE_PYTHON_FILES = [
 
 MIRRORED_FILES = [
     "bot.py",
+    "community_extensions.py",
     "config.py",
     "dashboard.py",
     "dashboard_account_templates.py",
@@ -83,6 +85,7 @@ PACKAGE_FILES = [
 ]
 
 FOCUSED_TESTS = [
+    "tests.test_community_extensions",
     "tests.test_anime_activities_seed",
     "tests.test_app_readiness",
     "tests.test_bot_startup",

@@ -1,3 +1,29 @@
+# Sana-Chan Version 4.4.48 Experimental
+
+Version 4.4.48 completes the community participation, safety, integration, and operations upgrade.
+
+## Community Participation
+
+- adds signed-in website quote voting with toggle behavior and self-vote prevention
+- records Discord daily-quote reactions and uses community score plus posting freshness for future selections
+- adds `/mysubmissions` for private Discord status summaries and a link to the full account portal
+- lets owners edit or withdraw pending quotes, events, meetups, and media records while retaining immutable revision history
+
+## Safety And Media Privacy
+
+- screens public quote, event, and meetup text for invite links, executable downloads, link bursts, and repetition
+- quarantines flagged items for human review and shows explainable findings to moderators
+- strips EXIF and other metadata from supported static image uploads while preserving orientation
+
+## APIs, Webhooks, And Operations
+
+- adds public read-only v1 APIs for approved quotes, events, and meetups on explicitly public servers
+- adds a bot-owner webhook registry, HMAC signing, SSRF protections, and delivery audit storage
+- adds a consolidated operations dashboard for queues, safety flags, notification/webhook failures, scheduler leases, storage, and backup freshness
+- advances the database schema to version 28
+
+---
+
 # Sana-Chan Version 4.4.47 Experimental
 
 Version 4.4.47 adds account-controlled notifications, a unified submission history, and safe delivery recovery.

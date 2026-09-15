@@ -29,6 +29,7 @@ function Copy-PayloadFiles {
         "POSTGRESQL.md",
         "bot.py",
         "community_quotes.py",
+        "community_extensions.py",
         "dashboard.py",
         "dashboard_account_templates.py",
         "dashboard_admin_roles.py",

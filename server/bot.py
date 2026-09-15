@@ -41,6 +41,7 @@ from community_quotes import (
     quote_display_text,
     quote_fingerprint,
 )
+from community_extensions import scrub_image_metadata
 from database_backend import connect_database, using_postgres
 from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
 from observability import capture_exception, init_sentry
@@ -63,7 +64,7 @@ SCHEMA_VERSION = DATABASE_SCHEMA_VERSION
 OWNER_OVERRIDE_USERNAME = "baytae"
 ENABLE_ANIME_COMMANDS = os.getenv("SANA_ENABLE_ANIME_COMMANDS", os.getenv("SDAC_ENABLE_ANIME_COMMANDS", "1")).strip().casefold() not in {"0", "false", "no", "off"}
 SIMPLIFIED_SLASH_COMMANDS = os.getenv("SANA_SIMPLIFIED_COMMANDS", os.getenv("SDAC_SIMPLIFIED_COMMANDS", "1")).strip().casefold() not in {"0", "false", "no", "off"}
-CORE_SLASH_COMMANDS = {"sana", "submit", "guess", "hint"}
+CORE_SLASH_COMMANDS = {"sana", "submit", "mysubmissions", "guess", "hint"}
 PROJECT_GITHUB_URL = f"https://github.com/{ORIGINAL_REPO}"
 PROJECT_WIKI_URL = f"{PROJECT_GITHUB_URL}/wiki"
 DASHBOARD_BASE_URL = (
@@ -11048,6 +11049,7 @@ async def animechallenge(
             media_file_path = library_folder / f"{int(time.time())}_{interaction.id}_{safe_name}"
             await media.save(media_file_path)
             maybe_compress_image(media_file_path, media.filename)
+            scrub_image_metadata(media_file_path)
             media_metadata = attachment_metadata(media, media_file_path)
             media_path = str(media_file_path)
             media_name = media.filename
@@ -13296,6 +13298,7 @@ async def create_submission(source_message, category):
             path = user_folder / filename
             await attachment.save(path)
             maybe_compress_image(path, attachment.filename)
+            scrub_image_metadata(path)
             try:
                 stored_size = path.stat().st_size
             except OSError:
@@ -13741,6 +13744,49 @@ class SubmissionCategoryView(discord.ui.View):
                 )
             except discord.HTTPException:
                 pass
+
+
+@tree.command(name="mysubmissions", description="Show your Sana-Chan submission status")
+@app_commands.guild_only()
+async def mysubmissions(interaction):
+    user_id = str(interaction.user.id)
+    guild_id = str(interaction.guild_id)
+    counts = {}
+    recent = []
+    with database() as connection:
+        for table, owner_column, label in (
+            ("submissions", "user_id", "Media"),
+            ("community_quotes", "submitter_user_id", "Quote"),
+            ("community_posts", "submitter_user_id", "Community"),
+        ):
+            rows = connection.execute(
+                f"SELECT status, COUNT(*) AS count FROM {table} WHERE guild_id = ? AND {owner_column} = ? GROUP BY status",
+                (guild_id, user_id),
+            ).fetchall()
+            counts[label] = {str(row["status"] or "pending"): int(row["count"] or 0) for row in rows}
+        recent_rows = connection.execute(
+            """
+            SELECT entity_type, id, status, created_at FROM (
+                SELECT 'Media' AS entity_type, id, status, COALESCE(created_at, submitted_at, '') AS created_at FROM submissions WHERE guild_id = ? AND user_id = ?
+                UNION ALL SELECT 'Quote', id, status, created_at FROM community_quotes WHERE guild_id = ? AND submitter_user_id = ?
+                UNION ALL SELECT CASE WHEN post_type='event' THEN 'Event' ELSE 'Meetup' END, id, status, created_at FROM community_posts WHERE guild_id = ? AND submitter_user_id = ?
+            ) recent_items ORDER BY created_at DESC LIMIT 5
+            """,
+            (guild_id, user_id, guild_id, user_id, guild_id, user_id),
+        ).fetchall()
+        recent = list(recent_rows)
+    lines = ["**Your Sana-Chan Submissions**"]
+    for label, values in counts.items():
+        total = sum(values.values())
+        breakdown = ", ".join(f"{status}: {count}" for status, count in sorted(values.items())) or "none"
+        lines.append(f"**{label}** — {total} total ({breakdown})")
+    if recent:
+        lines.append("\n**Recent**")
+        lines.extend(f"• {row['entity_type']} `#{row['id']}` — {str(row['status'] or 'pending').title()}" for row in recent)
+    public_url = (os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN") or "").strip().rstrip("/")
+    if public_url:
+        lines.append(f"\nEdit pending items and see details: {public_url}/my-submissions")
+    await interaction.response.send_message("\n".join(lines)[:1900], ephemeral=True)
 
 
 @tree.command(name="submit", description="Start a guided Sana-Chan submission")
@@ -14241,6 +14287,7 @@ async def startgame(
     try:
         await media.save(media_path)
         maybe_compress_image(media_path, media.filename)
+        scrub_image_metadata(media_path)
         media_metadata = attachment_metadata(media, media_path)
         discord_file = discord.File(media_path, filename=media.filename)
         game_lines = ["**Guessing Game Started**"]
@@ -16070,11 +16117,15 @@ async def post_daily_quote(guild_id, guild_config, now=None):
         if already_posted:
             return False
         quote_row = connection.execute("""
-            SELECT id, quote_text, speaker, category, source_text, context_text
-            FROM community_quotes
-            WHERE guild_id = ? AND status = 'approved'
-            ORDER BY CASE WHEN last_posted_at = '' THEN 0 ELSE 1 END,
-                     last_posted_at ASC, RANDOM()
+            SELECT q.id, q.quote_text, q.speaker, q.category, q.source_text, q.context_text,
+                   COALESCE(SUM(v.vote), 0) AS vote_score
+            FROM community_quotes q
+            LEFT JOIN community_quote_votes v ON v.quote_id = q.id
+            WHERE q.guild_id = ? AND q.status = 'approved'
+            GROUP BY q.id, q.quote_text, q.speaker, q.category, q.source_text, q.context_text,
+                     q.last_posted_at
+            ORDER BY CASE WHEN q.last_posted_at = '' THEN 0 ELSE 1 END,
+                     COALESCE(SUM(v.vote), 0) DESC, q.last_posted_at ASC, RANDOM()
             LIMIT 1
         """, (str(guild_id),)).fetchone()
     if not quote_row:
@@ -16087,15 +16138,21 @@ async def post_daily_quote(guild_id, guild_config, now=None):
             channel = None
     if channel is None:
         raise RuntimeError(f"Daily quote channel {channel_id} is unavailable.")
-    await channel.send(f"**Daily Quote**\n{quote_display_text(quote_row)}")
+    quote_message = await channel.send(f"**Daily Quote**\n{quote_display_text(quote_row)}")
+    if quote_message is not None:
+        for emoji in ("👍", "👎"):
+            try:
+                await quote_message.add_reaction(emoji)
+            except discord.HTTPException:
+                break
     posted_at = utc_now_iso()
     with database() as connection:
         connection.execute("""
             INSERT OR IGNORE INTO community_quote_daily_runs (
-                guild_id, run_date, quote_id, channel_id, created_at
+                guild_id, run_date, quote_id, channel_id, message_id, created_at
             )
-            VALUES (?, ?, ?, ?, ?)
-        """, (str(guild_id), run_date, int(quote_row["id"]), str(channel_id), posted_at))
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (str(guild_id), run_date, int(quote_row["id"]), str(channel_id), str(getattr(quote_message, "id", "")), posted_at))
         connection.execute("""
             UPDATE community_quotes
             SET last_posted_at = ?, updated_at = ?
@@ -16748,6 +16805,40 @@ async def on_message(message):
             ),
             "submit_channel_cleanup_failed",
         )
+
+
+async def update_quote_reaction_vote(payload, remove=False):
+    if bot.user and payload.user_id == bot.user.id:
+        return
+    vote = {"👍": 1, "👎": -1}.get(str(payload.emoji))
+    if vote is None:
+        return
+    with database() as connection:
+        quote = connection.execute(
+            """SELECT q.id, q.submitter_user_id FROM community_quote_daily_runs r JOIN community_quotes q ON q.id = r.quote_id WHERE r.message_id = ? LIMIT 1""",
+            (str(payload.message_id),),
+        ).fetchone()
+        if not quote or str(quote["submitter_user_id"] or "") == str(payload.user_id):
+            return
+        if remove:
+            connection.execute("DELETE FROM community_quote_votes WHERE quote_id = ? AND user_id = ? AND vote = ?", (int(quote["id"]), str(payload.user_id), vote))
+            return
+        now = utc_now_iso()
+        existing = connection.execute("SELECT vote FROM community_quote_votes WHERE quote_id = ? AND user_id = ?", (int(quote["id"]), str(payload.user_id))).fetchone()
+        if existing:
+            connection.execute("UPDATE community_quote_votes SET vote = ?, updated_at = ? WHERE quote_id = ? AND user_id = ?", (vote, now, int(quote["id"]), str(payload.user_id)))
+        else:
+            connection.execute("INSERT INTO community_quote_votes (quote_id,user_id,vote,created_at,updated_at) VALUES (?,?,?,?,?)", (int(quote["id"]), str(payload.user_id), vote, now, now))
+
+
+@bot.event
+async def on_raw_reaction_add(payload):
+    await update_quote_reaction_vote(payload)
+
+
+@bot.event
+async def on_raw_reaction_remove(payload):
+    await update_quote_reaction_vote(payload, remove=True)
 
 
 @bot.event

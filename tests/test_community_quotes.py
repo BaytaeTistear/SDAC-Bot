@@ -19,7 +19,7 @@ class CommunityQuoteMigrationTests(unittest.TestCase):
             version = connection.execute(
                 "SELECT version FROM schema_version WHERE id = 1"
             ).fetchone()["version"]
-            self.assertEqual(version, 27)
+            self.assertEqual(version, 28)
             quote_columns = {
                 row["name"]
                 for row in connection.execute(
@@ -55,7 +55,7 @@ class CommunityQuoteMigrationTests(unittest.TestCase):
             }
             self.assertEqual(
                 run_columns,
-                {"guild_id", "run_date", "quote_id", "channel_id", "created_at"},
+                {"guild_id", "run_date", "quote_id", "channel_id", "message_id", "created_at"},
             )
         finally:
             connection.close()

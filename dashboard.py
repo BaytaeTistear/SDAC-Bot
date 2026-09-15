@@ -53,6 +53,15 @@ from community_quotes import (
     quote_display_text,
     quote_fingerprint,
 )
+from community_extensions import (
+    deliver_webhook_event,
+    quote_vote_totals,
+    record_revision,
+    record_safety_findings,
+    safety_status,
+    screen_content,
+    scrub_image_metadata,
+)
 from database_backend import connect_database, using_postgres
 from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
 from dashboard_account_templates import (
@@ -1787,7 +1796,7 @@ MY_SUBMISSIONS_HTML = """
     <section class="panel">
         <h2>Media, Quotes, Events, And Meetups</h2>
         <div style="overflow-x:auto"><table>
-            <thead><tr><th>Type</th><th>Submission</th><th>Server</th><th>Status</th><th>Review Notes</th><th>Created</th></tr></thead>
+            <thead><tr><th>Type</th><th>Submission</th><th>Server</th><th>Status</th><th>Review Notes</th><th>Created</th><th>Actions</th></tr></thead>
             <tbody>
                 {% for row in rows %}
                     <tr>
@@ -1797,9 +1806,10 @@ MY_SUBMISSIONS_HTML = """
                         <td><span class="status">{{ row.status.title() }}</span></td>
                         <td>{{ row.review_notes or '' }}</td>
                         <td>{{ row.created_at }}</td>
+                        <td>{% if row.edit_url %}<a href="{{ row.edit_url }}">Edit / withdraw</a>{% else %}<span class="muted">Locked after review</span>{% endif %}</td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="6" class="muted">No matching submissions yet.</td></tr>
+                    <tr><td colspan="7" class="muted">No matching submissions yet.</td></tr>
                 {% endfor %}
             </tbody>
         </table></div>
@@ -8838,6 +8848,7 @@ def save_guess_library_upload(guild_id, upload, limits):
     path = folder / stored_name
     upload.save(path)
     maybe_compress_image(path, filename)
+    scrub_image_metadata(path)
 
     size = path.stat().st_size if path.exists() else 0
     max_file_bytes = int(limits.get("max_file_bytes", 25 * 1024 * 1024))
@@ -23948,6 +23959,8 @@ def my_submissions():
                 "category": row["category"] or "", "status": row["status"] or "pending",
                 "review_notes": "", "created_at": row["created_at"] or "",
                 "url": url_for("index", q=row["id"], guild_id=row["guild_id"] or "all"),
+                "edit_url": url_for("edit_own_submission", entity_type="media", entity_id=row["id"])
+                if account_user_id and (row["status"] or "pending") in {"pending", "quarantined"} else "",
             })
         for row in quote_rows:
             all_rows.append({
@@ -23956,6 +23969,8 @@ def my_submissions():
                 "category": row["category"] or "", "status": row["status"] or "pending",
                 "review_notes": row["review_notes"] or "", "created_at": row["created_at"] or "",
                 "url": url_for("community_quotes", guild_id=row["guild_id"]) + "#my-quotes",
+                "edit_url": url_for("edit_own_submission", entity_type="quote", entity_id=row["id"])
+                if account_user_id and (row["status"] or "pending") in {"pending", "quarantined"} else "",
             })
         for row in post_rows:
             endpoint = "community_events" if row["post_type"] == "event" else "community_meetups"
@@ -23966,6 +23981,8 @@ def my_submissions():
                 "category": row["category"] or "", "status": row["status"] or "pending",
                 "review_notes": row["review_notes"] or "", "created_at": row["created_at"] or "",
                 "url": url_for(endpoint, guild_id=row["guild_id"]),
+                "edit_url": url_for("edit_own_submission", entity_type="post", entity_id=row["id"])
+                if account_user_id and (row["status"] or "pending") in {"pending", "quarantined"} else "",
             })
         if not is_admin:
             all_rows = [row for row in all_rows if row["guild_id"] in visible_guild_ids]
@@ -25359,6 +25376,69 @@ def community_admin_review_url(post_type):
     return url_for("account_login", next=review_path, _external=True)
 
 
+EDIT_OWN_SUBMISSION_HTML = """
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Edit Submission</title><style>:root{color-scheme:dark}body{background:#101114;color:#f4f5f7;font-family:Arial,sans-serif;margin:0;padding:1rem}main{margin:auto;max-width:760px}.panel{background:#1b1d22;border:1px solid #30333b;border-radius:.75rem;padding:1rem}label{display:grid;gap:.35rem;margin:.8rem 0}input,textarea,button{background:#101114;border:1px solid #454956;border-radius:.5rem;color:#fff;font:inherit;padding:.7rem}textarea{min-height:7rem}button{background:#7c9cff;color:#081020;cursor:pointer;font-weight:700}.danger{background:#ff6b7f}.actions{display:flex;gap:.7rem;flex-wrap:wrap}a{color:#8eabff}</style></head>
+<body><main><p><a href="{{ url_for('my_submissions') }}">Back to My Submissions</a></p><section class="panel"><h1>Edit {{ entity_label }} #{{ row.id }}</h1><p>Pending items can be corrected or withdrawn. The previous version is retained for audit purposes.</p><form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+{% if entity_type == 'quote' %}<label>Quote<textarea name="quote_text" maxlength="1000" required>{{ row.quote_text }}</textarea></label><label>Speaker<input name="speaker" maxlength="160" value="{{ row.speaker }}" required></label><label>Source<input name="source_text" maxlength="200" value="{{ row.source_text or '' }}"></label><label>Context<textarea name="context_text" maxlength="500">{{ row.context_text or '' }}</textarea></label>
+{% elif entity_type == 'post' %}<label>Title<input name="title" maxlength="140" value="{{ row.title }}" required></label><label>Description<textarea name="description" maxlength="3000" required>{{ row.description }}</textarea></label><label>Location<input name="location" maxlength="180" value="{{ row.location or '' }}"></label><label>Information URL<input name="contact_url" maxlength="300" value="{{ row.contact_url or '' }}"></label>
+{% else %}<p>Media files cannot be replaced after upload. Withdraw this item and submit a corrected file.</p>{% endif %}
+<div class="actions">{% if entity_type != 'media' %}<button name="action" value="save" type="submit">Save Changes</button>{% endif %}<button class="danger" name="action" value="withdraw" type="submit" onclick="return confirm('Withdraw this submission?')">Withdraw</button></div></form></section></main></body></html>
+"""
+
+
+@app.route("/my-submissions/<entity_type>/<int:entity_id>/edit", methods=["GET", "POST"])
+def edit_own_submission(entity_type, entity_id):
+    account = dashboard_user(current_account_username()) if is_account_logged_in() else None
+    user_id = str((account["discord_user_id"] if account else "") or "").strip()
+    if not user_id:
+        return redirect(url_for("account_login", next=request.full_path))
+    mapping = {
+        "media": ("submissions", "user_id", "Media"),
+        "quote": ("community_quotes", "submitter_user_id", "Quote"),
+        "post": ("community_posts", "submitter_user_id", "Community post"),
+    }
+    if entity_type not in mapping:
+        abort(404)
+    table, owner_column, entity_label = mapping[entity_type]
+    with database() as connection:
+        row = connection.execute(f"SELECT * FROM {table} WHERE id = ? AND {owner_column} = ?", (entity_id, user_id)).fetchone()
+        if not row:
+            abort(404)
+        if str(row["status"] or "") not in {"pending", "quarantined"}:
+            abort(409, "This submission is locked because review has finished.")
+        if request.method == "POST":
+            require_csrf_token()
+            record_revision(connection, entity_type, entity_id, user_id, dict(row))
+            action = community_clean_text(request.form.get("action"), 20)
+            now = utc_now_iso()
+            if action == "withdraw":
+                connection.execute(f"UPDATE {table} SET status = 'withdrawn' WHERE id = ?", (entity_id,))
+            elif action == "save" and entity_type == "quote":
+                quote_text = community_clean_text(request.form.get("quote_text"), 1000)
+                speaker = community_clean_text(request.form.get("speaker"), 160)
+                if not quote_text or not speaker:
+                    abort(400, "Quote and speaker are required.")
+                findings = screen_content(quote_text, speaker, request.form.get("source_text"), request.form.get("context_text"))
+                connection.execute("""UPDATE community_quotes SET quote_text=?, speaker=?, source_text=?, context_text=?, normalized_hash=?, status=?, updated_at=? WHERE id=?""", (quote_text, speaker, community_clean_text(request.form.get("source_text"), 200), community_clean_text(request.form.get("context_text"), 500), quote_fingerprint(quote_text, speaker), safety_status(findings), now, entity_id))
+                record_safety_findings(connection, "quote", entity_id, row["guild_id"], findings)
+            elif action == "save" and entity_type == "post":
+                title = community_clean_text(request.form.get("title"), 140)
+                description = community_clean_text(request.form.get("description"), 3000)
+                if not title or not description:
+                    abort(400, "Title and description are required.")
+                location = community_clean_text(request.form.get("location"), 180)
+                contact_url = community_clean_url(request.form.get("contact_url"))
+                findings = screen_content(title, description, location, contact_url)
+                connection.execute("UPDATE community_posts SET title=?, description=?, location=?, contact_url=?, status=?, updated_at=? WHERE id=?", (title, description, location, contact_url, safety_status(findings), now, entity_id))
+                record_safety_findings(connection, "post", entity_id, row["guild_id"], findings)
+            else:
+                abort(400, "Unknown edit action.")
+        else:
+            return render_template_string(EDIT_OWN_SUBMISSION_HTML, row=row, entity_type=entity_type, entity_label=entity_label, csrf_token=get_csrf_token())
+    return redirect(url_for("my_submissions"))
+
+
 def community_quote_admin_review_url():
     review_path = url_for("admin_quote_submissions", status="pending")
     return url_for("account_login", next=review_path, _external=True)
@@ -25617,6 +25697,7 @@ COMMUNITY_APPROVAL_BODY = """
                     <td>
                         <strong>{{ post.title }}</strong><br>
                         <span class="muted">{{ post.description }}</span><br>
+                        {% for finding in post.safety_findings %}<span class="pill">Safety: {{ finding }}</span>{% endfor %}
                         {% if post.starts_at_label %}<span class="pill">{{ post.starts_at_label }}</span>{% endif %}
                         {% if post.location %}<span class="pill">{{ post.location }}</span>{% endif %}
                         {% if post.guild_name %}<span class="pill">{{ post.guild_name }}</span>{% endif %}
@@ -25885,7 +25966,27 @@ def community_rsvp_links(post_ids):
     return links
 
 
-def community_post_rows(post_type=None, status="approved", limit=100, tag="", when="all", guild_id=""):
+def community_safety_findings(entity_type, entity_ids):
+    entity_ids = [str(entity_id) for entity_id in entity_ids]
+    if not entity_ids:
+        return {}
+    placeholders = ",".join("?" for _ in entity_ids)
+    with closing(connect_db()) as connection:
+        rows = connection.execute(
+            f"SELECT entity_id, findings_json FROM content_safety_flags WHERE entity_type = ? AND status = 'open' AND entity_id IN ({placeholders}) ORDER BY id DESC",
+            (entity_type, *entity_ids),
+        ).fetchall()
+    findings = {}
+    for row in rows:
+        try:
+            values = json.loads(row["findings_json"] or "[]")
+        except (TypeError, ValueError):
+            values = []
+        findings.setdefault(str(row["entity_id"]), []).extend(item.get("message", "") for item in values if isinstance(item, dict) and item.get("message"))
+    return findings
+
+
+def community_post_rows(post_type=None, status="approved", limit=100, tag="", when="all", guild_id="", allowed_guild_ids=None):
     ensure_community_posts_table()
     clauses = []
     params = []
@@ -25933,6 +26034,7 @@ def community_post_rows(post_type=None, status="approved", limit=100, tag="", wh
     post_ids = [row["id"] for row in rows]
     rsvp_summary = community_rsvp_summary(post_ids)
     rsvp_links = community_rsvp_links(post_ids)
+    safety_findings = community_safety_findings("post", post_ids)
     output = []
     for row in rows:
         item = dict(row)
@@ -25946,6 +26048,7 @@ def community_post_rows(post_type=None, status="approved", limit=100, tag="", wh
         item["rsvp_names"] = item_summary["names"]
         item["rsvp_url"] = rsvp_links.get(int(row["id"]), "")
         item["can_view_rsvp_names"] = can_admin_access_guild(row["guild_id"], minimum_role="moderator")
+        item["safety_findings"] = safety_findings.get(str(row["id"]), [])
         output.append(item)
     return output
 
@@ -25965,6 +26068,10 @@ def save_community_post(post_type):
     if tag not in COMMUNITY_TAGS:
         tag = ""
     now = utc_now_iso()
+    location = community_clean_text(request.form.get("location"), 180)
+    contact_url = community_clean_url(request.form.get("contact_url"))
+    findings = screen_content(title, description, location, contact_url)
+    initial_status = safety_status(findings)
     with database() as connection:
         cursor = connection.execute(
             """
@@ -25972,18 +26079,19 @@ def save_community_post(post_type):
                 post_type, category, status, title, description, location, starts_at, ends_at,
                 host_name, contact_url, guild_id, submitter_name, submitter_contact,
                 submitter_user_id, tags, created_at, updated_at
-            ) VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 post_type,
                 labels["category"],
+                initial_status,
                 title,
                 description,
-                community_clean_text(request.form.get("location"), 180),
+                location,
                 community_clean_text(request.form.get("starts_at"), 40),
                 community_clean_text(request.form.get("ends_at"), 40),
                 community_clean_text(request.form.get("host_name"), 140),
-                community_clean_url(request.form.get("contact_url")),
+                contact_url,
                 guild_id,
                 community_clean_text(request.form.get("submitter_name"), 120),
                 community_clean_text(request.form.get("submitter_contact"), 180),
@@ -25993,7 +26101,9 @@ def save_community_post(post_type):
                 now,
             ),
         )
-        return int(cursor.lastrowid)
+        post_id = int(cursor.lastrowid)
+        record_safety_findings(connection, "post", post_id, guild_id, findings)
+        return post_id
 
 
 def community_page(post_type):
@@ -26135,6 +26245,8 @@ COMMUNITY_QUOTES_HTML = """
                         {% if quote.source_text %}<p class="muted">Source: {{ quote.source_text }}</p>{% endif %}
                         {% if quote.context_text %}<p class="muted">Context: {{ quote.context_text }}</p>{% endif %}
                         {% if quote.guild_name %}<p class="muted">{{ quote.guild_name }}</p>{% endif %}
+                        <p class="muted">Community score: {{ quote.score }} from {{ quote.vote_count }} vote{{ '' if quote.vote_count == 1 else 's' }}</p>
+                        {% if account_logged_in %}<form method="post" action="{{ url_for('vote_community_quote', quote_id=quote.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="{{ request.full_path }}"><button name="vote" value="1" type="submit">{{ '✓ ' if quote.my_vote == 1 else '' }}Helpful</button> <button name="vote" value="-1" type="submit">{{ '✓ ' if quote.my_vote == -1 else '' }}Not for me</button></form>{% else %}<p class="muted"><a href="{{ url_for('account_login', next=request.full_path) }}">Sign in to vote</a></p>{% endif %}
                     </article>
                 {% endfor %}
             </div>
@@ -26232,7 +26344,7 @@ QUOTE_APPROVAL_BODY = """
                 <td>#{{ quote.id }}<br><span class="muted">{{ quote.guild_name }}</span></td>
                 <td><strong>“{{ quote.quote_text }}”</strong><br>— {{ quote.speaker }}{% if quote.source_text %}<br><span class="muted">Source: {{ quote.source_text }}</span>{% endif %}{% if quote.context_text %}<br><span class="muted">Context: {{ quote.context_text }}</span>{% endif %}</td>
                 <td>{{ quote.submitter_name or 'Unknown' }}{% if quote.submitter_user_id %}<br><span class="muted">Discord {{ quote.submitter_user_id }}</span>{% endif %}{% if quote.submitter_email %}<br><span class="muted">{{ quote.submitter_email }}</span>{% endif %}</td>
-                <td>{{ quote.status.title() }}<br><span class="muted">{{ quote.created_at }}</span></td>
+                <td>{{ quote.status.title() }}<br><span class="muted">{{ quote.created_at }}</span>{% for finding in quote.safety_findings %}<br><span class="pill">Safety: {{ finding }}</span>{% endfor %}</td>
                 <td>
                     <form class="stack" method="post">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -26303,6 +26415,12 @@ def community_quote_rows(
             return []
         clauses.append("guild_id IN (" + ",".join("?" for _ in allowed_guild_ids) + ")")
         params.extend(allowed_guild_ids)
+    if allowed_guild_ids is not None:
+        allowed_guild_ids = [str(item) for item in allowed_guild_ids]
+        if not allowed_guild_ids:
+            return []
+        clauses.append("guild_id IN (" + ",".join("?" for _ in allowed_guild_ids) + ")")
+        params.extend(allowed_guild_ids)
     if status and status != "all":
         clauses.append("status = ?")
         params.append(status)
@@ -26325,10 +26443,25 @@ def community_quote_rows(
             """,
             (*params, int(limit)),
         ).fetchall()
+    with closing(connect_db()) as connection:
+        totals = quote_vote_totals(connection, [row["id"] for row in rows])
+        user_votes = {}
+        voter_id = community_clean_text(session.get("sdac_discord_user_id"), 32) if has_request_context() else ""
+        if voter_id and rows:
+            placeholders = ",".join("?" for _ in rows)
+            vote_rows = connection.execute(
+                f"SELECT quote_id, vote FROM community_quote_votes WHERE user_id = ? AND quote_id IN ({placeholders})",
+                (voter_id, *[int(row["id"]) for row in rows]),
+            ).fetchall()
+            user_votes = {int(vote_row["quote_id"]): int(vote_row["vote"]) for vote_row in vote_rows}
+    safety_findings = community_safety_findings("quote", [row["id"] for row in rows])
     output = []
     for row in rows:
         item = dict(row)
         item["guild_name"] = guild_names.get(str(row["guild_id"]), str(row["guild_id"]))
+        item.update(totals.get(int(row["id"]), {"score": 0, "vote_count": 0}))
+        item["my_vote"] = user_votes.get(int(row["id"]), 0)
+        item["safety_findings"] = safety_findings.get(str(row["id"]), [])
         output.append(item)
     return output
 
@@ -26361,6 +26494,8 @@ def save_community_quote():
     context_text = community_clean_text(request.form.get("context_text"), 500)
     category = normalized_quote_category(request.form.get("category"))
     normalized_hash = quote_fingerprint(quote_text, speaker)
+    findings = screen_content(quote_text, speaker, source_text, context_text)
+    initial_status = safety_status(findings)
     now = utc_now_iso()
     with database() as connection:
         duplicate = find_duplicate_quote(connection, guild_id, normalized_hash)
@@ -26374,11 +26509,12 @@ def save_community_quote():
                 submitter_user_id, submitter_name, submitter_email, source_text, context_text,
                 category, normalized_hash, created_at, updated_at
             )
-            VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             guild_id,
             quote_text,
             speaker,
+            initial_status,
             submitter_user_id,
             submitter_name,
             submitter_email,
@@ -26389,9 +26525,11 @@ def save_community_quote():
             now,
             now,
         ))
+        quote_id = int(cursor.lastrowid)
+        record_safety_findings(connection, "quote", quote_id, guild_id, findings)
         return connection.execute(
             "SELECT * FROM community_quotes WHERE id = ?",
-            (int(cursor.lastrowid),),
+            (quote_id,),
         ).fetchone()
 
 
@@ -26489,6 +26627,36 @@ def community_quotes():
     )
 
 
+@app.post("/quotes/<int:quote_id>/vote")
+def vote_community_quote(quote_id):
+    require_csrf_token()
+    voter_id = community_clean_text(session.get("sdac_discord_user_id"), 32)
+    if not voter_id:
+        return redirect(url_for("account_login", next=request.referrer or url_for("community_quotes")))
+    try:
+        vote = int(request.form.get("vote") or 0)
+    except (TypeError, ValueError):
+        vote = 0
+    if vote not in {-1, 1}:
+        abort(400, "Vote must be -1 or 1.")
+    now = utc_now_iso()
+    with database() as connection:
+        quote = connection.execute("SELECT id, submitter_user_id, status FROM community_quotes WHERE id = ?", (quote_id,)).fetchone()
+        if not quote or quote["status"] != "approved":
+            abort(404)
+        if str(quote["submitter_user_id"] or "") == voter_id:
+            abort(400, "You cannot vote on your own quote.")
+        existing = connection.execute("SELECT vote FROM community_quote_votes WHERE quote_id = ? AND user_id = ?", (quote_id, voter_id)).fetchone()
+        if existing and int(existing["vote"]) == vote:
+            connection.execute("DELETE FROM community_quote_votes WHERE quote_id = ? AND user_id = ?", (quote_id, voter_id))
+        elif existing:
+            connection.execute("UPDATE community_quote_votes SET vote = ?, updated_at = ? WHERE quote_id = ? AND user_id = ?", (vote, now, quote_id, voter_id))
+        else:
+            connection.execute("INSERT INTO community_quote_votes (quote_id, user_id, vote, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", (quote_id, voter_id, vote, now, now))
+    destination = request.form.get("next") or url_for("community_quotes")
+    return redirect(destination if destination.startswith("/") and not destination.startswith("//") else url_for("community_quotes"))
+
+
 @app.route("/admin/quotes", methods=["GET", "POST"])
 def admin_quote_submissions():
     login_response = require_admin_login("moderator")
@@ -26496,7 +26664,7 @@ def admin_quote_submissions():
         return login_response
     ensure_community_quotes_table()
     selected_status = community_clean_text(request.args.get("status"), 20).casefold() or "pending"
-    if selected_status not in {"pending", "approved", "rejected", "all"}:
+    if selected_status not in {"pending", "quarantined", "approved", "rejected", "withdrawn", "all"}:
         selected_status = "pending"
     config_data = load_config()
     server_options = guild_options(config_data, minimum_role="moderator")
@@ -26599,7 +26767,7 @@ def admin_quote_submissions():
         ),
         selected_status=selected_status,
         selected_guild_id=selected_guild_id,
-        status_options=["pending", "approved", "rejected", "all"],
+        status_options=["pending", "quarantined", "approved", "rejected", "withdrawn", "all"],
         guild_options=server_options,
         quote_categories=QUOTE_CATEGORIES,
     )
@@ -26627,7 +26795,7 @@ def admin_community_submissions():
     ensure_community_posts_table()
     selected_status = request.args.get("status", "pending").strip().lower() or "pending"
     selected_type = request.args.get("post_type", "all").strip().lower() or "all"
-    if selected_status not in {"pending", "approved", "rejected", "all"}:
+    if selected_status not in {"pending", "quarantined", "approved", "rejected", "withdrawn", "all"}:
         selected_status = "pending"
     if selected_type not in {"event", "meetup", "all"}:
         selected_type = "all"
@@ -26708,7 +26876,7 @@ def admin_community_submissions():
         posts=community_post_rows(selected_type, selected_status),
         selected_status=selected_status,
         selected_type=selected_type,
-        status_options=["pending", "approved", "rejected", "all"],
+        status_options=["pending", "quarantined", "approved", "rejected", "withdrawn", "all"],
         reason_presets=COMMUNITY_REPORT_REASON_PRESETS,
     )
 
@@ -26727,6 +26895,99 @@ def admin_live_status():
         status_items=dashboard_live_status_items(config_data),
         scheduled_rows=scheduled_rows,
     )
+
+
+OPERATIONS_DASHBOARD_BODY = """
+<section class="panel"><h2>Queue Health</h2><div class="grid">{% for item in queue_cards %}<article class="card"><h3>{{ item.label }}</h3><p class="metric">{{ item.count }}</p><p class="muted">Oldest: {{ item.oldest or 'None' }}</p></article>{% endfor %}</div></section>
+<section class="panel"><h2>Runtime</h2><table><tbody><tr><th>Open safety flags</th><td>{{ safety_count }}</td></tr><tr><th>Failed notifications</th><td>{{ failed_notifications }}</td></tr><tr><th>Failed webhooks</th><td>{{ failed_webhooks }}</td></tr><tr><th>Scheduler leases</th><td>{{ lease_count }}</td></tr><tr><th>Stored media</th><td>{{ media_size }}</td></tr><tr><th>Latest database backup</th><td>{{ latest_backup }}</td></tr></tbody></table></section>
+<section class="panel"><h2>Outbound Webhooks</h2><p class="muted">Approved community items generate signed JSON POST requests. URLs must use public HTTPS. Verify <code>X-SDAC-Signature-256</code> with the shared secret.</p><form method="post" class="stack"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="create"><label>Server<select name="guild_id"><option value="">All servers</option>{% for guild in guild_options %}<option value="{{ guild.id }}">{{ guild.name }}</option>{% endfor %}</select></label><label>HTTPS URL<input name="event_url" type="url" required placeholder="https://example.com/sdac-webhook"></label><label>Secret<input name="secret" required minlength="16" autocomplete="new-password"></label><label>Events<input name="events" value="quote.approved,community.approved" placeholder="Comma-separated event names or *"></label><button type="submit">Add Webhook</button></form><table><thead><tr><th>ID</th><th>Server</th><th>URL</th><th>Events</th><th></th></tr></thead><tbody>{% for hook in webhooks %}<tr><td>#{{ hook.id }}</td><td>{{ hook.guild_id or 'All' }}</td><td>{{ hook.event_url }}</td><td>{{ hook.events_json }}</td><td><form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="webhook_id" value="{{ hook.id }}"><button type="submit" onclick="return confirm('Delete this webhook?')">Delete</button></form></td></tr>{% else %}<tr><td colspan="5" class="muted">No webhooks configured.</td></tr>{% endfor %}</tbody></table></section>
+"""
+
+
+def queue_webhook_event(event_key, guild_id, payload):
+    threading.Thread(
+        target=deliver_webhook_event,
+        args=(connect_db, event_key, guild_id, payload),
+        daemon=True,
+        name=f"sdac-webhook-{event_key}",
+    ).start()
+
+
+@app.route("/admin/operations", methods=["GET", "POST"])
+def admin_operations_dashboard():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    if request.method == "POST":
+        require_csrf_token()
+        action = community_clean_text(request.form.get("action"), 20)
+        with database() as connection:
+            if action == "create":
+                event_url = community_clean_text(request.form.get("event_url"), 500)
+                secret = community_clean_text(request.form.get("secret"), 300)
+                guild_id = community_clean_text(request.form.get("guild_id"), 32)
+                events = [item.strip() for item in community_clean_text(request.form.get("events"), 500).split(",") if item.strip()]
+                if not event_url.startswith("https://") or len(secret) < 16:
+                    abort(400, "A public HTTPS URL and a secret of at least 16 characters are required.")
+                now = utc_now_iso()
+                connection.execute("INSERT INTO webhook_subscriptions (guild_id,event_url,secret,events_json,enabled,created_at,updated_at) VALUES (?,?,?,?,1,?,?)", (guild_id, event_url, secret, json.dumps(events), now, now))
+            elif action == "delete":
+                webhook_id = int(request.form.get("webhook_id") or 0)
+                connection.execute("DELETE FROM webhook_subscriptions WHERE id = ?", (webhook_id,))
+            else:
+                abort(400, "Unknown webhook action.")
+        return redirect(url_for("admin_operations_dashboard"))
+    with closing(connect_db()) as connection:
+        queue_cards = []
+        for table, label in (("submissions", "Media"), ("community_quotes", "Quotes"), ("community_posts", "Events / meetups")):
+            row = connection.execute(f"SELECT COUNT(*) AS count, MIN(COALESCE(created_at, '')) AS oldest FROM {table} WHERE status IN ('pending','quarantined')").fetchone()
+            queue_cards.append({"label": label, "count": int(row["count"] or 0), "oldest": row["oldest"] or ""})
+        safety_count = connection.execute("SELECT COUNT(*) FROM content_safety_flags WHERE status = 'open'").fetchone()[0]
+        failed_notifications = connection.execute("SELECT COUNT(*) FROM notification_deliveries WHERE status = 'failed'").fetchone()[0]
+        failed_webhooks = connection.execute("SELECT COUNT(*) FROM webhook_deliveries WHERE status = 'failed'").fetchone()[0]
+        lease_count = connection.execute("SELECT COUNT(*) FROM scheduler_leases WHERE expires_at > ?", (utc_now_iso(),)).fetchone()[0]
+        media_size_rows = connection.execute("SELECT media_sizes FROM submissions").fetchall()
+        media_bytes = sum(
+            int(value)
+            for media_row in media_size_rows
+            for value in split_values(media_row["media_sizes"])
+            if str(value).isdigit()
+        )
+        webhooks = connection.execute("SELECT id,guild_id,event_url,events_json,enabled FROM webhook_subscriptions ORDER BY id DESC").fetchall()
+    backups = recent_database_backups()
+    return admin_tool_shell("Operations Dashboard", "Live queue, safety, delivery, scheduler, storage, and backup visibility.", OPERATIONS_DASHBOARD_BODY, queue_cards=queue_cards, safety_count=safety_count, failed_notifications=failed_notifications, failed_webhooks=failed_webhooks, lease_count=lease_count, media_size=format_bytes(int(media_bytes or 0)), latest_backup=backups[0]["modified"] if backups else "No backup found", webhooks=webhooks, guild_options=guild_options(load_config()), csrf_token=get_csrf_token())
+
+
+@app.get("/api/v1/quotes")
+def public_quotes_api():
+    guild_id = community_clean_text(request.args.get("guild_id"), 32)
+    public_ids = {str(option["id"]) for option in guild_options(load_config(), public_only=True)}
+    if guild_id and guild_id not in public_ids:
+        abort(404)
+    try:
+        limit = max(1, min(100, int(request.args.get("limit") or 50)))
+    except (TypeError, ValueError):
+        abort(400, "limit must be a number")
+    rows = community_quote_rows(guild_id, "approved", limit=limit, allowed_guild_ids=public_ids)
+    return jsonify({"data": [{key: row.get(key) for key in ("id", "guild_id", "guild_name", "quote_text", "speaker", "source_text", "context_text", "category", "score", "vote_count", "created_at")} for row in rows], "count": len(rows)})
+
+
+@app.get("/api/v1/community")
+def public_community_api():
+    guild_id = community_clean_text(request.args.get("guild_id"), 32)
+    public_ids = {str(option["id"]) for option in guild_options(load_config(), public_only=True)}
+    if guild_id and guild_id not in public_ids:
+        abort(404)
+    post_type = community_clean_text(request.args.get("type"), 20)
+    if post_type not in {"", "event", "meetup"}:
+        abort(400, "type must be event or meetup")
+    try:
+        limit = max(1, min(100, int(request.args.get("limit") or 50)))
+    except (TypeError, ValueError):
+        abort(400, "limit must be a number")
+    rows = community_post_rows(post_type or "all", "approved", limit=limit, when="all", guild_id=guild_id, allowed_guild_ids=public_ids)
+    public_keys = ("id", "guild_id", "guild_name", "post_type", "category", "title", "description", "location", "starts_at", "ends_at", "host_name", "contact_url", "tags", "is_featured", "rsvp_count", "created_at")
+    return jsonify({"data": [{key: row.get(key) for key in public_keys} for row in rows], "count": len(rows)})
 
 
 @app.route("/admin/scheduled-games")

@@ -34,6 +34,10 @@ ID_TABLES = {
     "community_quotes",
     "public_form_attempts",
     "notification_deliveries",
+    "submission_revisions",
+    "content_safety_flags",
+    "webhook_subscriptions",
+    "webhook_deliveries",
 }
 
 

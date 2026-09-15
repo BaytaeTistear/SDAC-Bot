@@ -41,6 +41,7 @@ routes = [
     "/admin/users",
     "/admin/settings",
     "/admin/optimization",
+    "/admin/operations",
     "/admin/maintenance",
     "/admin/media",
     "/admin/jobs",

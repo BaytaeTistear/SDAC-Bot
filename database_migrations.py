@@ -3,7 +3,7 @@ import sqlite3
 
 
 
-DATABASE_SCHEMA_VERSION = 27
+DATABASE_SCHEMA_VERSION = 28
 GOOGLE_PLAY_REVIEW_PASSWORD_HASH = "scrypt:32768:8:1$tpr2C1Lx7O3szQ0T$0f9b5ee8f0d5caaecaf4d69667ea93aff95365decc7108fd955590df4ef07c17680a64610805821aef23fcb86171de70c4bc0f577501ca920bb6b5bb80a4426b"
 
 
@@ -948,6 +948,71 @@ def migration_27_notification_preferences_and_retries(connection):
     ensure_column(connection, "email_delivery_log", "retry_count", "INTEGER NOT NULL DEFAULT 0")
 
 
+def migration_28_community_extensions(connection):
+    ensure_column(connection, "community_quote_daily_runs", "message_id", "TEXT NOT NULL DEFAULT ''")
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS community_quote_votes (
+            quote_id INTEGER NOT NULL,
+            user_id TEXT NOT NULL,
+            vote INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (quote_id, user_id)
+        )
+    """)
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_quote_votes_score ON community_quote_votes (quote_id, vote)")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_quote_daily_message ON community_quote_daily_runs (message_id)")
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS submission_revisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            user_id TEXT NOT NULL DEFAULT '',
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_submission_revisions_entity ON submission_revisions (entity_type, entity_id, created_at)")
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS content_safety_flags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            guild_id TEXT NOT NULL DEFAULT '',
+            findings_json TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open',
+            created_at TEXT NOT NULL,
+            resolved_at TEXT NOT NULL DEFAULT '',
+            resolved_by TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_content_safety_open ON content_safety_flags (status, guild_id, created_at)")
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT NOT NULL DEFAULT '',
+            event_url TEXT NOT NULL,
+            secret TEXT NOT NULL,
+            events_json TEXT NOT NULL DEFAULT '[]',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS webhook_deliveries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subscription_id INTEGER NOT NULL,
+            event_key TEXT NOT NULL,
+            status TEXT NOT NULL,
+            http_status INTEGER NOT NULL DEFAULT 0,
+            error_text TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+    """)
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_recent ON webhook_deliveries (created_at, status)")
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -974,6 +1039,7 @@ MIGRATIONS = (
     (25, migration_25_security_quotes_and_scheduler_leases),
     (26, migration_26_quote_submitter_email),
     (27, migration_27_notification_preferences_and_retries),
+    (28, migration_28_community_extensions),
 )
 
 
