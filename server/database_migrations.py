@@ -3,7 +3,7 @@ import sqlite3
 
 
 
-DATABASE_SCHEMA_VERSION = 26
+DATABASE_SCHEMA_VERSION = 27
 GOOGLE_PLAY_REVIEW_PASSWORD_HASH = "scrypt:32768:8:1$tpr2C1Lx7O3szQ0T$0f9b5ee8f0d5caaecaf4d69667ea93aff95365decc7108fd955590df4ef07c17680a64610805821aef23fcb86171de70c4bc0f577501ca920bb6b5bb80a4426b"
 
 
@@ -920,6 +920,34 @@ def migration_26_quote_submitter_email(connection):
     )
 
 
+def migration_27_notification_preferences_and_retries(connection):
+    ensure_column(connection, "dashboard_admin_users", "notify_email", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column(connection, "dashboard_admin_users", "notify_discord", "INTEGER NOT NULL DEFAULT 1")
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS email_verification_tokens (
+            token_hash TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            email TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used_at TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user
+        ON email_verification_tokens (username, expires_at, used_at)
+    """)
+    ensure_column(connection, "notification_deliveries", "payload_text", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(connection, "notification_deliveries", "related_type", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(connection, "notification_deliveries", "related_id", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(connection, "notification_deliveries", "recipient", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(connection, "notification_deliveries", "retry_of_id", "INTEGER")
+    ensure_column(connection, "notification_deliveries", "retry_count", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column(connection, "email_delivery_log", "body_text", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(connection, "email_delivery_log", "retry_of_id", "INTEGER")
+    ensure_column(connection, "email_delivery_log", "retry_count", "INTEGER NOT NULL DEFAULT 0")
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -945,6 +973,7 @@ MIGRATIONS = (
     (24, migration_24_community_quotes),
     (25, migration_25_security_quotes_and_scheduler_leases),
     (26, migration_26_quote_submitter_email),
+    (27, migration_27_notification_preferences_and_retries),
 )
 
 

@@ -27,6 +27,21 @@ class QuoteWebsiteTests(unittest.TestCase):
         }), encoding="utf-8")
         with dashboard.database() as connection:
             apply_database_migrations(connection)
+            connection.execute(
+                """
+                INSERT INTO dashboard_admin_users (
+                    username, email, display_name, discord_user_id,
+                    password_hash, role, disabled, email_verified,
+                    notify_email, notify_discord, created_at, updated_at,
+                    guild_ids_json
+                ) VALUES (
+                    'quote-user', 'quote-user@example.com', 'Quote User',
+                    '123456789012345678', 'test', 'user', 0, 1, 1, 1,
+                    '2026-09-14T00:00:00+00:00',
+                    '2026-09-14T00:00:00+00:00', '[]'
+                )
+                """
+            )
             dashboard.upsert_user_server_access(
                 connection,
                 "quote-user",

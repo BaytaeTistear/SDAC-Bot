@@ -204,8 +204,10 @@ with dashboard.database() as connection:
         """
         INSERT INTO dashboard_admin_users (
             username, email, display_name, discord_user_id, password_hash, role,
-            disabled, created_at, updated_at, guild_ids_json
-        ) VALUES ('linked-mod', 'linked@example.com', 'Linked Mod', '444444444444444444', 'x', 'user', 0, ?, ?, '[]')
+            disabled, email_verified, notify_email, notify_discord,
+            created_at, updated_at, guild_ids_json
+        ) VALUES ('linked-mod', 'linked@example.com', 'Linked Mod',
+                  '444444444444444444', 'x', 'user', 0, 1, 1, 1, ?, ?, '[]')
         """,
         (community_now, community_now),
     )

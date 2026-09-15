@@ -1,3 +1,28 @@
+# Sana-Chan Version 4.4.47 Experimental
+
+Version 4.4.47 adds account-controlled notifications, a unified submission history, and safe delivery recovery.
+
+## Account Notifications
+
+- adds 30-minute, single-use email verification links
+- adds per-account email and Discord DM notification preferences
+- requires verified, opted-in email addresses before sending submission updates
+- applies preferences to quote, event, meetup, submitter, and staff notifications
+
+## My Submissions
+
+- upgrades My Submissions into a signed-in private portal
+- combines media, quotes, events, and meetups in one chronological view
+- shows moderation status and reviewer notes while preserving server visibility rules
+
+## Delivery Recovery
+
+- adds admin-only retry buttons for failed Discord and email notifications
+- saves the bounded payload needed for a retry and caps each retry chain at three attempts
+- records retry ancestry, attempt count, and final delivery result
+
+---
+
 # Sana-Chan Version 4.4.46 Experimental
 
 Version 4.4.46 adds opt-in private delivery updates for community quotes.

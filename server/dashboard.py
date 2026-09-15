@@ -1516,7 +1516,7 @@ ACCOUNT_HOME_HTML = """
     <table>
         <tbody>
             <tr><th>Username</th><td><code>{{ account.username }}</code></td></tr>
-            <tr><th>Email</th><td>{{ account.email or "Not set" }}</td></tr>
+            <tr><th>Email</th><td>{{ account.email or "Not set" }}{% if account.email %} · {{ "Verified" if account.email_verified else "Not verified" }}{% endif %}</td></tr>
             <tr><th>Display name</th><td>{{ account.display_name or account.username }}</td></tr>
             <tr><th>Discord user ID</th><td>{{ account.discord_user_id or "Not linked" }}</td></tr>
             <tr><th>Role</th><td>{{ role_labels.get(account.role, account.role) }}</td></tr>
@@ -1530,8 +1530,17 @@ ACCOUNT_HOME_HTML = """
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <label>Email<input name="email" type="email" value="{{ account.email or '' }}" placeholder="optional@example.com"></label>
             <label>Display name<input name="display_name" maxlength="120" value="{{ account.display_name or '' }}" placeholder="Name shown on Sana-Chan"></label>
+            <label><input name="notify_discord" type="checkbox" value="1" {% if account.notify_discord %}checked{% endif %}> Send private Discord DM status updates</label>
+            <label><input name="notify_email" type="checkbox" value="1" {% if account.notify_email %}checked{% endif %} {% if not account.email_verified %}disabled{% endif %}> Send private email status updates</label>
+            {% if account.email and not account.email_verified %}<p>Email updates remain disabled until this address is verified.</p>{% endif %}
             <button type="submit">Save Account Details</button>
         </form>
+        {% if account.email and not account.email_verified %}
+        <form method="post" action="{{ url_for('account_email_verify_send') }}" class="stack">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit">Send Verification Email</button>
+        </form>
+        {% endif %}
     </section>
     <section class="panel">
         <h2>Authenticate With Code</h2>
@@ -1752,14 +1761,18 @@ MY_SUBMISSIONS_HTML = """
 <main>
     <h1>My Submissions</h1>
     <nav>
+        <a href="{{ url_for('account_home') }}">Account</a>
         <a href="{{ url_for('index', key=admin_key if is_admin else None) }}">Gallery</a>
+        <a href="{{ url_for('community_quotes') }}">Quotes</a>
+        <a href="{{ url_for('community_events') }}">Events</a>
+        <a href="{{ url_for('community_meetups') }}">Meetups</a>
         <a href="{{ url_for('guessing_leaderboard', key=admin_key if is_admin else None) }}">Guessing leaderboard</a>
     </nav>
     <details class="panel filter-panel">
         <summary>Filters</summary>
         <form method="get">
             {% if is_admin %}<input type="hidden" name="key" value="{{ admin_key }}">{% endif %}
-            <input name="q" value="{{ search_query }}" placeholder="Discord user ID or username">
+            {% if is_admin %}<input name="q" value="{{ search_query }}" placeholder="Discord user ID or username">{% endif %}
             <select name="guild_id">
                 <option value="all">All public servers</option>
                 {% for guild in guild_options %}
@@ -1768,27 +1781,28 @@ MY_SUBMISSIONS_HTML = """
             </select>
             <button type="submit">Find Submissions</button>
         </form>
-        <p class="muted">Tip: Discord user ID is the most accurate search. Public users only see posted submissions.</p>
+        <p class="muted">{% if is_admin %}Discord user ID is the most accurate search.{% else %}Signed-in users see private moderation status for submissions linked to their Discord account.{% endif %}</p>
     </details>
+    {% if identity_missing %}<section class="panel"><p class="muted">Link a Discord account before using My Submissions.</p></section>{% endif %}
     <section class="panel">
-        <h2>Results</h2>
-        <table>
-            <thead><tr><th>ID</th><th>Server</th><th>Category</th><th>Votes</th><th>Status</th><th>Created</th></tr></thead>
+        <h2>Media, Quotes, Events, And Meetups</h2>
+        <div style="overflow-x:auto"><table>
+            <thead><tr><th>Type</th><th>Submission</th><th>Server</th><th>Status</th><th>Review Notes</th><th>Created</th></tr></thead>
             <tbody>
                 {% for row in rows %}
                     <tr>
-                        <td><a href="{{ url_for('index', q=row.id, guild_id=row.guild_id or 'all', key=admin_key if is_admin else None) }}">{{ row.id }}</a></td>
+                        <td>{{ row.type }}</td>
+                        <td><a href="{{ row.url }}">#{{ row.id }} · {{ row.title }}</a>{% if row.category %}<br><span class="muted">{{ row.category }}</span>{% endif %}</td>
                         <td>{{ guild_names.get(row.guild_id, row.guild_id) }}</td>
-                        <td>{{ row.category }}</td>
-                        <td>{{ row.stars or 0 }}</td>
-                        <td><span class="status">{{ row.status }}</span></td>
-                        <td>{{ row.created_at or row.submitted_at }}</td>
+                        <td><span class="status">{{ row.status.title() }}</span></td>
+                        <td>{{ row.review_notes or '' }}</td>
+                        <td>{{ row.created_at }}</td>
                     </tr>
                 {% else %}
                     <tr><td colspan="6" class="muted">No matching submissions yet.</td></tr>
                 {% endfor %}
             </tbody>
-        </table>
+        </table></div>
         <nav class="pagination">
             {% if page > 1 %}
                 <a href="{{ page_url(page - 1) }}">Previous</a>
@@ -5973,7 +5987,8 @@ COMMAND_CENTER_BODY = """
 NOTIFICATION_CENTER_BODY = """
 <section class="panel"><h2>Notification Center</h2><div class="grid"><div class="metric"><strong>{{ totals.critical }}</strong><span>Critical</span></div><div class="metric"><strong>{{ totals.warning }}</strong><span>Warnings</span></div><div class="metric"><strong>{{ totals.info }}</strong><span>Info</span></div><div class="metric"><strong>{{ totals.total }}</strong><span>Total</span></div></div></section>
 <section class="panel"><h2>Alerts</h2><table><thead><tr><th>Severity</th><th>Area</th><th>Message</th><th>Action</th></tr></thead><tbody>{% for item in notifications %}<tr><td class="{{ item.class }}">{{ item.severity }}</td><td>{{ item.area }}</td><td>{{ item.message }}</td><td><a class="button secondary" href="{{ item.url }}">Open</a></td></tr>{% else %}<tr><td colspan="4" class="muted">No dashboard notifications are active.</td></tr>{% endfor %}</tbody></table></section>
-<section class="panel"><h2>Recent Deliveries</h2><div style="overflow-x:auto"><table><thead><tr><th>When</th><th>Event</th><th>Server</th><th>Channel</th><th>Status</th><th>Result</th></tr></thead><tbody>{% for row in deliveries %}<tr><td>{{ row.created_at }}</td><td>{{ row.event_key }}</td><td>{{ row.guild_id or 'Global' }}</td><td>{{ row.channel_id }}</td><td class="{{ 'ok' if row.status == 'sent' else 'bad' }}">{{ row.status.title() }}</td><td>{{ row.response_message_id or row.error_text }}</td></tr>{% else %}<tr><td colspan="6" class="muted">No notification attempts have been recorded yet.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="panel"><h2>Recent Discord Deliveries</h2><div style="overflow-x:auto"><table><thead><tr><th>When</th><th>Event</th><th>Server</th><th>Channel</th><th>Status</th><th>Result</th><th>Retry</th></tr></thead><tbody>{% for row in deliveries %}<tr><td>{{ row.created_at }}</td><td>{{ row.event_key }}</td><td>{{ row.guild_id or 'Global' }}</td><td>{{ row.channel_id }}</td><td class="{{ 'ok' if row.status == 'sent' else 'bad' }}">{{ row.status.title() }}</td><td>{{ row.response_message_id or row.error_text }}</td><td>{% if row.status == 'failed' and row.payload_text and row.chain_retries < 3 and not row.chain_sent %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="delivery_type" value="discord"><input type="hidden" name="delivery_id" value="{{ row.id }}"><button type="submit">Retry</button></form>{% else %}<span class="muted">—</span>{% endif %}</td></tr>{% else %}<tr><td colspan="7" class="muted">No Discord notification attempts have been recorded yet.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="panel"><h2>Recent Email Deliveries</h2><div style="overflow-x:auto"><table><thead><tr><th>When</th><th>Subject</th><th>Recipient</th><th>Server</th><th>Status</th><th>Result</th><th>Retry</th></tr></thead><tbody>{% for row in email_deliveries %}<tr><td>{{ row.created_at }}</td><td>{{ row.subject }}</td><td>{{ row.recipient }}</td><td>{{ row.guild_id or 'Global' }}</td><td class="{{ 'ok' if row.status == 'sent' else 'bad' }}">{{ row.status.title() }}</td><td>{{ row.detail }}</td><td>{% if row.status == 'failed' and row.body_text and row.chain_retries < 3 and not row.chain_sent %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="delivery_type" value="email"><input type="hidden" name="delivery_id" value="{{ row.id }}"><button type="submit">Retry</button></form>{% else %}<span class="muted">—</span>{% endif %}</td></tr>{% else %}<tr><td colspan="7" class="muted">No email notification attempts have been recorded yet.</td></tr>{% endfor %}</tbody></table></div></section>
 """
 
 LAUNCH_SCORES_BODY = """
@@ -10426,6 +10441,8 @@ def initialize_database():
                 role TEXT NOT NULL DEFAULT 'moderator',
                 disabled INTEGER DEFAULT 0,
                 email_verified INTEGER DEFAULT 0,
+                notify_email INTEGER NOT NULL DEFAULT 0,
+                notify_discord INTEGER NOT NULL DEFAULT 1,
                 discord_user_id TEXT,
                 created_ip TEXT,
                 approved_by TEXT,
@@ -10519,7 +10536,20 @@ def initialize_database():
                 subject TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT '',
                 detail TEXT NOT NULL DEFAULT '',
+                body_text TEXT NOT NULL DEFAULT '',
+                retry_of_id INTEGER,
+                retry_count INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS email_verification_tokens (
+                token_hash TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                email TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                used_at TEXT NOT NULL DEFAULT ''
             )
         """)
         connection.execute("""
@@ -10999,6 +11029,8 @@ def initialize_database():
             "email": "TEXT",
             "display_name": "TEXT",
             "email_verified": "INTEGER DEFAULT 0",
+            "notify_email": "INTEGER NOT NULL DEFAULT 0",
+            "notify_discord": "INTEGER NOT NULL DEFAULT 1",
             "discord_user_id": "TEXT",
             "created_ip": "TEXT",
             "approved_by": "TEXT",
@@ -12172,14 +12204,27 @@ def post_discord_channel_message(channel_id, content):
     return bool(post_discord_channel_payload(channel_id, {"content": content[:1900]}))
 
 
-def record_notification_delivery(connection, event_key, guild_id, channel_id, payload):
+def record_notification_delivery(
+    connection,
+    event_key,
+    guild_id,
+    channel_id,
+    payload,
+    payload_text="",
+    related_type="",
+    related_id="",
+    recipient="",
+    retry_of_id=None,
+    retry_count=0,
+):
     success = bool(payload)
     connection.execute(
         """
         INSERT INTO notification_deliveries (
             event_key, guild_id, channel_id, status, error_text,
-            response_message_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            response_message_id, payload_text, related_type, related_id,
+            recipient, retry_of_id, retry_count, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             str(event_key or "")[:80],
@@ -12188,6 +12233,12 @@ def record_notification_delivery(connection, event_key, guild_id, channel_id, pa
             "sent" if success else "failed",
             "" if success else "Discord API request failed or was not configured.",
             str(payload.get("id") or "")[:32] if isinstance(payload, dict) else "",
+            str(payload_text or "")[:8000],
+            str(related_type or "")[:80],
+            str(related_id or "")[:80],
+            str(recipient or "")[:180],
+            retry_of_id,
+            max(0, int(retry_count or 0)),
             utc_now_iso(),
         ),
     )
@@ -12324,15 +12375,27 @@ def extract_email_address(value):
         return ""
 
 
-def log_email_delivery(related_type, related_id, guild_id, recipient, subject, status, detail):
+def log_email_delivery(
+    related_type,
+    related_id,
+    guild_id,
+    recipient,
+    subject,
+    status,
+    detail,
+    body_text="",
+    retry_of_id=None,
+    retry_count=0,
+):
     try:
         with database() as connection:
             connection.execute(
                 """
                 INSERT INTO email_delivery_log (
                     related_type, related_id, guild_id, recipient,
-                    subject, status, detail, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    subject, status, detail, body_text, retry_of_id,
+                    retry_count, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(related_type or "")[:80],
@@ -12342,6 +12405,9 @@ def log_email_delivery(related_type, related_id, guild_id, recipient, subject, s
                     str(subject or "")[:220],
                     str(status or "")[:40],
                     str(detail or "")[:1000],
+                    str(body_text or "")[:8000],
+                    retry_of_id,
+                    max(0, int(retry_count or 0)),
                     utc_now_iso(),
                 ),
             )
@@ -12349,18 +12415,27 @@ def log_email_delivery(related_type, related_id, guild_id, recipient, subject, s
         pass
 
 
-def send_sana_email(recipient, subject, body, related_type="", related_id="", guild_id=""):
+def send_sana_email(
+    recipient,
+    subject,
+    body,
+    related_type="",
+    related_id="",
+    guild_id="",
+    retry_of_id=None,
+    retry_count=0,
+):
     recipient = normalize_email(recipient)
     subject = community_clean_text(subject, 220)
     body = community_clean_text(body, 6000)
     config = smtp_email_config()
     if not config["host"] or not config["from_email"]:
         detail = "SMTP email is not configured. Set SANA_SMTP_HOST and SANA_SMTP_FROM in /etc/sana-bot/sana.env."
-        log_email_delivery(related_type, related_id, guild_id, recipient, subject, "failed", detail)
+        log_email_delivery(related_type, related_id, guild_id, recipient, subject, "failed", detail, body, retry_of_id, retry_count)
         raise RuntimeError(detail)
     if config["username"] and not config["password"]:
         detail = "SMTP username is set but SANA_SMTP_PASSWORD is missing."
-        log_email_delivery(related_type, related_id, guild_id, recipient, subject, "failed", detail)
+        log_email_delivery(related_type, related_id, guild_id, recipient, subject, "failed", detail, body, retry_of_id, retry_count)
         raise RuntimeError(detail)
     message = EmailMessage()
     message["Subject"] = subject
@@ -12385,9 +12460,9 @@ def send_sana_email(recipient, subject, body, related_type="", related_id="", gu
                 smtp.send_message(message)
     except Exception as error:
         detail = f"Email send failed: {error}"
-        log_email_delivery(related_type, related_id, guild_id, recipient, subject, "failed", detail)
+        log_email_delivery(related_type, related_id, guild_id, recipient, subject, "failed", detail, body, retry_of_id, retry_count)
         raise RuntimeError(detail) from error
-    log_email_delivery(related_type, related_id, guild_id, recipient, subject, "sent", "Sent successfully.")
+    log_email_delivery(related_type, related_id, guild_id, recipient, subject, "sent", "Sent successfully.", body, retry_of_id, retry_count)
     return True
 
 
@@ -12413,7 +12488,8 @@ def community_admin_notice_targets(guild_id):
     with closing(connect_db()) as connection:
         users = connection.execute(
             """
-            SELECT username, email, display_name, discord_user_id, role, disabled, guild_ids_json
+            SELECT username, email, display_name, discord_user_id, role, disabled,
+                   guild_ids_json, email_verified, notify_email, notify_discord
             FROM dashboard_admin_users
             WHERE disabled = 0
               AND (COALESCE(email, '') != '' OR COALESCE(discord_user_id, '') != '')
@@ -12436,10 +12512,19 @@ def community_admin_notice_targets(guild_id):
             except ValueError:
                 discord_user_id = ""
         target = {"email": "", "discord_user_id": "", "name": user["display_name"] or user["username"]}
-        if email and email not in seen_emails:
+        if (
+            email
+            and int(user["email_verified"] or 0)
+            and int(user["notify_email"] or 0)
+            and email not in seen_emails
+        ):
             seen_emails.add(email)
             target["email"] = email
-        if discord_user_id and discord_user_id not in seen_discord_ids:
+        if (
+            discord_user_id
+            and int(user["notify_discord"] or 0)
+            and discord_user_id not in seen_discord_ids
+        ):
             seen_discord_ids.add(discord_user_id)
             target["discord_user_id"] = discord_user_id
         if target["email"] or target["discord_user_id"]:
@@ -12552,7 +12637,42 @@ def send_quote_submitter_notifications(row, status, review_notes=""):
     failures = []
     content = quote_submitter_notification_text(row, status, review_notes)
     submitter_email = extract_email_address(row["submitter_email"])
-    if submitter_email:
+    submitter_user_id = str(row["submitter_user_id"] or "").strip()
+    linked_account = None
+    if submitter_user_id or submitter_email:
+        with closing(connect_db()) as connection:
+            linked_account = connection.execute(
+                """
+                SELECT email, email_verified, notify_email, notify_discord
+                FROM dashboard_admin_users
+                WHERE disabled = 0
+                  AND (
+                    (? != '' AND discord_user_id = ?)
+                    OR (? != '' AND lower(COALESCE(email, '')) = lower(?))
+                  )
+                ORDER BY CASE WHEN discord_user_id = ? THEN 0 ELSE 1 END
+                LIMIT 1
+                """,
+                (
+                    submitter_user_id,
+                    submitter_user_id,
+                    submitter_email,
+                    submitter_email,
+                    submitter_user_id,
+                ),
+            ).fetchone()
+    allow_email = bool(
+        submitter_email
+        and linked_account
+        and int(linked_account["email_verified"] or 0)
+        and int(linked_account["notify_email"] or 0)
+        and str(linked_account["email"] or "").casefold() == submitter_email.casefold()
+    )
+    allow_discord = bool(
+        submitter_user_id
+        and (not linked_account or int(linked_account["notify_discord"] or 0))
+    )
+    if allow_email:
         subject_status = "received" if status == "submitted" else community_clean_text(status, 20)
         try:
             send_sana_email(
@@ -12566,8 +12686,7 @@ def send_quote_submitter_notifications(row, status, review_notes=""):
             email_sent = 1
         except (RuntimeError, ValueError) as error:
             failures.append(f"Email update failed: {error}")
-    submitter_user_id = str(row["submitter_user_id"] or "").strip()
-    if submitter_user_id:
+    if allow_discord:
         channel_id = create_discord_dm_channel(submitter_user_id)
         payload = (
             post_discord_channel_payload(channel_id, {"content": content[:1900]})
@@ -12581,6 +12700,10 @@ def send_quote_submitter_notifications(row, status, review_notes=""):
                 row["guild_id"],
                 channel_id,
                 payload,
+                payload_text=json.dumps({"content": content[:1900]}),
+                related_type="community_quote",
+                related_id=row["id"],
+                recipient=submitter_user_id,
             )
         if payload:
             dm_sent = 1
@@ -12645,7 +12768,23 @@ def send_community_submission_emails(row, reason="submitted"):
     recipients = []
     submitter_email = extract_email_address(row["submitter_contact"])
     if submitter_email:
-        recipients.append((submitter_email, "submitter"))
+        with closing(connect_db()) as connection:
+            submitter_account = connection.execute(
+                """
+                SELECT email_verified, notify_email
+                FROM dashboard_admin_users
+                WHERE disabled = 0
+                  AND lower(COALESCE(email, '')) = lower(?)
+                LIMIT 1
+                """,
+                (submitter_email,),
+            ).fetchone()
+        if (
+            submitter_account
+            and int(submitter_account["email_verified"] or 0)
+            and int(submitter_account["notify_email"] or 0)
+        ):
+            recipients.append((submitter_email, "submitter"))
     for target in community_admin_notice_targets(row["guild_id"]):
         if target.get("email"):
             recipients.append((target["email"], "admin"))
@@ -12670,7 +12809,7 @@ def send_community_submission_emails(row, reason="submitted"):
         except (RuntimeError, ValueError) as error:
             failed.append(f"{email}: {error}")
     if not recipients:
-        failed.append("No recipient emails found. Add a submitter email or dashboard account emails for this server's moderators/admins.")
+        failed.append("No verified, opted-in recipient emails were found for this server.")
     return sent, failed
 
 
@@ -12693,9 +12832,17 @@ def send_community_notification(event_key, message, post_id, guild_id=None, thro
             return 0
         sent = 0
         for route in route_rows:
-            payload = post_discord_channel_payload(route["channel_id"], community_rsvp_poll_payload(content, post_row))
+            request_payload = community_rsvp_poll_payload(content, post_row)
+            payload = post_discord_channel_payload(route["channel_id"], request_payload)
             record_notification_delivery(
-                connection, event_key, route["guild_id"], route["channel_id"], payload
+                connection,
+                event_key,
+                route["guild_id"],
+                route["channel_id"],
+                payload,
+                payload_text=json.dumps(request_payload),
+                related_type="community_post",
+                related_id=post_id,
             )
             if payload and record_community_announcement(connection, post_id, route["guild_id"], route["channel_id"], payload):
                 sent += 1
@@ -12724,9 +12871,15 @@ def send_admin_notification(
     sent = 0
     with database() as connection:
         for row in route_rows:
-            payload = post_discord_channel_payload(row["channel_id"], {"content": content[:1900]})
+            request_payload = {"content": content[:1900]}
+            payload = post_discord_channel_payload(row["channel_id"], request_payload)
             record_notification_delivery(
-                connection, event_key, row["guild_id"], row["channel_id"], payload
+                connection,
+                event_key,
+                row["guild_id"],
+                row["channel_id"],
+                payload,
+                payload_text=json.dumps(request_payload),
             )
             if payload:
                 sent += 1
@@ -14493,7 +14646,8 @@ def dashboard_user(username):
     with closing(connect_db()) as connection:
         return connection.execute("""
             SELECT username, email, display_name, discord_user_id,
-                   password_hash, role, disabled, guild_ids_json, last_login_at
+                   password_hash, role, disabled, guild_ids_json, last_login_at,
+                   email_verified, notify_email, notify_discord
             FROM dashboard_admin_users
             WHERE username = ?
             LIMIT 1
@@ -14507,7 +14661,8 @@ def dashboard_user_by_login(identifier):
     with closing(connect_db()) as connection:
         return connection.execute("""
             SELECT username, email, display_name, discord_user_id,
-                   password_hash, role, disabled, guild_ids_json, last_login_at
+                   password_hash, role, disabled, guild_ids_json, last_login_at,
+                   email_verified, notify_email, notify_discord
             FROM dashboard_admin_users
             WHERE username = ?
                OR lower(COALESCE(email, '')) = ?
@@ -16820,6 +16975,8 @@ def account_update():
     username = current_account_username()
     raw_email = request.form.get("email", "")
     display_name = community_clean_text(request.form.get("display_name"), 120)
+    notify_email = request.form.get("notify_email") == "1"
+    notify_discord = request.form.get("notify_discord") == "1"
     try:
         email = normalize_email(raw_email)
     except ValueError as error:
@@ -16827,7 +16984,7 @@ def account_update():
     with database() as connection:
         account = connection.execute(
             """
-            SELECT username, disabled
+            SELECT username, email, email_verified, disabled
             FROM dashboard_admin_users
             WHERE username = ?
             LIMIT 1
@@ -16854,13 +17011,30 @@ def account_update():
                     notice="That email address already belongs to another account.",
                     error=1,
                 ))
+        email_changed = email != str(account["email"] or "").casefold()
+        email_verified = 0 if email_changed else int(account["email_verified"] or 0)
+        if notify_email and not email_verified:
+            return redirect(url_for(
+                "account_home",
+                notice="Verify your email address before enabling email notifications.",
+                error=1,
+            ))
         connection.execute(
             """
             UPDATE dashboard_admin_users
-            SET email = ?, display_name = ?, updated_at = ?
+            SET email = ?, display_name = ?, email_verified = ?,
+                notify_email = ?, notify_discord = ?, updated_at = ?
             WHERE username = ?
             """,
-            (email, display_name, utc_now_iso(), username),
+            (
+                email,
+                display_name,
+                email_verified,
+                1 if notify_email and email_verified else 0,
+                1 if notify_discord else 0,
+                utc_now_iso(),
+                username,
+            ),
         )
         add_admin_audit_log(
             connection,
@@ -16873,6 +17047,88 @@ def account_update():
             "Account details updated by account owner.",
         )
     return redirect(url_for("account_home", notice="Account details saved."))
+
+
+@app.post("/account/email-verification/send")
+def account_email_verify_send():
+    if not is_account_logged_in():
+        return redirect(url_for("account_login", next=url_for("account_home")))
+    require_csrf_token()
+    username = current_account_username()
+    account = dashboard_user(username)
+    if not account or not account["email"]:
+        return redirect(url_for("account_home", notice="Add an email address first.", error=1))
+    if int(account["email_verified"] or 0):
+        return redirect(url_for("account_home", notice="Your email address is already verified."))
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    expires_at = (now + timedelta(minutes=30)).isoformat()
+    with database() as connection:
+        connection.execute(
+            "DELETE FROM email_verification_tokens WHERE username = ? AND used_at = ''",
+            (username,),
+        )
+        connection.execute(
+            """
+            INSERT INTO email_verification_tokens (
+                token_hash, username, email, created_at, expires_at, used_at
+            ) VALUES (?, ?, ?, ?, ?, '')
+            """,
+            (token_hash, username, account["email"], now.isoformat(), expires_at),
+        )
+    verify_url = url_for("account_email_verify_confirm", token=token, _external=True)
+    try:
+        send_sana_email(
+            account["email"],
+            "Verify your Sana-Chan email",
+            f"Verify this email for Sana-Chan private notifications:\n\n{verify_url}\n\nThis link expires in 30 minutes.",
+            related_type="dashboard_user",
+            related_id=username,
+        )
+    except (RuntimeError, ValueError) as error:
+        return redirect(url_for("account_home", notice=str(error), error=1))
+    return redirect(url_for("account_home", notice="Verification email sent. Check your inbox."))
+
+
+@app.get("/account/email-verification/confirm")
+def account_email_verify_confirm():
+    token = request.args.get("token", "")
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now = utc_now_iso()
+    with database() as connection:
+        row = connection.execute(
+            """
+            SELECT token_hash, username, email
+            FROM email_verification_tokens
+            WHERE token_hash = ? AND used_at = '' AND expires_at >= ?
+            LIMIT 1
+            """,
+            (token_hash, now),
+        ).fetchone()
+        if not row:
+            return redirect(url_for("account_login", notice="That verification link is invalid or expired.", error=1))
+        account = connection.execute(
+            "SELECT email FROM dashboard_admin_users WHERE username = ? AND disabled = 0",
+            (row["username"],),
+        ).fetchone()
+        if not account or str(account["email"] or "").casefold() != str(row["email"] or "").casefold():
+            return redirect(url_for("account_login", notice="That account email has changed.", error=1))
+        connection.execute(
+            """
+            UPDATE dashboard_admin_users
+            SET email_verified = 1, notify_email = 1, updated_at = ?
+            WHERE username = ?
+            """,
+            (now, row["username"]),
+        )
+        connection.execute(
+            "UPDATE email_verification_tokens SET used_at = ? WHERE token_hash = ?",
+            (now, token_hash),
+        )
+    if is_account_logged_in() and current_account_username() == row["username"]:
+        return redirect(url_for("account_home", notice="Email verified and private email updates enabled."))
+    return redirect(url_for("account_login", notice="Email verified. Sign in to manage notification preferences."))
 
 
 @app.route("/account/auth-code", methods=["POST"])
@@ -21051,11 +21307,75 @@ def admin_command_center():
     return admin_tool_shell("Command Center", "Searchable map of the most-used Sana-Chan admin tools.", COMMAND_CENTER_BODY, actions=admin_command_actions())
 
 
-@app.route("/admin/notification-center")
+@app.route("/admin/notification-center", methods=["GET", "POST"])
 def admin_notification_center():
     login_response = require_admin_login("moderator")
     if login_response:
         return login_response
+    if request.method == "POST":
+        admin_response = require_admin_login("admin")
+        if admin_response:
+            return admin_response
+        require_csrf_token()
+        delivery_type = request.form.get("delivery_type", "")
+        raw_id = request.form.get("delivery_id", "")
+        if delivery_type not in {"discord", "email"} or not raw_id.isdigit():
+            return redirect(url_for("admin_notification_center", notice="Invalid retry request.", error=1))
+        delivery_id = int(raw_id)
+        with closing(connect_db()) as connection:
+            table = "notification_deliveries" if delivery_type == "discord" else "email_delivery_log"
+            row = connection.execute(f"SELECT * FROM {table} WHERE id = ?", (delivery_id,)).fetchone()
+            retry_of_id = int(row["retry_of_id"] or row["id"]) if row else 0
+            chain_retries = connection.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE retry_of_id = ?",
+                (retry_of_id,),
+            ).fetchone()[0] if row else 0
+            chain_sent = connection.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE retry_of_id = ? AND status = 'sent'",
+                (retry_of_id,),
+            ).fetchone()[0] if row else 0
+        if not row or row["status"] != "failed" or int(chain_retries) >= 3 or int(chain_sent):
+            return redirect(url_for("admin_notification_center", notice="That delivery cannot be retried.", error=1))
+        guild_id = str(row["guild_id"] or "")
+        if guild_id and not can_admin_access_guild(guild_id, minimum_role="admin"):
+            abort(403)
+        retry_count = int(chain_retries) + 1
+        if delivery_type == "discord":
+            try:
+                request_payload = json.loads(row["payload_text"])
+            except (TypeError, json.JSONDecodeError):
+                return redirect(url_for("admin_notification_center", notice="The saved Discord payload is invalid.", error=1))
+            payload = post_discord_channel_payload(row["channel_id"], request_payload)
+            with database() as connection:
+                record_notification_delivery(
+                    connection,
+                    row["event_key"],
+                    guild_id,
+                    row["channel_id"],
+                    payload,
+                    payload_text=row["payload_text"],
+                    related_type=row["related_type"],
+                    related_id=row["related_id"],
+                    recipient=row["recipient"],
+                    retry_of_id=retry_of_id,
+                    retry_count=retry_count,
+                )
+            notice = "Discord notification retry sent." if payload else "Discord notification retry failed."
+            return redirect(url_for("admin_notification_center", notice=notice, error=0 if payload else 1))
+        try:
+            send_sana_email(
+                row["recipient"],
+                row["subject"],
+                row["body_text"],
+                related_type=row["related_type"],
+                related_id=row["related_id"],
+                guild_id=guild_id,
+                retry_of_id=retry_of_id,
+                retry_count=retry_count,
+            )
+            return redirect(url_for("admin_notification_center", notice="Email notification retry sent."))
+        except (RuntimeError, ValueError) as error:
+            return redirect(url_for("admin_notification_center", notice=str(error), error=1))
     notifications = dashboard_notifications()
     totals = {"critical": sum(1 for item in notifications if item["severity"] == "Critical"), "warning": sum(1 for item in notifications if item["severity"] == "Warning"), "info": sum(1 for item in notifications if item["severity"] == "Info"), "total": len(notifications)}
     allowed_ids = current_admin_allowed_guild_ids(load_config())
@@ -21063,16 +21383,47 @@ def admin_notification_center():
     with closing(connect_db()) as connection:
         deliveries = connection.execute(
             f"""
-            SELECT event_key, guild_id, channel_id, status, error_text,
-                   response_message_id, created_at
-            FROM notification_deliveries
+            SELECT d.id, d.event_key, d.guild_id, d.channel_id, d.status, d.error_text,
+                   d.response_message_id, d.payload_text, d.related_type, d.related_id,
+                   d.recipient, d.retry_of_id, d.retry_count, d.created_at,
+                   (SELECT COUNT(*) FROM notification_deliveries r
+                    WHERE r.retry_of_id = COALESCE(d.retry_of_id, d.id)) AS chain_retries,
+                   (SELECT COUNT(*) FROM notification_deliveries r
+                    WHERE r.retry_of_id = COALESCE(d.retry_of_id, d.id)
+                      AND r.status = 'sent') AS chain_sent
+            FROM notification_deliveries d
             WHERE {scope_sql}
-            ORDER BY id DESC
+            ORDER BY d.id DESC
             LIMIT 25
             """,
             scope_params,
         ).fetchall()
-    return admin_tool_shell("Notification Center", "Actionable alerts for review queues, releases, backups, security, and bot health.", NOTIFICATION_CENTER_BODY, notifications=notifications, totals=totals, deliveries=deliveries)
+        email_deliveries = connection.execute(
+            f"""
+            SELECT e.id, e.related_type, e.related_id, e.guild_id, e.recipient, e.subject,
+                   e.status, e.detail, e.body_text, e.retry_of_id, e.retry_count, e.created_at,
+                   (SELECT COUNT(*) FROM email_delivery_log r
+                    WHERE r.retry_of_id = COALESCE(e.retry_of_id, e.id)) AS chain_retries,
+                   (SELECT COUNT(*) FROM email_delivery_log r
+                    WHERE r.retry_of_id = COALESCE(e.retry_of_id, e.id)
+                      AND r.status = 'sent') AS chain_sent
+            FROM email_delivery_log e
+            WHERE {scope_sql}
+            ORDER BY e.id DESC
+            LIMIT 25
+            """,
+            scope_params,
+        ).fetchall()
+    return admin_tool_shell(
+        "Notification Center",
+        "Actionable alerts for review queues, releases, backups, security, and bot health.",
+        NOTIFICATION_CENTER_BODY,
+        notifications=notifications,
+        totals=totals,
+        deliveries=deliveries,
+        email_deliveries=email_deliveries,
+        csrf_token=get_csrf_token(),
+    )
 
 
 @app.route("/admin/launch-scores")
@@ -23539,69 +23890,89 @@ def user_profile(user_id):
 @app.route("/me")
 def my_submissions():
     config_data = load_config()
-    has_key = request.args.get("key") == ADMIN_KEY
-    is_admin = has_key and is_admin_logged_in()
-    if has_key and not is_admin:
-        return redirect(url_for(
-            "admin_login",
-            key=ADMIN_KEY,
-            next=request.full_path,
-        ))
-
-    search_query = (
-        request.args.get("q", "").strip()
-        or session.get("sdac_discord_user_id", "")
-    )
-    if not search_query and is_account_logged_in():
-        account = dashboard_user(current_account_username())
-        if account and account["discord_user_id"]:
-            search_query = account["discord_user_id"]
+    is_admin = is_admin_logged_in()
+    account = dashboard_user(current_account_username()) if is_account_logged_in() else None
+    if not account and not is_admin:
+        return redirect(url_for("account_login", next=request.full_path))
+    account_user_id = str((account["discord_user_id"] if account else "") or "").strip()
+    search_query = request.args.get("q", "").strip() if is_admin else account_user_id
     server_options = guild_options(config_data, public_only=not is_admin)
     guild_names = guild_name_map(config_data)
     selected_server_id = selected_guild_id(server_options)
     visible_guild_ids = {option["id"] for option in server_options}
-    rows = []
+    all_rows = []
     page = positive_page(request.args.get("page"))
     total_pages = 1
 
     if search_query:
-        where = []
         parameters = []
         if search_query.isdigit():
-            where.append("user_id = ?")
-            parameters.append(search_query)
+            media_owner = "user_id = ?"
+            quote_owner = "submitter_user_id = ?"
+            post_owner = "submitter_user_id = ?"
         else:
-            where.append("username LIKE ?")
-            parameters.append(f"%{search_query}%")
-        if not is_admin:
-            where.append("status = 'posted'")
+            media_owner = "username LIKE ?"
+            quote_owner = "submitter_name LIKE ?"
+            post_owner = "submitter_name LIKE ?"
+            search_query = f"%{search_query}%"
+        parameters.append(search_query)
         if selected_server_id:
-            where.append("guild_id = ?")
-            parameters.append(selected_server_id)
-        elif not is_admin:
-            visible_filter, visible_params = guild_id_filter(
-                "guild_id",
-                visible_guild_ids,
-            )
-            where.append(visible_filter)
-            parameters.extend(visible_params)
-
+            guild_clause = " AND guild_id = ?"
+            guild_parameters = [selected_server_id]
+        else:
+            guild_clause = ""
+            guild_parameters = []
         with closing(connect_db()) as connection:
-            total_items = connection.execute(f"""
-                SELECT COUNT(*)
+            media_rows = connection.execute(f"""
+                SELECT id, guild_id, category, status,
+                       COALESCE(created_at, submitted_at, '') AS created_at
                 FROM submissions
-                WHERE {" AND ".join(where)}
-            """, parameters).fetchone()[0]
-            total_pages = max(1, math.ceil(total_items / PAGE_SIZE))
-            page = min(page, total_pages)
-            rows = connection.execute(f"""
-                SELECT id, guild_id, user_id, username, category, stars,
-                       status, created_at, submitted_at
-                FROM submissions
-                WHERE {" AND ".join(where)}
-                ORDER BY created_at DESC, id DESC
-                LIMIT ? OFFSET ?
-            """, parameters + [PAGE_SIZE, (page - 1) * PAGE_SIZE]).fetchall()
+                WHERE {media_owner}{guild_clause}
+            """, parameters + guild_parameters).fetchall()
+            quote_rows = connection.execute(f"""
+                SELECT id, guild_id, quote_text, category, status,
+                       review_notes, created_at
+                FROM community_quotes
+                WHERE {quote_owner}{guild_clause}
+            """, parameters + guild_parameters).fetchall()
+            post_rows = connection.execute(f"""
+                SELECT id, guild_id, post_type, title, category, status,
+                       review_notes, created_at
+                FROM community_posts
+                WHERE {post_owner}{guild_clause}
+            """, parameters + guild_parameters).fetchall()
+        for row in media_rows:
+            all_rows.append({
+                "id": row["id"], "guild_id": str(row["guild_id"] or ""),
+                "type": "Media", "title": f"Media submission #{row['id']}",
+                "category": row["category"] or "", "status": row["status"] or "pending",
+                "review_notes": "", "created_at": row["created_at"] or "",
+                "url": url_for("index", q=row["id"], guild_id=row["guild_id"] or "all"),
+            })
+        for row in quote_rows:
+            all_rows.append({
+                "id": row["id"], "guild_id": str(row["guild_id"] or ""),
+                "type": "Quote", "title": community_clean_text(row["quote_text"], 90),
+                "category": row["category"] or "", "status": row["status"] or "pending",
+                "review_notes": row["review_notes"] or "", "created_at": row["created_at"] or "",
+                "url": url_for("community_quotes", guild_id=row["guild_id"]) + "#my-quotes",
+            })
+        for row in post_rows:
+            endpoint = "community_events" if row["post_type"] == "event" else "community_meetups"
+            all_rows.append({
+                "id": row["id"], "guild_id": str(row["guild_id"] or ""),
+                "type": "Event" if row["post_type"] == "event" else "Meetup",
+                "title": row["title"] or f"Community post #{row['id']}",
+                "category": row["category"] or "", "status": row["status"] or "pending",
+                "review_notes": row["review_notes"] or "", "created_at": row["created_at"] or "",
+                "url": url_for(endpoint, guild_id=row["guild_id"]),
+            })
+        if not is_admin:
+            all_rows = [row for row in all_rows if row["guild_id"] in visible_guild_ids]
+        all_rows.sort(key=lambda row: (row["created_at"], int(row["id"])), reverse=True)
+    total_pages = max(1, math.ceil(len(all_rows) / PAGE_SIZE))
+    page = min(page, total_pages)
+    rows = all_rows[(page - 1) * PAGE_SIZE:page * PAGE_SIZE]
 
     def page_url(page_number):
         values = {
@@ -23619,6 +23990,7 @@ def my_submissions():
         guild_names=guild_names,
         guild_options=server_options,
         is_admin=is_admin,
+        identity_missing=not search_query,
         page=page,
         page_url=page_url,
         rows=rows,
@@ -25814,9 +26186,13 @@ COMMUNITY_QUOTES_HTML = """
                 <label>Your name
                     <input name="submitter_name" maxlength="120" placeholder="Optional; shown only to reviewers">
                 </label>
-                <label>Email for private status updates
-                    <input name="submitter_email" type="email" maxlength="180" autocomplete="email" placeholder="Optional">
+                {% if verified_notification_email %}
+                <label>Verified email for private status updates
+                    <input name="submitter_email" type="email" maxlength="180" autocomplete="email" value="{{ verified_notification_email }}" readonly>
                 </label>
+                {% else %}
+                <p class="muted">For email updates, sign in and verify an email from your account page. Discord-linked submissions can still receive DMs according to account preferences.</p>
+                {% endif %}
                 <label>Quote
                     <textarea name="quote_text" maxlength="1000" required placeholder="Enter the quote exactly as it should appear"></textarea>
                 </label>
@@ -25972,9 +26348,15 @@ def save_community_quote():
         submitter_name = community_clean_text(current_account_username(), 120)
     submitter_user_id = community_clean_text(session.get("sdac_discord_user_id"), 32)
     submitter_email_raw = community_clean_text(request.form.get("submitter_email"), 180)
-    submitter_email = extract_email_address(submitter_email_raw)
-    if submitter_email_raw and not submitter_email:
-        raise ValueError("Enter a valid email address or leave the email field blank.")
+    account = dashboard_user(current_account_username()) if is_account_logged_in() else None
+    verified_email = (
+        extract_email_address(account["email"])
+        if account and int(account["email_verified"] or 0) and int(account["notify_email"] or 0)
+        else ""
+    )
+    if submitter_email_raw and submitter_email_raw.casefold() != verified_email.casefold():
+        raise ValueError("Verify this email in your account and enable email notifications before using it.")
+    submitter_email = verified_email
     source_text = community_clean_text(request.form.get("source_text"), 200)
     context_text = community_clean_text(request.form.get("context_text"), 500)
     category = normalized_quote_category(request.form.get("category"))
@@ -26072,6 +26454,18 @@ def community_quotes():
                 notice=str(exc),
                 error=1,
             ))
+    notification_account = (
+        dashboard_user(current_account_username())
+        if is_account_logged_in()
+        else None
+    )
+    verified_notification_email = (
+        extract_email_address(notification_account["email"])
+        if notification_account
+        and int(notification_account["email_verified"] or 0)
+        and int(notification_account["notify_email"] or 0)
+        else ""
+    )
     return render_template_string(
         COMMUNITY_QUOTES_HTML,
         csrf_token=get_csrf_token(),
@@ -26085,6 +26479,7 @@ def community_quotes():
         quote_categories=QUOTE_CATEGORIES,
         turnstile_site_key=TURNSTILE_SITE_KEY,
         account_logged_in=is_account_logged_in(),
+        verified_notification_email=verified_notification_email,
         my_quotes=community_quote_rows(
             selected_guild_id,
             "all",

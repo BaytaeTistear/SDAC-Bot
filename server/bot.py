@@ -1651,6 +1651,18 @@ async def send_quote_submitter_dm(client, row, status, review_notes=""):
     user_id = str(row["submitter_user_id"] or "").strip()
     if not user_id.isdigit():
         return False
+    with database() as connection:
+        preference = connection.execute(
+            """
+            SELECT notify_discord
+            FROM dashboard_admin_users
+            WHERE discord_user_id = ? AND disabled = 0
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+    if preference and not int(preference["notify_discord"] or 0):
+        return False
     try:
         user = client.get_user(int(user_id)) or await client.fetch_user(int(user_id))
         await user.send(quote_submitter_dm_text(row, status, review_notes))

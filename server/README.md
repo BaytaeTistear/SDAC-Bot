@@ -525,6 +525,8 @@ Admins should start with `/sana`. The panel opens button-based menus for setup, 
 
 Website quote submissions are available at `/quotes`, and moderators review them at `/admin/quotes`. Discord-linked submitters receive private DM updates when a quote is submitted, approved, or rejected. Website submitters can also provide an optional email address; configure the `SANA_SMTP_*` environment variables to enable private email updates.
 
+Email notifications require a verified account email and explicit opt-in from the account page. Users can independently disable email or Discord DM updates. The signed-in `/my-submissions` portal combines private status and reviewer notes for media, quotes, events, and meetups. Administrators can retry eligible failed deliveries up to three times from the Notification Center.
+
 ### Dashboard Pages
 
 ```text
@@ -538,6 +540,7 @@ Website quote submissions are available at `/quotes`, and moderators review them
 /account/register               Create a dashboard account
 /account/login                  Dashboard account login
 /account                        Dashboard account profile
+/my-submissions                 Signed-in media, quote, event, and meetup history
 /admin/login                   Admin login
 /admin                         Role-aware Staff Home
 /admin/moderator               Moderator workbench
