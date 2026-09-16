@@ -41,7 +41,7 @@ from community_quotes import (
     quote_display_text,
     quote_fingerprint,
 )
-from community_extensions import scrub_image_metadata
+from community_extensions import process_webhook_outbox, scrub_image_metadata
 from database_backend import connect_database, using_postgres
 from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
 from observability import capture_exception, init_sentry
@@ -6300,6 +6300,9 @@ def cleanup_background_data():
                 DELETE FROM rate_limit_events
                 WHERE created_at IS NOT NULL AND created_at < ?
             """, (rate_limit_cutoff,))
+        connection.execute("DELETE FROM user_notifications WHERE is_read=1 AND created_at < ?", ((now - timedelta(days=180)).isoformat(),))
+        connection.execute("DELETE FROM webhook_deliveries WHERE created_at < ?", ((now - timedelta(days=90)).isoformat(),))
+        connection.execute("DELETE FROM service_metrics WHERE created_at < ?", ((now - timedelta(days=395)).isoformat(),))
         removed_media = cleanup_orphaned_media(connection)
         removed_originals = cleanup_old_local_originals(connection)
         if pending_rows or removed_media or removed_originals:
@@ -16180,6 +16183,14 @@ async def daily_quote_scheduler():
             await report_background_error(f"daily_quote_scheduler:{guild_id}", error)
 
 
+@tasks.loop(minutes=1)
+async def webhook_delivery_scheduler():
+    try:
+        await asyncio.to_thread(process_webhook_outbox, connect_db, 25)
+    except Exception as error:
+        await report_background_error("webhook_delivery_scheduler", error)
+
+
 @daily_quote_scheduler.before_loop
 async def before_daily_quote_scheduler():
     await bot.wait_until_ready()
@@ -16752,6 +16763,8 @@ async def on_ready():
         weekly_top_scheduler.start()
     if not daily_quote_scheduler.is_running():
         daily_quote_scheduler.start()
+    if not webhook_delivery_scheduler.is_running():
+        webhook_delivery_scheduler.start()
     if not backup_scheduler.is_running():
         backup_scheduler.start()
     if not restore_test_scheduler.is_running():

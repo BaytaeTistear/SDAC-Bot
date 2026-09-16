@@ -1,0 +1,83 @@
+name: Staging and Production Promotion
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to promote
+        required: true
+      promote_production:
+        description: Promote the tested commit to production
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -v
+      - run: python scripts/release_readiness.py --skip-tests
+      - run: python scripts/pre_release_smoke.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdac-tested-${{ github.sha }}
+          path: |
+            bot.py
+            dashboard.py
+            community_*.py
+            professional_services.py
+            database_*.py
+            server/
+
+  browser:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: actions/setup-node@v4
+        with: {node-version: "22"}
+      - run: pip install -r requirements.txt
+      - run: npm ci
+        working-directory: e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - run: npm test
+        working-directory: e2e
+
+  staging:
+    needs: [verify, browser]
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/deploy_environment.py --environment staging --commit "${{ github.sha }}" --version "${{ inputs.version || 'next' }}"
+        env:
+          SDAC_STAGING_DEPLOY_HOOK: ${{ secrets.SDAC_STAGING_DEPLOY_HOOK }}
+          SDAC_STAGING_ROLLBACK_HOOK: ${{ secrets.SDAC_STAGING_ROLLBACK_HOOK }}
+          SDAC_STAGING_HEALTH_URL: ${{ vars.SDAC_STAGING_HEALTH_URL }}
+          SDAC_DEPLOY_TOKEN: ${{ secrets.SDAC_DEPLOY_TOKEN }}
+
+  production:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.promote_production }}
+    needs: staging
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/deploy_environment.py --environment production --commit "${{ github.sha }}" --version "${{ inputs.version }}"
+        env:
+          SDAC_PRODUCTION_DEPLOY_HOOK: ${{ secrets.SDAC_PRODUCTION_DEPLOY_HOOK }}
+          SDAC_PRODUCTION_ROLLBACK_HOOK: ${{ secrets.SDAC_PRODUCTION_ROLLBACK_HOOK }}
+          SDAC_PRODUCTION_HEALTH_URL: ${{ vars.SDAC_PRODUCTION_HEALTH_URL }}
+          SDAC_DEPLOY_TOKEN: ${{ secrets.SDAC_DEPLOY_TOKEN }}

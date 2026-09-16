@@ -10,6 +10,7 @@ PWA_HEAD_HTML = """
 <meta name="theme-color" content="#030713">
 <link rel="icon" href="/app-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/app-icon.svg">
+<link rel="stylesheet" href="/static/professional.css">
 """
 
 PWA_INSTALL_HTML = """

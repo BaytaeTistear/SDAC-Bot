@@ -1,3 +1,29 @@
+# Sana-Chan Version 4.4.49 Experimental
+
+Version 4.4.49 adds a professional operations, integration, support, and privacy layer across the bot and website.
+
+## Reliable Operations And Delivery
+
+- adds protected staging and production promotion with exact-commit artifacts, health verification, and rollback hooks
+- adds public service status, recovery validation, service metrics, and documented SLO and incident procedures
+- adds a durable webhook outbox with HMAC signatures, idempotency keys, bounded exponential retries, replay controls, secret rotation, and automatic endpoint protection
+- advances the database schema to version 29
+
+## Professional Website Experience
+
+- adds an accessible shared design system with keyboard focus, responsive tables, status treatments, and reduced-motion support
+- adds a signed-in notification inbox, self-service privacy export and deletion requests, support tickets, and moderation appeals
+- adds moderator case assignment and resolution tools plus bot-owner recovery validation
+- adds live OpenAPI documentation and Playwright browser coverage for desktop and mobile layouts
+
+## Documentation And Maintainability
+
+- extracts reusable notification, webhook, metrics, privacy, and API helpers into a dedicated service module
+- adds production operations, webhook integration, privacy, and support runbooks
+- includes all new modules, styles, tests, and documentation in Linux and Windows installer payloads
+
+---
+
 # Sana-Chan Version 4.4.48 Experimental
 
 Version 4.4.48 completes the community participation, safety, integration, and operations upgrade.

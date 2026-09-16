@@ -38,6 +38,13 @@ ID_TABLES = {
     "content_safety_flags",
     "webhook_subscriptions",
     "webhook_deliveries",
+    "user_notifications",
+    "webhook_outbox",
+    "privacy_requests",
+    "support_tickets",
+    "moderation_appeals",
+    "service_metrics",
+    "deployment_records",
 }
 
 

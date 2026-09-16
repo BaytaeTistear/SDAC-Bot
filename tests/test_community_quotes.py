@@ -19,7 +19,7 @@ class CommunityQuoteMigrationTests(unittest.TestCase):
             version = connection.execute(
                 "SELECT version FROM schema_version WHERE id = 1"
             ).fetchone()["version"]
-            self.assertEqual(version, 28)
+            self.assertEqual(version, 29)
             quote_columns = {
                 row["name"]
                 for row in connection.execute(

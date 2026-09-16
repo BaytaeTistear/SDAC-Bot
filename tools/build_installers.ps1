@@ -27,6 +27,10 @@ function Copy-PayloadFiles {
         "PRODUCTION_NEXT.md",
         "MONITORING.md",
         "POSTGRESQL.md",
+        "PRODUCTION_OPERATIONS.md",
+        "API_WEBHOOKS.md",
+        "DATA_PRIVACY.md",
+        "SUPPORT_RUNBOOK.md",
         "bot.py",
         "community_quotes.py",
         "community_extensions.py",
@@ -39,6 +43,8 @@ function Copy-PayloadFiles {
         "database_backend.py",
         "database_migrations.py",
         "observability.py",
+        "professional_services.py",
+        "static\professional.css",
         "requirements.txt",
         "docker-compose.yml",
         "scripts\install_ubuntu.sh",
@@ -58,6 +64,7 @@ function Copy-PayloadFiles {
         "scripts\release_checklist.sh",
         "scripts\release_readiness.py",
         "scripts\pre_release_smoke.py",
+        "scripts\deploy_environment.py",
         "scripts\sdac_doctor.py",
         "scripts\sana-doctor",
         "scripts\migrate_database.py",
@@ -452,7 +459,7 @@ mkdir -p "`$APP_DIR/media" "`$APP_DIR/backups"
 
 if [[ "`$SKIP_SERVICES" == "1" ]]; then
     say "Compiling Python files without installing services"
-    python3 -m py_compile "`$APP_DIR/bot.py" "`$APP_DIR/dashboard.py" "`$APP_DIR/dashboard_account_templates.py" "`$APP_DIR/dashboard_admin_roles.py" "`$APP_DIR/dashboard_shell_assets.py" "`$APP_DIR/dashboard_sidebar.py" "`$APP_DIR/config.py" "`$APP_DIR/database_backend.py"
+    python3 -m py_compile "`$APP_DIR/bot.py" "`$APP_DIR/dashboard.py" "`$APP_DIR/dashboard_account_templates.py" "`$APP_DIR/dashboard_admin_roles.py" "`$APP_DIR/dashboard_shell_assets.py" "`$APP_DIR/dashboard_sidebar.py" "`$APP_DIR/config.py" "`$APP_DIR/database_backend.py" "`$APP_DIR/professional_services.py"
     python3 -m py_compile "`$APP_DIR/database_migrations.py" "`$APP_DIR/observability.py" "`$APP_DIR/scripts/migrate_database.py" "`$APP_DIR/scripts/export_sqlite_to_postgres.py" "`$APP_DIR/scripts/release_readiness.py"
     echo "Sana-Chan files extracted to `$APP_DIR"
     exit 0
@@ -649,7 +656,7 @@ $chunkLiteral
 
         string[] files = new string[]
         {
-            "bot.py", "dashboard.py", "dashboard_account_templates.py", "dashboard_admin_roles.py", "dashboard_shell_assets.py", "dashboard_sidebar.py", "config.py", "requirements.txt",
+            "bot.py", "dashboard.py", "dashboard_account_templates.py", "dashboard_admin_roles.py", "dashboard_shell_assets.py", "dashboard_sidebar.py", "config.py", "professional_services.py", "requirements.txt",
             "database_migrations.py", "observability.py",
             "README.md", "HOSTING.md",
         "DOCKER.md", "DEPLOY.md", "PRODUCTION_NEXT.md",
@@ -860,7 +867,7 @@ if not exist ""venv\Scripts\python.exe"" (
 )
 ""%~dp0venv\Scripts\python.exe"" -m pip install --upgrade pip
 ""%~dp0venv\Scripts\python.exe"" -m pip install -r requirements.txt
-""%~dp0venv\Scripts\python.exe"" -m py_compile bot.py community_quotes.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py scripts\migrate_database.py scripts\export_sqlite_to_postgres.py
+""%~dp0venv\Scripts\python.exe"" -m py_compile bot.py community_quotes.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py professional_services.py scripts\migrate_database.py scripts\export_sqlite_to_postgres.py
 pause
 ", new UTF8Encoding(false));
 
@@ -891,7 +898,7 @@ pause
         Run(pythonCommand, "-m venv \"" + Path.Combine(appDir, "venv") + "\"", appDir, true);
         Run(venvPython, "-m pip install --upgrade pip", appDir, false);
         Run(venvPython, "-m pip install \"discord.py>=2.3.2\" \"Flask>=3.0.0\" \"sentry-sdk>=2.0.0\"", appDir, false);
-        Run(venvPython, "-m py_compile bot.py community_quotes.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py observability.py scripts\\migrate_database.py scripts\\export_sqlite_to_postgres.py", appDir, false);
+        Run(venvPython, "-m py_compile bot.py community_quotes.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py observability.py professional_services.py scripts\\migrate_database.py scripts\\export_sqlite_to_postgres.py", appDir, false);
         if (!String.IsNullOrWhiteSpace(InitialAdminUsername) && !String.IsNullOrWhiteSpace(InitialAdminPassword))
         {
             string script = Path.Combine(appDir, "scripts", "reset_admin_login.py");

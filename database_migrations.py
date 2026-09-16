@@ -3,7 +3,7 @@ import sqlite3
 
 
 
-DATABASE_SCHEMA_VERSION = 28
+DATABASE_SCHEMA_VERSION = 29
 GOOGLE_PLAY_REVIEW_PASSWORD_HASH = "scrypt:32768:8:1$tpr2C1Lx7O3szQ0T$0f9b5ee8f0d5caaecaf4d69667ea93aff95365decc7108fd955590df4ef07c17680a64610805821aef23fcb86171de70c4bc0f577501ca920bb6b5bb80a4426b"
 
 
@@ -1013,6 +1013,47 @@ def migration_28_community_extensions(connection):
     connection.execute("CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_recent ON webhook_deliveries (created_at, status)")
 
 
+def migration_29_professional_operations(connection):
+    connection.execute("""CREATE TABLE IF NOT EXISTS user_notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL,title TEXT NOT NULL,body TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'general',action_url TEXT NOT NULL DEFAULT '',is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL)""")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_user_notifications_user ON user_notifications (user_id,is_read,created_at)")
+    connection.execute("""CREATE TABLE IF NOT EXISTS webhook_outbox (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,event_id TEXT NOT NULL UNIQUE,event_key TEXT NOT NULL,guild_id TEXT NOT NULL DEFAULT '',
+        payload_json TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',attempt_count INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL, last_error TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL)""")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_webhook_outbox_due ON webhook_outbox (status,next_attempt_at)")
+    ensure_column(connection, "webhook_subscriptions", "consecutive_failures", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column(connection, "webhook_subscriptions", "last_success_at", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(connection, "webhook_subscriptions", "disabled_reason", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(connection, "webhook_deliveries", "idempotency_key", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(connection, "webhook_deliveries", "outbox_id", "INTEGER")
+    connection.execute("""CREATE TABLE IF NOT EXISTS privacy_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL,request_type TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',
+        details TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,completed_at TEXT NOT NULL DEFAULT '')""")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_privacy_requests_user ON privacy_requests (user_id,status,created_at)")
+    connection.execute("""CREATE TABLE IF NOT EXISTS support_tickets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL DEFAULT '',guild_id TEXT NOT NULL DEFAULT '',subject TEXT NOT NULL,
+        message TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open',priority TEXT NOT NULL DEFAULT 'normal',assigned_to TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,updated_at TEXT NOT NULL,resolved_at TEXT NOT NULL DEFAULT '')""")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets (status,priority,created_at)")
+    connection.execute("""CREATE TABLE IF NOT EXISTS moderation_assignments (
+        entity_type TEXT NOT NULL,entity_id TEXT NOT NULL,assigned_to TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'assigned',
+        due_at TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(entity_type,entity_id))""")
+    connection.execute("""CREATE TABLE IF NOT EXISTS moderation_appeals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL,guild_id TEXT NOT NULL DEFAULT '',entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open',review_notes TEXT NOT NULL DEFAULT '',
+        reviewed_by TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL)""")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_moderation_appeals_status ON moderation_appeals (status,guild_id,created_at)")
+    connection.execute("""CREATE TABLE IF NOT EXISTS service_metrics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,metric_key TEXT NOT NULL,metric_value REAL NOT NULL,unit TEXT NOT NULL DEFAULT 'count',
+        guild_id TEXT NOT NULL DEFAULT '',details_json TEXT NOT NULL DEFAULT '{}',created_at TEXT NOT NULL)""")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_service_metrics_key ON service_metrics (metric_key,created_at)")
+    connection.execute("""CREATE TABLE IF NOT EXISTS deployment_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,version TEXT NOT NULL,environment TEXT NOT NULL,status TEXT NOT NULL,commit_sha TEXT NOT NULL DEFAULT '',
+        details TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,completed_at TEXT NOT NULL DEFAULT '')""")
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -1040,6 +1081,7 @@ MIGRATIONS = (
     (26, migration_26_quote_submitter_email),
     (27, migration_27_notification_preferences_and_retries),
     (28, migration_28_community_extensions),
+    (29, migration_29_professional_operations),
 )
 
 

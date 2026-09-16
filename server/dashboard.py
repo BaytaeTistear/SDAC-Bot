@@ -54,13 +54,20 @@ from community_quotes import (
     quote_fingerprint,
 )
 from community_extensions import (
-    deliver_webhook_event,
+    process_webhook_outbox,
     quote_vote_totals,
     record_revision,
     record_safety_findings,
     safety_status,
     screen_content,
     scrub_image_metadata,
+)
+from professional_services import (
+    create_inbox_notification,
+    enqueue_webhook,
+    openapi_document,
+    privacy_export,
+    record_service_metric,
 )
 from database_backend import connect_database, using_postgres
 from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
@@ -1522,6 +1529,14 @@ ACCOUNT_HOME_HTML = """
 <main>
     <h1>Your Sana-Chan Account</h1>
     {% if notice %}<div class="notice {{ 'error' if error else '' }}">{{ notice }}</div>{% endif %}
+
+    <section class="panel">
+        <h2>Self-Service Requests</h2>
+        <p class="muted">Verify the requester, then use the server-scoped export/delete controls below. Two-admin approval remains enforced when configured.</p>
+        <table><thead><tr><th>User</th><th>Request</th><th>Status</th></tr></thead><tbody>
+        {% for item in privacy_requests %}<tr><td>{{ item.user_id }}</td><td>{{ item.request_type }}<br>{{ item.created_at }}</td><td>{{ item.status }}</td></tr>{% else %}<tr><td colspan="3" class="muted">No privacy requests.</td></tr>{% endfor %}
+        </tbody></table>
+    </section>
     <table>
         <tbody>
             <tr><th>Username</th><td><code>{{ account.username }}</code></td></tr>
@@ -20440,6 +20455,9 @@ def admin_privacy():
             ORDER BY created_at DESC, id DESC
             LIMIT 50
         """).fetchall()
+        privacy_requests = connection.execute(
+            "SELECT * FROM privacy_requests ORDER BY created_at DESC,id DESC LIMIT 100"
+        ).fetchall()
     return render_template_string(
         PRIVACY_HTML,
         actions=actions,
@@ -20448,6 +20466,7 @@ def admin_privacy():
         error=error,
         guild_options=options,
         can_purge_server=has_admin_role("owner"),
+        privacy_requests=privacy_requests,
         notice=notice,
     )
 
@@ -26761,6 +26780,15 @@ def admin_quote_submissions():
                     row["guild_id"],
                     {"id": quote_id, "status": "approved"},
                 )
+            with database() as inbox_connection:
+                create_inbox_notification(
+                    inbox_connection,
+                    row["submitter_user_id"],
+                    f"Quote #{quote_id} {new_status}",
+                    review_notes or f"Your quote was {new_status} by a moderator.",
+                    "submission",
+                    url_for("community_quotes", guild_id=row["guild_id"]) + "#my-quotes",
+                )
         return redirect(url_for("admin_quote_submissions", notice=message, status=selected_status, guild_id=selected_guild_id))
     return admin_tool_shell(
         "Quote Moderation",
@@ -26883,6 +26911,16 @@ def admin_community_submissions():
                     "status": "approved",
                 },
             )
+        if action in {"approve", "reject"}:
+            with database() as inbox_connection:
+                create_inbox_notification(
+                    inbox_connection,
+                    row["submitter_user_id"],
+                    f"{row['post_type'].title()} #{post_id} {new_status}",
+                    review_notes or f"Your {row['post_type']} was {new_status} by a moderator.",
+                    "submission",
+                    url_for("community_events" if row["post_type"] == "event" else "community_meetups", guild_id=row["guild_id"]),
+                )
         return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice=message, status=selected_status, post_type=selected_type))
     return admin_tool_shell(
         "Events And Meetups",
@@ -26915,14 +26953,192 @@ def admin_live_status():
 OPERATIONS_DASHBOARD_BODY = """
 <section class="panel"><h2>Queue Health</h2><div class="grid">{% for item in queue_cards %}<article class="card"><h3>{{ item.label }}</h3><p class="metric">{{ item.count }}</p><p class="muted">Oldest: {{ item.oldest or 'None' }}</p></article>{% endfor %}</div></section>
 <section class="panel"><h2>Runtime</h2><table><tbody><tr><th>Open safety flags</th><td>{{ safety_count }}</td></tr><tr><th>Failed notifications</th><td>{{ failed_notifications }}</td></tr><tr><th>Failed webhooks</th><td>{{ failed_webhooks }}</td></tr><tr><th>Scheduler leases</th><td>{{ lease_count }}</td></tr><tr><th>Stored media</th><td>{{ media_size }}</td></tr><tr><th>Latest database backup</th><td>{{ latest_backup }}</td></tr></tbody></table></section>
-<section class="panel"><h2>Outbound Webhooks</h2><p class="muted">Approved community items generate signed JSON POST requests. URLs must use public HTTPS. Verify <code>X-SDAC-Signature-256</code> with the shared secret.</p><form method="post" class="stack"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="create"><label>Server<select name="guild_id"><option value="">All servers</option>{% for guild in guild_options %}<option value="{{ guild.id }}">{{ guild.name }}</option>{% endfor %}</select></label><label>HTTPS URL<input name="event_url" type="url" required placeholder="https://example.com/sdac-webhook"></label><label>Secret<input name="secret" required minlength="16" autocomplete="new-password"></label><label>Events<input name="events" value="quote.approved,community.approved" placeholder="Comma-separated event names or *"></label><button type="submit">Add Webhook</button></form><table><thead><tr><th>ID</th><th>Server</th><th>URL</th><th>Events</th><th></th></tr></thead><tbody>{% for hook in webhooks %}<tr><td>#{{ hook.id }}</td><td>{{ hook.guild_id or 'All' }}</td><td>{{ hook.event_url }}</td><td>{{ hook.events_json }}</td><td><form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="webhook_id" value="{{ hook.id }}"><button type="submit" onclick="return confirm('Delete this webhook?')">Delete</button></form></td></tr>{% else %}<tr><td colspan="5" class="muted">No webhooks configured.</td></tr>{% endfor %}</tbody></table></section>
+<section class="panel"><h2>Outbound Webhooks</h2><p class="muted">Approved community items generate signed, idempotent JSON POST requests through a durable retry queue. URLs must use public HTTPS.</p><form method="post" class="stack"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="create"><label>Server<select name="guild_id"><option value="">All servers</option>{% for guild in guild_options %}<option value="{{ guild.id }}">{{ guild.name }}</option>{% endfor %}</select></label><label>HTTPS URL<input name="event_url" type="url" required placeholder="https://example.com/sdac-webhook"></label><label>Secret<input name="secret" required minlength="16" autocomplete="new-password"></label><label>Events<input name="events" value="quote.approved,community.approved,webhook.test" placeholder="Comma-separated event names or *"></label><button type="submit">Add Webhook</button></form><table><thead><tr><th>ID</th><th>Destination</th><th>Health</th><th>Actions</th></tr></thead><tbody>{% for hook in webhooks %}<tr><td>#{{ hook.id }}</td><td>{{ hook.guild_id or 'All servers' }}<br>{{ hook.event_url }}<br><span class="muted">{{ hook.events_json }}</span></td><td>{{ 'Enabled' if hook.enabled else 'Disabled' }} · {{ hook.consecutive_failures }} failure(s)<br><span class="muted">{{ hook.disabled_reason or ('Last success: ' + hook.last_success_at if hook.last_success_at else 'No successful delivery yet') }}</span></td><td><form method="post" class="stack"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="webhook_id" value="{{ hook.id }}"><input name="secret" minlength="16" placeholder="New secret for rotation"><button name="action" value="test" type="submit">Send Test</button><button name="action" value="rotate" type="submit">Rotate Secret / Re-enable</button><button name="action" value="delete" type="submit" onclick="return confirm('Delete this webhook?')">Delete</button></form></td></tr>{% else %}<tr><td colspan="4" class="muted">No webhooks configured.</td></tr>{% endfor %}</tbody></table></section>
+<section class="panel"><h2>Webhook Outbox</h2><table><thead><tr><th>Event</th><th>Status</th><th>Attempts</th><th>Error</th><th></th></tr></thead><tbody>{% for item in outbox %}<tr><td>{{ item.event_key }}<br><code>{{ item.event_id }}</code></td><td>{{ item.status }}</td><td>{{ item.attempt_count }}</td><td>{{ item.last_error }}</td><td>{% if item.status in ['dead','retry'] %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="replay"><input type="hidden" name="outbox_id" value="{{ item.id }}"><button>Replay</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="muted">No webhook events yet.</td></tr>{% endfor %}</tbody></table></section>
 """
 
 
+PROFESSIONAL_LIST_BODY = """
+<section class="panel"><h2>{{ heading }}</h2><p class="muted">{{ guidance }}</p>{% if form_kind %}<form method="post" class="stack"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="create">{% if form_kind == 'support' %}<label>Subject<input name="subject" maxlength="160" required></label><label>Message<textarea name="message" maxlength="4000" required></textarea></label>{% elif form_kind == 'appeal' %}<label>Submission type<select name="entity_type"><option value="media">Media</option><option value="quote">Quote</option><option value="post">Event / meetup</option></select></label><label>Submission ID<input name="entity_id" inputmode="numeric" required></label><label>Why should this decision be reviewed?<textarea name="reason" maxlength="3000" required></textarea></label>{% endif %}<button type="submit">Submit</button></form>{% endif %}<div class="stack">{% for row in rows %}<article class="card"><h3>#{{ row.id }} · {{ row.title or row.subject or row.entity_type }}</h3><p>{{ row.body or row.message or row.reason }}</p><p class="muted">{{ row.status.title() }} · {{ row.created_at }}{% if row.assigned_to %} · Assigned to {{ row.assigned_to }}{% endif %}</p>{% if admin_actions %}<form method="post" class="actions"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="record_id" value="{{ row.id }}"><input type="hidden" name="record_type" value="{{ row.record_type }}"><input name="assigned_to" placeholder="Assign moderator" value="{{ row.assigned_to or '' }}"><button name="action" value="assign" type="submit">Assign</button><button name="action" value="resolve" type="submit">Resolve</button></form>{% endif %}</article>{% else %}<p class="muted">Nothing here yet.</p>{% endfor %}</div></section>
+"""
+
+
+@app.route("/notifications", methods=["GET", "POST"])
+def notification_inbox():
+    user_id = community_clean_text(session.get("sdac_discord_user_id"), 32)
+    if not user_id:
+        return redirect(url_for("account_login", next=request.full_path))
+    with database() as connection:
+        if request.method == "POST":
+            require_csrf_token()
+            notification_id = int(request.form.get("notification_id") or 0)
+            if notification_id:
+                connection.execute("UPDATE user_notifications SET is_read=1 WHERE id=? AND user_id=?", (notification_id, user_id))
+            else:
+                connection.execute("UPDATE user_notifications SET is_read=1 WHERE user_id=?", (user_id,))
+            return redirect(url_for("notification_inbox"))
+        rows = [dict(row) for row in connection.execute("SELECT id,title,body,category,action_url,is_read,created_at FROM user_notifications WHERE user_id=? ORDER BY id DESC LIMIT 100", (user_id,)).fetchall()]
+    return render_template_string("""<!doctype html><html><head><title>Notifications</title>{{ pwa|safe }}</head><body><main><h1>Notifications</h1><p><a href="{{ url_for('account_home') }}">Account</a></p><form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>Mark all read</button></form>{% for row in rows %}<article class="sdac-card"><h2>{{ row.title }}</h2><p>{{ row.body }}</p><p class="sdac-muted">{{ row.category }} · {{ row.created_at }} · {{ 'Read' if row.is_read else 'New' }}</p>{% if row.action_url %}<a href="{{ row.action_url }}">Open</a>{% endif %}{% if not row.is_read %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="notification_id" value="{{ row.id }}"><button>Mark read</button></form>{% endif %}</article>{% else %}<p>No notifications yet.</p>{% endfor %}</main></body></html>""", rows=rows, csrf_token=get_csrf_token(), pwa=PWA_HEAD_HTML)
+
+
+@app.route("/account/privacy", methods=["GET", "POST"])
+def account_privacy_center():
+    user_id = community_clean_text(session.get("sdac_discord_user_id"), 32)
+    if not user_id:
+        return redirect(url_for("account_login", next=request.full_path))
+    with database() as connection:
+        if request.method == "POST":
+            require_csrf_token()
+            action = community_clean_text(request.form.get("action"), 30)
+            if action == "export":
+                response = jsonify(privacy_export(connection, user_id))
+                response.headers["Content-Disposition"] = "attachment; filename=sdac-privacy-export.json"
+                return response
+            if action == "delete":
+                existing = connection.execute("SELECT id FROM privacy_requests WHERE user_id=? AND request_type='delete' AND status='pending'", (user_id,)).fetchone()
+                if not existing:
+                    connection.execute("INSERT INTO privacy_requests (user_id,request_type,status,details,created_at) VALUES (?,'delete','pending','User-requested account and personal-data deletion',?)", (user_id, utc_now_iso()))
+                return redirect(url_for("account_privacy_center", notice="Deletion request submitted."))
+            abort(400)
+        requests = connection.execute("SELECT * FROM privacy_requests WHERE user_id=? ORDER BY id DESC", (user_id,)).fetchall()
+    return render_template_string("""<!doctype html><html><head><title>Privacy Center</title>{{ pwa|safe }}</head><body><main><h1>Privacy Center</h1><p>Download a machine-readable copy of your SDAC data or request deletion. A moderator must verify destructive requests before processing.</p>{% if request.args.get('notice') %}<p>{{ request.args.get('notice') }}</p>{% endif %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button name="action" value="export">Download my data</button><button name="action" value="delete" onclick="return confirm('Request deletion of your account data?')">Request deletion</button></form><h2>Requests</h2>{% for row in requests %}<p>#{{ row.id }} {{ row.request_type }} — {{ row.status }} · {{ row.created_at }}</p>{% else %}<p>No privacy requests.</p>{% endfor %}</main></body></html>""", requests=requests, csrf_token=get_csrf_token(), pwa=PWA_HEAD_HTML)
+
+
+@app.route("/support", methods=["GET", "POST"])
+def support_center():
+    user_id = community_clean_text(session.get("sdac_discord_user_id"), 32)
+    if not user_id:
+        return redirect(url_for("account_login", next=request.full_path))
+    with database() as connection:
+        if request.method == "POST":
+            require_csrf_token()
+            subject = community_clean_text(request.form.get("subject"), 160)
+            message = community_clean_text(request.form.get("message"), 4000)
+            if not subject or not message:
+                abort(400, "Subject and message are required.")
+            now = utc_now_iso()
+            connection.execute("INSERT INTO support_tickets (user_id,guild_id,subject,message,status,priority,created_at,updated_at) VALUES (?,?,?,?,'open','normal',?,?)", (user_id, community_clean_text(session.get("sdac_selected_guild_id"), 32), subject, message, now, now))
+            return redirect(url_for("support_center"))
+        rows = [dict(row) for row in connection.execute("SELECT id,subject,message,status,assigned_to,created_at FROM support_tickets WHERE user_id=? ORDER BY id DESC", (user_id,)).fetchall()]
+    return admin_tool_shell("Support", "Create and track requests without exposing private details publicly.", PROFESSIONAL_LIST_BODY, heading="My Support Tickets", guidance="Include enough detail to reproduce the issue, but never include passwords or bot tokens.", form_kind="support", rows=rows, admin_actions=False)
+
+
+@app.route("/appeals", methods=["GET", "POST"])
+def moderation_appeals():
+    user_id = community_clean_text(session.get("sdac_discord_user_id"), 32)
+    if not user_id:
+        return redirect(url_for("account_login", next=request.full_path))
+    with database() as connection:
+        if request.method == "POST":
+            require_csrf_token()
+            entity_type = community_clean_text(request.form.get("entity_type"), 20)
+            entity_id = community_clean_text(request.form.get("entity_id"), 30)
+            reason = community_clean_text(request.form.get("reason"), 3000)
+            if entity_type not in {"media", "quote", "post"} or not entity_id.isdigit() or not reason:
+                abort(400, "Choose a valid submission and explain the appeal.")
+            now = utc_now_iso()
+            connection.execute("INSERT INTO moderation_appeals (user_id,guild_id,entity_type,entity_id,reason,status,created_at,updated_at) VALUES (?,?,?,?,?,'open',?,?)", (user_id, community_clean_text(session.get("sdac_selected_guild_id"), 32), entity_type, entity_id, reason, now, now))
+            return redirect(url_for("moderation_appeals"))
+        rows = [dict(row) for row in connection.execute("SELECT id,entity_type,entity_id,reason,status,reviewed_by,created_at FROM moderation_appeals WHERE user_id=? ORDER BY id DESC", (user_id,)).fetchall()]
+    return admin_tool_shell("Appeals", "Request a second review of a moderation decision.", PROFESSIONAL_LIST_BODY, heading="My Appeals", guidance="Appeals are reviewed by a moderator other than the original reviewer when possible.", form_kind="appeal", rows=rows, admin_actions=False)
+
+
+@app.route("/admin/cases", methods=["GET", "POST"])
+def admin_case_management():
+    login_response = require_admin_login("moderator")
+    if login_response:
+        return login_response
+    if request.method == "POST":
+        require_csrf_token()
+        record_type = community_clean_text(request.form.get("record_type"), 20)
+        record_id = int(request.form.get("record_id") or 0)
+        action = community_clean_text(request.form.get("action"), 20)
+        assigned_to = community_clean_text(request.form.get("assigned_to"), 120)
+        table = "support_tickets" if record_type == "support" else "moderation_appeals" if record_type == "appeal" else ""
+        if not table or not record_id:
+            abort(400)
+        with database() as connection:
+            case_row = connection.execute(f"SELECT * FROM {table} WHERE id=?", (record_id,)).fetchone()
+            if not case_row:
+                abort(404)
+            if action == "assign":
+                assignment_column = "assigned_to" if table == "support_tickets" else "reviewed_by"
+                connection.execute(f"UPDATE {table} SET {assignment_column}=?,updated_at=? WHERE id=?", (assigned_to, utc_now_iso(), record_id))
+                connection.execute(
+                    """INSERT INTO moderation_assignments (entity_type,entity_id,assigned_to,status,created_at,updated_at)
+                       VALUES (?,?,?,'assigned',?,?)
+                       ON CONFLICT(entity_type,entity_id) DO UPDATE SET assigned_to=excluded.assigned_to,status='assigned',updated_at=excluded.updated_at""",
+                    (record_type, str(record_id), assigned_to, utc_now_iso(), utc_now_iso()),
+                )
+                add_admin_audit_log(connection, case_row["guild_id"], "case_assigned", session.get("sdac_discord_user_id", ""), current_account_username() or "moderator", record_type, record_id, f"Assigned to {assigned_to or 'unassigned'}")
+            elif action == "resolve":
+                existing_owner = case_row["assigned_to"] if table == "support_tickets" else case_row["reviewed_by"]
+                if not existing_owner:
+                    abort(400, "Assign this case before resolving it.")
+                if table == "support_tickets":
+                    connection.execute("UPDATE support_tickets SET status='resolved',resolved_at=?,updated_at=? WHERE id=?", (utc_now_iso(), utc_now_iso(), record_id))
+                else:
+                    connection.execute("UPDATE moderation_appeals SET status='resolved',updated_at=? WHERE id=?", (utc_now_iso(), record_id))
+                connection.execute("UPDATE moderation_assignments SET status='resolved',updated_at=? WHERE entity_type=? AND entity_id=?", (utc_now_iso(), record_type, str(record_id)))
+                add_admin_audit_log(connection, case_row["guild_id"], "case_resolved", session.get("sdac_discord_user_id", ""), current_account_username() or "moderator", record_type, record_id, f"Resolved by {existing_owner}")
+            else:
+                abort(400)
+        return redirect(url_for("admin_case_management"))
+    with closing(connect_db()) as connection:
+        support = [dict(row) | {"record_type": "support", "title": row["subject"], "body": row["message"]} for row in connection.execute("SELECT * FROM support_tickets WHERE status!='resolved' ORDER BY priority DESC,id").fetchall()]
+        appeals = [dict(row) | {"record_type": "appeal", "title": f"{row['entity_type']} #{row['entity_id']}", "body": row["reason"], "assigned_to": row["reviewed_by"]} for row in connection.execute("SELECT * FROM moderation_appeals WHERE status!='resolved' ORDER BY id").fetchall()]
+    return admin_tool_shell("Case Management", "Assign, escalate, and resolve support tickets and moderation appeals.", PROFESSIONAL_LIST_BODY, heading="Open Cases", guidance="Assign an owner before changing a case outcome. All decisions remain auditable.", form_kind="", rows=support + appeals, admin_actions=True)
+
+
+@app.route("/admin/recovery-validation", methods=["GET", "POST"])
+def admin_recovery_validation():
+    login_response = require_admin_login("bot_owner")
+    if login_response:
+        return login_response
+    result = None
+    if request.method == "POST":
+        require_csrf_token()
+        started = time.perf_counter()
+        passed, backup_path, message = run_manual_restore_test()
+        duration = round(time.perf_counter() - started, 3)
+        backup_age = max(0, time.time() - backup_path.stat().st_mtime) if backup_path and backup_path.exists() else 0
+        with database() as connection:
+            record_service_metric(connection, "recovery_time_seconds", duration, "seconds", details={"passed": bool(passed)})
+            record_service_metric(connection, "recovery_point_age_seconds", backup_age, "seconds", details={"backup": backup_path.name if backup_path else ""})
+        result = {"passed": passed, "message": message, "rto": duration, "rpo": round(backup_age, 1)}
+    return admin_tool_shell("Recovery Validation", "Restore a recent backup into an isolated validation database and measure recovery objectives.", """<section class='panel'><h2>Disaster Recovery Drill</h2><p>Target: RTO under 15 minutes and RPO under 24 hours.</p><form method='post'><input type='hidden' name='csrf_token' value='{{ csrf_token }}'><button>Run isolated restore validation</button></form>{% if result %}<p class='{{ '' if result.passed else 'danger' }}'>{{ result.message }}</p><p>Measured RTO: {{ result.rto }} seconds · RPO: {{ result.rpo }} seconds</p>{% endif %}</section>""", result=result)
+
+
+@app.get("/api/v1/openapi.json")
+def public_openapi():
+    return jsonify(openapi_document(request.url_root.rstrip("/")))
+
+
+@app.get("/api/docs")
+def public_api_docs():
+    return render_template_string("""<!doctype html><html><head><title>SDAC API</title>{{ pwa|safe }}</head><body><main><h1>Sana-Chan Public API</h1><p>Versioned, read-only access to approved public community data. Maximum 100 records per request.</p><ul><li><a href='/api/v1/quotes'>GET /api/v1/quotes</a></li><li><a href='/api/v1/community'>GET /api/v1/community</a></li><li><a href='/api/v1/openapi.json'>OpenAPI 3.1 document</a></li><li><a href='/status'>Service status</a></li></ul><h2>Webhook verification</h2><p>Compute HMAC-SHA256 over the raw request body using the configured secret and compare it to <code>X-SDAC-Signature-256</code>. Use <code>Idempotency-Key</code> to ignore duplicate deliveries.</p></main></body></html>""", pwa=PWA_HEAD_HTML)
+
+
+@app.get("/status")
+def public_service_status():
+    with closing(connect_db()) as connection:
+        failed_webhooks = connection.execute("SELECT COUNT(*) FROM webhook_outbox WHERE status='dead'").fetchone()[0]
+        pending = connection.execute("SELECT COUNT(*) FROM webhook_outbox WHERE status IN ('pending','retry')").fetchone()[0]
+        open_cases = connection.execute("SELECT (SELECT COUNT(*) FROM support_tickets WHERE status!='resolved') + (SELECT COUNT(*) FROM moderation_appeals WHERE status!='resolved')").fetchone()[0]
+    backups = recent_database_backups()
+    state = "operational" if int(failed_webhooks or 0) == 0 else "degraded"
+    payload = {"status": state, "checked_at": utc_now_iso(), "components": {"dashboard": "operational", "database": "operational", "webhook_queue": "operational" if not failed_webhooks else "degraded", "backups": "operational" if backups else "needs_attention"}, "queue": {"webhooks": int(pending or 0), "open_cases": int(open_cases or 0)}}
+    if "application/json" in request.headers.get("Accept", "") or request.args.get("format") == "json":
+        return jsonify(payload)
+    return render_template_string("""<!doctype html><html><head><title>SDAC Status</title>{{ pwa|safe }}</head><body><main><h1>Service Status: {{ payload.status.title() }}</h1><p>Last checked {{ payload.checked_at }}</p>{% for name,state in payload.components.items() %}<article class='sdac-card'><h2>{{ name.replace('_',' ').title() }}</h2><p>{{ state.replace('_',' ').title() }}</p></article>{% endfor %}</main></body></html>""", payload=payload, pwa=PWA_HEAD_HTML)
+
+
 def queue_webhook_event(event_key, guild_id, payload):
+    with database() as connection:
+        enqueue_webhook(connection, event_key, guild_id, payload)
     threading.Thread(
-        target=deliver_webhook_event,
-        args=(connect_db, event_key, guild_id, payload),
+        target=process_webhook_outbox,
+        args=(connect_db,),
         daemon=True,
         name=f"sdac-webhook-{event_key}",
     ).start()
@@ -26949,8 +27165,25 @@ def admin_operations_dashboard():
             elif action == "delete":
                 webhook_id = int(request.form.get("webhook_id") or 0)
                 connection.execute("DELETE FROM webhook_subscriptions WHERE id = ?", (webhook_id,))
+            elif action == "rotate":
+                webhook_id = int(request.form.get("webhook_id") or 0)
+                secret = community_clean_text(request.form.get("secret"), 300)
+                if len(secret) < 16:
+                    abort(400, "A new secret of at least 16 characters is required.")
+                connection.execute("UPDATE webhook_subscriptions SET secret=?,enabled=1,consecutive_failures=0,disabled_reason='',updated_at=? WHERE id=?", (secret, utc_now_iso(), webhook_id))
+            elif action == "test":
+                webhook_id = int(request.form.get("webhook_id") or 0)
+                hook = connection.execute("SELECT guild_id FROM webhook_subscriptions WHERE id=?", (webhook_id,)).fetchone()
+                if not hook:
+                    abort(404)
+                enqueue_webhook(connection, "webhook.test", hook["guild_id"], {"status": "test", "subscription_id": webhook_id})
+            elif action == "replay":
+                outbox_id = int(request.form.get("outbox_id") or 0)
+                connection.execute("UPDATE webhook_outbox SET status='pending',attempt_count=0,next_attempt_at=?,last_error='',updated_at=? WHERE id=?", (utc_now_iso(), utc_now_iso(), outbox_id))
             else:
                 abort(400, "Unknown webhook action.")
+        if action in {"test", "replay"}:
+            threading.Thread(target=process_webhook_outbox, args=(connect_db,), daemon=True, name="sdac-webhook-manual").start()
         return redirect(url_for("admin_operations_dashboard"))
     with closing(connect_db()) as connection:
         queue_cards = []
@@ -26968,9 +27201,10 @@ def admin_operations_dashboard():
             for value in split_values(media_row["media_sizes"])
             if str(value).isdigit()
         )
-        webhooks = connection.execute("SELECT id,guild_id,event_url,events_json,enabled FROM webhook_subscriptions ORDER BY id DESC").fetchall()
+        webhooks = connection.execute("SELECT id,guild_id,event_url,events_json,enabled,consecutive_failures,last_success_at,disabled_reason FROM webhook_subscriptions ORDER BY id DESC").fetchall()
+        outbox = connection.execute("SELECT id,event_id,event_key,status,attempt_count,last_error,created_at FROM webhook_outbox ORDER BY id DESC LIMIT 50").fetchall()
     backups = recent_database_backups()
-    return admin_tool_shell("Operations Dashboard", "Live queue, safety, delivery, scheduler, storage, and backup visibility.", OPERATIONS_DASHBOARD_BODY, queue_cards=queue_cards, safety_count=safety_count, failed_notifications=failed_notifications, failed_webhooks=failed_webhooks, lease_count=lease_count, media_size=format_bytes(int(media_bytes or 0)), latest_backup=backups[0]["modified"] if backups else "No backup found", webhooks=webhooks, guild_options=guild_options(load_config()), csrf_token=get_csrf_token())
+    return admin_tool_shell("Operations Dashboard", "Live queue, safety, delivery, scheduler, storage, and backup visibility.", OPERATIONS_DASHBOARD_BODY, queue_cards=queue_cards, safety_count=safety_count, failed_notifications=failed_notifications, failed_webhooks=failed_webhooks, lease_count=lease_count, media_size=format_bytes(int(media_bytes or 0)), latest_backup=backups[0]["modified"] if backups else "No backup found", webhooks=webhooks, outbox=outbox, guild_options=guild_options(load_config()), csrf_token=get_csrf_token())
 
 
 @app.get("/api/v1/quotes")

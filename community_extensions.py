@@ -9,7 +9,8 @@ import json
 import re
 import socket
 import tempfile
-from datetime import datetime, timezone
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -24,6 +25,19 @@ EXECUTABLE_LINK_PATTERN = re.compile(
     r"https?://[^\s<>]+\.(?:exe|msi|bat|cmd|scr|ps1|jar)(?:[?#][^\s<>]*)?$",
     re.IGNORECASE,
 )
+
+
+@contextmanager
+def managed_connection(connection_factory):
+    connection = connection_factory()
+    try:
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
 def utc_now_iso():
@@ -144,20 +158,23 @@ def _public_webhook_url(value):
         return False
 
 
-def deliver_webhook_event(connection_factory, event_key, guild_id, payload):
+def deliver_webhook_event(connection_factory, event_key, guild_id, payload, event_id="", created_at="", outbox_id=None, return_details=False, target_subscription_id=0):
     """Deliver a signed JSON event to enabled, public HTTPS subscriptions."""
-    body = json.dumps({"event": event_key, "guild_id": str(guild_id or ""), "created_at": utc_now_iso(), "data": payload}, separators=(",", ":")).encode("utf-8")
-    with connection_factory() as connection:
+    event_id = str(event_id or hashlib.sha256(f"{event_key}:{guild_id}:{utc_now_iso()}".encode()).hexdigest())
+    body = json.dumps({"id": event_id, "event": event_key, "guild_id": str(guild_id or ""), "created_at": created_at or utc_now_iso(), "data": payload}, separators=(",", ":")).encode("utf-8")
+    with managed_connection(connection_factory) as connection:
         rows = connection.execute(
             """
             SELECT id, event_url, secret, events_json
             FROM webhook_subscriptions
             WHERE enabled = 1 AND (guild_id = ? OR guild_id = '')
+              AND (? = 0 OR id = ?)
             ORDER BY id
             """,
-            (str(guild_id or ""),),
+            (str(guild_id or ""), int(target_subscription_id or 0), int(target_subscription_id or 0)),
         ).fetchall()
     delivered = 0
+    eligible = 0
     for row in rows:
         try:
             events = json.loads(row["events_json"] or "[]")
@@ -165,13 +182,14 @@ def deliver_webhook_event(connection_factory, event_key, guild_id, payload):
             events = []
         if events and event_key not in events and "*" not in events:
             continue
+        eligible += 1
         status, http_status, error = "failed", 0, ""
         if not _public_webhook_url(row["event_url"]):
             error = "Webhook URL must resolve to a public HTTPS address."
         else:
             signature = hmac.new(str(row["secret"] or "").encode("utf-8"), body, hashlib.sha256).hexdigest()
             try:
-                response = urlopen(Request(row["event_url"], data=body, headers={"Content-Type": "application/json", "User-Agent": "Sana-Chan-Webhook/1", "X-SDAC-Event": event_key, "X-SDAC-Signature-256": "sha256=" + signature}, method="POST"), timeout=5)
+                response = urlopen(Request(row["event_url"], data=body, headers={"Content-Type": "application/json", "User-Agent": "Sana-Chan-Webhook/1", "X-SDAC-Event": event_key, "X-SDAC-Signature-256": "sha256=" + signature, "Idempotency-Key": event_id}, method="POST"), timeout=5)
                 http_status = int(getattr(response, "status", 200))
                 status = "delivered" if 200 <= http_status < 300 else "failed"
                 delivered += 1 if status == "delivered" else 0
@@ -179,13 +197,66 @@ def deliver_webhook_event(connection_factory, event_key, guild_id, payload):
                 http_status, error = int(exc.code), str(exc)[:500]
             except (URLError, OSError, TimeoutError) as exc:
                 error = str(exc)[:500]
-        with connection_factory() as connection:
+        with managed_connection(connection_factory) as connection:
             connection.execute(
                 """
                 INSERT INTO webhook_deliveries (
-                    subscription_id, event_key, status, http_status, error_text, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    subscription_id, event_key, status, http_status, error_text, created_at,
+                    idempotency_key, outbox_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (int(row["id"]), event_key, status, http_status, error, utc_now_iso()),
+                (int(row["id"]), event_key, status, http_status, error, utc_now_iso(), event_id, outbox_id),
             )
-    return delivered
+            if status == "delivered":
+                connection.execute("UPDATE webhook_subscriptions SET consecutive_failures=0,last_success_at=?,disabled_reason='' WHERE id=?", (utc_now_iso(), int(row["id"])))
+            else:
+                connection.execute("UPDATE webhook_subscriptions SET consecutive_failures=consecutive_failures+1 WHERE id=?", (int(row["id"]),))
+                failure_row = connection.execute("SELECT consecutive_failures FROM webhook_subscriptions WHERE id=?", (int(row["id"]),)).fetchone()
+                if failure_row and int(failure_row["consecutive_failures"] or 0) >= 10:
+                    connection.execute("UPDATE webhook_subscriptions SET enabled=0,disabled_reason='Automatically disabled after 10 consecutive failures' WHERE id=?", (int(row["id"]),))
+    return (delivered, eligible) if return_details else delivered
+
+
+def process_webhook_outbox(connection_factory, limit=20):
+    """Deliver due webhook events with bounded exponential retries."""
+    from professional_services import schedule_webhook_retry
+
+    now = utc_now_iso()
+    with managed_connection(connection_factory) as connection:
+        stale_before = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+        connection.execute(
+            """UPDATE webhook_outbox SET status='retry',next_attempt_at=?,last_error='Recovered stale delivery claim',updated_at=?
+               WHERE status='processing' AND updated_at < ?""",
+            (now, now, stale_before),
+        )
+        rows = connection.execute(
+            """SELECT * FROM webhook_outbox WHERE status IN ('pending','retry') AND next_attempt_at <= ? ORDER BY id LIMIT ?""",
+            (now, int(limit)),
+        ).fetchall()
+    processed = 0
+    for row in rows:
+        with managed_connection(connection_factory) as connection:
+            claim = connection.execute(
+                "UPDATE webhook_outbox SET status='processing',updated_at=? WHERE id=? AND status IN ('pending','retry')",
+                (utc_now_iso(), int(row["id"])),
+            )
+            if int(claim.rowcount or 0) != 1:
+                continue
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+            target_subscription_id = int(payload.get("subscription_id") or 0) if row["event_key"] == "webhook.test" else 0
+            delivered, eligible = deliver_webhook_event(
+                connection_factory, row["event_key"], row["guild_id"], payload,
+                event_id=row["event_id"], created_at=row["created_at"], outbox_id=int(row["id"]), return_details=True,
+                target_subscription_id=target_subscription_id,
+            )
+            with managed_connection(connection_factory) as connection:
+                if eligible == 0 or delivered == eligible:
+                    connection.execute("UPDATE webhook_outbox SET status='delivered',attempt_count=attempt_count+1,last_error='',updated_at=? WHERE id=?", (utc_now_iso(), int(row["id"])))
+                else:
+                    schedule_webhook_retry(connection, int(row["id"]), int(row["attempt_count"] or 0) + 1, f"Delivered {delivered} of {eligible} subscriptions")
+            processed += 1
+        except Exception as exc:
+            with managed_connection(connection_factory) as connection:
+                schedule_webhook_retry(connection, int(row["id"]), int(row["attempt_count"] or 0) + 1, str(exc))
+    return processed

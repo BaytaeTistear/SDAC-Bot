@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.48**. Community tools include public quote/event/meetup APIs, account-owned pending submission editing, quote voting, explainable safety quarantine, automatic image metadata removal, and a consolidated operations dashboard.
+Current experimental backend: **4.4.49**. Professional operations now include protected staging promotion, durable signed webhooks, public API documentation and status, a notification inbox, privacy tools, support and appeal case management, recovery validation, and browser-tested responsive design.
 
 Sana-Chan Bot is a Discord media submission and guessing-game system with a web dashboard. Discord users submit images, audio, or video through `/submit`. Admins configure categories, review pending submissions, run guessing games, and view submissions, votes, leaderboards, maintenance status, and moderation history from the dashboard.
 
