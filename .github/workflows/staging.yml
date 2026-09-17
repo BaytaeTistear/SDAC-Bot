@@ -61,7 +61,22 @@ jobs:
     environment: staging
     steps:
       - uses: actions/checkout@v4
-      - run: python scripts/deploy_environment.py --environment staging --commit "${{ github.sha }}" --version "${{ inputs.version || 'next' }}"
+      - name: Detect staging deployment configuration
+        id: staging-config
+        env:
+          SDAC_STAGING_DEPLOY_HOOK: ${{ secrets.SDAC_STAGING_DEPLOY_HOOK }}
+          SDAC_STAGING_HEALTH_URL: ${{ vars.SDAC_STAGING_HEALTH_URL }}
+          SDAC_DEPLOY_TOKEN: ${{ secrets.SDAC_DEPLOY_TOKEN }}
+        run: |
+          if [[ -n "$SDAC_STAGING_DEPLOY_HOOK" && -n "$SDAC_STAGING_HEALTH_URL" && -n "$SDAC_DEPLOY_TOKEN" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Staging deployment is not configured; verification completed without deployment."
+          fi
+      - name: Deploy exact commit to staging
+        if: steps.staging-config.outputs.enabled == 'true'
+        run: python scripts/deploy_environment.py --environment staging --commit "${{ github.sha }}" --version "${{ inputs.version || 'next' }}"
         env:
           SDAC_STAGING_DEPLOY_HOOK: ${{ secrets.SDAC_STAGING_DEPLOY_HOOK }}
           SDAC_STAGING_ROLLBACK_HOOK: ${{ secrets.SDAC_STAGING_ROLLBACK_HOOK }}

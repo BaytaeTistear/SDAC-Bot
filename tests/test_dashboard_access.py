@@ -34,6 +34,7 @@ class DashboardAccessTests(unittest.TestCase):
         }
         with self.dashboard.database() as connection:
             connection.execute("DELETE FROM dashboard_user_server_access")
+            connection.execute("DELETE FROM dashboard_bot_owners")
             connection.execute("DELETE FROM guess_library_items")
             connection.execute("DELETE FROM background_jobs")
             connection.execute("DELETE FROM dashboard_admin_users")
@@ -321,6 +322,37 @@ class DashboardAccessTests(unittest.TestCase):
         self.assertLess(levels["moderator"], levels["admin"])
         self.assertLess(levels["admin"], levels["owner"])
         self.assertLess(levels["owner"], levels["bot_owner"])
+
+    def test_full_site_access_can_be_granted_from_user_management(self):
+        with self.dashboard.app.test_client() as client:
+            with client.session_transaction() as session:
+                session["sdac_admin"] = True
+                session["sdac_admin_username"] = "baytae"
+                session["sdac_admin_role"] = "bot_owner"
+                session["csrf_token"] = "full-access-token"
+            with mock.patch.object(self.dashboard, "load_config", return_value=self.config):
+                page = client.get(f"/admin/users?key={self.dashboard.ADMIN_KEY}")
+                self.assertEqual(page.status_code, 200)
+                self.assertIn("Grant Full Site Access", page.get_data(as_text=True))
+                response = client.post(
+                    "/admin/users",
+                    data={
+                        "key": self.dashboard.ADMIN_KEY,
+                        "csrf_token": "full-access-token",
+                        "action": "promote_dashboard_user",
+                        "username": "scoped-user",
+                        "role": "bot_owner",
+                    },
+                    follow_redirects=False,
+                )
+
+        self.assertEqual(response.status_code, 302)
+        with self.dashboard.database() as connection:
+            user = connection.execute("SELECT role FROM dashboard_admin_users WHERE username='scoped-user'").fetchone()
+            owner = connection.execute("SELECT username FROM dashboard_bot_owners WHERE username='scoped-user'").fetchone()
+        self.assertEqual(user["role"], "bot_owner")
+        self.assertIsNotNone(owner)
+        self.assertTrue(self.dashboard.is_bot_owner_username("scoped-user"))
 
     def test_admin_account_role_keeps_moderator_sidebar_sections(self):
         with self.dashboard.database() as connection:

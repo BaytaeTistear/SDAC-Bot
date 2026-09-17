@@ -528,9 +528,9 @@ STAFF_HOME_MODES = {
         "required_role": "owner",
     },
     "bot_owner": {
-        "title": "Bot Owner Home",
+        "title": "Full Access Home",
         "eyebrow": "Global operations",
-        "summary": "Watch the whole SDAC install: services, releases, backups, database health, jobs, and cross-server controls.",
+        "summary": "Manage the whole SDAC site: users, every server, services, releases, backups, database health, jobs, and global controls.",
         "required_role": "bot_owner",
     },
 }
@@ -3059,6 +3059,7 @@ USERS_HTML = """
     </section>
     <section class="panel">
         <h2>Dashboard Accounts</h2>
+        <p class="muted"><strong>Full Site Access</strong> can view and change every website area, manage every server, administer users, and use global operations controls. Grant it only to people you trust with the entire installation.</p>
         <table>
             <thead><tr><th>User</th><th>Discord</th><th>Role</th><th>Server Access</th><th>Status</th><th>Promote</th><th>Ban</th></tr></thead>
             <tbody>
@@ -3070,7 +3071,17 @@ USERS_HTML = """
                     <td>{{ access_summary_by_user.get(user.username, 'Not Added') }}</td>
                     <td>{{ 'Banned' if user.disabled else 'Active' }}</td>
                     <td>
-                        {% if can_promote_dashboard_user(user.role, 'moderator', user.username) or can_promote_dashboard_user(user.role, 'admin', user.username) or can_promote_dashboard_user(user.role, 'owner', user.username) %}
+                        {% if user.role != 'bot_owner' and can_promote_dashboard_user(user.role, 'bot_owner', user.username) %}
+                            <form method="post" class="stack" onsubmit="return confirm('Grant {{ user.username }} full access to every website area, server, user account, and global control?');">
+                                <input type="hidden" name="key" value="{{ admin_key }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="action" value="promote_dashboard_user">
+                                <input type="hidden" name="username" value="{{ user.username }}">
+                                <input type="hidden" name="role" value="bot_owner">
+                                <button type="submit">Grant Full Site Access</button>
+                            </form>
+                        {% endif %}
+                        {% if can_promote_dashboard_user(user.role, 'moderator', user.username) or can_promote_dashboard_user(user.role, 'admin', user.username) or can_promote_dashboard_user(user.role, 'owner', user.username) or can_promote_dashboard_user(user.role, 'bot_owner', user.username) %}
                             <form method="post" class="stack">
                                 <input type="hidden" name="key" value="{{ admin_key }}">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -3474,6 +3485,7 @@ SETTINGS_HTML = """
 
     <section class="panel">
         <h2>Dashboard Access</h2>
+        <p class="muted"><strong>Full Site Access</strong> is the highest website role. It can change all servers, settings, users, moderation data, releases, maintenance controls, privacy tools, and operational configuration.</p>
         <p>
             Logged in as <code>{{ current_admin_username }}</code>
             with <code>{{ current_admin_role }}</code> access.
@@ -3568,7 +3580,7 @@ SETTINGS_HTML = """
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="8" class="muted">No dashboard accounts yet. Create the first Bot Owner with <code>python scripts/reset_admin_login.py --username baytae --role owner</code>.</td></tr>
+                    <tr><td colspan="8" class="muted">No dashboard accounts yet. Create the first full-access owner with <code>python scripts/reset_admin_login.py --username baytae --role bot_owner</code>.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -18535,7 +18547,7 @@ def admin_preview_as():
         ("Cross Server", "moderator"),
         ("Moderation", "moderator"),
         ("Server Owner", "owner"),
-        ("Bot Owner", "bot_owner"),
+        ("Full Site Access", "bot_owner"),
     ]:
         visible_sections.append({
             "label": label,

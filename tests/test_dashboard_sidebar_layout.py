@@ -43,7 +43,7 @@ class DashboardSidebarLayoutTests(unittest.TestCase):
         self.assertIn('<span>User</span>', body)
         self.assertIn('<span>Moderator</span>', body)
         self.assertIn('<span>Server Owner</span>', body)
-        self.assertIn('<span>Bot Owner</span>', body)
+        self.assertIn('<span>Full Site Access</span>', body)
         self.assertIn('class="sdac-sidebar-section-caret"', body)
         self.assertIn('class="sdac-server-switcher"', body)
         self.assertIn('action="/admin/bot-owner"', body)

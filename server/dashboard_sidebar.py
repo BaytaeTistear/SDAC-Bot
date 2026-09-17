@@ -69,7 +69,7 @@ ADMIN_SECTIONS = [
         ],
     },
     {
-        "label": "Bot Owner",
+        "label": "Full Site Access",
         "required_role": "bot_owner",
         "links": [
             ("Release Center", "admin_release_center", {}),

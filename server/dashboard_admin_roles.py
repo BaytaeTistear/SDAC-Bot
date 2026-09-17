@@ -17,7 +17,7 @@ ROLE_LABELS = {
     "moderator": "Moderator",
     "admin": "Admin",
     "owner": "Server Owner",
-    "bot_owner": "Bot Owner",
+    "bot_owner": "Full Site Access",
 }
 
 OWNER_OVERRIDE_USERNAME = "baytae"

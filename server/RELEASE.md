@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.4.50 Experimental
+
+Version 4.4.50 makes complete website access explicit and safely assignable from user management.
+
+## Full Site Access
+
+- renames the highest website role to Full Site Access while preserving its proven internal permission behavior
+- adds a prominent one-click grant action with confirmation on the Users page
+- gives recipients access to every server, setting, user-management area, release tool, maintenance control, privacy tool, and global operation
+- adds clear warnings explaining the authority being granted and retains audit logging for every role change
+- keeps the protected primary owner recovery behavior intact
+
+---
+
 # Sana-Chan Version 4.4.49 Experimental
 
 Version 4.4.49 adds a professional operations, integration, support, and privacy layer across the bot and website.
