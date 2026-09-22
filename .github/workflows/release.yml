@@ -179,6 +179,8 @@ jobs:
           name: sana-installers
           path: |
             dist/Sana-Chan-Linux-Installer.sh
+            dist/Sana-Chan-Linux-Installer.sh.sha256
+            dist/sana-install
             dist/Sana-Chan-Windows-Installer.exe
             dist/Sana-Chan-Ubuntu-Update.sh
             dist/Sana-Chan-Windows-Update.ps1
@@ -261,6 +263,12 @@ jobs:
             echo "Linux installer contains CRLF line endings."
             exit 1
           fi
+          if grep -q $'\r' artifacts/sana-install; then
+            echo "One-line installer bootstrap contains CRLF line endings."
+            exit 1
+          fi
+          bash -n artifacts/sana-install
+          (cd artifacts && sha256sum --check Sana-Chan-Linux-Installer.sh.sha256)
           if grep -q $'\r' artifacts/Sana-Chan-Ubuntu-Update.sh; then
             echo "Ubuntu updater contains CRLF line endings."
             exit 1

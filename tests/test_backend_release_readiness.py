@@ -89,6 +89,22 @@ class BackendReleaseReadinessTests(unittest.TestCase):
             self.assertIn('chmod +x "$INSTALLER_PATH"', script, filename)
             self.assertIn("refresh_resolved_version_from_installer", script, filename)
 
+    def test_one_line_installer_is_verified_and_released(self):
+        quick_installer = (ROOT / "scripts" / "quick_install.sh").read_text(encoding="utf-8")
+        self.assertIn('"$BASE_URL/$INSTALLER_NAME.sha256"', quick_installer)
+        self.assertIn("sha256sum --check", quick_installer)
+        self.assertIn("latest-experimental", quick_installer)
+        self.assertIn("SANA_APP_DIR", quick_installer)
+        for filename in (
+            "tools/build_installers.ps1",
+            "tools/release_experimental.ps1",
+            "tools/release_official.ps1",
+            ".github/workflows/release.yml",
+        ):
+            text = (ROOT / filename).read_text(encoding="utf-8")
+            self.assertIn("sana-install", text, filename)
+            self.assertIn("Sana-Chan-Linux-Installer.sh.sha256", text, filename)
+
     def test_docker_compose_uses_portable_environment_syntax(self):
         compose_text = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
         self.assertNotIn("required: false", compose_text)

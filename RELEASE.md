@@ -1,3 +1,19 @@
+# Sana-Chan Version 4.4.51 Experimental
+
+Version 4.4.51 adds a verified one-line Linux installation path for fresh hosts and server moves.
+
+## One-Line Server Installation
+
+- adds the public `sana-install` bootstrap for a single copy-and-paste install command
+- downloads the complete installer to a temporary file so token and password prompts remain interactive
+- verifies the published Linux installer against its SHA-256 sidecar before execution
+- automatically selects the Ubuntu account when available or the current Linux account otherwise
+- chooses the matching home-directory installation path while still supporting environment overrides
+- preserves existing configuration, database, media, backups, and environment files during reinstall or migration
+- validates the bootstrap, checksum, line endings, packaging, and release assets in CI
+
+---
+
 # Sana-Chan Version 4.4.50 Experimental
 
 Version 4.4.50 makes complete website access explicit and safely assignable from user management.

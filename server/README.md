@@ -1,6 +1,16 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.50**. Full Site Access can now be granted explicitly from user management, giving trusted users every server, setting, account-management, release, maintenance, privacy, and global operations control.
+Current experimental backend: **4.4.51**. New Linux servers can now install the complete bot and dashboard with one verified command while retaining the existing interactive secret setup.
+
+## One-Line Linux Install
+
+Run this as the account that should own the bot files:
+
+```bash
+bash -c "$(curl --proto '=https' --tlsv1.2 -fsSL https://github.com/BaytaeTistear/SDAC-Bot/releases/download/latest-experimental/sana-install)"
+```
+
+The bootstrap downloads the full installer, verifies its SHA-256 checksum, installs into the current account's home directory (or the Ubuntu account when present), and prompts for the Discord token and initial full-access website account. Existing configuration, database, media, backups, and environment files are preserved when reinstalling into the same path.
 
 Sana-Chan Bot is a Discord media submission and guessing-game system with a web dashboard. Discord users submit images, audio, or video through `/submit`. Admins configure categories, review pending submissions, run guessing games, and view submissions, votes, leaderboards, maintenance status, and moderation history from the dashboard.
 

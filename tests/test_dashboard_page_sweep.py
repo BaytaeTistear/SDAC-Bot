@@ -52,6 +52,8 @@ routes = [
     "/admin/monthly-report",
     "/admin/polls",
     "/admin/releases",
+    "/admin/release-center",
+    "/admin/install-success",
     "/admin/release-checklist, "
     "/admin/go-live-checklist",
     "/admin/production-health",
@@ -165,6 +167,13 @@ with client.session_transaction() as session:
     session["sdac_admin_role"] = "bot_owner"
     session["sdac_admin_auth"] = "test"
     session["sdac_admin_guild_ids"] = []
+
+for install_route in ("/admin/release-center", "/admin/install-success"):
+    install_page = client.get(install_route)
+    assert install_page.status_code == 200
+    install_body = install_page.get_data(as_text=True)
+    assert "sana-install" in install_body
+    assert "Copy Install Command" in install_body
 
 
 

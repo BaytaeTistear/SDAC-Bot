@@ -48,6 +48,7 @@ function Copy-PayloadFiles {
         "requirements.txt",
         "docker-compose.yml",
         "scripts\install_ubuntu.sh",
+        "scripts\quick_install.sh",
         "scripts\update_ubuntu.sh",
         "scripts\rollback_ubuntu.sh",
         "scripts\install_journal_limits.sh",
@@ -1041,6 +1042,15 @@ function Copy-ReleaseHelperScripts {
         )
     }
 
+    $quickInstallSource = Join-Path $Root "scripts\quick_install.sh"
+    $quickInstallContent = [IO.File]::ReadAllText($quickInstallSource)
+    $quickInstallContent = $quickInstallContent -replace "`r`n", "`n" -replace "`r", "`n"
+    [IO.File]::WriteAllText(
+        (Join-Path $Dist "sana-install"),
+        $quickInstallContent,
+        [Text.UTF8Encoding]::new($false)
+    )
+
     $windowsSource = Join-Path $Root "scripts\update_from_github_windows.ps1"
     $windowsContent = [IO.File]::ReadAllText($windowsSource)
     $windowsContent = $windowsContent -replace "`r`n", "`n" -replace "`r", "`n"
@@ -1059,6 +1069,14 @@ Convert-PayloadTextFilesToLf -PayloadRoot $payloadRoot
 New-LinuxInstaller `
     -PayloadRoot $payloadRoot `
     -OutputPath (Join-Path $Dist "Sana-Chan-Linux-Installer.sh")
+
+$linuxInstallerPath = Join-Path $Dist "Sana-Chan-Linux-Installer.sh"
+$linuxInstallerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $linuxInstallerPath).Hash.ToLowerInvariant()
+[IO.File]::WriteAllText(
+    (Join-Path $Dist "Sana-Chan-Linux-Installer.sh.sha256"),
+    "$linuxInstallerHash  Sana-Chan-Linux-Installer.sh`n",
+    [Text.UTF8Encoding]::new($false)
+)
 
 New-WindowsInstaller `
     -PayloadRoot $payloadRoot `

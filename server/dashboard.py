@@ -5943,6 +5943,12 @@ RELEASE_CENTER_BODY = """
     </table>
 </section>
 <section class="panel">
+    <h2>One-Line New Server Install</h2>
+    <p class="muted">Paste this into a fresh Linux server. The downloaded installer is checksum-verified before it runs, then prompts securely for the Discord token and first website owner password.</p>
+    <pre id="sdac-one-line-install">bash -c "$(curl --proto '=https' --tlsv1.2 -fsSL https://github.com/BaytaeTistear/SDAC-Bot/releases/download/latest-experimental/sana-install)"</pre>
+    <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('sdac-one-line-install').textContent.trim())">Copy Install Command</button>
+</section>
+<section class="panel">
     <h2>Update Commands</h2>
     <p><code>sana-update latest-experimental</code></p>
     <p><code>sana-update latest-official</code></p>
@@ -21681,6 +21687,7 @@ def admin_install_success():
     app_info = public_app_metadata()
     body = """
     <section class="panel"><h2>First Install Success Screen</h2><div class="grid"><div class="metric"><strong>{{ rows|length }}</strong><span>Configured Servers</span></div><div class="metric"><strong>{{ 'Ready' if app_info.invite_url else 'Missing' }}</strong><span>Invite Bot</span></div><div class="metric"><strong>/sana</strong><span>Default Command</span></div></div></section>
+    <section class="panel"><h2>Install On Another Server</h2><p class="muted">Use this on a fresh Linux host. It verifies the release checksum before running the interactive installer.</p><pre id="sdac-install-command">bash -c "$(curl --proto '=https' --tlsv1.2 -fsSL https://github.com/BaytaeTistear/SDAC-Bot/releases/download/latest-experimental/sana-install)"</pre><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('sdac-install-command').textContent.trim())">Copy Install Command</button></section>
     <section class="panel"><h2>Next Steps</h2><div class="action-list"><div class="action"><div><h3>Invite Sana-Chan</h3><p class="muted">Install with bot and applications.commands scopes.</p></div><a class="button" href="{{ url_for('bot_invite') }}">Open</a></div><div class="action"><div><h3>Run Setup Wizard</h3><p class="muted">Pick channels, categories, command name, and setup tests.</p></div><a class="button secondary" href="{{ url_for('admin_setup_wizard', key=admin_key) }}">Open</a></div><div class="action"><div><h3>Open Wiki</h3><p class="muted">Share docs with server owners and moderators.</p></div><a class="button secondary" href="{{ app_info.wiki_url }}">Open</a></div></div></section>
     <section class="panel"><h2>Server Results</h2><table><thead><tr><th>Server</th><th>Score</th><th>Required</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ row.name }}</td><td>{{ row.health_score }}%</td><td>{{ row.complete_count }} / {{ row.total_count }}</td></tr>{% else %}<tr><td colspan="3" class="muted">No servers configured yet.</td></tr>{% endfor %}</tbody></table></section>
     """

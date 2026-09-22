@@ -61,6 +61,7 @@ MIRRORED_FILES = [
     "scripts/install_backup_prereqs.sh",
     "scripts/install_nginx_site.sh",
     "scripts/install_ubuntu.sh",
+    "scripts/quick_install.sh",
     "scripts/migrate_database.py",
     "scripts/pre_release_smoke.py",
     "scripts/release_checklist.sh",
