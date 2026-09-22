@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 import sqlite3
 
 
@@ -691,19 +692,34 @@ def migration_16_dashboard_access_and_bot_owners(connection):
         )
         VALUES ('baytae', 'bootstrap', ?, ?)
     """, (now, now))
-    connection.execute("""
-        INSERT OR IGNORE INTO dashboard_user_server_access (
-            username, guild_id, role, source, verified_at, updated_at
-        )
-        SELECT users.username, json_each.value,
-               CASE WHEN owners.username IS NOT NULL THEN 'bot_owner' ELSE users.role END,
-               'legacy', users.updated_at, users.updated_at
+    legacy_users = connection.execute("""
+        SELECT users.username, users.role, users.guild_ids_json, users.updated_at,
+               CASE WHEN owners.username IS NOT NULL THEN 1 ELSE 0 END AS is_bot_owner
         FROM dashboard_admin_users AS users
         LEFT JOIN dashboard_bot_owners AS owners
           ON lower(owners.username) = lower(users.username)
-        , json_each(COALESCE(NULLIF(users.guild_ids_json, ''), '[]'))
-        WHERE json_valid(COALESCE(NULLIF(users.guild_ids_json, ''), '[]'))
-    """)
+    """).fetchall()
+    for user in legacy_users:
+        try:
+            guild_ids = json.loads(user["guild_ids_json"] or "[]")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(guild_ids, list):
+            continue
+        role = "bot_owner" if user["is_bot_owner"] else user["role"]
+        for guild_id in guild_ids:
+            guild_id = str(guild_id or "").strip()
+            if not guild_id:
+                continue
+            connection.execute("""
+                INSERT OR IGNORE INTO dashboard_user_server_access (
+                    username, guild_id, role, source, verified_at, updated_at
+                )
+                VALUES (?, ?, ?, 'legacy', ?, ?)
+            """, (
+                user["username"], guild_id, role,
+                user["updated_at"], user["updated_at"],
+            ))
 
 
 def migration_17_dashboard_auth_codes(connection):

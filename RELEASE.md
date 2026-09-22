@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.4.52 Experimental
+
+Version 4.4.52 makes legacy dashboard-access migration portable across SQLite and PostgreSQL.
+
+## Database Compatibility
+
+- replaces the SQLite-only JSON table function in the access backfill with validated application-level JSON parsing
+- preserves legacy server scopes and bot-owner role promotion on both supported database engines
+- skips malformed legacy scope values safely and adds a focused migration regression test
+- restores the PostgreSQL integration gate for the verified one-line installer release
+
+---
+
 # Sana-Chan Version 4.4.51 Experimental
 
 Version 4.4.51 adds a verified one-line Linux installation path for fresh hosts and server moves.

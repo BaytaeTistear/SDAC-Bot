@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.51**. New Linux servers can now install the complete bot and dashboard with one verified command while retaining the existing interactive secret setup.
+Current experimental backend: **4.4.52**. New Linux servers can install the complete bot and dashboard with one verified command, including PostgreSQL-safe migration of existing dashboard access.
 
 ## One-Line Linux Install
 
