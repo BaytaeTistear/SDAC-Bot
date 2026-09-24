@@ -200,7 +200,7 @@ jobs:
           node-version: "22"
           cache: "npm"
           cache-dependency-path: apps/sana-official-app/package-lock.json
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: "temurin"
           java-version: "21"
