@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.55**. The canonical public website and OAuth callback host is now `https://sanachan.bot.nu`.
+Current experimental backend: **4.4.56**. Discord anime-profile selectors now acknowledge immediately, keep working for 15 minutes, and report lookup failures instead of timing out silently.
 
 ## One-Line Linux Install
 

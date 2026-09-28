@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.4.56 Experimental
+
+Version 4.4.56 restores reliable anime-profile viewing from the guided Discord `/sana` menu.
+
+## Anime Profile Interaction Fix
+
+- acknowledges member and self-profile selections before Discord's interaction deadline
+- moves profile database lookups off the bot event loop and bounds them with a 20-second timeout
+- shows a useful retry and Doctor message if a profile lookup fails
+- extends the anime-profile picker lifetime from 5 minutes to 15 minutes
+- adds regression coverage for acknowledgement order, background lookup, timeout handling, and view lifetime
+
+---
+
 # Sana-Chan Version 4.4.55 Experimental
 
 Version 4.4.55 makes `https://sanachan.bot.nu` the canonical public website.

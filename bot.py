@@ -2395,6 +2395,25 @@ def anime_profile_content_for_member(guild_id, member):
     ])
     return "\n".join(lines)[:1900]
 
+
+async def edit_anime_profile_selection(interaction, member, owner_id, is_admin=False):
+    try:
+        content = await asyncio.wait_for(
+            asyncio.to_thread(anime_profile_content_for_member, interaction.guild_id, member),
+            timeout=20,
+        )
+    except Exception as error:
+        capture_exception(error)
+        print(f"Anime profile lookup failed for {getattr(member, 'id', 'unknown')}: {error}", flush=True)
+        content = (
+            "Sana-Chan could not load that anime profile right now. Please try again. "
+            "If it keeps happening, ask a server admin to run `/sana` → Setup → Doctor."
+        )
+    await interaction.edit_original_response(
+        content=content,
+        view=AnimeProfileView(owner_id, is_admin),
+    )
+
 class AnimeProfileSelfButton(discord.ui.Button):
     def __init__(self, owner_id):
         super().__init__(label="View My Profile", style=discord.ButtonStyle.primary, row=1)
@@ -2404,9 +2423,13 @@ class AnimeProfileSelfButton(discord.ui.Button):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
             return
-        await interaction.response.edit_message(
-            content=anime_profile_content_for_member(interaction.guild_id, interaction.user),
-            view=AnimeProfileView(self.owner_id, self.view.is_admin),
+        is_admin = bool(getattr(self.view, "is_admin", False))
+        await interaction.response.defer()
+        await edit_anime_profile_selection(
+            interaction,
+            interaction.user,
+            self.owner_id,
+            is_admin,
         )
 
 
@@ -2419,19 +2442,23 @@ class AnimeProfileMemberSelect(discord.ui.UserSelect):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
             return
+        is_admin = bool(getattr(self.view, "is_admin", False))
+        await interaction.response.defer()
         selected_user = self.values[0]
         member = selected_user
         if interaction.guild and not isinstance(member, discord.Member):
             member = interaction.guild.get_member(int(selected_user.id)) or selected_user
-        await interaction.response.edit_message(
-            content=anime_profile_content_for_member(interaction.guild_id, member),
-            view=AnimeProfileView(self.owner_id, self.view.is_admin),
+        await edit_anime_profile_selection(
+            interaction,
+            member,
+            self.owner_id,
+            is_admin,
         )
 
 
 class AnimeProfileView(discord.ui.View):
     def __init__(self, owner_id, is_admin=False):
-        super().__init__(timeout=300)
+        super().__init__(timeout=900)
         self.owner_id = int(owner_id)
         self.is_admin = bool(is_admin)
         self.add_item(AnimeProfileMemberSelect(owner_id))

@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import os
 import tempfile
 import unittest
@@ -379,6 +380,14 @@ class BotStartupTests(unittest.TestCase):
         self.assertTrue(hasattr(bot, "import_mal_xml_attachment_flow"))
         self.assertFalse(hasattr(bot, "AnimeProfileImportXmlModal"))
         self.assertTrue(hasattr(bot, "handle_sana_anime_action"))
+        member_callback = inspect.getsource(bot.AnimeProfileMemberSelect.callback)
+        self_callback = inspect.getsource(bot.AnimeProfileSelfButton.callback)
+        lookup_helper = inspect.getsource(bot.edit_anime_profile_selection)
+        self.assertLess(member_callback.index("response.defer()"), member_callback.index("self.values[0]"))
+        self.assertIn("response.defer()", self_callback)
+        self.assertIn("asyncio.to_thread", lookup_helper)
+        self.assertIn("asyncio.wait_for", lookup_helper)
+        self.assertEqual(bot.AnimeProfileView(123).timeout, 900)
 
     def test_sana_events_menu_has_discord_posting_setup(self):
         import bot
