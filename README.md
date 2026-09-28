@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.52**. New Linux servers can install the complete bot and dashboard with one verified command, including PostgreSQL-safe migration of existing dashboard access.
+Current experimental backend: **4.4.53**. Users can securely connect their own MyAnimeList account and sync authenticated Anime and Manga lists while retaining XML import as a fallback.
 
 ## One-Line Linux Install
 
@@ -44,6 +44,8 @@ Sana-Chan Bot is a Discord media submission and guessing-game system with a web 
 - Server Owner theme and layout editors for shared colors, background images,
   content width, sidebar width, spacing, card radius, and dashboard density
 - Optional Discord OAuth dashboard login with per-server admin scoping
+- MyAnimeList OAuth account connection with encrypted refresh tokens, manual
+  re-sync, and authenticated Anime/Manga list import
 - Admin alert routing for system errors, backup/restore failures, storage
   warnings, repost deletion failures, and stale bot heartbeat warnings
 - Public user profiles and submission reports

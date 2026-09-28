@@ -69,6 +69,20 @@ from professional_services import (
     privacy_export,
     record_service_metric,
 )
+from mal_integration import (
+    decrypt_mal_token,
+    encrypt_mal_token,
+    exchange_mal_code,
+    mal_authorization_url,
+    mal_configured,
+    mal_current_user,
+    mal_profile_summary,
+    mal_redirect_uri,
+    mal_token_expiry,
+    mal_token_needs_refresh,
+    new_pkce_verifier,
+    refresh_mal_token,
+)
 from database_backend import connect_database, using_postgres
 from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
 from dashboard_account_templates import (
@@ -1513,6 +1527,7 @@ ACCOUNT_HOME_HTML = """
         body { background: #101114; color: #f4f5f7; font-family: Arial, sans-serif; margin: 0; padding: clamp(1rem, 3vw, 1.5rem); }
         main { background: #1b1d22; border: 1px solid #30333b; border-radius: 12px; margin: 60px auto; padding: 24px; width: min(100%, 640px); }
         a { color: #7c9cff; }
+        a.button { background: #7c9cff; border-radius: 7px; color: #0b1020; display: inline-block; font-weight: bold; padding: 10px 12px; text-decoration: none; }
         table { border-collapse: collapse; width: 100%; }
         th, td { border-bottom: 1px solid #30333b; padding: 10px; text-align: left; }
         input, button { border: 1px solid #30333b; border-radius: 7px; box-sizing: border-box; font-size: 15px; padding: 9px 10px; }
@@ -1564,6 +1579,28 @@ ACCOUNT_HOME_HTML = """
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button type="submit">Send Verification Email</button>
         </form>
+        {% endif %}
+    </section>
+    <section class="panel">
+        <h2>MyAnimeList Account</h2>
+        {% if mal_connection %}
+            <p>Connected as <a href="https://myanimelist.net/profile/{{ mal_connection.mal_username|urlencode }}" rel="noopener" target="_blank"><strong>{{ mal_connection.mal_username }}</strong></a>.</p>
+            <p>Last sync: {{ mal_connection.last_sync_at or "Not synced yet" }}{% if mal_connection.last_sync_status %} · {{ mal_connection.last_sync_status }}{% endif %}</p>
+            {% if mal_connection.last_sync_error %}<p class="notice error">{{ mal_connection.last_sync_error }}</p>{% endif %}
+            <form method="post" action="{{ url_for('account_mal_sync') }}" class="stack">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit">Sync Anime and Manga Lists</button>
+            </form>
+            <form method="post" action="{{ url_for('account_mal_disconnect') }}" class="stack">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit">Disconnect MyAnimeList</button>
+            </form>
+        {% elif mal_ready %}
+            <p>Sign in at MyAnimeList to securely import your own anime and manga lists. Public username importing remains disabled.</p>
+            <a class="button" href="{{ url_for('account_mal_start') }}">Connect MyAnimeList Account</a>
+        {% else %}
+            <p>MyAnimeList account connection is not configured on this host yet.</p>
+            <p>Register the callback <code>{{ mal_callback_url }}</code>, then set <code>SANA_MAL_CLIENT_ID</code> and <code>SANA_MAL_CLIENT_SECRET</code>.</p>
         {% endif %}
     </section>
     <section class="panel">
@@ -2984,7 +3021,7 @@ ANIME_ACTIVITIES_HTML = """
             <div class="card"><code>/animeevent activity #channel details</code><p>Post an activity prompt to Discord using one of the keys below.</p></div>
             <div class="card"><code>/animechallenge mode prompt answer hint</code><p>Create a Game Library item for anime guessing modes.</p></div>
             <div class="card"><code>/animeprofile favorites watching</code><p>Let users save favorite anime and currently watching notes.</p></div>
-            <div class="card"><code>/sana -> Anime Profile -> Import MyAnimeList</code><p>Import your own MyAnimeList XML export into separate Anime and Manga profile sections.</p></div>
+            <div class="card"><code>/sana → Anime Profile → Connect MyAnimeList</code><p>Sign into your own MyAnimeList account to sync Anime and Manga lists, or use your XML export as a fallback.</p></div>
             <div class="card"><code>/animeleaderboard month</code><p>Show a combined anime score from submission votes and guessing points.</p></div>
         </div>
     </section>
@@ -17011,6 +17048,248 @@ def account_access_debug():
     )
 
 
+def dashboard_mal_connection(username):
+    username = str(username or "").strip().casefold()
+    if not username:
+        return None
+    with closing(connect_db()) as connection:
+        row = connection.execute("""
+            SELECT dashboard_username, mal_user_id, mal_username,
+                   access_token_encrypted, refresh_token_encrypted,
+                   token_type, expires_at, connected_at, updated_at,
+                   last_sync_at, last_sync_status, last_sync_error
+            FROM dashboard_mal_connections
+            WHERE dashboard_username = ?
+            LIMIT 1
+        """, (username,)).fetchone()
+    if not row:
+        return None
+    return {key: row[key] for key in row.keys()}
+
+
+def save_dashboard_mal_connection(username, mal_user, token_payload):
+    username = str(username or "").strip().casefold()
+    now = utc_now_iso()
+    existing = dashboard_mal_connection(username)
+    refresh_token = str(token_payload.get("refresh_token") or "")
+    if not refresh_token and existing:
+        refresh_token_encrypted = existing["refresh_token_encrypted"]
+    else:
+        refresh_token_encrypted = encrypt_mal_token(refresh_token, app.secret_key)
+    with database() as connection:
+        connection.execute("""
+            INSERT INTO dashboard_mal_connections (
+                dashboard_username, mal_user_id, mal_username,
+                access_token_encrypted, refresh_token_encrypted,
+                token_type, expires_at, connected_at, updated_at,
+                last_sync_at, last_sync_status, last_sync_error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', '')
+            ON CONFLICT(dashboard_username) DO UPDATE SET
+                mal_user_id = excluded.mal_user_id,
+                mal_username = excluded.mal_username,
+                access_token_encrypted = excluded.access_token_encrypted,
+                refresh_token_encrypted = excluded.refresh_token_encrypted,
+                token_type = excluded.token_type,
+                expires_at = excluded.expires_at,
+                updated_at = excluded.updated_at,
+                last_sync_error = ''
+        """, (
+            username,
+            str(mal_user.get("id") or ""),
+            str(mal_user.get("name") or "")[:120],
+            encrypt_mal_token(token_payload.get("access_token"), app.secret_key),
+            refresh_token_encrypted,
+            str(token_payload.get("token_type") or "Bearer")[:40],
+            mal_token_expiry(token_payload),
+            existing["connected_at"] if existing else now,
+            now,
+        ))
+
+
+def update_dashboard_mal_sync_status(username, status, error_text=""):
+    now = utc_now_iso()
+    with database() as connection:
+        connection.execute("""
+            UPDATE dashboard_mal_connections
+            SET last_sync_at = ?, last_sync_status = ?,
+                last_sync_error = ?, updated_at = ?
+            WHERE dashboard_username = ?
+        """, (now, str(status or "")[:80], str(error_text or "")[:500], now, username))
+
+
+def dashboard_mal_access_token(username):
+    saved = dashboard_mal_connection(username)
+    if not saved:
+        raise ValueError("Connect a MyAnimeList account first.")
+    access_token = decrypt_mal_token(saved["access_token_encrypted"], app.secret_key)
+    if not mal_token_needs_refresh(saved["expires_at"]):
+        return access_token
+    refresh_token = decrypt_mal_token(saved["refresh_token_encrypted"], app.secret_key)
+    if not refresh_token:
+        raise ValueError("The MyAnimeList connection cannot be refreshed. Reconnect the account.")
+    token_payload = refresh_mal_token(refresh_token)
+    mal_user = {
+        "id": saved["mal_user_id"],
+        "name": saved["mal_username"],
+    }
+    save_dashboard_mal_connection(username, mal_user, token_payload)
+    return str(token_payload.get("access_token") or "")
+
+
+def sync_dashboard_mal_profile(username, access_token, mal_user=None):
+    account = dashboard_user(username)
+    if not account or int(account["disabled"] or 0):
+        raise ValueError("The Sana-Chan account is unavailable.")
+    discord_user_id = str(account["discord_user_id"] or "").strip()
+    if not discord_user_id:
+        raise ValueError("Sign in with Discord once before syncing MyAnimeList so the bot can match your profile.")
+    guild_ids = sorted(current_account_allowed_guild_ids(load_config()))
+    if not guild_ids:
+        raise ValueError("Authenticate at least one Discord server before syncing MyAnimeList.")
+    summary = mal_profile_summary(access_token, mal_user)
+    now = utc_now_iso()
+    with database() as connection:
+        for guild_id in guild_ids:
+            connection.execute("""
+                INSERT INTO anime_profiles (
+                    guild_id, user_id, username, favorites, watching,
+                    manga_favorites, manga_reading, mal_profile_url,
+                    anime_preview_images, manga_preview_images, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                    username = excluded.username,
+                    favorites = excluded.favorites,
+                    watching = excluded.watching,
+                    manga_favorites = excluded.manga_favorites,
+                    manga_reading = excluded.manga_reading,
+                    mal_profile_url = excluded.mal_profile_url,
+                    anime_preview_images = excluded.anime_preview_images,
+                    manga_preview_images = excluded.manga_preview_images,
+                    updated_at = excluded.updated_at
+            """, (
+                guild_id,
+                discord_user_id,
+                summary["username"],
+                summary["anime_favorites"][:1000],
+                summary["anime_watching"][:1000],
+                summary["manga_favorites"][:1000],
+                summary["manga_reading"][:1000],
+                summary["mal_profile_url"][:300],
+                json.dumps(summary["anime_preview_images"][:3]),
+                json.dumps(summary["manga_preview_images"][:3]),
+                now,
+            ))
+        add_admin_audit_log(
+            connection,
+            None,
+            "account_myanimelist_sync",
+            username,
+            username,
+            "dashboard_mal_connection",
+            summary["mal_user_id"],
+            f"Synced {summary['anime_count']} anime and {summary['manga_count']} manga across {len(guild_ids)} server(s).",
+        )
+    update_dashboard_mal_sync_status(username, "Success", "")
+    return summary, len(guild_ids)
+
+
+@app.get("/account/mal/start")
+def account_mal_start():
+    if not is_account_logged_in():
+        return redirect(url_for("account_login", next=request.full_path))
+    if not mal_configured():
+        return redirect(url_for("account_home", notice="MyAnimeList account connection is not configured on this host.", error=1))
+    account = dashboard_user(current_account_username())
+    if not account or not str(account["discord_user_id"] or "").strip():
+        return redirect(url_for("account_home", notice="Sign in with Discord once before connecting MyAnimeList.", error=1))
+    state = secrets.token_urlsafe(32)
+    verifier = new_pkce_verifier()
+    remember_dashboard_session()
+    session["sdac_mal_oauth_state"] = state
+    session["sdac_mal_oauth_verifier"] = verifier
+    session["sdac_mal_oauth_username"] = current_account_username()
+    redirect_uri = mal_redirect_uri(configured_public_url(prefer_request=True))
+    return redirect(mal_authorization_url(redirect_uri, state, verifier))
+
+
+@app.get("/account/mal/callback")
+def account_mal_callback():
+    if not is_account_logged_in():
+        return redirect(url_for("account_login", notice="Sign in again, then reconnect MyAnimeList.", error=1))
+    if not mal_configured():
+        abort(404)
+    state = request.args.get("state", "")
+    expected_state = session.pop("sdac_mal_oauth_state", "")
+    verifier = session.pop("sdac_mal_oauth_verifier", "")
+    started_by = session.pop("sdac_mal_oauth_username", "")
+    if request.args.get("error"):
+        return redirect(url_for("account_home", notice="MyAnimeList account authorization was canceled.", error=1))
+    if (
+        not state
+        or not expected_state
+        or not secrets.compare_digest(state, expected_state)
+        or started_by != current_account_username()
+        or not verifier
+    ):
+        return redirect(url_for("account_home", notice="MyAnimeList connection state did not match. Try again.", error=1))
+    code = request.args.get("code", "")
+    if not code:
+        return redirect(url_for("account_home", notice="MyAnimeList did not return an authorization code.", error=1))
+    try:
+        redirect_uri = mal_redirect_uri(configured_public_url(prefer_request=True))
+        token_payload = exchange_mal_code(code, redirect_uri, verifier)
+        access_token = str(token_payload.get("access_token") or "")
+        mal_user = mal_current_user(access_token)
+        save_dashboard_mal_connection(current_account_username(), mal_user, token_payload)
+        summary, server_count = sync_dashboard_mal_profile(current_account_username(), access_token, mal_user)
+    except ValueError as error:
+        if dashboard_mal_connection(current_account_username()):
+            update_dashboard_mal_sync_status(current_account_username(), "Failed", str(error))
+        return redirect(url_for("account_home", notice=str(error), error=1))
+    return redirect(url_for(
+        "account_home",
+        notice=f"Connected MyAnimeList account {summary['username']} and synced {summary['anime_count']} anime plus {summary['manga_count']} manga across {server_count} server(s).",
+    ))
+
+
+@app.post("/account/mal/sync")
+def account_mal_sync():
+    if not is_account_logged_in():
+        return redirect(url_for("account_login", next=url_for("account_home")))
+    require_csrf_token()
+    username = current_account_username()
+    try:
+        access_token = dashboard_mal_access_token(username)
+        summary, server_count = sync_dashboard_mal_profile(username, access_token)
+    except ValueError as error:
+        if dashboard_mal_connection(username):
+            update_dashboard_mal_sync_status(username, "Failed", str(error))
+        return redirect(url_for("account_home", notice=str(error), error=1))
+    return redirect(url_for(
+        "account_home",
+        notice=f"Synced {summary['anime_count']} anime and {summary['manga_count']} manga across {server_count} server(s).",
+    ))
+
+
+@app.post("/account/mal/disconnect")
+def account_mal_disconnect():
+    if not is_account_logged_in():
+        return redirect(url_for("account_login", next=url_for("account_home")))
+    require_csrf_token()
+    username = current_account_username()
+    with database() as connection:
+        connection.execute(
+            "DELETE FROM dashboard_mal_connections WHERE dashboard_username = ?",
+            (username,),
+        )
+        add_admin_audit_log(
+            connection, None, "account_myanimelist_disconnect",
+            username, username, "dashboard_mal_connection", username,
+            "MyAnimeList OAuth tokens removed by the account owner.",
+        )
+    return redirect(url_for("account_home", notice="MyAnimeList account disconnected. Existing imported profile text was kept."))
+
+
 @app.route("/account/update", methods=["POST"])
 def account_update():
     if not is_account_logged_in():
@@ -17254,6 +17533,9 @@ def account_home():
         can_open_admin=ROLE_LEVELS.get(max_role, -1) >= ROLE_LEVELS["moderator"],
         csrf_token=get_csrf_token(),
         error=request.args.get("error") == "1",
+        mal_callback_url=mal_redirect_uri(configured_public_url(prefer_request=True)),
+        mal_connection=dashboard_mal_connection(account["username"]),
+        mal_ready=mal_configured(),
         notice=request.args.get("notice", ""),
         role_labels=ROLE_LABELS,
     )

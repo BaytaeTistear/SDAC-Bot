@@ -864,7 +864,7 @@ SDAC_SUBMENUS = {
         "placeholder": "Choose an anime profile action",
         "options": [
             ("anime_save", "Save Profile", "Run /animeprofile favorites watching."),
-            ("anime_import", "Import MyAnimeList", "Import your own .xml export file."),
+            ("anime_import", "Connect MyAnimeList", "Sign into your own MAL account or import XML."),
             ("anime_view", "View Profile", "Choose a member and show their saved anime profile."),
             ("anime_activities", "Activity List", "Run /animeactivities for activity keys."),
         ],
@@ -945,7 +945,7 @@ SDAC_SUBMENU_DETAILS = {
     "guess_hint": "**Show Hint**\nShow the currently revealed hint for the active game in this channel.",
     "guess_active": "**Active Game**\nShow the active guessing game status in this channel.",
     "anime_save": "**Save Anime Profile**\nRun `/animeprofile favorites watching` to save favorites and currently watching notes.",
-    "anime_import": "**Import MyAnimeList**\nUpload your own `.xml` export file from the guided `/sana` flow. Export your lists at https://myanimelist.net/panel.php?go=export. Username import is disabled so users cannot import someone else's public account.",
+    "anime_import": "**Connect MyAnimeList**\nSign into your own MyAnimeList account to sync Anime and Manga lists, or upload your own `.xml` export file. Public username import stays disabled so nobody can import someone else's account.",
     "anime_view": "**View Anime Profile**\nChoose a server member from `/sana` to view their saved anime profile.",
     "anime_activities": "**Anime Activities**\nRun `/animeactivities` to see available activity keys and anime game/community ideas.",
     "events_posting_setup": "**Discord Posting Setup**\nAdmins can choose Events or Meetups, pick the Discord channel, decide whether approved posts should be announced, and confirm the route.",
@@ -2506,7 +2506,7 @@ async def import_mal_xml_attachment_flow(interaction, owner_id, is_admin=False):
 
 class AnimeProfileImportButton(discord.ui.Button):
     def __init__(self, owner_id, is_admin=False):
-        super().__init__(label="Import XML File", style=discord.ButtonStyle.primary, row=0)
+        super().__init__(label="Import XML File", style=discord.ButtonStyle.secondary, row=0)
         self.owner_id = int(owner_id)
         self.is_admin = bool(is_admin)
 
@@ -2519,6 +2519,12 @@ class AnimeProfileImportButton(discord.ui.Button):
 class AnimeProfileImportView(discord.ui.View):
     def __init__(self, owner_id, is_admin=False):
         super().__init__(timeout=300)
+        self.add_item(discord.ui.Button(
+            label="Connect MyAnimeList Account",
+            style=discord.ButtonStyle.link,
+            url=f"{DASHBOARD_BASE_URL}/account/mal/start",
+            row=0,
+        ))
         self.add_item(AnimeProfileImportButton(owner_id, is_admin))
         self.add_item(SDACBackButton(is_admin))
 
@@ -2527,11 +2533,10 @@ async def handle_sana_anime_action(interaction, action, is_admin, section_key):
     if action == "anime_import":
         await interaction.response.edit_message(
             content=(
-                "**Import MyAnimeList**\n"
-                "Upload your own MyAnimeList `.xml` export file. "
-                "Export your lists first at https://myanimelist.net/panel.php?go=export. "
-                "Username import is disabled so users cannot import someone else's public account. "
-                "Imported data is saved into separate Anime and Manga sections with profile links and previews when available."
+                "**Connect MyAnimeList**\n"
+                "Use **Connect MyAnimeList Account** to sign into your own MAL account and sync Anime and Manga lists. "
+                "You can still use **Import XML File** after exporting at https://myanimelist.net/panel.php?go=export. "
+                "Public username import stays disabled so nobody can import someone else's account."
             ),
             view=AnimeProfileImportView(interaction.user.id, is_admin),
         )

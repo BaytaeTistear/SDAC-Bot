@@ -105,6 +105,26 @@ class BackendReleaseReadinessTests(unittest.TestCase):
             self.assertIn("sana-install", text, filename)
             self.assertIn("Sana-Chan-Linux-Installer.sh.sha256", text, filename)
 
+    def test_myanimelist_account_connection_is_packaged(self):
+        self.assertTrue((ROOT / "mal_integration.py").is_file())
+        self.assertTrue((ROOT / "server" / "mal_integration.py").is_file())
+        self.assertEqual(
+            (ROOT / "mal_integration.py").read_bytes(),
+            (ROOT / "server" / "mal_integration.py").read_bytes(),
+        )
+        for filename in (
+            "tools/build_installers.ps1",
+            "tools/release_experimental.ps1",
+            "tools/release_official.ps1",
+            ".github/workflows/release.yml",
+        ):
+            self.assertIn(
+                "mal_integration.py",
+                (ROOT / filename).read_text(encoding="utf-8"),
+                filename,
+            )
+        self.assertIn("cryptography>=42.0.0", (ROOT / "requirements.txt").read_text(encoding="utf-8"))
+
     def test_docker_compose_uses_portable_environment_syntax(self):
         compose_text = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
         self.assertNotIn("required: false", compose_text)

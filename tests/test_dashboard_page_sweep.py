@@ -175,6 +175,10 @@ for install_route in ("/admin/release-center", "/admin/install-success"):
     assert "sana-install" in install_body
     assert "Copy Install Command" in install_body
 
+assert "MyAnimeList Account" in dashboard.ACCOUNT_HOME_HTML
+assert "account_mal_start" in dashboard.ACCOUNT_HOME_HTML
+assert any(rule.rule == "/account/mal/callback" for rule in dashboard.app.url_map.iter_rules())
+
 
 
 community_now = dashboard.utc_now_iso()

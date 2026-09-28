@@ -1,3 +1,25 @@
+# Sana-Chan Version 4.4.53 Experimental
+
+Version 4.4.53 restores MyAnimeList importing as a secure authenticated account connection.
+
+## MyAnimeList Account Connection
+
+- adds MyAnimeList OAuth 2.0 authorization with state validation and MAL-compatible PKCE
+- imports only the signed-in user's `@me` Anime and Manga lists instead of accepting another person's public username
+- encrypts access and refresh tokens at rest with the stable dashboard secret
+- refreshes expired access tokens and provides account-page Sync and Disconnect controls
+- syncs profile highlights, active lists, profile links, and preview images to every authorized Discord server
+- adds a Connect MyAnimeList Account button to the guided `/sana` Anime Profile flow
+- retains the existing XML export upload as an offline fallback
+
+## Setup And Safety
+
+- advances the database schema to version 30 for isolated MAL connection records
+- adds installer, Docker, environment, doctor, callback, and server-move documentation
+- adds focused tests for token encryption, PKCE authorization, authenticated list summaries, schema creation, account UI, and Discord linking
+
+---
+
 # Sana-Chan Version 4.4.52 Experimental
 
 Version 4.4.52 makes legacy dashboard-access migration portable across SQLite and PostgreSQL.

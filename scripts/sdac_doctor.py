@@ -91,6 +91,15 @@ def check_environment():
     oauth_client_secret = os.getenv("SANA_DISCORD_CLIENT_SECRET") or os.getenv("SDAC_DISCORD_CLIENT_SECRET")
     oauth_ready = bool(oauth_client_id and oauth_client_secret)
     status("Discord OAuth", oauth_ready, "client id/secret set" if oauth_ready else "client id/secret missing")
+    mal_client_id = os.getenv("SANA_MAL_CLIENT_ID") or os.getenv("SDAC_MAL_CLIENT_ID")
+    mal_client_secret = os.getenv("SANA_MAL_CLIENT_SECRET") or os.getenv("SDAC_MAL_CLIENT_SECRET")
+    mal_ready = bool(mal_client_id and mal_client_secret)
+    mal_callback = (
+        os.getenv("SANA_MAL_REDIRECT_URI")
+        or os.getenv("SDAC_MAL_REDIRECT_URI")
+        or (f"{PUBLIC_URL}/account/mal/callback" if PUBLIC_URL else "public URL missing")
+    )
+    status("MyAnimeList OAuth", mal_ready, f"{'client id/secret set' if mal_ready else 'optional client id/secret missing'}; callback {mal_callback}")
 
 
 def check_disk():

@@ -245,6 +245,12 @@ merge_legacy_env_file() {
     copy_env_key SDAC_DISCORD_CLIENT_SECRET
     copy_env_key SANA_OAUTH_REDIRECT_URI SDAC_OAUTH_REDIRECT_URI
     copy_env_key SDAC_OAUTH_REDIRECT_URI
+    copy_env_key SANA_MAL_CLIENT_ID SDAC_MAL_CLIENT_ID
+    copy_env_key SANA_MAL_CLIENT_SECRET SDAC_MAL_CLIENT_SECRET
+    copy_env_key SANA_MAL_REDIRECT_URI SDAC_MAL_REDIRECT_URI
+    copy_env_key SDAC_MAL_CLIENT_ID
+    copy_env_key SDAC_MAL_CLIENT_SECRET
+    copy_env_key SDAC_MAL_REDIRECT_URI
 }
 
 merge_legacy_env_file
@@ -312,6 +318,12 @@ SANA_DASHBOARD_URL=$PUBLIC_URL_INPUT
 SANA_DOMAIN=${SANA_DOMAIN:-freethefishies.us.to}
 SANA_FRIENDLY_URL=${SANA_FRIENDLY_URL:-http://sanachan.bot.nu}
 SDAC_PUBLIC_URL=$PUBLIC_URL_INPUT
+SANA_MAL_CLIENT_ID=${SANA_MAL_CLIENT_ID:-${SDAC_MAL_CLIENT_ID:-}}
+SANA_MAL_CLIENT_SECRET=${SANA_MAL_CLIENT_SECRET:-${SDAC_MAL_CLIENT_SECRET:-}}
+SANA_MAL_REDIRECT_URI=${SANA_MAL_REDIRECT_URI:-${SDAC_MAL_REDIRECT_URI:-}}
+SDAC_MAL_CLIENT_ID=${SDAC_MAL_CLIENT_ID:-${SANA_MAL_CLIENT_ID:-}}
+SDAC_MAL_CLIENT_SECRET=${SDAC_MAL_CLIENT_SECRET:-${SANA_MAL_CLIENT_SECRET:-}}
+SDAC_MAL_REDIRECT_URI=${SDAC_MAL_REDIRECT_URI:-${SANA_MAL_REDIRECT_URI:-}}
 SANA_PUBLIC_BOT_NAME=Sana-Chan Bot
 SDAC_PUBLIC_BOT_NAME=Sana-Chan Bot
 SANA_PUBLIC_TAGLINE=Screenshot, media, and guessing-game management for Discord communities.
@@ -359,7 +371,7 @@ if [[ "$INSTALL_BACKUP_PREREQS" == "1" && -f "$APP_DIR/scripts/install_backup_pr
 fi
 
 "$APP_DIR/venv/bin/python" -m py_compile "$APP_DIR/bot.py" "$APP_DIR/dashboard.py" "$APP_DIR/dashboard_account_templates.py" "$APP_DIR/dashboard_admin_roles.py" "$APP_DIR/dashboard_shell_assets.py" "$APP_DIR/dashboard_sidebar.py"
-"$APP_DIR/venv/bin/python" -m py_compile "$APP_DIR/config.py" "$APP_DIR/database_backend.py" "$APP_DIR/database_migrations.py" "$APP_DIR/observability.py"
+"$APP_DIR/venv/bin/python" -m py_compile "$APP_DIR/config.py" "$APP_DIR/database_backend.py" "$APP_DIR/database_migrations.py" "$APP_DIR/mal_integration.py" "$APP_DIR/observability.py"
 
 if [[ -f "$APP_DIR/scripts/reset_admin_login.py" ]]; then
     DASHBOARD_ACCOUNT_COUNT="$("$APP_DIR/venv/bin/python" - "$APP_DIR" <<'PY'

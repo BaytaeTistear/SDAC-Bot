@@ -2,10 +2,28 @@ import inspect
 import sqlite3
 import unittest
 
-from database_migrations import migration_16_dashboard_access_and_bot_owners
+from database_migrations import (
+    migration_16_dashboard_access_and_bot_owners,
+    migration_30_myanimelist_account_connections,
+)
 
 
 class DatabaseMigrationTests(unittest.TestCase):
+    def test_myanimelist_connection_schema_keeps_tokens_out_of_account_rows(self):
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+
+        migration_30_myanimelist_account_connections(connection)
+
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(dashboard_mal_connections)")
+        }
+        self.assertIn("access_token_encrypted", columns)
+        self.assertIn("refresh_token_encrypted", columns)
+        self.assertIn("last_sync_status", columns)
+        self.assertNotIn("access_token", columns)
+
     def test_dashboard_access_backfill_is_portable_and_preserves_legacy_scopes(self):
         connection = sqlite3.connect(":memory:")
         connection.row_factory = sqlite3.Row

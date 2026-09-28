@@ -42,6 +42,7 @@ function Copy-PayloadFiles {
         "config.py",
         "database_backend.py",
         "database_migrations.py",
+        "mal_integration.py",
         "observability.py",
         "professional_services.py",
         "static\professional.css",
@@ -393,6 +394,7 @@ if [[ -f "`$APP_DIR/bot.py" || -f "`$APP_DIR/dashboard.py" ]]; then
         dashboard_sidebar.py \
         config.py \
         database_migrations.py \
+        mal_integration.py \
         observability.py \
         requirements.txt \
         README.md \
@@ -461,7 +463,7 @@ mkdir -p "`$APP_DIR/media" "`$APP_DIR/backups"
 if [[ "`$SKIP_SERVICES" == "1" ]]; then
     say "Compiling Python files without installing services"
     python3 -m py_compile "`$APP_DIR/bot.py" "`$APP_DIR/dashboard.py" "`$APP_DIR/dashboard_account_templates.py" "`$APP_DIR/dashboard_admin_roles.py" "`$APP_DIR/dashboard_shell_assets.py" "`$APP_DIR/dashboard_sidebar.py" "`$APP_DIR/config.py" "`$APP_DIR/database_backend.py" "`$APP_DIR/professional_services.py"
-    python3 -m py_compile "`$APP_DIR/database_migrations.py" "`$APP_DIR/observability.py" "`$APP_DIR/scripts/migrate_database.py" "`$APP_DIR/scripts/export_sqlite_to_postgres.py" "`$APP_DIR/scripts/release_readiness.py"
+    python3 -m py_compile "`$APP_DIR/database_migrations.py" "`$APP_DIR/mal_integration.py" "`$APP_DIR/observability.py" "`$APP_DIR/scripts/migrate_database.py" "`$APP_DIR/scripts/export_sqlite_to_postgres.py" "`$APP_DIR/scripts/release_readiness.py"
     echo "Sana-Chan files extracted to `$APP_DIR"
     exit 0
 fi
@@ -658,7 +660,7 @@ $chunkLiteral
         string[] files = new string[]
         {
             "bot.py", "dashboard.py", "dashboard_account_templates.py", "dashboard_admin_roles.py", "dashboard_shell_assets.py", "dashboard_sidebar.py", "config.py", "professional_services.py", "requirements.txt",
-            "database_migrations.py", "observability.py",
+            "database_migrations.py", "mal_integration.py", "observability.py",
             "README.md", "HOSTING.md",
         "DOCKER.md", "DEPLOY.md", "PRODUCTION_NEXT.md",
             "MONITORING.md", "POSTGRESQL.md", "DISCORD_PERMISSIONS.md", ".env"
@@ -829,6 +831,12 @@ $chunkLiteral
         env.AppendLine("SDAC_SECRET_KEY=" + QuoteEnv(secretKey));
         env.AppendLine("PYTHONUNBUFFERED=1");
         env.AppendLine("SDAC_PUBLIC_URL=" + QuoteEnv(publicUrl));
+        env.AppendLine("SANA_MAL_CLIENT_ID=");
+        env.AppendLine("SANA_MAL_CLIENT_SECRET=");
+        env.AppendLine("SANA_MAL_REDIRECT_URI=");
+        env.AppendLine("SDAC_MAL_CLIENT_ID=");
+        env.AppendLine("SDAC_MAL_CLIENT_SECRET=");
+        env.AppendLine("SDAC_MAL_REDIRECT_URI=");
         env.AppendLine("SDAC_RELEASE=");
         env.AppendLine("SDAC_PUBLIC_BOT_NAME=SDAC Bot");
         env.AppendLine("SDAC_PUBLIC_TAGLINE=Screenshot, media, and guessing-game management for Discord communities.");
@@ -868,7 +876,7 @@ if not exist ""venv\Scripts\python.exe"" (
 )
 ""%~dp0venv\Scripts\python.exe"" -m pip install --upgrade pip
 ""%~dp0venv\Scripts\python.exe"" -m pip install -r requirements.txt
-""%~dp0venv\Scripts\python.exe"" -m py_compile bot.py community_quotes.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py professional_services.py scripts\migrate_database.py scripts\export_sqlite_to_postgres.py
+""%~dp0venv\Scripts\python.exe"" -m py_compile bot.py community_quotes.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py mal_integration.py professional_services.py scripts\migrate_database.py scripts\export_sqlite_to_postgres.py
 pause
 ", new UTF8Encoding(false));
 
@@ -899,7 +907,7 @@ pause
         Run(pythonCommand, "-m venv \"" + Path.Combine(appDir, "venv") + "\"", appDir, true);
         Run(venvPython, "-m pip install --upgrade pip", appDir, false);
         Run(venvPython, "-m pip install \"discord.py>=2.3.2\" \"Flask>=3.0.0\" \"sentry-sdk>=2.0.0\"", appDir, false);
-        Run(venvPython, "-m py_compile bot.py community_quotes.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py observability.py professional_services.py scripts\\migrate_database.py scripts\\export_sqlite_to_postgres.py", appDir, false);
+        Run(venvPython, "-m py_compile bot.py community_quotes.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py config.py database_backend.py database_migrations.py mal_integration.py observability.py professional_services.py scripts\\migrate_database.py scripts\\export_sqlite_to_postgres.py", appDir, false);
         if (!String.IsNullOrWhiteSpace(InitialAdminUsername) && !String.IsNullOrWhiteSpace(InitialAdminPassword))
         {
             string script = Path.Combine(appDir, "scripts", "reset_admin_login.py");

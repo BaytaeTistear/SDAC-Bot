@@ -4,7 +4,7 @@ import sqlite3
 
 
 
-DATABASE_SCHEMA_VERSION = 29
+DATABASE_SCHEMA_VERSION = 30
 GOOGLE_PLAY_REVIEW_PASSWORD_HASH = "scrypt:32768:8:1$tpr2C1Lx7O3szQ0T$0f9b5ee8f0d5caaecaf4d69667ea93aff95365decc7108fd955590df4ef07c17680a64610805821aef23fcb86171de70c4bc0f577501ca920bb6b5bb80a4426b"
 
 
@@ -1070,6 +1070,29 @@ def migration_29_professional_operations(connection):
         details TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,completed_at TEXT NOT NULL DEFAULT '')""")
 
 
+def migration_30_myanimelist_account_connections(connection):
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS dashboard_mal_connections (
+            dashboard_username TEXT PRIMARY KEY,
+            mal_user_id TEXT NOT NULL,
+            mal_username TEXT NOT NULL,
+            access_token_encrypted TEXT NOT NULL,
+            refresh_token_encrypted TEXT NOT NULL DEFAULT '',
+            token_type TEXT NOT NULL DEFAULT 'Bearer',
+            expires_at TEXT NOT NULL,
+            connected_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_sync_at TEXT NOT NULL DEFAULT '',
+            last_sync_status TEXT NOT NULL DEFAULT '',
+            last_sync_error TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dashboard_mal_connections_user
+        ON dashboard_mal_connections (mal_user_id, updated_at)
+    """)
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -1098,6 +1121,7 @@ MIGRATIONS = (
     (27, migration_27_notification_preferences_and_retries),
     (28, migration_28_community_extensions),
     (29, migration_29_professional_operations),
+    (30, migration_30_myanimelist_account_connections),
 )
 
 
