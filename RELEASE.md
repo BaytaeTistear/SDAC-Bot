@@ -1,3 +1,24 @@
+# Sana-Chan Version 4.4.54 Experimental
+
+Version 4.4.54 adds authenticated AniList importing and portable list export.
+
+## AniList Account Connection
+
+- adds AniList OAuth 2.0 authorization-code login with state validation
+- encrypts long-lived AniList access tokens at rest and clearly handles expiry without refresh tokens
+- imports authenticated Anime and Manga lists, including custom-list-only entries without duplicates
+- syncs profile highlights, active lists, profile links, and preview images to every authorized Discord server
+- adds account-page Sync, JSON Export, and Disconnect controls plus a Discord `/sana` connection button
+- exports complete authenticated AniList list data as a portable JSON backup without exposing OAuth tokens
+
+## Deployment And Safety
+
+- advances the database schema to version 31 for isolated AniList connection records and AniList profile URLs
+- adds installer, Docker, environment, doctor, hosting, and server-move coverage
+- adds focused OAuth, encryption, deduplication, export, schema, route, and Discord-link tests
+
+---
+
 # Sana-Chan Version 4.4.53 Experimental
 
 Version 4.4.53 restores MyAnimeList importing as a secure authenticated account connection.

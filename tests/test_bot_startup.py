@@ -368,6 +368,13 @@ class BotStartupTests(unittest.TestCase):
         connect_buttons = [child for child in import_view.children if child.label == "Connect MyAnimeList Account"]
         self.assertEqual(len(connect_buttons), 1)
         self.assertEqual(connect_buttons[0].url, f"{bot.DASHBOARD_BASE_URL}/account/mal/start")
+        anilist_buttons = [
+            item
+            for item in import_view.children
+            if getattr(item, "label", "") == "Connect AniList Account"
+        ]
+        self.assertEqual(len(anilist_buttons), 1)
+        self.assertEqual(anilist_buttons[0].url, f"{bot.DASHBOARD_BASE_URL}/account/anilist/start")
         self.assertFalse(hasattr(bot, "AnimeProfileImportUsernameModal"))
         self.assertTrue(hasattr(bot, "import_mal_xml_attachment_flow"))
         self.assertFalse(hasattr(bot, "AnimeProfileImportXmlModal"))

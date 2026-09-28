@@ -21,7 +21,7 @@ The command downloads the full installer to a temporary file, verifies the publi
 To install a specific release while using the same one-line bootstrap:
 
 ```bash
-SANA_RELEASE_TAG=version-4.4.53 bash -c "$(curl --proto '=https' --tlsv1.2 -fsSL https://github.com/BaytaeTistear/SDAC-Bot/releases/download/latest-experimental/sana-install)"
+SANA_RELEASE_TAG=version-4.4.54 bash -c "$(curl --proto '=https' --tlsv1.2 -fsSL https://github.com/BaytaeTistear/SDAC-Bot/releases/download/latest-experimental/sana-install)"
 ```
 
 For a server move, copy `config.json`, `sdac.db`, and `media/` into the intended application directory before running the command. Copy `/etc/sana-bot/sana.env` separately with restrictive permissions if you want to retain the same secrets; otherwise the installer safely prompts for replacements. Existing data in the target directory is preserved and the database is backed up before upgrade migrations.
@@ -50,6 +50,31 @@ For a server move, copy `config.json`, `sdac.db`, and `media/` into the intended
    ```
 
 Users can then open `/sana` → Anime Profile → Connect MyAnimeList, sign into their own MAL account, and sync from the website account page. OAuth tokens are encrypted with `SDAC_SECRET_KEY`; preserve that key when moving servers or users will need to reconnect. The XML export importer remains available as a fallback.
+
+### Enable AniList Import And Export
+
+1. Create an AniList application at `https://anilist.co/settings/developer`.
+2. Register this exact redirect URL, replacing the domain when necessary:
+
+   ```text
+   https://freethefishies.us.to/account/anilist/callback
+   ```
+
+3. Add the issued credentials to `/etc/sana-bot/sana.env`:
+
+   ```bash
+   SANA_ANILIST_CLIENT_ID=your-client-id
+   SANA_ANILIST_CLIENT_SECRET=your-client-secret
+   SANA_ANILIST_REDIRECT_URI=https://freethefishies.us.to/account/anilist/callback
+   ```
+
+4. Restart the dashboard and bot:
+
+   ```bash
+   sudo systemctl restart sana-dashboard sana-bot
+   ```
+
+Users can then connect AniList from `/sana` or their website account page, sync their authenticated Anime and Manga lists, and download a full JSON backup. AniList currently issues long-lived access tokens without refresh tokens, so users must reconnect after expiry. Tokens are encrypted with `SDAC_SECRET_KEY` and are never included in exports.
 
 ## 1. Install System Packages
 

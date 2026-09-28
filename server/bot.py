@@ -864,7 +864,7 @@ SDAC_SUBMENUS = {
         "placeholder": "Choose an anime profile action",
         "options": [
             ("anime_save", "Save Profile", "Run /animeprofile favorites watching."),
-            ("anime_import", "Connect MyAnimeList", "Sign into your own MAL account or import XML."),
+            ("anime_import", "Connect Anime Accounts", "Connect MyAnimeList or AniList, or import MAL XML."),
             ("anime_view", "View Profile", "Choose a member and show their saved anime profile."),
             ("anime_activities", "Activity List", "Run /animeactivities for activity keys."),
         ],
@@ -945,7 +945,7 @@ SDAC_SUBMENU_DETAILS = {
     "guess_hint": "**Show Hint**\nShow the currently revealed hint for the active game in this channel.",
     "guess_active": "**Active Game**\nShow the active guessing game status in this channel.",
     "anime_save": "**Save Anime Profile**\nRun `/animeprofile favorites watching` to save favorites and currently watching notes.",
-    "anime_import": "**Connect MyAnimeList**\nSign into your own MyAnimeList account to sync Anime and Manga lists, or upload your own `.xml` export file. Public username import stays disabled so nobody can import someone else's account.",
+    "anime_import": "**Connect Anime Accounts**\nSign into your own MyAnimeList account or your own AniList account to sync Anime and Manga lists. AniList connections can also download a JSON backup, and MyAnimeList `.xml` import remains available as a fallback. Public username import stays disabled.",
     "anime_view": "**View Anime Profile**\nChoose a server member from `/sana` to view their saved anime profile.",
     "anime_activities": "**Anime Activities**\nRun `/animeactivities` to see available activity keys and anime game/community ideas.",
     "events_posting_setup": "**Discord Posting Setup**\nAdmins can choose Events or Meetups, pick the Discord channel, decide whether approved posts should be announced, and confirm the route.",
@@ -2316,6 +2316,7 @@ def save_anime_profile_sections(
     manga_favorites="",
     manga_reading="",
     mal_profile_url="",
+    anilist_profile_url="",
     anime_preview_images=None,
     manga_preview_images=None,
 ):
@@ -2323,10 +2324,10 @@ def save_anime_profile_sections(
         connection.execute("""
             INSERT INTO anime_profiles (
                 guild_id, user_id, username, favorites, watching,
-                manga_favorites, manga_reading, mal_profile_url,
+                manga_favorites, manga_reading, mal_profile_url, anilist_profile_url,
                 anime_preview_images, manga_preview_images, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(guild_id, user_id) DO UPDATE SET
                 username = excluded.username,
                 favorites = excluded.favorites,
@@ -2334,6 +2335,7 @@ def save_anime_profile_sections(
                 manga_favorites = excluded.manga_favorites,
                 manga_reading = excluded.manga_reading,
                 mal_profile_url = excluded.mal_profile_url,
+                anilist_profile_url = excluded.anilist_profile_url,
                 anime_preview_images = excluded.anime_preview_images,
                 manga_preview_images = excluded.manga_preview_images,
                 updated_at = excluded.updated_at
@@ -2346,6 +2348,7 @@ def save_anime_profile_sections(
             clean_profile_text(manga_favorites),
             clean_profile_text(manga_reading),
             clean_profile_text(mal_profile_url, 300),
+            clean_profile_text(anilist_profile_url, 300),
             json.dumps(list(anime_preview_images or [])[:3]),
             json.dumps(list(manga_preview_images or [])[:3]),
             utc_now_iso(),
@@ -2355,7 +2358,7 @@ def save_anime_profile_sections(
 def anime_profile_content_for_member(guild_id, member):
     with database() as connection:
         row = connection.execute("""
-            SELECT username, favorites, watching, manga_favorites, manga_reading, mal_profile_url, anime_preview_images, manga_preview_images, updated_at
+            SELECT username, favorites, watching, manga_favorites, manga_reading, mal_profile_url, anilist_profile_url, anime_preview_images, manga_preview_images, updated_at
             FROM anime_profiles
             WHERE guild_id = ? AND user_id = ?
         """, (str(guild_id), str(member.id))).fetchone()
@@ -2368,6 +2371,8 @@ def anime_profile_content_for_member(guild_id, member):
     ]
     if row["mal_profile_url"]:
         lines.append(f"MyAnimeList: {row['mal_profile_url']}")
+    if row["anilist_profile_url"]:
+        lines.append(f"AniList: {row['anilist_profile_url']}")
     lines.extend([
         "**Anime**",
         f"Favorites: {row['favorites'] or 'Not set'}",
@@ -2525,18 +2530,24 @@ class AnimeProfileImportView(discord.ui.View):
             url=f"{DASHBOARD_BASE_URL}/account/mal/start",
             row=0,
         ))
+        self.add_item(discord.ui.Button(
+            label="Connect AniList Account",
+            style=discord.ButtonStyle.link,
+            url=f"{DASHBOARD_BASE_URL}/account/anilist/start",
+            row=1,
+        ))
         self.add_item(AnimeProfileImportButton(owner_id, is_admin))
-        self.add_item(SDACBackButton(is_admin))
+        self.add_item(SDACBackButton(is_admin, row=2))
 
 
 async def handle_sana_anime_action(interaction, action, is_admin, section_key):
     if action == "anime_import":
         await interaction.response.edit_message(
             content=(
-                "**Connect MyAnimeList**\n"
-                "Use **Connect MyAnimeList Account** to sign into your own MAL account and sync Anime and Manga lists. "
-                "You can still use **Import XML File** after exporting at https://myanimelist.net/panel.php?go=export. "
-                "Public username import stays disabled so nobody can import someone else's account."
+                "**Connect Anime Accounts**\n"
+                "Sign into your own **MyAnimeList** or **AniList** account to sync Anime and Manga lists. "
+                "The AniList connection also provides a full JSON backup export from the website account page. "
+                "You can still use **Import XML File** after exporting at https://myanimelist.net/panel.php?go=export."
             ),
             view=AnimeProfileImportView(interaction.user.id, is_admin),
         )

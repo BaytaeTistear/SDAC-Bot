@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.53**. Users can securely connect their own MyAnimeList account and sync authenticated Anime and Manga lists while retaining XML import as a fallback.
+Current experimental backend: **4.4.54**. Users can securely connect MyAnimeList or AniList, sync authenticated Anime and Manga lists, and export a full AniList JSON backup.
 
 ## One-Line Linux Install
 
@@ -46,6 +46,8 @@ Sana-Chan Bot is a Discord media submission and guessing-game system with a web 
 - Optional Discord OAuth dashboard login with per-server admin scoping
 - MyAnimeList OAuth account connection with encrypted refresh tokens, manual
   re-sync, and authenticated Anime/Manga list import
+- AniList OAuth account connection with encrypted long-lived tokens, manual
+  re-sync, authenticated Anime/Manga import, and portable JSON list export
 - Admin alert routing for system errors, backup/restore failures, storage
   warnings, repost deletion failures, and stale bot heartbeat warnings
 - Public user profiles and submission reports

@@ -44,6 +44,7 @@ jobs:
             database_backend.py \
             database_migrations.py \
             mal_integration.py \
+            anilist_integration.py \
             observability.py \
             scripts/migrate_database.py \
             scripts/export_sqlite_to_postgres.py \

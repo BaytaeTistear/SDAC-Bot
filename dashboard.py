@@ -83,6 +83,19 @@ from mal_integration import (
     new_pkce_verifier,
     refresh_mal_token,
 )
+from anilist_integration import (
+    anilist_authorization_url,
+    anilist_configured,
+    anilist_current_user,
+    anilist_export_payload,
+    anilist_profile_summary,
+    anilist_redirect_uri,
+    anilist_token_expired,
+    anilist_token_expiry,
+    decrypt_anilist_token,
+    encrypt_anilist_token,
+    exchange_anilist_code,
+)
 from database_backend import connect_database, using_postgres
 from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
 from dashboard_account_templates import (
@@ -1604,6 +1617,29 @@ ACCOUNT_HOME_HTML = """
         {% endif %}
     </section>
     <section class="panel">
+        <h2>AniList Account</h2>
+        {% if anilist_connection %}
+            <p>Connected as <a href="https://anilist.co/user/{{ anilist_connection.anilist_username|urlencode }}/" rel="noopener" target="_blank"><strong>{{ anilist_connection.anilist_username }}</strong></a>.</p>
+            <p>Last sync: {{ anilist_connection.last_sync_at or "Not synced yet" }}{% if anilist_connection.last_sync_status %} · {{ anilist_connection.last_sync_status }}{% endif %}</p>
+            {% if anilist_connection.last_sync_error %}<p class="notice error">{{ anilist_connection.last_sync_error }}</p>{% endif %}
+            <form method="post" action="{{ url_for('account_anilist_sync') }}" class="stack">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit">Sync Anime and Manga Lists</button>
+            </form>
+            <p><a class="button" href="{{ url_for('account_anilist_export') }}">Export AniList Backup (JSON)</a></p>
+            <form method="post" action="{{ url_for('account_anilist_disconnect') }}" class="stack">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit">Disconnect AniList</button>
+            </form>
+        {% elif anilist_ready %}
+            <p>Sign in at AniList to securely import your own anime and manga lists and download a portable JSON backup.</p>
+            <a class="button" href="{{ url_for('account_anilist_start') }}">Connect AniList Account</a>
+        {% else %}
+            <p>AniList account connection is not configured on this host yet.</p>
+            <p>Register the callback <code>{{ anilist_callback_url }}</code>, then set <code>SANA_ANILIST_CLIENT_ID</code> and <code>SANA_ANILIST_CLIENT_SECRET</code>.</p>
+        {% endif %}
+    </section>
+    <section class="panel">
         <h2>Authenticate With Code</h2>
         <form method="post" action="{{ url_for('account_auth_code') }}" class="stack">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -3021,7 +3057,7 @@ ANIME_ACTIVITIES_HTML = """
             <div class="card"><code>/animeevent activity #channel details</code><p>Post an activity prompt to Discord using one of the keys below.</p></div>
             <div class="card"><code>/animechallenge mode prompt answer hint</code><p>Create a Game Library item for anime guessing modes.</p></div>
             <div class="card"><code>/animeprofile favorites watching</code><p>Let users save favorite anime and currently watching notes.</p></div>
-            <div class="card"><code>/sana → Anime Profile → Connect MyAnimeList</code><p>Sign into your own MyAnimeList account to sync Anime and Manga lists, or use your XML export as a fallback.</p></div>
+            <div class="card"><code>/sana → Anime Profile → Connect Anime Accounts</code><p>Sign into MyAnimeList or AniList to sync Anime and Manga lists. AniList also supports JSON backup export, and MAL XML remains available as a fallback.</p></div>
             <div class="card"><code>/animeleaderboard month</code><p>Show a combined anime score from submission votes and guessing points.</p></div>
         </div>
     </section>
@@ -17290,6 +17326,216 @@ def account_mal_disconnect():
     return redirect(url_for("account_home", notice="MyAnimeList account disconnected. Existing imported profile text was kept."))
 
 
+def dashboard_anilist_connection(username):
+    username = str(username or "").strip().casefold()
+    if not username:
+        return None
+    with closing(connect_db()) as connection:
+        row = connection.execute("""
+            SELECT dashboard_username, anilist_user_id, anilist_username,
+                   access_token_encrypted, token_type, expires_at,
+                   connected_at, updated_at, last_sync_at,
+                   last_sync_status, last_sync_error
+            FROM dashboard_anilist_connections
+            WHERE dashboard_username = ?
+            LIMIT 1
+        """, (username,)).fetchone()
+    return {key: row[key] for key in row.keys()} if row else None
+
+
+def save_dashboard_anilist_connection(username, anilist_user, token_payload):
+    username = str(username or "").strip().casefold()
+    now = utc_now_iso()
+    existing = dashboard_anilist_connection(username)
+    with database() as connection:
+        connection.execute("""
+            INSERT INTO dashboard_anilist_connections (
+                dashboard_username, anilist_user_id, anilist_username,
+                access_token_encrypted, token_type, expires_at,
+                connected_at, updated_at, last_sync_at,
+                last_sync_status, last_sync_error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '')
+            ON CONFLICT(dashboard_username) DO UPDATE SET
+                anilist_user_id = excluded.anilist_user_id,
+                anilist_username = excluded.anilist_username,
+                access_token_encrypted = excluded.access_token_encrypted,
+                token_type = excluded.token_type,
+                expires_at = excluded.expires_at,
+                updated_at = excluded.updated_at,
+                last_sync_error = ''
+        """, (
+            username,
+            str(anilist_user.get("id") or ""),
+            str(anilist_user.get("name") or "")[:120],
+            encrypt_anilist_token(token_payload.get("access_token"), app.secret_key),
+            str(token_payload.get("token_type") or "Bearer")[:40],
+            anilist_token_expiry(token_payload),
+            existing["connected_at"] if existing else now,
+            now,
+        ))
+
+
+def update_dashboard_anilist_sync_status(username, status, error_text=""):
+    now = utc_now_iso()
+    with database() as connection:
+        connection.execute("""
+            UPDATE dashboard_anilist_connections
+            SET last_sync_at = ?, last_sync_status = ?,
+                last_sync_error = ?, updated_at = ?
+            WHERE dashboard_username = ?
+        """, (now, str(status or "")[:80], str(error_text or "")[:500], now, username))
+
+
+def dashboard_anilist_access_token(username):
+    saved = dashboard_anilist_connection(username)
+    if not saved:
+        raise ValueError("Connect an AniList account first.")
+    if anilist_token_expired(saved["expires_at"]):
+        raise ValueError("The AniList connection expired. AniList does not issue refresh tokens, so reconnect the account.")
+    return decrypt_anilist_token(saved["access_token_encrypted"], app.secret_key)
+
+
+def sync_dashboard_anilist_profile(username, access_token, anilist_user=None):
+    account = dashboard_user(username)
+    if not account or int(account["disabled"] or 0):
+        raise ValueError("The Sana-Chan account is unavailable.")
+    discord_user_id = str(account["discord_user_id"] or "").strip()
+    if not discord_user_id:
+        raise ValueError("Sign in with Discord once before syncing AniList so the bot can match your profile.")
+    guild_ids = sorted(current_account_allowed_guild_ids(load_config()))
+    if not guild_ids:
+        raise ValueError("Authenticate at least one Discord server before syncing AniList.")
+    summary = anilist_profile_summary(access_token, anilist_user)
+    now = utc_now_iso()
+    with database() as connection:
+        for guild_id in guild_ids:
+            connection.execute("""
+                INSERT INTO anime_profiles (
+                    guild_id, user_id, username, favorites, watching,
+                    manga_favorites, manga_reading, anilist_profile_url,
+                    anime_preview_images, manga_preview_images, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                    username = excluded.username,
+                    favorites = excluded.favorites,
+                    watching = excluded.watching,
+                    manga_favorites = excluded.manga_favorites,
+                    manga_reading = excluded.manga_reading,
+                    anilist_profile_url = excluded.anilist_profile_url,
+                    anime_preview_images = excluded.anime_preview_images,
+                    manga_preview_images = excluded.manga_preview_images,
+                    updated_at = excluded.updated_at
+            """, (
+                guild_id, discord_user_id, summary["username"],
+                summary["anime_favorites"][:1000], summary["anime_watching"][:1000],
+                summary["manga_favorites"][:1000], summary["manga_reading"][:1000],
+                summary["anilist_profile_url"][:300],
+                json.dumps(summary["anime_preview_images"][:3]),
+                json.dumps(summary["manga_preview_images"][:3]), now,
+            ))
+        add_admin_audit_log(
+            connection, None, "account_anilist_sync", username, username,
+            "dashboard_anilist_connection", summary["anilist_user_id"],
+            f"Synced {summary['anime_count']} anime and {summary['manga_count']} manga across {len(guild_ids)} server(s).",
+        )
+    update_dashboard_anilist_sync_status(username, "Success", "")
+    return summary, len(guild_ids)
+
+
+@app.get("/account/anilist/start")
+def account_anilist_start():
+    if not is_account_logged_in():
+        return redirect(url_for("account_login", next=request.full_path))
+    if not anilist_configured():
+        return redirect(url_for("account_home", notice="AniList account connection is not configured on this host.", error=1))
+    account = dashboard_user(current_account_username())
+    if not account or not str(account["discord_user_id"] or "").strip():
+        return redirect(url_for("account_home", notice="Sign in with Discord once before connecting AniList.", error=1))
+    state = secrets.token_urlsafe(32)
+    remember_dashboard_session()
+    session["sdac_anilist_oauth_state"] = state
+    session["sdac_anilist_oauth_username"] = current_account_username()
+    redirect_uri = anilist_redirect_uri(configured_public_url(prefer_request=True))
+    return redirect(anilist_authorization_url(redirect_uri, state))
+
+
+@app.get("/account/anilist/callback")
+def account_anilist_callback():
+    if not is_account_logged_in():
+        return redirect(url_for("account_login", notice="Sign in again, then reconnect AniList.", error=1))
+    if not anilist_configured():
+        abort(404)
+    state = request.args.get("state", "")
+    expected_state = session.pop("sdac_anilist_oauth_state", "")
+    started_by = session.pop("sdac_anilist_oauth_username", "")
+    if request.args.get("error"):
+        return redirect(url_for("account_home", notice="AniList account authorization was canceled.", error=1))
+    if not state or not expected_state or not secrets.compare_digest(state, expected_state) or started_by != current_account_username():
+        return redirect(url_for("account_home", notice="AniList connection state did not match. Try again.", error=1))
+    code = request.args.get("code", "")
+    if not code:
+        return redirect(url_for("account_home", notice="AniList did not return an authorization code.", error=1))
+    try:
+        redirect_uri = anilist_redirect_uri(configured_public_url(prefer_request=True))
+        token_payload = exchange_anilist_code(code, redirect_uri)
+        access_token = str(token_payload.get("access_token") or "")
+        anilist_user = anilist_current_user(access_token)
+        save_dashboard_anilist_connection(current_account_username(), anilist_user, token_payload)
+        summary, server_count = sync_dashboard_anilist_profile(current_account_username(), access_token, anilist_user)
+    except ValueError as error:
+        if dashboard_anilist_connection(current_account_username()):
+            update_dashboard_anilist_sync_status(current_account_username(), "Failed", str(error))
+        return redirect(url_for("account_home", notice=str(error), error=1))
+    return redirect(url_for("account_home", notice=f"Connected AniList account {summary['username']} and synced {summary['anime_count']} anime plus {summary['manga_count']} manga across {server_count} server(s)."))
+
+
+@app.post("/account/anilist/sync")
+def account_anilist_sync():
+    if not is_account_logged_in():
+        return redirect(url_for("account_login", next=url_for("account_home")))
+    require_csrf_token()
+    username = current_account_username()
+    try:
+        summary, server_count = sync_dashboard_anilist_profile(username, dashboard_anilist_access_token(username))
+    except ValueError as error:
+        if dashboard_anilist_connection(username):
+            update_dashboard_anilist_sync_status(username, "Failed", str(error))
+        return redirect(url_for("account_home", notice=str(error), error=1))
+    return redirect(url_for("account_home", notice=f"Synced {summary['anime_count']} anime and {summary['manga_count']} manga across {server_count} server(s)."))
+
+
+@app.get("/account/anilist/export.json")
+def account_anilist_export():
+    if not is_account_logged_in():
+        return redirect(url_for("account_login", next=request.full_path))
+    username = current_account_username()
+    try:
+        payload = anilist_export_payload(dashboard_anilist_access_token(username))
+    except ValueError as error:
+        return redirect(url_for("account_home", notice=str(error), error=1))
+    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "-", str((payload.get("user") or {}).get("name") or "account")).strip("-") or "account"
+    response = Response(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", mimetype="application/json")
+    response.headers["Content-Disposition"] = f'attachment; filename="sana-anilist-{safe_name}.json"'
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.post("/account/anilist/disconnect")
+def account_anilist_disconnect():
+    if not is_account_logged_in():
+        return redirect(url_for("account_login", next=url_for("account_home")))
+    require_csrf_token()
+    username = current_account_username()
+    with database() as connection:
+        connection.execute("DELETE FROM dashboard_anilist_connections WHERE dashboard_username = ?", (username,))
+        add_admin_audit_log(
+            connection, None, "account_anilist_disconnect", username, username,
+            "dashboard_anilist_connection", username,
+            "AniList OAuth token removed by the account owner.",
+        )
+    return redirect(url_for("account_home", notice="AniList account disconnected. Existing imported profile text was kept."))
+
+
 @app.route("/account/update", methods=["POST"])
 def account_update():
     if not is_account_logged_in():
@@ -17503,6 +17749,11 @@ def account_logout():
     session.pop("sdac_admin_role", None)
     session.pop("sdac_admin_auth", None)
     session.pop("sdac_admin_guild_ids", None)
+    session.pop("sdac_mal_oauth_state", None)
+    session.pop("sdac_mal_oauth_verifier", None)
+    session.pop("sdac_mal_oauth_username", None)
+    session.pop("sdac_anilist_oauth_state", None)
+    session.pop("sdac_anilist_oauth_username", None)
     return redirect(url_for("index"))
 
 
@@ -17533,6 +17784,9 @@ def account_home():
         can_open_admin=ROLE_LEVELS.get(max_role, -1) >= ROLE_LEVELS["moderator"],
         csrf_token=get_csrf_token(),
         error=request.args.get("error") == "1",
+        anilist_callback_url=anilist_redirect_uri(configured_public_url(prefer_request=True)),
+        anilist_connection=dashboard_anilist_connection(account["username"]),
+        anilist_ready=anilist_configured(),
         mal_callback_url=mal_redirect_uri(configured_public_url(prefer_request=True)),
         mal_connection=dashboard_mal_connection(account["username"]),
         mal_ready=mal_configured(),

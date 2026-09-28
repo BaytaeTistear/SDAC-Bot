@@ -100,6 +100,15 @@ def check_environment():
         or (f"{PUBLIC_URL}/account/mal/callback" if PUBLIC_URL else "public URL missing")
     )
     status("MyAnimeList OAuth", mal_ready, f"{'client id/secret set' if mal_ready else 'optional client id/secret missing'}; callback {mal_callback}")
+    anilist_client_id = os.getenv("SANA_ANILIST_CLIENT_ID") or os.getenv("SDAC_ANILIST_CLIENT_ID")
+    anilist_client_secret = os.getenv("SANA_ANILIST_CLIENT_SECRET") or os.getenv("SDAC_ANILIST_CLIENT_SECRET")
+    anilist_ready = bool(anilist_client_id and anilist_client_secret)
+    anilist_callback = (
+        os.getenv("SANA_ANILIST_REDIRECT_URI")
+        or os.getenv("SDAC_ANILIST_REDIRECT_URI")
+        or (f"{PUBLIC_URL}/account/anilist/callback" if PUBLIC_URL else "public URL missing")
+    )
+    status("AniList OAuth", anilist_ready, f"{'client id/secret set' if anilist_ready else 'optional client id/secret missing'}; callback {anilist_callback}")
 
 
 def check_disk():

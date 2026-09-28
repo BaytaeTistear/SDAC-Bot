@@ -5,10 +5,22 @@ import unittest
 from database_migrations import (
     migration_16_dashboard_access_and_bot_owners,
     migration_30_myanimelist_account_connections,
+    migration_31_anilist_account_connections,
 )
 
 
 class DatabaseMigrationTests(unittest.TestCase):
+    def test_anilist_connection_schema_encrypts_tokens_and_adds_profile_url(self):
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        connection.execute("CREATE TABLE anime_profiles (guild_id TEXT, user_id TEXT)")
+        migration_31_anilist_account_connections(connection)
+        connection_columns = {row["name"] for row in connection.execute("PRAGMA table_info(dashboard_anilist_connections)")}
+        profile_columns = {row["name"] for row in connection.execute("PRAGMA table_info(anime_profiles)")}
+        self.assertIn("access_token_encrypted", connection_columns)
+        self.assertNotIn("access_token", connection_columns)
+        self.assertIn("anilist_profile_url", profile_columns)
+
     def test_myanimelist_connection_schema_keeps_tokens_out_of_account_rows(self):
         connection = sqlite3.connect(":memory:")
         connection.row_factory = sqlite3.Row

@@ -26,6 +26,7 @@ CORE_PYTHON_FILES = [
     "dashboard_sidebar.py",
     "database_backend.py",
     "database_migrations.py",
+    "anilist_integration.py",
     "mal_integration.py",
     "observability.py",
     "professional_services.py",
@@ -50,6 +51,7 @@ MIRRORED_FILES = [
     "dashboard_sidebar.py",
     "database_backend.py",
     "database_migrations.py",
+    "anilist_integration.py",
     "mal_integration.py",
     "observability.py",
     "professional_services.py",
@@ -103,6 +105,7 @@ FOCUSED_TESTS = [
     "tests.test_dashboard_sidebar_layout",
     "tests.test_dashboard_sidebar_routes",
     "tests.test_mal_integration",
+    "tests.test_anilist_integration",
     "tests.test_public_bot_invite",
     "tests.test_professional_features",
 ]

@@ -176,8 +176,12 @@ for install_route in ("/admin/release-center", "/admin/install-success"):
     assert "Copy Install Command" in install_body
 
 assert "MyAnimeList Account" in dashboard.ACCOUNT_HOME_HTML
+assert "AniList Account" in dashboard.ACCOUNT_HOME_HTML
+assert "Export AniList Backup (JSON)" in dashboard.ACCOUNT_HOME_HTML
 assert "account_mal_start" in dashboard.ACCOUNT_HOME_HTML
 assert any(rule.rule == "/account/mal/callback" for rule in dashboard.app.url_map.iter_rules())
+assert any(rule.rule == "/account/anilist/callback" for rule in dashboard.app.url_map.iter_rules())
+assert any(rule.rule == "/account/anilist/export.json" for rule in dashboard.app.url_map.iter_rules())
 
 
 
