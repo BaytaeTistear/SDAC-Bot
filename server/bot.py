@@ -2355,19 +2355,72 @@ def save_anime_profile_sections(
         ))
 
 
-def anime_profile_content_for_member(guild_id, member):
-    with database() as connection:
-        row = connection.execute("""
-            SELECT username, favorites, watching, manga_favorites, manga_reading, mal_profile_url, anilist_profile_url, anime_preview_images, manga_preview_images, updated_at
+def load_anime_profile_row(guild_id, user_id):
+    queries = [
+        """
+            SELECT username, favorites, watching, manga_favorites, manga_reading,
+                   mal_profile_url, anilist_profile_url, anime_preview_images,
+                   manga_preview_images, updated_at
             FROM anime_profiles
             WHERE guild_id = ? AND user_id = ?
-        """, (str(guild_id), str(member.id))).fetchone()
+        """,
+        """
+            SELECT username, favorites, watching, manga_favorites, manga_reading,
+                   mal_profile_url, NULL AS anilist_profile_url, anime_preview_images,
+                   manga_preview_images, updated_at
+            FROM anime_profiles
+            WHERE guild_id = ? AND user_id = ?
+        """,
+        """
+            SELECT username, favorites, watching,
+                   NULL AS manga_favorites, NULL AS manga_reading,
+                   NULL AS mal_profile_url, NULL AS anilist_profile_url,
+                   NULL AS anime_preview_images, NULL AS manga_preview_images,
+                   updated_at
+            FROM anime_profiles
+            WHERE guild_id = ? AND user_id = ?
+        """,
+    ]
+    last_error = None
+    for query in queries:
+        try:
+            with database() as connection:
+                return connection.execute(query, (str(guild_id), str(user_id))).fetchone()
+        except Exception as error:
+            message = str(error).casefold()
+            if not any(marker in message for marker in ("no such column", "does not exist", "undefined column")):
+                raise
+            last_error = error
+    if last_error:
+        raise last_error
+    return None
+
+
+def safe_profile_image_list(raw_value):
+    if isinstance(raw_value, list):
+        values = raw_value
+    else:
+        try:
+            values = json.loads(str(raw_value or "[]"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return []
+    if not isinstance(values, list):
+        return []
+    return [
+        str(value)
+        for value in values
+        if str(value).startswith(("http://", "https://"))
+    ][:3]
+
+
+def anime_profile_content_for_member(guild_id, member):
+    row = load_anime_profile_row(guild_id, member.id)
     if not row:
         return f"No anime profile found for {member.mention} yet."
-    anime_images = safe_json_loads(row["anime_preview_images"] or "[]", [])[:3]
-    manga_images = safe_json_loads(row["manga_preview_images"] or "[]", [])[:3]
+    anime_images = safe_profile_image_list(row["anime_preview_images"])
+    manga_images = safe_profile_image_list(row["manga_preview_images"])
     lines = [
-        f"**Anime & Manga Profile: {row['username'] or member.display_name}**",
+        f"**Anime & Manga Profile: {row['username'] or getattr(member, 'display_name', str(member))}**",
     ]
     if row["mal_profile_url"]:
         lines.append(f"MyAnimeList: {row['mal_profile_url']}")
@@ -2407,7 +2460,7 @@ async def edit_anime_profile_selection(interaction, member, owner_id, is_admin=F
         print(f"Anime profile lookup failed for {getattr(member, 'id', 'unknown')}: {error}", flush=True)
         content = (
             "Sana-Chan could not load that anime profile right now. Please try again. "
-            "If it keeps happening, ask a server admin to run `/sana` → Setup → Doctor."
+            "If it keeps happening, a server admin can use the **Run Doctor** button below."
         )
     await interaction.edit_original_response(
         content=content,
@@ -2463,6 +2516,8 @@ class AnimeProfileView(discord.ui.View):
         self.is_admin = bool(is_admin)
         self.add_item(AnimeProfileMemberSelect(owner_id))
         self.add_item(AnimeProfileSelfButton(owner_id))
+        if self.is_admin:
+            self.add_item(SDACSubmenuButton(True, "setup", "setup_doctor", "Run Doctor", row=2, style=discord.ButtonStyle.primary))
         self.add_item(SDACBackButton(is_admin))
 
 
@@ -3139,9 +3194,20 @@ class SDACSubmenuView(discord.ui.View):
             ]
         if len(options) > 8:
             self.add_item(SDACSubmenuSelect(is_admin, section_key, row=0))
-            shortcut_options = options[:6]
+            if section_key == "setup":
+                visible_setup_actions = {
+                    "setup_wizard",
+                    "setup_status",
+                    "setup_test",
+                    "diagnostics",
+                    "live_status",
+                    "setup_doctor",
+                }
+                shortcut_options = [option for option in options if option[0] in visible_setup_actions]
+            else:
+                shortcut_options = options[:6]
             for index, (value, label, _description) in enumerate(shortcut_options):
-                style = discord.ButtonStyle.primary if index == 0 else discord.ButtonStyle.secondary
+                style = discord.ButtonStyle.primary if index == 0 or value == "setup_doctor" else discord.ButtonStyle.secondary
                 self.add_item(SDACSubmenuButton(is_admin, section_key, value, label, 1 + (index // 2), style))
             self.add_item(SDACBackButton(is_admin, row=4))
             return
@@ -9281,6 +9347,20 @@ async def diagnostic_lines(interaction):
             "SELECT COUNT(*) FROM background_jobs WHERE guild_id = ? AND job_type = 'guess_library_bulk_import' AND status IN ('queued', 'running', 'retry')",
             (str(interaction.guild_id),),
         ).fetchone()[0]
+    try:
+        with database() as connection:
+            connection.execute("""
+                SELECT username, favorites, watching, manga_favorites, manga_reading,
+                       mal_profile_url, anilist_profile_url, anime_preview_images,
+                       manga_preview_images, updated_at
+                FROM anime_profiles
+                WHERE guild_id = ?
+                LIMIT 1
+            """, (str(interaction.guild_id),)).fetchone()
+        anime_profile_storage = "[OK] Anime profile storage and account columns are readable."
+    except Exception as error:
+        capture_exception(error)
+        anime_profile_storage = f"[MISSING] Anime profile storage check failed (`{type(error).__name__}`). Restart after updating, then retry."
     oauth_ready = bool(
         (os.getenv("SANA_DISCORD_CLIENT_ID") or os.getenv("SDAC_DISCORD_CLIENT_ID") or os.getenv("DISCORD_CLIENT_ID"))
         and (os.getenv("SANA_DISCORD_CLIENT_SECRET") or os.getenv("SDAC_DISCORD_CLIENT_SECRET") or os.getenv("DISCORD_CLIENT_SECRET"))
@@ -9297,6 +9377,7 @@ async def diagnostic_lines(interaction):
         f"[OK] Active games in this server: `{active_games}`",
         f"[OK] Scheduled games queued/running: `{scheduled_games}`",
         f"[OK] Active import jobs: `{import_jobs}`",
+        anime_profile_storage,
         ("[OK] Discord OAuth env is configured." if oauth_ready else "[MISSING] Discord OAuth env is missing client ID or secret."),
         ("[OK] Discord token is loaded." if bool(TOKEN) else "[MISSING] Discord token is missing."),
         ("[OK] Public URL/domain configured." if (os.getenv("SDAC_PUBLIC_URL") or os.getenv("SDAC_DOMAIN") or os.getenv("SANA_PUBLIC_URL") or os.getenv("SANA_DOMAIN")) else "[OPTIONAL] Public URL/domain is not configured."),

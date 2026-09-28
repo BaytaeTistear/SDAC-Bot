@@ -1,8 +1,11 @@
 import asyncio
 import inspect
 import os
+import sqlite3
 import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 
 
 class BotStartupTests(unittest.TestCase):
@@ -340,6 +343,13 @@ class BotStartupTests(unittest.TestCase):
                 self.assertLessEqual(sum(1 for child in view.children if child.row == row), 5, section_key)
         setup_view = bot.SDACSubmenuView(True, "setup")
         self.assertTrue(any(isinstance(child, bot.SDACSubmenuSelect) for child in setup_view.children))
+        doctor_buttons = [
+            child
+            for child in setup_view.children
+            if isinstance(child, bot.SDACSubmenuButton) and child.value == "setup_doctor"
+        ]
+        self.assertEqual(len(doctor_buttons), 1)
+        self.assertEqual(doctor_buttons[0].label, "Doctor")
         self.assertIn("Sana-Chan Doctor", bot.SDAC_SUBMENU_DETAILS["setup_doctor"])
         self.assertTrue(hasattr(bot, "doctor_summary_lines"))
         self.assertTrue(hasattr(bot, "run_sana_doctor_action"))
@@ -388,6 +398,62 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("asyncio.to_thread", lookup_helper)
         self.assertIn("asyncio.wait_for", lookup_helper)
         self.assertEqual(bot.AnimeProfileView(123).timeout, 900)
+        admin_profile_view = bot.AnimeProfileView(123, is_admin=True)
+        profile_doctor_buttons = [
+            child
+            for child in admin_profile_view.children
+            if isinstance(child, bot.SDACSubmenuButton) and child.value == "setup_doctor"
+        ]
+        self.assertEqual(len(profile_doctor_buttons), 1)
+        self.assertEqual(profile_doctor_buttons[0].label, "Run Doctor")
+        diagnostics_source = inspect.getsource(bot.diagnostic_lines)
+        self.assertIn("Anime profile storage and account columns are readable", diagnostics_source)
+
+    def test_anime_profile_view_supports_legacy_profile_schema(self):
+        import bot
+
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        tmp.close()
+        original_db_file = bot.DB_FILE
+        try:
+            connection = sqlite3.connect(tmp.name)
+            connection.execute("""
+                CREATE TABLE anime_profiles (
+                    guild_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    username TEXT,
+                    favorites TEXT,
+                    watching TEXT,
+                    updated_at TEXT,
+                    PRIMARY KEY (guild_id, user_id)
+                )
+            """)
+            connection.execute(
+                "INSERT INTO anime_profiles (guild_id, user_id, username, favorites, watching, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                ("guild-1", "user-1", "Legacy User", "Favorite Show", "Watching Show", "2026-09-28T00:00:00+00:00"),
+            )
+            connection.commit()
+            connection.close()
+            bot.DB_FILE = Path(tmp.name)
+            member = SimpleNamespace(id="user-1", mention="<@user-1>", display_name="Fallback User")
+
+            content = bot.anime_profile_content_for_member("guild-1", member)
+
+            self.assertIn("Legacy User", content)
+            self.assertIn("Favorite Show", content)
+            self.assertIn("Watching Show", content)
+            self.assertIn("Manga", content)
+            self.assertEqual(
+                bot.safe_profile_image_list('["https://cdn.example/cover.jpg", "javascript:bad"]'),
+                ["https://cdn.example/cover.jpg"],
+            )
+            self.assertEqual(bot.safe_profile_image_list("not-json"), [])
+        finally:
+            bot.DB_FILE = original_db_file
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
 
     def test_sana_events_menu_has_discord_posting_setup(self):
         import bot

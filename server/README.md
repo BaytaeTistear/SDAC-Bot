@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.56**. Discord anime-profile selectors now acknowledge immediately, keep working for 15 minutes, and report lookup failures instead of timing out silently.
+Current experimental backend: **4.4.57**. Anime profiles render again, Doctor is a visible Setup shortcut, and failed profile screens provide a direct Run Doctor button for admins.
 
 ## One-Line Linux Install
 

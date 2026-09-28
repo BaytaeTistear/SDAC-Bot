@@ -1,3 +1,19 @@
+# Sana-Chan Version 4.4.57 Experimental
+
+Version 4.4.57 restores anime-profile rendering and makes Doctor easy to find.
+
+## Profile Rendering And Doctor
+
+- replaces the missing `safe_json_loads` call that caused every saved anime profile to fail with a `NameError`
+- validates and limits stored anime and manga preview-image URLs before displaying them
+- supports reading profiles created with older database schemas while migrations catch up
+- promotes Doctor to a dedicated visible button in Setup
+- adds a direct Run Doctor button to the anime-profile view for admins
+- checks anime-profile storage and MAL/AniList columns during Doctor diagnostics
+- adds regression coverage for Doctor visibility, the direct Doctor shortcut, safe image parsing, and legacy profile rendering
+
+---
+
 # Sana-Chan Version 4.4.56 Experimental
 
 Version 4.4.56 restores reliable anime-profile viewing from the guided Discord `/sana` menu.
