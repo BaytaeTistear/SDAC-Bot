@@ -152,5 +152,21 @@ class BackendReleaseReadinessTests(unittest.TestCase):
         self.assertIn("DISCORD_TOKEN: ${DISCORD_TOKEN:-}", compose_text)
         self.assertIn("SDAC_SECRET_KEY: ${SDAC_SECRET_KEY:-}", compose_text)
 
+    def test_sanachan_domain_is_the_canonical_release_default(self):
+        canonical_url = "https://sanachan.bot.nu"
+        expected_fragments = {
+            "bot.py": f'or "{canonical_url}"',
+            "dashboard.py": f'DEFAULT_PUBLIC_DASHBOARD_URL = "{canonical_url}"',
+            "docker-compose.yml": f"SANA_FRIENDLY_URL: ${{SANA_FRIENDLY_URL:-{canonical_url}}}",
+            "scripts/install_ubuntu.sh": f"PUBLIC_URL_INPUT=\"${{PUBLIC_URL_INPUT:-{canonical_url}}}\"",
+            "HOSTING.md": f"{canonical_url}/account/mal/callback",
+            "README.md": canonical_url,
+        }
+        for filename, fragment in expected_fragments.items():
+            self.assertIn(fragment, (ROOT / filename).read_text(encoding="utf-8"), filename)
+
+        hosting = (ROOT / "HOSTING.md").read_text(encoding="utf-8")
+        self.assertIn(f"{canonical_url}/account/anilist/callback", hosting)
+
 if __name__ == "__main__":
     unittest.main()

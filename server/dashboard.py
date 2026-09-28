@@ -146,13 +146,13 @@ DISCORD_OAUTH_CLIENT_SECRET = (
 DISCORD_OAUTH_REDIRECT_URI = os.getenv("SANA_OAUTH_REDIRECT_URI", os.getenv("SDAC_OAUTH_REDIRECT_URI", ""))
 DISCORD_ADMINISTRATOR_PERMISSION = 0x8
 APP_LOGIN_TICKET_MAX_AGE_SECONDS = 5 * 60
-DEFAULT_PUBLIC_DASHBOARD_URL = "https://freethefishies.us.to"
-DEFAULT_FRIENDLY_DASHBOARD_URL = "http://sanachan.bot.nu"
+DEFAULT_PUBLIC_DASHBOARD_URL = "https://sanachan.bot.nu"
+DEFAULT_FRIENDLY_DASHBOARD_URL = "https://sanachan.bot.nu"
 KNOWN_PUBLIC_DASHBOARD_URLS = {
     DEFAULT_PUBLIC_DASHBOARD_URL,
     DEFAULT_FRIENDLY_DASHBOARD_URL,
     "http://freethefishies.us.to",
-    "https://sanachan.bot.nu",
+    "https://freethefishies.us.to",
 }
 KNOWN_PUBLIC_DASHBOARD_DOMAINS = {
     "freethefishies.us.to",
@@ -25131,7 +25131,7 @@ DEFAULT_APP_ALLOWED_ORIGINS = {
     DEFAULT_PUBLIC_DASHBOARD_URL,
     DEFAULT_FRIENDLY_DASHBOARD_URL,
     "http://freethefishies.us.to",
-    "https://sanachan.bot.nu",
+    "https://freethefishies.us.to",
 }
 
 
@@ -25609,7 +25609,7 @@ def admin_ui_health():
         {
             "label": "Dashboard URL",
             "value": request.host_url.rstrip("/"),
-            "detail": "Expected public URL should be https://freethefishies.us.to unless testing locally.",
+            "detail": "Expected public URL should be https://sanachan.bot.nu unless testing locally.",
             "ok": request.host_url.startswith("https://") or request.host.startswith(("127.0.0.1", "localhost")),
         },
         {

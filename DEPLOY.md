@@ -64,7 +64,7 @@ chmod +x Sana-Chan-Ubuntu-Update.sh
 SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot \
 SDAC_APP_USER=ubuntu \
 SDAC_ENV_FILE=/etc/sdac-bot/sdac.env \
-SDAC_DOMAIN=freethefishies.us.to \
+SDAC_DOMAIN=sanachan.bot.nu \
 ./Sana-Chan-Ubuntu-Update.sh --install-command
 
 sana-update latest-official
@@ -131,13 +131,13 @@ Install or refresh the Nginx site:
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=freethefishies.us.to bash scripts/install_nginx_site.sh
+SDAC_DOMAIN=sanachan.bot.nu bash scripts/install_nginx_site.sh
 ```
 
 Issue or renew the Let's Encrypt certificate:
 
 ```bash
-sudo certbot --nginx -d freethefishies.us.to --cert-name freethefishies.us.to --key-type rsa
+sudo certbot --nginx -d sanachan.bot.nu --cert-name sanachan.bot.nu --key-type rsa
 ```
 
 Test renewal:
@@ -151,7 +151,7 @@ sudo certbot renew --dry-run
 Public health check:
 
 ```text
-https://freethefishies.us.to/health
+https://sanachan.bot.nu/health
 ```
 
 Local health check:
@@ -176,7 +176,7 @@ Run the bundled production check:
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=freethefishies.us.to bash scripts/check_production.sh
+SDAC_DOMAIN=sanachan.bot.nu bash scripts/check_production.sh
 ```
 
 ## Restore Test
@@ -196,13 +196,13 @@ dashboard Settings page.
 Use this page to see what each Discord server still needs configured:
 
 ```text
-https://freethefishies.us.to/admin/onboarding
+https://sanachan.bot.nu/admin/onboarding
 ```
 
 Use this page to watch pending submissions and recent moderation decisions:
 
 ```text
-https://freethefishies.us.to/admin/moderation
+https://sanachan.bot.nu/admin/moderation
 ```
 
 In Discord, admins can run this command after permission changes:

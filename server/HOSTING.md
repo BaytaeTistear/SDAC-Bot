@@ -21,7 +21,7 @@ The command downloads the full installer to a temporary file, verifies the publi
 To install a specific release while using the same one-line bootstrap:
 
 ```bash
-SANA_RELEASE_TAG=version-4.4.54 bash -c "$(curl --proto '=https' --tlsv1.2 -fsSL https://github.com/BaytaeTistear/SDAC-Bot/releases/download/latest-experimental/sana-install)"
+SANA_RELEASE_TAG=version-4.4.55 bash -c "$(curl --proto '=https' --tlsv1.2 -fsSL https://github.com/BaytaeTistear/SDAC-Bot/releases/download/latest-experimental/sana-install)"
 ```
 
 For a server move, copy `config.json`, `sdac.db`, and `media/` into the intended application directory before running the command. Copy `/etc/sana-bot/sana.env` separately with restrictive permissions if you want to retain the same secrets; otherwise the installer safely prompts for replacements. Existing data in the target directory is preserved and the database is backed up before upgrade migrations.
@@ -32,7 +32,7 @@ For a server move, copy `config.json`, `sdac.db`, and `media/` into the intended
 2. Register this exact redirect URL, replacing the domain when necessary:
 
    ```text
-   https://freethefishies.us.to/account/mal/callback
+   https://sanachan.bot.nu/account/mal/callback
    ```
 
 3. Add the issued credentials to `/etc/sana-bot/sana.env`:
@@ -40,7 +40,7 @@ For a server move, copy `config.json`, `sdac.db`, and `media/` into the intended
    ```bash
    SANA_MAL_CLIENT_ID=your-client-id
    SANA_MAL_CLIENT_SECRET=your-client-secret
-   SANA_MAL_REDIRECT_URI=https://freethefishies.us.to/account/mal/callback
+   SANA_MAL_REDIRECT_URI=https://sanachan.bot.nu/account/mal/callback
    ```
 
 4. Restart the dashboard and bot:
@@ -57,7 +57,7 @@ Users can then open `/sana` → Anime Profile → Connect MyAnimeList, sign into
 2. Register this exact redirect URL, replacing the domain when necessary:
 
    ```text
-   https://freethefishies.us.to/account/anilist/callback
+   https://sanachan.bot.nu/account/anilist/callback
    ```
 
 3. Add the issued credentials to `/etc/sana-bot/sana.env`:
@@ -65,7 +65,7 @@ Users can then open `/sana` → Anime Profile → Connect MyAnimeList, sign into
    ```bash
    SANA_ANILIST_CLIENT_ID=your-client-id
    SANA_ANILIST_CLIENT_SECRET=your-client-secret
-   SANA_ANILIST_REDIRECT_URI=https://freethefishies.us.to/account/anilist/callback
+   SANA_ANILIST_REDIRECT_URI=https://sanachan.bot.nu/account/anilist/callback
    ```
 
 4. Restart the dashboard and bot:
@@ -149,7 +149,7 @@ For the current domain:
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=freethefishies.us.to bash scripts/install_nginx_site.sh
+SDAC_DOMAIN=sanachan.bot.nu bash scripts/install_nginx_site.sh
 ```
 
 This installs `/etc/nginx/sites-available/sdac-dashboard`, enables it, sets a
@@ -167,7 +167,7 @@ SDAC_DOMAIN=YOUR-DOMAIN bash scripts/install_nginx_site.sh
 For the current domain:
 
 ```bash
-sudo certbot --nginx -d freethefishies.us.to --cert-name freethefishies.us.to --key-type rsa
+sudo certbot --nginx -d sanachan.bot.nu --cert-name sanachan.bot.nu --key-type rsa
 ```
 
 If Certbot asks whether you are changing the key type, use the full command
@@ -203,14 +203,14 @@ bash scripts/install_journal_limits.sh
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=freethefishies.us.to bash scripts/check_production.sh
+SDAC_DOMAIN=sanachan.bot.nu bash scripts/check_production.sh
 ```
 
 Include the Certbot dry-run check:
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=freethefishies.us.to SDAC_RUN_CERTBOT_DRY_RUN=1 bash scripts/check_production.sh
+SDAC_DOMAIN=sanachan.bot.nu SDAC_RUN_CERTBOT_DRY_RUN=1 bash scripts/check_production.sh
 ```
 
 ## 8. Database Migrations And Restore Tests
@@ -265,7 +265,7 @@ sudo systemctl restart sdac-bot sdac-dashboard
 Public uptime check:
 
 ```text
-https://freethefishies.us.to/health
+https://sanachan.bot.nu/health
 ```
 
 Local check from the server:
@@ -277,19 +277,19 @@ curl http://127.0.0.1:5000/health
 Admin-only detailed health check after logging in through the dashboard:
 
 ```text
-https://freethefishies.us.to/admin/health
+https://sanachan.bot.nu/admin/health
 ```
 
 Human-friendly maintenance page:
 
 ```text
-https://freethefishies.us.to/admin/maintenance
+https://sanachan.bot.nu/admin/maintenance
 ```
 
 Moderation queue and recent decisions:
 
 ```text
-https://freethefishies.us.to/admin/moderation
+https://sanachan.bot.nu/admin/moderation
 ```
 
 ## 11. Future Updates
@@ -320,7 +320,7 @@ chmod +x Sana-Chan-Ubuntu-Update.sh
 SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot \
 SDAC_APP_USER=ubuntu \
 SDAC_ENV_FILE=/etc/sdac-bot/sdac.env \
-SDAC_DOMAIN=freethefishies.us.to \
+SDAC_DOMAIN=sanachan.bot.nu \
 ./Sana-Chan-Ubuntu-Update.sh --install-command
 
 sana-update latest-official
@@ -442,7 +442,7 @@ Set a private staff channel for bot error notices:
 Admins can check new-server setup progress at:
 
 ```text
-https://freethefishies.us.to/admin/onboarding
+https://sanachan.bot.nu/admin/onboarding
 ```
 
 ## 14. Off-Server Backups

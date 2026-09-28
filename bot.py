@@ -75,7 +75,7 @@ DASHBOARD_BASE_URL = (
     or "https://sanachan.bot.nu"
 ).rstrip("/")
 if DASHBOARD_BASE_URL == "https://freethefuishies.us.to":
-    DASHBOARD_BASE_URL = "https://freethefishies.us.to"
+    DASHBOARD_BASE_URL = "https://sanachan.bot.nu"
 COMMAND_ALIAS_PATTERN = re.compile(r"^[a-z0-9_-]{1,32}$")
 COMMAND_ALIAS_RESERVED = CORE_SLASH_COMMANDS | {"commands", "admincommands", "setup"}
 

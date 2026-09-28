@@ -303,12 +303,12 @@ PY
 )"
     fi
     if [[ -z "$PUBLIC_URL_INPUT" ]]; then
-        read -r -p "Public dashboard URL [https://freethefishies.us.to] or domain: " PUBLIC_URL_INPUT
+        read -r -p "Public dashboard URL [https://sanachan.bot.nu] or domain: " PUBLIC_URL_INPUT
     fi
     if [[ -z "$SERVER_NAME_INPUT" ]]; then
         read -r -p "Server label for dashboard status [production]: " SERVER_NAME_INPUT
     fi
-    PUBLIC_URL_INPUT="${PUBLIC_URL_INPUT:-https://freethefishies.us.to}"
+    PUBLIC_URL_INPUT="${PUBLIC_URL_INPUT:-https://sanachan.bot.nu}"
     SERVER_NAME_INPUT="${SERVER_NAME_INPUT:-oracle-production}"
 
     ENV_TMP="$(mktemp)"
@@ -321,8 +321,8 @@ SDAC_SECRET_KEY=$SECRET_KEY_INPUT
 PYTHONUNBUFFERED=1
 SANA_PUBLIC_URL=$PUBLIC_URL_INPUT
 SANA_DASHBOARD_URL=$PUBLIC_URL_INPUT
-SANA_DOMAIN=${SANA_DOMAIN:-freethefishies.us.to}
-SANA_FRIENDLY_URL=${SANA_FRIENDLY_URL:-http://sanachan.bot.nu}
+SANA_DOMAIN=${SANA_DOMAIN:-sanachan.bot.nu}
+SANA_FRIENDLY_URL=${SANA_FRIENDLY_URL:-https://sanachan.bot.nu}
 SDAC_PUBLIC_URL=$PUBLIC_URL_INPUT
 SANA_MAL_CLIENT_ID=${SANA_MAL_CLIENT_ID:-${SDAC_MAL_CLIENT_ID:-}}
 SANA_MAL_CLIENT_SECRET=${SANA_MAL_CLIENT_SECRET:-${SDAC_MAL_CLIENT_SECRET:-}}

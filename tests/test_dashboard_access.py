@@ -188,13 +188,13 @@ class DashboardAccessTests(unittest.TestCase):
                 status = self.dashboard.public_url_launch_status()
 
         self.assertTrue(status["ok"])
-        self.assertEqual(status["public_url"], "https://freethefishies.us.to")
+        self.assertEqual(status["public_url"], "https://sanachan.bot.nu")
 
     def test_stable_public_domains_are_allowed_app_origins(self):
         with self.dashboard.app.test_request_context("/api/app/bootstrap", headers={"Origin": "https://freethefishies.us.to"}):
             self.assertEqual(self.dashboard.app_allowed_cors_origin(), "https://freethefishies.us.to")
-        with self.dashboard.app.test_request_context("/api/app/bootstrap", headers={"Origin": "http://sanachan.bot.nu"}):
-            self.assertEqual(self.dashboard.app_allowed_cors_origin(), "http://sanachan.bot.nu")
+        with self.dashboard.app.test_request_context("/api/app/bootstrap", headers={"Origin": "https://sanachan.bot.nu"}):
+            self.assertEqual(self.dashboard.app_allowed_cors_origin(), "https://sanachan.bot.nu")
 
     def test_oauth_callback_uses_public_url(self):
         with self.dashboard.app.test_request_context("/admin/oauth-diagnostics", base_url="http://localhost:5000"):

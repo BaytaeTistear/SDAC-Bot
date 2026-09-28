@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.54**. Users can securely connect MyAnimeList or AniList, sync authenticated Anime and Manga lists, and export a full AniList JSON backup.
+Current experimental backend: **4.4.55**. The canonical public website and OAuth callback host is now `https://sanachan.bot.nu`.
 
 ## One-Line Linux Install
 
@@ -145,7 +145,7 @@ chmod +x Sana-Chan-Ubuntu-Update.sh
 SDAC_APP_DIR=/home/ubuntu/discord-screenshot-bot \
 SDAC_APP_USER=ubuntu \
 SDAC_ENV_FILE=/etc/sdac-bot/sdac.env \
-SDAC_DOMAIN=freethefishies.us.to \
+SDAC_DOMAIN=sanachan.bot.nu \
 ./Sana-Chan-Ubuntu-Update.sh --install-command
 ```
 
@@ -291,27 +291,27 @@ journalctl -u nginx -n 80 --no-pager
 
 ```bash
 curl http://127.0.0.1:5000/health
-curl -I https://freethefishies.us.to/health
+curl -I https://sanachan.bot.nu/health
 ```
 
 Admin JSON health:
 
 ```text
-https://freethefishies.us.to/admin/health
+https://sanachan.bot.nu/admin/health
 ```
 
 Human-friendly maintenance page:
 
 ```text
-https://freethefishies.us.to/admin/maintenance
+https://sanachan.bot.nu/admin/maintenance
 ```
 
 ### Nginx And HTTPS
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=freethefishies.us.to bash scripts/install_nginx_site.sh
-sudo certbot --nginx -d freethefishies.us.to --cert-name freethefishies.us.to --key-type rsa
+SDAC_DOMAIN=sanachan.bot.nu bash scripts/install_nginx_site.sh
+sudo certbot --nginx -d sanachan.bot.nu --cert-name sanachan.bot.nu --key-type rsa
 sudo certbot renew --dry-run
 ```
 
@@ -435,13 +435,13 @@ the app image separate from uploaded media, backups, and `sdac.db`.
 
 ```bash
 cd /home/ubuntu/discord-screenshot-bot
-SDAC_DOMAIN=freethefishies.us.to bash scripts/check_production.sh
+SDAC_DOMAIN=sanachan.bot.nu bash scripts/check_production.sh
 ```
 
 Include Certbot dry-run:
 
 ```bash
-SDAC_DOMAIN=freethefishies.us.to SDAC_RUN_CERTBOT_DRY_RUN=1 bash scripts/check_production.sh
+SDAC_DOMAIN=sanachan.bot.nu SDAC_RUN_CERTBOT_DRY_RUN=1 bash scripts/check_production.sh
 ```
 
 Create a one-command support bundle:

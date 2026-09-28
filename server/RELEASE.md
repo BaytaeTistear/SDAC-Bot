@@ -1,3 +1,17 @@
+# Sana-Chan Version 4.4.55 Experimental
+
+Version 4.4.55 makes `https://sanachan.bot.nu` the canonical public website.
+
+## Domain And OAuth
+
+- updates bot, dashboard, Docker, and one-line installer defaults to the new HTTPS domain
+- uses `https://sanachan.bot.nu/account/mal/callback` for MyAnimeList account connections
+- uses `https://sanachan.bot.nu/account/anilist/callback` for AniList account connections
+- updates deployment, certificate, monitoring, restore, and mobile-listing documentation
+- preserves explicit environment overrides and legacy-origin compatibility for existing installations
+
+---
+
 # Sana-Chan Version 4.4.54 Experimental
 
 Version 4.4.54 adds authenticated AniList importing and portable list export.

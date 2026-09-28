@@ -8,7 +8,7 @@ x-sana-env: &sana-env
   SANA_PUBLIC_URL: ${SANA_PUBLIC_URL:-http://localhost:5000}
   SANA_DASHBOARD_URL: ${SANA_DASHBOARD_URL:-http://localhost:5000}
   SANA_DOMAIN: ${SANA_DOMAIN:-}
-  SANA_FRIENDLY_URL: ${SANA_FRIENDLY_URL:-http://sanachan.bot.nu}
+  SANA_FRIENDLY_URL: ${SANA_FRIENDLY_URL:-https://sanachan.bot.nu}
   SDAC_PUBLIC_URL: ${SDAC_PUBLIC_URL:-http://localhost:5000}
   SDAC_DOMAIN: ${SDAC_DOMAIN:-}
   DISCORD_TOKEN: ${DISCORD_TOKEN:-}
