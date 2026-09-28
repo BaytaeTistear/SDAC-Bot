@@ -6,10 +6,22 @@ from database_migrations import (
     migration_16_dashboard_access_and_bot_owners,
     migration_30_myanimelist_account_connections,
     migration_31_anilist_account_connections,
+    migration_32_distinct_anime_profile_statuses,
 )
 
 
 class DatabaseMigrationTests(unittest.TestCase):
+    def test_anime_profile_statuses_are_stored_separately(self):
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        connection.execute("CREATE TABLE anime_profiles (guild_id TEXT, user_id TEXT)")
+        migration_32_distinct_anime_profile_statuses(connection)
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(anime_profiles)")}
+        self.assertTrue({
+            "anime_completed", "anime_planned", "anime_on_hold",
+            "manga_completed", "manga_planned", "manga_on_hold",
+        }.issubset(columns))
+
     def test_anilist_connection_schema_encrypts_tokens_and_adds_profile_url(self):
         connection = sqlite3.connect(":memory:")
         connection.row_factory = sqlite3.Row

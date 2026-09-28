@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.57**. Anime profiles render again, Doctor is a visible Setup shortcut, and failed profile screens provide a direct Run Doctor button for admins.
+Current experimental backend: **4.4.58**. Anime profiles now keep Favorites, Watching, Finished, Planned, and On Hold in distinct sections for both MyAnimeList and AniList.
 
 ## One-Line Linux Install
 

@@ -1,6 +1,12 @@
-# Sana-Chan Version 4.4.57 Experimental
+# Sana-Chan Version 4.4.58 Experimental
 
-Version 4.4.57 restores anime-profile rendering and makes Doctor easy to find.
+Version 4.4.58 corrects anime and manga profile categorization across MyAnimeList, AniList, and XML imports.
+
+- Favorites now come from explicit provider favorites instead of completed-list substitutes.
+- Watching, Finished, Planned, and On Hold are stored and displayed separately.
+- Manga receives the same distinct Reading, Finished, Planned, and On Hold sections.
+- Database schema 32 adds the new status fields automatically.
+- Existing connected accounts should use Sync once after updating to rebuild their saved profile with the corrected categories.
 
 ## Profile Rendering And Doctor
 

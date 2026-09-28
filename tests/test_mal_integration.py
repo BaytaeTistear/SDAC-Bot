@@ -41,9 +41,11 @@ class MyAnimeListIntegrationTests(unittest.TestCase):
                 "list_status": {"status": "watching", "score": 8, "updated_at": "2026-09-28T01:00:00Z"},
             },
             {
-                "node": {"title": "Completed Favorite"},
+                "node": {"title": "Completed Show"},
                 "list_status": {"status": "completed", "score": 10, "updated_at": "2026-09-27T01:00:00Z"},
             },
+            {"node": {"title": "Planned Later"}, "list_status": {"status": "plan_to_watch"}},
+            {"node": {"title": "Paused Show"}, "list_status": {"status": "on_hold"}},
         ]
         manga = [
             {
@@ -51,15 +53,26 @@ class MyAnimeListIntegrationTests(unittest.TestCase):
                 "list_status": {"status": "reading", "score": 9, "updated_at": "2026-09-28T01:00:00Z"},
             },
         ]
-        with patch.object(mal_integration, "_mal_user_list", side_effect=[anime, manga]):
+        explicit_favorites = {
+            "anime": [{"anime": {"title": "Real Favorite"}}],
+            "manga": [{"manga": {"title": "Favorite Manga"}}],
+        }
+        with patch.object(mal_integration, "_mal_user_list", side_effect=[anime, manga]), patch.object(
+            mal_integration, "_mal_public_favorites", return_value=explicit_favorites
+        ):
             summary = mal_integration.mal_profile_summary(
                 "token",
                 {"id": 42, "name": "account_owner"},
             )
-        self.assertEqual(summary["anime_count"], 2)
+        self.assertEqual(summary["anime_count"], 4)
         self.assertEqual(summary["manga_count"], 1)
-        self.assertIn("Completed Favorite", summary["anime_favorites"])
+        self.assertEqual(summary["anime_favorites"], "Real Favorite")
         self.assertIn("Currently Airing", summary["anime_watching"])
+        self.assertNotIn("Planned Later", summary["anime_watching"])
+        self.assertEqual(summary["anime_completed"], "Completed Show")
+        self.assertEqual(summary["anime_planned"], "Planned Later")
+        self.assertEqual(summary["anime_on_hold"], "Paused Show")
+        self.assertEqual(summary["manga_favorites"], "Favorite Manga")
         self.assertIn("Reading Now", summary["manga_reading"])
         self.assertEqual(summary["mal_profile_url"], "https://myanimelist.net/profile/account_owner")
         self.assertEqual(summary["anime_preview_images"], ["https://img.example/anime.jpg"])

@@ -14,6 +14,7 @@ from cryptography.fernet import Fernet, InvalidToken
 MAL_AUTHORIZE_URL = "https://myanimelist.net/v1/oauth2/authorize"
 MAL_TOKEN_URL = "https://myanimelist.net/v1/oauth2/token"
 MAL_API_BASE_URL = "https://api.myanimelist.net/v2"
+JIKAN_API_BASE_URL = "https://api.jikan.moe/v4"
 MAL_USER_AGENT = "Sana-Chan MyAnimeList Connection/4.4"
 
 
@@ -241,29 +242,65 @@ def _completed_highlights(entries):
     return completed
 
 
+def _mal_public_favorites(username):
+    """Return MAL's explicit public favorites without substituting list scores."""
+    clean_username = _clean_title(username)
+    if not clean_username:
+        return {"anime": [], "manga": []}
+    request = Request(
+        f"{JIKAN_API_BASE_URL}/users/{quote(clean_username, safe='')}/favorites",
+        headers={"Accept": "application/json", "User-Agent": MAL_USER_AGENT},
+    )
+    try:
+        with urlopen(request, timeout=15) as response:
+            data = (json.loads(response.read().decode("utf-8")) or {}).get("data") or {}
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+        return {"anime": [], "manga": []}
+    return {
+        "anime": list(data.get("anime") or []),
+        "manga": list(data.get("manga") or []),
+    }
+
+
+def _favorite_title(entry, media_key):
+    media = entry.get(media_key) if isinstance(entry, dict) else None
+    if not isinstance(media, dict):
+        media = entry if isinstance(entry, dict) else {}
+    return _clean_title(media.get("title") or media.get("title_english") or media.get("name"))
+
+
 def mal_profile_summary(access_token, user=None):
     user = user or mal_current_user(access_token)
     anime = _mal_user_list(access_token, "anime")
     manga = _mal_user_list(access_token, "manga")
-    active_anime = [entry for entry in anime if _entry_status(entry) in {"watching", "on_hold", "plan_to_watch"}]
-    active_manga = [entry for entry in manga if _entry_status(entry) in {"reading", "on_hold", "plan_to_read"}]
+    watching_anime = [entry for entry in anime if _entry_status(entry) == "watching"]
+    planned_anime = [entry for entry in anime if _entry_status(entry) == "plan_to_watch"]
+    held_anime = [entry for entry in anime if _entry_status(entry) == "on_hold"]
+    reading_manga = [entry for entry in manga if _entry_status(entry) == "reading"]
+    planned_manga = [entry for entry in manga if _entry_status(entry) == "plan_to_read"]
+    held_manga = [entry for entry in manga if _entry_status(entry) == "on_hold"]
     completed_anime = _completed_highlights(anime)
     completed_manga = _completed_highlights(manga)
-    anime_favorites = _unique_values((_entry_title(entry) for entry in completed_anime or active_anime), 8)
-    manga_favorites = _unique_values((_entry_title(entry) for entry in completed_manga or active_manga), 8)
-    anime_active_titles = _unique_values((_entry_title(entry) for entry in active_anime), 8)
-    manga_active_titles = _unique_values((_entry_title(entry) for entry in active_manga), 8)
-    anime_images = _unique_values((_entry_image(entry) for entry in active_anime + completed_anime), 3)
-    manga_images = _unique_values((_entry_image(entry) for entry in active_manga + completed_manga), 3)
     username = _clean_title(user.get("name"))
+    favorites = _mal_public_favorites(username)
+    anime_favorites = _unique_values((_favorite_title(entry, "anime") for entry in favorites["anime"]), 8)
+    manga_favorites = _unique_values((_favorite_title(entry, "manga") for entry in favorites["manga"]), 8)
+    anime_images = _unique_values((_entry_image(entry) for entry in watching_anime + completed_anime + planned_anime), 3)
+    manga_images = _unique_values((_entry_image(entry) for entry in reading_manga + completed_manga + planned_manga), 3)
     return {
         "username": username,
         "mal_user_id": str(user.get("id") or ""),
         "mal_profile_url": f"https://myanimelist.net/profile/{quote(username, safe='')}",
-        "anime_favorites": ", ".join(anime_favorites) or "No completed anime highlights found.",
-        "anime_watching": ("Watching: " + ", ".join(anime_active_titles)) if anime_active_titles else "No active anime entries found.",
-        "manga_favorites": ", ".join(manga_favorites) or "No completed manga highlights found.",
-        "manga_reading": ("Reading: " + ", ".join(manga_active_titles)) if manga_active_titles else "No active manga entries found.",
+        "anime_favorites": ", ".join(anime_favorites),
+        "anime_watching": ", ".join(_unique_values((_entry_title(entry) for entry in watching_anime), 8)),
+        "anime_completed": ", ".join(_unique_values((_entry_title(entry) for entry in completed_anime), 8)),
+        "anime_planned": ", ".join(_unique_values((_entry_title(entry) for entry in planned_anime), 8)),
+        "anime_on_hold": ", ".join(_unique_values((_entry_title(entry) for entry in held_anime), 8)),
+        "manga_favorites": ", ".join(manga_favorites),
+        "manga_reading": ", ".join(_unique_values((_entry_title(entry) for entry in reading_manga), 8)),
+        "manga_completed": ", ".join(_unique_values((_entry_title(entry) for entry in completed_manga), 8)),
+        "manga_planned": ", ".join(_unique_values((_entry_title(entry) for entry in planned_manga), 8)),
+        "manga_on_hold": ", ".join(_unique_values((_entry_title(entry) for entry in held_manga), 8)),
         "anime_preview_images": anime_images,
         "manga_preview_images": manga_images,
         "anime_count": len(anime),

@@ -4,7 +4,7 @@ import sqlite3
 
 
 
-DATABASE_SCHEMA_VERSION = 31
+DATABASE_SCHEMA_VERSION = 32
 GOOGLE_PLAY_REVIEW_PASSWORD_HASH = "scrypt:32768:8:1$tpr2C1Lx7O3szQ0T$0f9b5ee8f0d5caaecaf4d69667ea93aff95365decc7108fd955590df4ef07c17680a64610805821aef23fcb86171de70c4bc0f577501ca920bb6b5bb80a4426b"
 
 
@@ -1116,6 +1116,18 @@ def migration_31_anilist_account_connections(connection):
     """)
 
 
+def migration_32_distinct_anime_profile_statuses(connection):
+    for column in (
+        "anime_completed",
+        "anime_planned",
+        "anime_on_hold",
+        "manga_completed",
+        "manga_planned",
+        "manga_on_hold",
+    ):
+        ensure_column(connection, "anime_profiles", column, "TEXT")
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -1146,6 +1158,7 @@ MIGRATIONS = (
     (29, migration_29_professional_operations),
     (30, migration_30_myanimelist_account_connections),
     (31, migration_31_anilist_account_connections),
+    (32, migration_32_distinct_anime_profile_statuses),
 )
 
 

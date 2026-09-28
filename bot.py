@@ -2319,15 +2319,23 @@ def save_anime_profile_sections(
     anilist_profile_url="",
     anime_preview_images=None,
     manga_preview_images=None,
+    anime_completed="",
+    anime_planned="",
+    anime_on_hold="",
+    manga_completed="",
+    manga_planned="",
+    manga_on_hold="",
 ):
     with database() as connection:
         connection.execute("""
             INSERT INTO anime_profiles (
                 guild_id, user_id, username, favorites, watching,
                 manga_favorites, manga_reading, mal_profile_url, anilist_profile_url,
-                anime_preview_images, manga_preview_images, updated_at
+                anime_preview_images, manga_preview_images, anime_completed,
+                anime_planned, anime_on_hold, manga_completed, manga_planned,
+                manga_on_hold, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(guild_id, user_id) DO UPDATE SET
                 username = excluded.username,
                 favorites = excluded.favorites,
@@ -2338,6 +2346,12 @@ def save_anime_profile_sections(
                 anilist_profile_url = excluded.anilist_profile_url,
                 anime_preview_images = excluded.anime_preview_images,
                 manga_preview_images = excluded.manga_preview_images,
+                anime_completed = excluded.anime_completed,
+                anime_planned = excluded.anime_planned,
+                anime_on_hold = excluded.anime_on_hold,
+                manga_completed = excluded.manga_completed,
+                manga_planned = excluded.manga_planned,
+                manga_on_hold = excluded.manga_on_hold,
                 updated_at = excluded.updated_at
         """, (
             str(guild_id),
@@ -2351,6 +2365,12 @@ def save_anime_profile_sections(
             clean_profile_text(anilist_profile_url, 300),
             json.dumps(list(anime_preview_images or [])[:3]),
             json.dumps(list(manga_preview_images or [])[:3]),
+            clean_profile_text(anime_completed),
+            clean_profile_text(anime_planned),
+            clean_profile_text(anime_on_hold),
+            clean_profile_text(manga_completed),
+            clean_profile_text(manga_planned),
+            clean_profile_text(manga_on_hold),
             utc_now_iso(),
         ))
 
@@ -2360,14 +2380,19 @@ def load_anime_profile_row(guild_id, user_id):
         """
             SELECT username, favorites, watching, manga_favorites, manga_reading,
                    mal_profile_url, anilist_profile_url, anime_preview_images,
-                   manga_preview_images, updated_at
+                   manga_preview_images, anime_completed, anime_planned,
+                   anime_on_hold, manga_completed, manga_planned, manga_on_hold,
+                   updated_at
             FROM anime_profiles
             WHERE guild_id = ? AND user_id = ?
         """,
         """
             SELECT username, favorites, watching, manga_favorites, manga_reading,
                    mal_profile_url, NULL AS anilist_profile_url, anime_preview_images,
-                   manga_preview_images, updated_at
+                   manga_preview_images, NULL AS anime_completed,
+                   NULL AS anime_planned, NULL AS anime_on_hold,
+                   NULL AS manga_completed, NULL AS manga_planned,
+                   NULL AS manga_on_hold, updated_at
             FROM anime_profiles
             WHERE guild_id = ? AND user_id = ?
         """,
@@ -2376,6 +2401,9 @@ def load_anime_profile_row(guild_id, user_id):
                    NULL AS manga_favorites, NULL AS manga_reading,
                    NULL AS mal_profile_url, NULL AS anilist_profile_url,
                    NULL AS anime_preview_images, NULL AS manga_preview_images,
+                   NULL AS anime_completed, NULL AS anime_planned,
+                   NULL AS anime_on_hold, NULL AS manga_completed,
+                   NULL AS manga_planned, NULL AS manga_on_hold,
                    updated_at
             FROM anime_profiles
             WHERE guild_id = ? AND user_id = ?
@@ -2430,6 +2458,9 @@ def anime_profile_content_for_member(guild_id, member):
         "**Anime**",
         f"Favorites: {row['favorites'] or 'Not set'}",
         f"Watching: {row['watching'] or 'Not set'}",
+        f"Finished: {row['anime_completed'] or 'Not set'}",
+        f"Planned: {row['anime_planned'] or 'Not set'}",
+        f"On Hold: {row['anime_on_hold'] or 'Not set'}",
     ])
     if anime_images:
         lines.append("Anime previews:")
@@ -2438,6 +2469,9 @@ def anime_profile_content_for_member(guild_id, member):
         "**Manga**",
         f"Favorites: {row['manga_favorites'] or 'Not set'}",
         f"Reading: {row['manga_reading'] or 'Not set'}",
+        f"Finished: {row['manga_completed'] or 'Not set'}",
+        f"Planned: {row['manga_planned'] or 'Not set'}",
+        f"On Hold: {row['manga_on_hold'] or 'Not set'}",
     ])
     if manga_images:
         lines.append("Manga previews:")
@@ -2571,16 +2605,22 @@ async def import_mal_xml_attachment_flow(interaction, owner_id, is_admin=False):
         await interaction.followup.send(str(error), ephemeral=True)
         return
     save_anime_profile_sections(
-        interaction.guild_id,
-        interaction.user.id,
-        interaction.user,
-        profile["anime_favorites"],
-        profile["anime_watching"],
-        profile["manga_favorites"],
-        profile["manga_reading"],
-        profile.get("mal_profile_url", ""),
-        profile.get("anime_preview_images", []),
-        profile.get("manga_preview_images", []),
+        guild_id=interaction.guild_id,
+        user_id=interaction.user.id,
+        username=interaction.user,
+        anime_favorites=profile["anime_favorites"],
+        anime_watching=profile["anime_watching"],
+        manga_favorites=profile["manga_favorites"],
+        manga_reading=profile["manga_reading"],
+        mal_profile_url=profile.get("mal_profile_url", ""),
+        anime_preview_images=profile.get("anime_preview_images", []),
+        manga_preview_images=profile.get("manga_preview_images", []),
+        anime_completed=profile.get("anime_completed", ""),
+        anime_planned=profile.get("anime_planned", ""),
+        anime_on_hold=profile.get("anime_on_hold", ""),
+        manga_completed=profile.get("manga_completed", ""),
+        manga_planned=profile.get("manga_planned", ""),
+        manga_on_hold=profile.get("manga_on_hold", ""),
     )
     try:
         await message.delete()
@@ -4574,8 +4614,15 @@ def initialize_database():
                 manga_favorites TEXT,
                 manga_reading TEXT,
                 mal_profile_url TEXT,
+                anilist_profile_url TEXT,
                 anime_preview_images TEXT,
                 manga_preview_images TEXT,
+                anime_completed TEXT,
+                anime_planned TEXT,
+                anime_on_hold TEXT,
+                manga_completed TEXT,
+                manga_planned TEXT,
+                manga_on_hold TEXT,
                 updated_at TEXT,
                 PRIMARY KEY (guild_id, user_id)
             )
@@ -5332,8 +5379,15 @@ def initialize_database():
             "manga_favorites": "TEXT",
             "manga_reading": "TEXT",
             "mal_profile_url": "TEXT",
+            "anilist_profile_url": "TEXT",
             "anime_preview_images": "TEXT",
             "manga_preview_images": "TEXT",
+            "anime_completed": "TEXT",
+            "anime_planned": "TEXT",
+            "anime_on_hold": "TEXT",
+            "manga_completed": "TEXT",
+            "manga_planned": "TEXT",
+            "manga_on_hold": "TEXT",
         }.items():
             ensure_column(connection, "anime_profiles", column, definition)
 
@@ -9352,7 +9406,9 @@ async def diagnostic_lines(interaction):
             connection.execute("""
                 SELECT username, favorites, watching, manga_favorites, manga_reading,
                        mal_profile_url, anilist_profile_url, anime_preview_images,
-                       manga_preview_images, updated_at
+                       manga_preview_images, anime_completed, anime_planned,
+                       anime_on_hold, manga_completed, manga_planned,
+                       manga_on_hold, updated_at
                 FROM anime_profiles
                 WHERE guild_id = ?
                 LIMIT 1
@@ -10826,6 +10882,10 @@ def summarize_mal_profile(
     favorites_payload,
     manga_reading_payload=None,
     manga_completed_payload=None,
+    planned_payload=None,
+    on_hold_payload=None,
+    manga_planned_payload=None,
+    manga_on_hold_payload=None,
 ):
     watching = jikan_title_list(watching_payload, limit=8, media_key="anime")
     completed = jikan_title_list(completed_payload, limit=8, media_key="anime")
@@ -10836,29 +10896,22 @@ def summarize_mal_profile(
     manga_reading = jikan_title_list(manga_reading_payload, limit=8, media_key="manga")
     manga_completed = jikan_title_list(manga_completed_payload, limit=8, media_key="manga")
     manga_favorites = jikan_title_list({"data": favorite_manga_entries}, limit=8, media_key="manga")
-    note = f"Imported from MyAnimeList user {username}."
-    anime_favorites = join_profile_titles(favorites or completed[:5] or watching[:5], note)
-    anime_watching_parts = []
-    if watching:
-        anime_watching_parts.append("Watching: " + ", ".join(watching))
-    if completed:
-        anime_watching_parts.append("Completed highlights: " + ", ".join(completed[:5]))
-    anime_watching = clean_profile_text(" | ".join(anime_watching_parts) or "Imported from MyAnimeList; no public watching list items found.")
-    if anime_favorites != note:
-        anime_favorites = clean_profile_text(f"{anime_favorites} ({note})")
-    manga_favorites_text = join_profile_titles(manga_favorites or manga_completed[:5] or manga_reading[:5], "No public manga favorites found.")
-    manga_reading_parts = []
-    if manga_reading:
-        manga_reading_parts.append("Reading: " + ", ".join(manga_reading))
-    if manga_completed:
-        manga_reading_parts.append("Completed highlights: " + ", ".join(manga_completed[:5]))
-    manga_reading_text = clean_profile_text(" | ".join(manga_reading_parts) or "No public manga reading list items found.")
+    planned = jikan_title_list(planned_payload, limit=8, media_key="anime")
+    on_hold = jikan_title_list(on_hold_payload, limit=8, media_key="anime")
+    manga_planned = jikan_title_list(manga_planned_payload, limit=8, media_key="manga")
+    manga_on_hold = jikan_title_list(manga_on_hold_payload, limit=8, media_key="manga")
     return {
         "username": username,
-        "anime_favorites": anime_favorites,
-        "anime_watching": anime_watching,
-        "manga_favorites": manga_favorites_text,
-        "manga_reading": manga_reading_text,
+        "anime_favorites": join_profile_titles(favorites, ""),
+        "anime_watching": join_profile_titles(watching, ""),
+        "anime_completed": join_profile_titles(completed, ""),
+        "anime_planned": join_profile_titles(planned, ""),
+        "anime_on_hold": join_profile_titles(on_hold, ""),
+        "manga_favorites": join_profile_titles(manga_favorites, ""),
+        "manga_reading": join_profile_titles(manga_reading, ""),
+        "manga_completed": join_profile_titles(manga_completed, ""),
+        "manga_planned": join_profile_titles(manga_planned, ""),
+        "manga_on_hold": join_profile_titles(manga_on_hold, ""),
     }
 
 
@@ -10910,8 +10963,12 @@ def summarize_mal_xml_profile(xml_text):
     mal_username = xml_child_text(root, ["myinfo/user_name", "myinfo/username", "user_name", "username"])
     anime_watching = []
     anime_completed = []
+    anime_planned = []
+    anime_on_hold = []
     manga_reading = []
     manga_completed = []
+    manga_planned = []
+    manga_on_hold = []
     anime_preview_images = []
     manga_preview_images = []
     for entry in root.findall(".//anime"):
@@ -10920,29 +10977,43 @@ def summarize_mal_xml_profile(xml_text):
         anime_preview_images = append_unique_preview(anime_preview_images, xml_image_url(entry))
         if not title:
             continue
-        if status in {"watching", "plan to watch", "on-hold", "dropped"}:
+        if status == "watching":
             anime_watching.append(title)
         elif status == "completed":
             anime_completed.append(title)
+        elif status == "plan to watch":
+            anime_planned.append(title)
+        elif status == "on-hold":
+            anime_on_hold.append(title)
     for entry in root.findall(".//manga"):
         title = xml_child_text(entry, ["manga_title", "series_title", "title"])
         status = xml_child_text(entry, ["my_status", "status"]).casefold()
         manga_preview_images = append_unique_preview(manga_preview_images, xml_image_url(entry))
         if not title:
             continue
-        if status in {"reading", "plan to read", "on-hold", "dropped"}:
+        if status == "reading":
             manga_reading.append(title)
         elif status == "completed":
             manga_completed.append(title)
-    if not (anime_watching or anime_completed or manga_reading or manga_completed):
+        elif status == "plan to read":
+            manga_planned.append(title)
+        elif status == "on-hold":
+            manga_on_hold.append(title)
+    if not any((anime_watching, anime_completed, anime_planned, anime_on_hold, manga_reading, manga_completed, manga_planned, manga_on_hold)):
         raise ValueError("No anime or manga entries were found in that XML file.")
     return {
         "username": mal_username or "MAL XML export",
         "mal_profile_url": mal_profile_url_from_username(mal_username),
-        "anime_favorites": join_profile_titles(anime_completed[:8] or anime_watching[:8], "Imported from MyAnimeList XML."),
-        "anime_watching": clean_profile_text(("Watching: " + ", ".join(anime_watching[:8])) if anime_watching else "Completed highlights: " + ", ".join(anime_completed[:5])),
-        "manga_favorites": join_profile_titles(manga_completed[:8] or manga_reading[:8], "Imported from MyAnimeList XML."),
-        "manga_reading": clean_profile_text(("Reading: " + ", ".join(manga_reading[:8])) if manga_reading else "Completed highlights: " + ", ".join(manga_completed[:5])),
+        "anime_favorites": "",
+        "anime_watching": join_profile_titles(anime_watching[:8], ""),
+        "anime_completed": join_profile_titles(anime_completed[:8], ""),
+        "anime_planned": join_profile_titles(anime_planned[:8], ""),
+        "anime_on_hold": join_profile_titles(anime_on_hold[:8], ""),
+        "manga_favorites": "",
+        "manga_reading": join_profile_titles(manga_reading[:8], ""),
+        "manga_completed": join_profile_titles(manga_completed[:8], ""),
+        "manga_planned": join_profile_titles(manga_planned[:8], ""),
+        "manga_on_hold": join_profile_titles(manga_on_hold[:8], ""),
         "anime_preview_images": anime_preview_images[:3],
         "manga_preview_images": manga_preview_images[:3],
     }
@@ -10974,12 +11045,18 @@ async def fetch_mal_profile_summary(username):
             f"/users/{encoded}/mangalist",
             {"status": "completed", "limit": 10, "order_by": "score", "sort": "desc"},
         ),
+        asyncio.to_thread(jikan_get_json_optional, f"/users/{encoded}/animelist", {"status": "plan_to_watch", "limit": 10}),
+        asyncio.to_thread(jikan_get_json_optional, f"/users/{encoded}/animelist", {"status": "on_hold", "limit": 10}),
+        asyncio.to_thread(jikan_get_json_optional, f"/users/{encoded}/mangalist", {"status": "plan_to_read", "limit": 10}),
+        asyncio.to_thread(jikan_get_json_optional, f"/users/{encoded}/mangalist", {"status": "on_hold", "limit": 10}),
     )
     payloads = [payload for payload, _error in results]
     errors = [error for _payload, error in results if error]
     if errors and all("not found or is not public" in error for error in errors):
         raise ValueError("That MyAnimeList profile was not found or is not public.")
-    watching_payload, completed_payload, favorites_payload, manga_reading_payload, manga_completed_payload = payloads
+    (watching_payload, completed_payload, favorites_payload, manga_reading_payload,
+     manga_completed_payload, planned_payload, on_hold_payload,
+     manga_planned_payload, manga_on_hold_payload) = payloads
     return summarize_mal_profile(
         clean_username,
         watching_payload,
@@ -10987,6 +11064,10 @@ async def fetch_mal_profile_summary(username):
         favorites_payload,
         manga_reading_payload,
         manga_completed_payload,
+        planned_payload,
+        on_hold_payload,
+        manga_planned_payload,
+        manga_on_hold_payload,
     )
 
 

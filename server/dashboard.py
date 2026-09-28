@@ -10679,8 +10679,15 @@ def initialize_database():
                 manga_favorites TEXT,
                 manga_reading TEXT,
                 mal_profile_url TEXT,
+                anilist_profile_url TEXT,
                 anime_preview_images TEXT,
                 manga_preview_images TEXT,
+                anime_completed TEXT,
+                anime_planned TEXT,
+                anime_on_hold TEXT,
+                manga_completed TEXT,
+                manga_planned TEXT,
+                manga_on_hold TEXT,
                 updated_at TEXT,
                 PRIMARY KEY (guild_id, user_id)
             )
@@ -11358,8 +11365,15 @@ def initialize_database():
             "manga_favorites": "TEXT",
             "manga_reading": "TEXT",
             "mal_profile_url": "TEXT",
+            "anilist_profile_url": "TEXT",
             "anime_preview_images": "TEXT",
             "manga_preview_images": "TEXT",
+            "anime_completed": "TEXT",
+            "anime_planned": "TEXT",
+            "anime_on_hold": "TEXT",
+            "manga_completed": "TEXT",
+            "manga_planned": "TEXT",
+            "manga_on_hold": "TEXT",
         }.items():
             if column not in anime_profile_columns:
                 connection.execute(
@@ -17190,8 +17204,10 @@ def sync_dashboard_mal_profile(username, access_token, mal_user=None):
                 INSERT INTO anime_profiles (
                     guild_id, user_id, username, favorites, watching,
                     manga_favorites, manga_reading, mal_profile_url,
-                    anime_preview_images, manga_preview_images, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    anime_preview_images, manga_preview_images, anime_completed,
+                    anime_planned, anime_on_hold, manga_completed, manga_planned,
+                    manga_on_hold, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(guild_id, user_id) DO UPDATE SET
                     username = excluded.username,
                     favorites = excluded.favorites,
@@ -17201,6 +17217,12 @@ def sync_dashboard_mal_profile(username, access_token, mal_user=None):
                     mal_profile_url = excluded.mal_profile_url,
                     anime_preview_images = excluded.anime_preview_images,
                     manga_preview_images = excluded.manga_preview_images,
+                    anime_completed = excluded.anime_completed,
+                    anime_planned = excluded.anime_planned,
+                    anime_on_hold = excluded.anime_on_hold,
+                    manga_completed = excluded.manga_completed,
+                    manga_planned = excluded.manga_planned,
+                    manga_on_hold = excluded.manga_on_hold,
                     updated_at = excluded.updated_at
             """, (
                 guild_id,
@@ -17213,6 +17235,12 @@ def sync_dashboard_mal_profile(username, access_token, mal_user=None):
                 summary["mal_profile_url"][:300],
                 json.dumps(summary["anime_preview_images"][:3]),
                 json.dumps(summary["manga_preview_images"][:3]),
+                summary["anime_completed"][:1000],
+                summary["anime_planned"][:1000],
+                summary["anime_on_hold"][:1000],
+                summary["manga_completed"][:1000],
+                summary["manga_planned"][:1000],
+                summary["manga_on_hold"][:1000],
                 now,
             ))
         add_admin_audit_log(
@@ -17413,8 +17441,10 @@ def sync_dashboard_anilist_profile(username, access_token, anilist_user=None):
                 INSERT INTO anime_profiles (
                     guild_id, user_id, username, favorites, watching,
                     manga_favorites, manga_reading, anilist_profile_url,
-                    anime_preview_images, manga_preview_images, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    anime_preview_images, manga_preview_images, anime_completed,
+                    anime_planned, anime_on_hold, manga_completed, manga_planned,
+                    manga_on_hold, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(guild_id, user_id) DO UPDATE SET
                     username = excluded.username,
                     favorites = excluded.favorites,
@@ -17424,6 +17454,12 @@ def sync_dashboard_anilist_profile(username, access_token, anilist_user=None):
                     anilist_profile_url = excluded.anilist_profile_url,
                     anime_preview_images = excluded.anime_preview_images,
                     manga_preview_images = excluded.manga_preview_images,
+                    anime_completed = excluded.anime_completed,
+                    anime_planned = excluded.anime_planned,
+                    anime_on_hold = excluded.anime_on_hold,
+                    manga_completed = excluded.manga_completed,
+                    manga_planned = excluded.manga_planned,
+                    manga_on_hold = excluded.manga_on_hold,
                     updated_at = excluded.updated_at
             """, (
                 guild_id, discord_user_id, summary["username"],
@@ -17431,7 +17467,10 @@ def sync_dashboard_anilist_profile(username, access_token, anilist_user=None):
                 summary["manga_favorites"][:1000], summary["manga_reading"][:1000],
                 summary["anilist_profile_url"][:300],
                 json.dumps(summary["anime_preview_images"][:3]),
-                json.dumps(summary["manga_preview_images"][:3]), now,
+                json.dumps(summary["manga_preview_images"][:3]),
+                summary["anime_completed"][:1000], summary["anime_planned"][:1000],
+                summary["anime_on_hold"][:1000], summary["manga_completed"][:1000],
+                summary["manga_planned"][:1000], summary["manga_on_hold"][:1000], now,
             ))
         add_admin_audit_log(
             connection, None, "account_anilist_sync", username, username,

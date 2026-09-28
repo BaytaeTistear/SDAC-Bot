@@ -180,6 +180,21 @@ query ($type: MediaType!, $userId: Int!) {
 }
 """
 
+ANILIST_FAVORITES_QUERY = """
+query ($userId: Int!) {
+  User(id: $userId) {
+    favourites {
+      anime(page: 1, perPage: 50) {
+        nodes { id title { romaji english native userPreferred } coverImage { extraLarge large medium } }
+      }
+      manga(page: 1, perPage: 50) {
+        nodes { id title { romaji english native userPreferred } coverImage { extraLarge large medium } }
+      }
+    }
+  }
+}
+"""
+
 
 def _anilist_list(access_token, user_id, media_type):
     data = anilist_graphql(
@@ -200,6 +215,15 @@ def _anilist_list(access_token, user_id, media_type):
             copied["list_name"] = str(list_group.get("name") or "")
             entries.append(copied)
     return entries
+
+
+def _anilist_favorites(access_token, user_id):
+    data = anilist_graphql(access_token, ANILIST_FAVORITES_QUERY, {"userId": int(user_id)})
+    favourites = ((data.get("User") or {}).get("favourites") or {})
+    return {
+        "anime": [{"media": node} for node in ((favourites.get("anime") or {}).get("nodes") or [])],
+        "manga": [{"media": node} for node in ((favourites.get("manga") or {}).get("nodes") or [])],
+    }
 
 
 def _clean(value, limit=160):
@@ -241,10 +265,12 @@ def _unique(values, limit):
 
 def anilist_account_data(access_token, user=None):
     user = user or anilist_current_user(access_token)
+    favorites = _anilist_favorites(access_token, user["id"])
     return {
         "user": user,
         "anime": _anilist_list(access_token, user["id"], "ANIME"),
         "manga": _anilist_list(access_token, user["id"], "MANGA"),
+        "favorites": favorites,
     }
 
 
@@ -253,8 +279,13 @@ def anilist_profile_summary(access_token, user=None, account_data=None):
     user = data["user"]
     anime = data["anime"]
     manga = data["manga"]
-    active_anime = [entry for entry in anime if str(entry.get("status") or "").upper() in {"CURRENT", "PAUSED", "PLANNING"}]
-    active_manga = [entry for entry in manga if str(entry.get("status") or "").upper() in {"CURRENT", "PAUSED", "PLANNING"}]
+    favorites = data.get("favorites") or {"anime": [], "manga": []}
+    active_anime = [entry for entry in anime if str(entry.get("status") or "").upper() == "CURRENT"]
+    planned_anime = [entry for entry in anime if str(entry.get("status") or "").upper() == "PLANNING"]
+    held_anime = [entry for entry in anime if str(entry.get("status") or "").upper() == "PAUSED"]
+    active_manga = [entry for entry in manga if str(entry.get("status") or "").upper() == "CURRENT"]
+    planned_manga = [entry for entry in manga if str(entry.get("status") or "").upper() == "PLANNING"]
+    held_manga = [entry for entry in manga if str(entry.get("status") or "").upper() == "PAUSED"]
     complete_anime = sorted((entry for entry in anime if str(entry.get("status") or "").upper() == "COMPLETED"), key=_score, reverse=True)
     complete_manga = sorted((entry for entry in manga if str(entry.get("status") or "").upper() == "COMPLETED"), key=_score, reverse=True)
     username = _clean(user.get("name"), 120)
@@ -262,10 +293,16 @@ def anilist_profile_summary(access_token, user=None, account_data=None):
         "username": username,
         "anilist_user_id": str(user.get("id") or ""),
         "anilist_profile_url": str(user.get("siteUrl") or f"https://anilist.co/user/{quote(username, safe='')}/"),
-        "anime_favorites": ", ".join(_unique((_title(entry) for entry in complete_anime or active_anime), 8)) or "No completed anime highlights found.",
-        "anime_watching": ("Watching: " + ", ".join(_unique((_title(entry) for entry in active_anime), 8))) if active_anime else "No active anime entries found.",
-        "manga_favorites": ", ".join(_unique((_title(entry) for entry in complete_manga or active_manga), 8)) or "No completed manga highlights found.",
-        "manga_reading": ("Reading: " + ", ".join(_unique((_title(entry) for entry in active_manga), 8))) if active_manga else "No active manga entries found.",
+        "anime_favorites": ", ".join(_unique((_title(entry) for entry in favorites.get("anime", [])), 8)),
+        "anime_watching": ", ".join(_unique((_title(entry) for entry in active_anime), 8)),
+        "anime_completed": ", ".join(_unique((_title(entry) for entry in complete_anime), 8)),
+        "anime_planned": ", ".join(_unique((_title(entry) for entry in planned_anime), 8)),
+        "anime_on_hold": ", ".join(_unique((_title(entry) for entry in held_anime), 8)),
+        "manga_favorites": ", ".join(_unique((_title(entry) for entry in favorites.get("manga", [])), 8)),
+        "manga_reading": ", ".join(_unique((_title(entry) for entry in active_manga), 8)),
+        "manga_completed": ", ".join(_unique((_title(entry) for entry in complete_manga), 8)),
+        "manga_planned": ", ".join(_unique((_title(entry) for entry in planned_manga), 8)),
+        "manga_on_hold": ", ".join(_unique((_title(entry) for entry in held_manga), 8)),
         "anime_preview_images": _unique((_image(entry) for entry in active_anime + complete_anime), 3),
         "manga_preview_images": _unique((_image(entry) for entry in active_manga + complete_manga), 3),
         "anime_count": len(anime),

@@ -32,21 +32,32 @@ class AniListIntegrationTests(unittest.TestCase):
         user = {"id": 77, "name": "account_owner", "siteUrl": "https://anilist.co/user/account_owner/"}
         anime = [
             {"id": 1, "status": "CURRENT", "score": 8, "media": {"title": {"userPreferred": "Watching Now"}, "coverImage": {"large": "https://img.example/anime.jpg"}}},
-            {"id": 2, "status": "COMPLETED", "score": 10, "media": {"title": {"english": "Finished Favorite"}, "coverImage": {}}},
+            {"id": 2, "status": "COMPLETED", "score": 10, "media": {"title": {"english": "Finished Show"}, "coverImage": {}}},
+            {"id": 4, "status": "PLANNING", "score": 0, "media": {"title": {"english": "Planned Show"}, "coverImage": {}}},
+            {"id": 5, "status": "PAUSED", "score": 0, "media": {"title": {"english": "Paused Show"}, "coverImage": {}}},
         ]
         manga = [{"id": 3, "status": "CURRENT", "score": 9, "media": {"title": {"romaji": "Reading Now"}, "coverImage": {"medium": "https://img.example/manga.jpg"}}}]
-        account_data = {"user": user, "anime": anime, "manga": manga}
+        favorites = {
+            "anime": [{"media": {"title": {"english": "Actual Favorite"}}}],
+            "manga": [{"media": {"title": {"english": "Favorite Manga"}}}],
+        }
+        account_data = {"user": user, "anime": anime, "manga": manga, "favorites": favorites}
         summary = anilist_integration.anilist_profile_summary("token", account_data=account_data)
-        self.assertEqual(summary["anime_count"], 2)
+        self.assertEqual(summary["anime_count"], 4)
         self.assertEqual(summary["manga_count"], 1)
-        self.assertIn("Finished Favorite", summary["anime_favorites"])
+        self.assertEqual(summary["anime_favorites"], "Actual Favorite")
         self.assertIn("Watching Now", summary["anime_watching"])
+        self.assertNotIn("Planned Show", summary["anime_watching"])
+        self.assertEqual(summary["anime_completed"], "Finished Show")
+        self.assertEqual(summary["anime_planned"], "Planned Show")
+        self.assertEqual(summary["anime_on_hold"], "Paused Show")
+        self.assertEqual(summary["manga_favorites"], "Favorite Manga")
         self.assertIn("Reading Now", summary["manga_reading"])
         self.assertEqual(summary["anilist_profile_url"], user["siteUrl"])
         with patch.object(anilist_integration, "anilist_account_data", return_value=account_data):
             exported = anilist_integration.anilist_export_payload("token", user)
         self.assertEqual(exported["schema"], "sana-chan-anilist-export-v1")
-        self.assertEqual(len(exported["anime"]), 2)
+        self.assertEqual(len(exported["anime"]), 4)
         self.assertEqual(len(exported["manga"]), 1)
 
     def test_custom_list_duplicates_are_removed(self):

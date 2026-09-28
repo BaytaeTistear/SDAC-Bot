@@ -116,12 +116,13 @@ class BotStartupTests(unittest.TestCase):
             {"data": [{"manga": {"title": "Completed Manga"}}]},
         )
         self.assertIn("Favorite One", profile["anime_favorites"])
-        self.assertIn("example_user", profile["anime_favorites"])
         self.assertIn("Watching One", profile["anime_watching"])
-        self.assertIn("Completed One", profile["anime_watching"])
+        self.assertNotIn("Completed One", profile["anime_watching"])
+        self.assertIn("Completed One", profile["anime_completed"])
         self.assertIn("Favorite Manga", profile["manga_favorites"])
         self.assertIn("Reading One", profile["manga_reading"])
-        self.assertIn("Completed Manga", profile["manga_reading"])
+        self.assertNotIn("Completed Manga", profile["manga_reading"])
+        self.assertIn("Completed Manga", profile["manga_completed"])
 
     def test_mal_xml_profile_summary_splits_anime_and_manga(self):
         import bot
@@ -136,10 +137,12 @@ class BotStartupTests(unittest.TestCase):
         </myanimelist>
         """)
         self.assertEqual(profile["mal_profile_url"], "https://myanimelist.net/profile/test_user")
-        self.assertIn("Anime Done", profile["anime_favorites"])
+        self.assertEqual(profile["anime_favorites"], "")
         self.assertIn("Anime Watching", profile["anime_watching"])
-        self.assertIn("Manga Done", profile["manga_favorites"])
+        self.assertIn("Anime Done", profile["anime_completed"])
+        self.assertEqual(profile["manga_favorites"], "")
         self.assertIn("Manga Reading", profile["manga_reading"])
+        self.assertIn("Manga Done", profile["manga_completed"])
         self.assertEqual(profile["anime_preview_images"][:1], ["https://cdn.example/anime1.jpg"])
         self.assertEqual(profile["manga_preview_images"][:1], ["https://cdn.example/manga1.jpg"])
     def test_scheduled_auto_hint_time_scales_to_question_window(self):
