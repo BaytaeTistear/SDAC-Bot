@@ -38,14 +38,18 @@ class AniListIntegrationTests(unittest.TestCase):
         ]
         manga = [{"id": 3, "status": "CURRENT", "score": 9, "media": {"title": {"romaji": "Reading Now"}, "coverImage": {"medium": "https://img.example/manga.jpg"}}}]
         favorites = {
-            "anime": [{"media": {"title": {"english": "Actual Favorite"}}}],
+            "anime": [{"media": {"title": {"english": "Actual Favorite"}}}] + [
+                {"media": {"title": {"english": f"Favorite {number}"}}} for number in range(2, 7)
+            ],
             "manga": [{"media": {"title": {"english": "Favorite Manga"}}}],
         }
         account_data = {"user": user, "anime": anime, "manga": manga, "favorites": favorites}
         summary = anilist_integration.anilist_profile_summary("token", account_data=account_data)
         self.assertEqual(summary["anime_count"], 4)
         self.assertEqual(summary["manga_count"], 1)
-        self.assertEqual(summary["anime_favorites"], "Actual Favorite")
+        self.assertIn("Actual Favorite", summary["anime_favorites"])
+        self.assertIn("Favorite 5", summary["anime_favorites"])
+        self.assertNotIn("Favorite 6", summary["anime_favorites"])
         self.assertIn("Watching Now", summary["anime_watching"])
         self.assertNotIn("Planned Show", summary["anime_watching"])
         self.assertEqual(summary["anime_completed"], "Finished Show")

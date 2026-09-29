@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.59**. Discord anime-profile screens now include direct MyAnimeList and AniList sync buttons for connected website accounts.
+Current experimental backend: **4.4.60**. MyAnimeList and AniList profiles are stored and viewed separately, with Anime/Manga subsections and five-title category limits.
 
 ## One-Line Linux Install
 

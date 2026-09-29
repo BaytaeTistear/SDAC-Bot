@@ -283,8 +283,8 @@ def mal_profile_summary(access_token, user=None):
     completed_manga = _completed_highlights(manga)
     username = _clean_title(user.get("name"))
     favorites = _mal_public_favorites(username)
-    anime_favorites = _unique_values((_favorite_title(entry, "anime") for entry in favorites["anime"]), 8)
-    manga_favorites = _unique_values((_favorite_title(entry, "manga") for entry in favorites["manga"]), 8)
+    anime_favorites = _unique_values((_favorite_title(entry, "anime") for entry in favorites["anime"]), 5)
+    manga_favorites = _unique_values((_favorite_title(entry, "manga") for entry in favorites["manga"]), 5)
     anime_images = _unique_values((_entry_image(entry) for entry in watching_anime + completed_anime + planned_anime), 3)
     manga_images = _unique_values((_entry_image(entry) for entry in reading_manga + completed_manga + planned_manga), 3)
     return {
@@ -292,15 +292,15 @@ def mal_profile_summary(access_token, user=None):
         "mal_user_id": str(user.get("id") or ""),
         "mal_profile_url": f"https://myanimelist.net/profile/{quote(username, safe='')}",
         "anime_favorites": ", ".join(anime_favorites),
-        "anime_watching": ", ".join(_unique_values((_entry_title(entry) for entry in watching_anime), 8)),
-        "anime_completed": ", ".join(_unique_values((_entry_title(entry) for entry in completed_anime), 8)),
-        "anime_planned": ", ".join(_unique_values((_entry_title(entry) for entry in planned_anime), 8)),
-        "anime_on_hold": ", ".join(_unique_values((_entry_title(entry) for entry in held_anime), 8)),
+        "anime_watching": ", ".join(_unique_values((_entry_title(entry) for entry in watching_anime), 5)),
+        "anime_completed": ", ".join(_unique_values((_entry_title(entry) for entry in completed_anime), 5)),
+        "anime_planned": ", ".join(_unique_values((_entry_title(entry) for entry in planned_anime), 5)),
+        "anime_on_hold": ", ".join(_unique_values((_entry_title(entry) for entry in held_anime), 5)),
         "manga_favorites": ", ".join(manga_favorites),
-        "manga_reading": ", ".join(_unique_values((_entry_title(entry) for entry in reading_manga), 8)),
-        "manga_completed": ", ".join(_unique_values((_entry_title(entry) for entry in completed_manga), 8)),
-        "manga_planned": ", ".join(_unique_values((_entry_title(entry) for entry in planned_manga), 8)),
-        "manga_on_hold": ", ".join(_unique_values((_entry_title(entry) for entry in held_manga), 8)),
+        "manga_reading": ", ".join(_unique_values((_entry_title(entry) for entry in reading_manga), 5)),
+        "manga_completed": ", ".join(_unique_values((_entry_title(entry) for entry in completed_manga), 5)),
+        "manga_planned": ", ".join(_unique_values((_entry_title(entry) for entry in planned_manga), 5)),
+        "manga_on_hold": ", ".join(_unique_values((_entry_title(entry) for entry in held_manga), 5)),
         "anime_preview_images": anime_images,
         "manga_preview_images": manga_images,
         "anime_count": len(anime),

@@ -7,10 +7,20 @@ from database_migrations import (
     migration_30_myanimelist_account_connections,
     migration_31_anilist_account_connections,
     migration_32_distinct_anime_profile_statuses,
+    migration_33_separate_anime_provider_snapshots,
 )
 
 
 class DatabaseMigrationTests(unittest.TestCase):
+    def test_anime_providers_have_independent_snapshots(self):
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        connection.execute("CREATE TABLE anime_profiles (guild_id TEXT, user_id TEXT)")
+        migration_33_separate_anime_provider_snapshots(connection)
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(anime_profiles)")}
+        self.assertIn("mal_profile_json", columns)
+        self.assertIn("anilist_profile_json", columns)
+
     def test_anime_profile_statuses_are_stored_separately(self):
         connection = sqlite3.connect(":memory:")
         connection.row_factory = sqlite3.Row

@@ -54,7 +54,9 @@ class MyAnimeListIntegrationTests(unittest.TestCase):
             },
         ]
         explicit_favorites = {
-            "anime": [{"anime": {"title": "Real Favorite"}}],
+            "anime": [{"anime": {"title": "Real Favorite"}}] + [
+                {"anime": {"title": f"Favorite {number}"}} for number in range(2, 7)
+            ],
             "manga": [{"manga": {"title": "Favorite Manga"}}],
         }
         with patch.object(mal_integration, "_mal_user_list", side_effect=[anime, manga]), patch.object(
@@ -66,7 +68,9 @@ class MyAnimeListIntegrationTests(unittest.TestCase):
             )
         self.assertEqual(summary["anime_count"], 4)
         self.assertEqual(summary["manga_count"], 1)
-        self.assertEqual(summary["anime_favorites"], "Real Favorite")
+        self.assertIn("Real Favorite", summary["anime_favorites"])
+        self.assertIn("Favorite 5", summary["anime_favorites"])
+        self.assertNotIn("Favorite 6", summary["anime_favorites"])
         self.assertIn("Currently Airing", summary["anime_watching"])
         self.assertNotIn("Planned Later", summary["anime_watching"])
         self.assertEqual(summary["anime_completed"], "Completed Show")

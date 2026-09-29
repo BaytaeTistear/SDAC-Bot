@@ -2395,6 +2395,7 @@ def load_anime_profile_row(guild_id, user_id):
                    mal_profile_url, anilist_profile_url, anime_preview_images,
                    manga_preview_images, anime_completed, anime_planned,
                    anime_on_hold, manga_completed, manga_planned, manga_on_hold,
+                   mal_profile_json, anilist_profile_json,
                    updated_at
             FROM anime_profiles
             WHERE guild_id = ? AND user_id = ?
@@ -2405,7 +2406,8 @@ def load_anime_profile_row(guild_id, user_id):
                    manga_preview_images, NULL AS anime_completed,
                    NULL AS anime_planned, NULL AS anime_on_hold,
                    NULL AS manga_completed, NULL AS manga_planned,
-                   NULL AS manga_on_hold, updated_at
+                   NULL AS manga_on_hold, NULL AS mal_profile_json,
+                   NULL AS anilist_profile_json, updated_at
             FROM anime_profiles
             WHERE guild_id = ? AND user_id = ?
         """,
@@ -2417,6 +2419,7 @@ def load_anime_profile_row(guild_id, user_id):
                    NULL AS anime_completed, NULL AS anime_planned,
                    NULL AS anime_on_hold, NULL AS manga_completed,
                    NULL AS manga_planned, NULL AS manga_on_hold,
+                   NULL AS mal_profile_json, NULL AS anilist_profile_json,
                    updated_at
             FROM anime_profiles
             WHERE guild_id = ? AND user_id = ?
@@ -2454,44 +2457,102 @@ def safe_profile_image_list(raw_value):
     ][:3]
 
 
+ANIME_PROFILE_SNAPSHOT_KEYS = (
+    "username", "mal_profile_url", "anilist_profile_url",
+    "anime_favorites", "anime_watching", "anime_completed",
+    "anime_planned", "anime_on_hold", "manga_favorites",
+    "manga_reading", "manga_completed", "manga_planned",
+    "manga_on_hold", "anime_preview_images", "manga_preview_images",
+)
+
+
+def anime_profile_snapshot(summary, provider):
+    snapshot = {
+        key: summary.get(key, []) if key.endswith("_images") else str(summary.get(key) or "")
+        for key in ANIME_PROFILE_SNAPSHOT_KEYS
+    }
+    snapshot["provider"] = str(provider or "").casefold()
+    snapshot["synced_at"] = utc_now_iso()
+    return snapshot
+
+
+def safe_anime_profile_snapshot(raw_value):
+    try:
+        value = raw_value if isinstance(raw_value, dict) else json.loads(str(raw_value or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def profile_top_five_text(value):
+    return clean_profile_text(value, 500) or "Not set"
+
+
+def anime_provider_detail_sections(guild_id, user_id, provider):
+    row = load_anime_profile_row(guild_id, user_id)
+    provider = str(provider or "").casefold()
+    provider_name = "MyAnimeList" if provider == "mal" else "AniList"
+    snapshot_key = "mal_profile_json" if provider == "mal" else "anilist_profile_json"
+    snapshot = safe_anime_profile_snapshot(row[snapshot_key]) if row else {}
+    if not snapshot:
+        message = (
+            f"No separate {provider_name} snapshot has been saved yet. "
+            f"Use **Sync {provider_name}** first."
+        )
+        return message, ""
+    url_key = "mal_profile_url" if provider == "mal" else "anilist_profile_url"
+    heading = f"**{provider_name}: {snapshot.get('username') or row['username'] or 'Profile'}**"
+    if snapshot.get(url_key):
+        heading += f"\n{snapshot[url_key]}"
+    anime = "\n".join([
+        heading,
+        "__Anime — top 5 per category__",
+        f"Favorites: {profile_top_five_text(snapshot.get('anime_favorites'))}",
+        f"Watching: {profile_top_five_text(snapshot.get('anime_watching'))}",
+        f"Finished: {profile_top_five_text(snapshot.get('anime_completed'))}",
+        f"Planned: {profile_top_five_text(snapshot.get('anime_planned'))}",
+        f"On Hold: {profile_top_five_text(snapshot.get('anime_on_hold'))}",
+    ])[:1900]
+    manga = "\n".join([
+        f"**{provider_name} Manga — top 5 per category**",
+        f"Favorites: {profile_top_five_text(snapshot.get('manga_favorites'))}",
+        f"Reading: {profile_top_five_text(snapshot.get('manga_reading'))}",
+        f"Finished: {profile_top_five_text(snapshot.get('manga_completed'))}",
+        f"Planned: {profile_top_five_text(snapshot.get('manga_planned'))}",
+        f"On Hold: {profile_top_five_text(snapshot.get('manga_on_hold'))}",
+        f"Synced: `{snapshot.get('synced_at') or row['updated_at'] or 'unknown'}`",
+    ])[:1900]
+    return anime, manga
+
+
 def anime_profile_content_for_member(guild_id, member):
     row = load_anime_profile_row(guild_id, member.id)
     if not row:
         return f"No anime profile found for {member.mention} yet."
-    anime_images = safe_profile_image_list(row["anime_preview_images"])
-    manga_images = safe_profile_image_list(row["manga_preview_images"])
     lines = [
         f"**Anime & Manga Profile: {row['username'] or getattr(member, 'display_name', str(member))}**",
     ]
-    if row["mal_profile_url"]:
-        lines.append(f"MyAnimeList: {row['mal_profile_url']}")
-    if row["anilist_profile_url"]:
-        lines.append(f"AniList: {row['anilist_profile_url']}")
+    mal_snapshot = safe_anime_profile_snapshot(row["mal_profile_json"])
+    anilist_snapshot = safe_anime_profile_snapshot(row["anilist_profile_json"])
     lines.extend([
-        "**Anime**",
-        f"Favorites: {row['favorites'] or 'Not set'}",
-        f"Watching: {row['watching'] or 'Not set'}",
-        f"Finished: {row['anime_completed'] or 'Not set'}",
-        f"Planned: {row['anime_planned'] or 'Not set'}",
-        f"On Hold: {row['anime_on_hold'] or 'Not set'}",
+        "**MyAnimeList section**",
+        (f"Connected: {row['mal_profile_url']}" if row["mal_profile_url"] else "Not connected"),
+        "Use **View MAL Details** for Anime and Manga categories." if mal_snapshot else "Use **Sync MyAnimeList** to create this section.",
+        "**AniList section**",
+        (f"Connected: {row['anilist_profile_url']}" if row["anilist_profile_url"] else "Not connected"),
+        "Use **View AniList Details** for Anime and Manga categories." if anilist_snapshot else "Use **Sync AniList** to create this section.",
     ])
-    if anime_images:
-        lines.append("Anime previews:")
-        lines.extend(str(url) for url in anime_images if str(url).startswith(("http://", "https://")))
-    lines.extend([
-        "**Manga**",
-        f"Favorites: {row['manga_favorites'] or 'Not set'}",
-        f"Reading: {row['manga_reading'] or 'Not set'}",
-        f"Finished: {row['manga_completed'] or 'Not set'}",
-        f"Planned: {row['manga_planned'] or 'Not set'}",
-        f"On Hold: {row['manga_on_hold'] or 'Not set'}",
-    ])
-    if manga_images:
-        lines.append("Manga previews:")
-        lines.extend(str(url) for url in manga_images if str(url).startswith(("http://", "https://")))
+    if not mal_snapshot and not anilist_snapshot and any((row["favorites"], row["watching"], row["manga_favorites"], row["manga_reading"])):
+        lines.extend([
+            "**Legacy / manual profile**",
+            f"Anime favorites: {profile_top_five_text(row['favorites'])}",
+            f"Watching: {profile_top_five_text(row['watching'])}",
+            f"Manga favorites: {profile_top_five_text(row['manga_favorites'])}",
+            f"Reading: {profile_top_five_text(row['manga_reading'])}",
+        ])
     lines.extend([
         f"Updated: `{row['updated_at'] or 'unknown'}`",
-        f"Experimental note: {ANIME_ACTIVITY_RETIREMENT_NOTE}",
+        "Favorites only appear when the provider returns an explicit public favorite list.",
     ])
     return "\n".join(lines)[:1900]
 
@@ -2608,7 +2669,18 @@ def sync_connected_anime_profile(guild_id, discord_user, provider):
         manga_planned=summary.get("manga_planned", ""),
         manga_on_hold=summary.get("manga_on_hold", ""),
     )
+    snapshot_column = "mal_profile_json" if provider == "mal" else "anilist_profile_json"
     with database() as connection:
+        connection.execute(f"""
+            UPDATE anime_profiles
+            SET {snapshot_column} = ?, updated_at = ?
+            WHERE guild_id = ? AND user_id = ?
+        """, (
+            json.dumps(anime_profile_snapshot(summary, provider), separators=(",", ":")),
+            now,
+            str(guild_id),
+            str(discord_user.id),
+        ))
         connection.execute(f"""
             UPDATE dashboard_{'mal' if provider == 'mal' else 'anilist'}_connections
             SET last_sync_at = ?, last_sync_status = 'Success',
@@ -2633,7 +2705,7 @@ async def edit_anime_profile_selection(interaction, member, owner_id, is_admin=F
         )
     await interaction.edit_original_response(
         content=content,
-        view=AnimeProfileView(owner_id, is_admin),
+        view=AnimeProfileView(owner_id, is_admin, member.id),
     )
 
 class AnimeProfileSelfButton(discord.ui.Button):
@@ -2712,21 +2784,47 @@ class AnimeProfileSyncButton(discord.ui.Button):
             content = "Sana-Chan could not sync that account right now. Please try again or ask an admin to run Doctor."
         await interaction.edit_original_response(
             content=content[:1900],
-            view=AnimeProfileView(self.owner_id, bool(getattr(self.view, "is_admin", False))),
+            view=AnimeProfileView(self.owner_id, bool(getattr(self.view, "is_admin", False)), interaction.user.id),
         )
 
 
+class AnimeProfileDetailsButton(discord.ui.Button):
+    def __init__(self, owner_id, target_user_id, provider):
+        self.owner_id = int(owner_id)
+        self.target_user_id = int(target_user_id)
+        self.provider = str(provider).casefold()
+        label = "View MAL Details" if self.provider == "mal" else "View AniList Details"
+        super().__init__(label=label, style=discord.ButtonStyle.secondary, row=3)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        anime_text, manga_text = await asyncio.to_thread(
+            anime_provider_detail_sections,
+            interaction.guild_id,
+            self.target_user_id,
+            self.provider,
+        )
+        await interaction.response.send_message(anime_text, ephemeral=True)
+        if manga_text:
+            await interaction.followup.send(manga_text, ephemeral=True)
+
+
 class AnimeProfileView(discord.ui.View):
-    def __init__(self, owner_id, is_admin=False):
+    def __init__(self, owner_id, is_admin=False, target_user_id=None):
         super().__init__(timeout=900)
         self.owner_id = int(owner_id)
+        self.target_user_id = int(target_user_id or owner_id)
         self.is_admin = bool(is_admin)
         self.add_item(AnimeProfileMemberSelect(owner_id))
         self.add_item(AnimeProfileSelfButton(owner_id))
         self.add_item(AnimeProfileSyncButton(owner_id, "mal"))
         self.add_item(AnimeProfileSyncButton(owner_id, "anilist"))
+        self.add_item(AnimeProfileDetailsButton(owner_id, self.target_user_id, "mal"))
+        self.add_item(AnimeProfileDetailsButton(owner_id, self.target_user_id, "anilist"))
         if self.is_admin:
-            self.add_item(SDACSubmenuButton(True, "setup", "setup_doctor", "Run Doctor", row=3, style=discord.ButtonStyle.primary))
+            self.add_item(SDACSubmenuButton(True, "setup", "setup_doctor", "Run Doctor", row=4, style=discord.ButtonStyle.primary))
         self.add_item(SDACBackButton(is_admin, row=4))
 
 
@@ -2797,6 +2895,17 @@ async def import_mal_xml_attachment_flow(interaction, owner_id, is_admin=False):
         manga_planned=profile.get("manga_planned", ""),
         manga_on_hold=profile.get("manga_on_hold", ""),
     )
+    with database() as connection:
+        connection.execute("""
+            UPDATE anime_profiles
+            SET mal_profile_json = ?, updated_at = ?
+            WHERE guild_id = ? AND user_id = ?
+        """, (
+            json.dumps(anime_profile_snapshot(profile, "mal"), separators=(",", ":")),
+            utc_now_iso(),
+            str(interaction.guild_id),
+            str(interaction.user.id),
+        ))
     try:
         await message.delete()
     except discord.HTTPException:
@@ -4798,6 +4907,8 @@ def initialize_database():
                 manga_completed TEXT,
                 manga_planned TEXT,
                 manga_on_hold TEXT,
+                mal_profile_json TEXT,
+                anilist_profile_json TEXT,
                 updated_at TEXT,
                 PRIMARY KEY (guild_id, user_id)
             )
@@ -5563,6 +5674,8 @@ def initialize_database():
             "manga_completed": "TEXT",
             "manga_planned": "TEXT",
             "manga_on_hold": "TEXT",
+            "mal_profile_json": "TEXT",
+            "anilist_profile_json": "TEXT",
         }.items():
             ensure_column(connection, "anime_profiles", column, definition)
 
@@ -9583,7 +9696,8 @@ async def diagnostic_lines(interaction):
                        mal_profile_url, anilist_profile_url, anime_preview_images,
                        manga_preview_images, anime_completed, anime_planned,
                        anime_on_hold, manga_completed, manga_planned,
-                       manga_on_hold, updated_at
+                       manga_on_hold, mal_profile_json, anilist_profile_json,
+                       updated_at
                 FROM anime_profiles
                 WHERE guild_id = ?
                 LIMIT 1
@@ -11039,7 +11153,7 @@ def anime_title_from_jikan_entry(entry):
     return title_from_jikan_entry(entry, "anime")
 
 
-def jikan_title_list(payload, limit=8, media_key="anime"):
+def jikan_title_list(payload, limit=5, media_key="anime"):
     titles = []
     for entry in (payload or {}).get("data", []):
         title = title_from_jikan_entry(entry, media_key)
@@ -11062,19 +11176,19 @@ def summarize_mal_profile(
     manga_planned_payload=None,
     manga_on_hold_payload=None,
 ):
-    watching = jikan_title_list(watching_payload, limit=8, media_key="anime")
-    completed = jikan_title_list(completed_payload, limit=8, media_key="anime")
+    watching = jikan_title_list(watching_payload, limit=5, media_key="anime")
+    completed = jikan_title_list(completed_payload, limit=5, media_key="anime")
     favorite_data = (favorites_payload or {}).get("data") or {}
     favorite_anime_entries = favorite_data.get("anime", []) if isinstance(favorite_data, dict) else []
     favorite_manga_entries = favorite_data.get("manga", []) if isinstance(favorite_data, dict) else []
-    favorites = jikan_title_list({"data": favorite_anime_entries}, limit=8, media_key="anime")
-    manga_reading = jikan_title_list(manga_reading_payload, limit=8, media_key="manga")
-    manga_completed = jikan_title_list(manga_completed_payload, limit=8, media_key="manga")
-    manga_favorites = jikan_title_list({"data": favorite_manga_entries}, limit=8, media_key="manga")
-    planned = jikan_title_list(planned_payload, limit=8, media_key="anime")
-    on_hold = jikan_title_list(on_hold_payload, limit=8, media_key="anime")
-    manga_planned = jikan_title_list(manga_planned_payload, limit=8, media_key="manga")
-    manga_on_hold = jikan_title_list(manga_on_hold_payload, limit=8, media_key="manga")
+    favorites = jikan_title_list({"data": favorite_anime_entries}, limit=5, media_key="anime")
+    manga_reading = jikan_title_list(manga_reading_payload, limit=5, media_key="manga")
+    manga_completed = jikan_title_list(manga_completed_payload, limit=5, media_key="manga")
+    manga_favorites = jikan_title_list({"data": favorite_manga_entries}, limit=5, media_key="manga")
+    planned = jikan_title_list(planned_payload, limit=5, media_key="anime")
+    on_hold = jikan_title_list(on_hold_payload, limit=5, media_key="anime")
+    manga_planned = jikan_title_list(manga_planned_payload, limit=5, media_key="manga")
+    manga_on_hold = jikan_title_list(manga_on_hold_payload, limit=5, media_key="manga")
     return {
         "username": username,
         "anime_favorites": join_profile_titles(favorites, ""),
@@ -11180,15 +11294,15 @@ def summarize_mal_xml_profile(xml_text):
         "username": mal_username or "MAL XML export",
         "mal_profile_url": mal_profile_url_from_username(mal_username),
         "anime_favorites": "",
-        "anime_watching": join_profile_titles(anime_watching[:8], ""),
-        "anime_completed": join_profile_titles(anime_completed[:8], ""),
-        "anime_planned": join_profile_titles(anime_planned[:8], ""),
-        "anime_on_hold": join_profile_titles(anime_on_hold[:8], ""),
+        "anime_watching": join_profile_titles(anime_watching[:5], ""),
+        "anime_completed": join_profile_titles(anime_completed[:5], ""),
+        "anime_planned": join_profile_titles(anime_planned[:5], ""),
+        "anime_on_hold": join_profile_titles(anime_on_hold[:5], ""),
         "manga_favorites": "",
-        "manga_reading": join_profile_titles(manga_reading[:8], ""),
-        "manga_completed": join_profile_titles(manga_completed[:8], ""),
-        "manga_planned": join_profile_titles(manga_planned[:8], ""),
-        "manga_on_hold": join_profile_titles(manga_on_hold[:8], ""),
+        "manga_reading": join_profile_titles(manga_reading[:5], ""),
+        "manga_completed": join_profile_titles(manga_completed[:5], ""),
+        "manga_planned": join_profile_titles(manga_planned[:5], ""),
+        "manga_on_hold": join_profile_titles(manga_on_hold[:5], ""),
         "anime_preview_images": anime_preview_images[:3],
         "manga_preview_images": manga_preview_images[:3],
     }
@@ -11285,7 +11399,12 @@ async def animeprofileview(
 ):
     member = member or interaction.user
     content = anime_profile_content_for_member(interaction.guild_id, member)
-    await interaction.response.send_message(content, ephemeral=content.startswith("No anime profile found"))
+    is_admin = bool(getattr(getattr(interaction.user, "guild_permissions", None), "administrator", False))
+    await interaction.response.send_message(
+        content,
+        view=AnimeProfileView(interaction.user.id, is_admin, member.id),
+        ephemeral=content.startswith("No anime profile found"),
+    )
 
 
 @optional_tree_command(ENABLE_ANIME_COMMANDS, name="animeleaderboard", description="Show the experimental anime community leaderboard")

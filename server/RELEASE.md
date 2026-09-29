@@ -1,12 +1,13 @@
-# Sana-Chan Version 4.4.59 Experimental
+# Sana-Chan Version 4.4.60 Experimental
 
-Version 4.4.59 adds account syncing directly inside Discord.
+Version 4.4.60 separates MyAnimeList and AniList profile data completely.
 
-- Anime profile screens now include **Sync MyAnimeList** and **Sync AniList** buttons.
-- Sync uses the account already connected and linked through `sanachan.bot.nu`.
-- MyAnimeList access tokens refresh automatically when possible.
-- Provider selection is explicit so one service is never synced accidentally.
-- The bot preserves the other provider's profile link and displays the refreshed profile immediately.
+- MAL and AniList now have independent saved snapshots, so syncing one cannot overwrite the other.
+- **View MAL Details** and **View AniList Details** open dedicated provider views.
+- Each provider is split into Anime and Manga subsections.
+- Favorites, Watching or Reading, Finished, Planned, and On Hold show at most five titles each.
+- Explicit provider favorites are retained independently instead of being mixed with completed titles.
+- Database schema 33 adds the provider snapshot fields automatically.
 
 ## Profile Rendering And Doctor
 

@@ -10688,6 +10688,8 @@ def initialize_database():
                 manga_completed TEXT,
                 manga_planned TEXT,
                 manga_on_hold TEXT,
+                mal_profile_json TEXT,
+                anilist_profile_json TEXT,
                 updated_at TEXT,
                 PRIMARY KEY (guild_id, user_id)
             )
@@ -11374,6 +11376,8 @@ def initialize_database():
             "manga_completed": "TEXT",
             "manga_planned": "TEXT",
             "manga_on_hold": "TEXT",
+            "mal_profile_json": "TEXT",
+            "anilist_profile_json": "TEXT",
         }.items():
             if column not in anime_profile_columns:
                 connection.execute(
@@ -17186,6 +17190,23 @@ def dashboard_mal_access_token(username):
     return str(token_payload.get("access_token") or "")
 
 
+def anime_profile_snapshot_json(summary, provider):
+    keys = (
+        "username", "mal_profile_url", "anilist_profile_url",
+        "anime_favorites", "anime_watching", "anime_completed",
+        "anime_planned", "anime_on_hold", "manga_favorites",
+        "manga_reading", "manga_completed", "manga_planned",
+        "manga_on_hold", "anime_preview_images", "manga_preview_images",
+    )
+    snapshot = {
+        key: summary.get(key, []) if key.endswith("_images") else str(summary.get(key) or "")
+        for key in keys
+    }
+    snapshot["provider"] = str(provider or "").casefold()
+    snapshot["synced_at"] = utc_now_iso()
+    return json.dumps(snapshot, separators=(",", ":"))
+
+
 def sync_dashboard_mal_profile(username, access_token, mal_user=None):
     account = dashboard_user(username)
     if not account or int(account["disabled"] or 0):
@@ -17206,8 +17227,8 @@ def sync_dashboard_mal_profile(username, access_token, mal_user=None):
                     manga_favorites, manga_reading, mal_profile_url,
                     anime_preview_images, manga_preview_images, anime_completed,
                     anime_planned, anime_on_hold, manga_completed, manga_planned,
-                    manga_on_hold, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    manga_on_hold, mal_profile_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(guild_id, user_id) DO UPDATE SET
                     username = excluded.username,
                     favorites = excluded.favorites,
@@ -17223,6 +17244,7 @@ def sync_dashboard_mal_profile(username, access_token, mal_user=None):
                     manga_completed = excluded.manga_completed,
                     manga_planned = excluded.manga_planned,
                     manga_on_hold = excluded.manga_on_hold,
+                    mal_profile_json = excluded.mal_profile_json,
                     updated_at = excluded.updated_at
             """, (
                 guild_id,
@@ -17241,6 +17263,7 @@ def sync_dashboard_mal_profile(username, access_token, mal_user=None):
                 summary["manga_completed"][:1000],
                 summary["manga_planned"][:1000],
                 summary["manga_on_hold"][:1000],
+                anime_profile_snapshot_json(summary, "mal"),
                 now,
             ))
         add_admin_audit_log(
@@ -17443,8 +17466,8 @@ def sync_dashboard_anilist_profile(username, access_token, anilist_user=None):
                     manga_favorites, manga_reading, anilist_profile_url,
                     anime_preview_images, manga_preview_images, anime_completed,
                     anime_planned, anime_on_hold, manga_completed, manga_planned,
-                    manga_on_hold, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    manga_on_hold, anilist_profile_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(guild_id, user_id) DO UPDATE SET
                     username = excluded.username,
                     favorites = excluded.favorites,
@@ -17460,6 +17483,7 @@ def sync_dashboard_anilist_profile(username, access_token, anilist_user=None):
                     manga_completed = excluded.manga_completed,
                     manga_planned = excluded.manga_planned,
                     manga_on_hold = excluded.manga_on_hold,
+                    anilist_profile_json = excluded.anilist_profile_json,
                     updated_at = excluded.updated_at
             """, (
                 guild_id, discord_user_id, summary["username"],
@@ -17470,7 +17494,8 @@ def sync_dashboard_anilist_profile(username, access_token, anilist_user=None):
                 json.dumps(summary["manga_preview_images"][:3]),
                 summary["anime_completed"][:1000], summary["anime_planned"][:1000],
                 summary["anime_on_hold"][:1000], summary["manga_completed"][:1000],
-                summary["manga_planned"][:1000], summary["manga_on_hold"][:1000], now,
+                summary["manga_planned"][:1000], summary["manga_on_hold"][:1000],
+                anime_profile_snapshot_json(summary, "anilist"), now,
             ))
         add_admin_audit_log(
             connection, None, "account_anilist_sync", username, username,

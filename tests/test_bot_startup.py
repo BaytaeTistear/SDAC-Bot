@@ -412,6 +412,11 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("response.defer()", sync_callback)
         self.assertIn("asyncio.to_thread", sync_callback)
         self.assertIn("sync_connected_anime_profile", sync_callback)
+        detail_buttons = [
+            child for child in bot.AnimeProfileView(123).children
+            if isinstance(child, bot.AnimeProfileDetailsButton)
+        ]
+        self.assertEqual([button.label for button in detail_buttons], ["View MAL Details", "View AniList Details"])
         admin_profile_view = bot.AnimeProfileView(123, is_admin=True)
         profile_doctor_buttons = [
             child
@@ -494,7 +499,8 @@ class BotStartupTests(unittest.TestCase):
                     mal_profile_url TEXT, anilist_profile_url TEXT, anime_preview_images TEXT,
                     manga_preview_images TEXT, anime_completed TEXT, anime_planned TEXT,
                     anime_on_hold TEXT, manga_completed TEXT, manga_planned TEXT,
-                    manga_on_hold TEXT, updated_at TEXT, PRIMARY KEY (guild_id, user_id)
+                    manga_on_hold TEXT, mal_profile_json TEXT, anilist_profile_json TEXT,
+                    updated_at TEXT, PRIMARY KEY (guild_id, user_id)
                 );
             """)
             secret = "test-sync-secret"
@@ -530,12 +536,18 @@ class BotStartupTests(unittest.TestCase):
                     "guild-1", SimpleNamespace(id=123, __str__=lambda self: "Viewer"), "mal"
                 )
             self.assertEqual(provider, "MyAnimeList")
+            anime_text, manga_text = bot.anime_provider_detail_sections("guild-1", 123, "mal")
+            self.assertIn("MyAnimeList", anime_text)
+            self.assertIn("Favorites: Favorite", anime_text)
+            self.assertIn("Finished: Finished", anime_text)
+            self.assertIn("Manga Favorite", manga_text)
             connection = sqlite3.connect(tmp.name)
             row = connection.execute(
-                "SELECT favorites, watching, anime_completed, anime_planned FROM anime_profiles"
+                "SELECT favorites, watching, anime_completed, anime_planned, mal_profile_json FROM anime_profiles"
             ).fetchone()
             connection.close()
-            self.assertEqual(row, ("Favorite", "Watching", "Finished", "Planned"))
+            self.assertEqual(row[:4], ("Favorite", "Watching", "Finished", "Planned"))
+            self.assertIn('"anime_favorites":"Favorite"', row[4])
         finally:
             bot.DB_FILE = original_db_file
             try:
