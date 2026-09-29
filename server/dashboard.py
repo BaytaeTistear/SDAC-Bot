@@ -13981,6 +13981,8 @@ def remove_submission_from_dashboard(submission_id, actor_id, actor_name, reason
         ).fetchone()
     if not row:
         return False, "Submission not found."
+    if not can_admin_access_guild(row["guild_id"], load_config()):
+        abort(403)
 
     for channel_id, message_id in (
         (row["repost_channel_id"], row["repost_message_id"]),
@@ -14030,6 +14032,10 @@ def remove_submission_from_dashboard(submission_id, actor_id, actor_name, reason
         connection.execute("DELETE FROM submissions WHERE id = ?", (submission_id,))
         connection.execute(
             "DELETE FROM media_fingerprints WHERE submission_id = ?",
+            (submission_id,),
+        )
+        connection.execute(
+            "DELETE FROM submission_reports WHERE submission_id = ?",
             (submission_id,),
         )
     delete_local_media(row)
@@ -28422,6 +28428,15 @@ def set_submission_status(submission_id):
                 error=1,
                 **redirect_values,
             ))
+        if not can_admin_access_guild(row["guild_id"], load_config()):
+            abort(403)
+        if row["status"] not in {"posted", "needs_review"}:
+            return redirect(url_for(
+                "index",
+                notice="Pending submissions must be handled from the Discord approval queue.",
+                error=1,
+                **redirect_values,
+            ))
         connection.execute("""
             UPDATE submissions
             SET status = ?
@@ -28487,6 +28502,8 @@ def quarantine_submission(submission_id):
             error=1,
             **redirect_values,
         ))
+    if not can_admin_access_guild(row["guild_id"], load_config(), "admin"):
+        abort(403)
     actor_id, actor_name = web_actor()
     reason = request.form.get("reason", "Manual dashboard quarantine")
     if two_admin_approval_enabled(load_config()):
@@ -28546,6 +28563,8 @@ def delete_submission(submission_id):
             error=1,
             **redirect_values,
         ))
+    if not can_admin_access_guild(row["guild_id"], load_config()):
+        abort(403)
     actor_id, actor = web_actor()
     if two_admin_approval_enabled(load_config()):
         return approval_required_redirect(

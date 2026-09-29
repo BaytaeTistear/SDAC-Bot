@@ -1,3 +1,19 @@
+# Sana-Chan Version 4.4.61 Experimental
+
+Version 4.4.61 hardens the complete Discord and website submission lifecycle.
+
+- stale pending submissions now delete their Discord approval message before database and media cleanup
+- failed Discord deletion preserves the submission for a safe retry and sends an admin notification
+- submission removal and rejection clean dependent fingerprint and report records
+- dashboard status, quarantine, and deletion actions enforce per-server administrator scope
+- pending approvals can no longer be published directly from the website without the Discord approval flow
+- simultaneous moderator approval or rejection actions are resolved without leaving duplicate reposts
+- Discord votes use conflict-safe updates so simultaneous votes do not overwrite voter data
+- category names are constrained to filesystem-safe values and same-name attachments receive unique stored filenames
+- six focused lifecycle tests cover cleanup, deletion, authorization, and path safety
+
+---
+
 # Sana-Chan Version 4.4.60 Experimental
 
 Version 4.4.60 separates MyAnimeList and AniList profile data completely.

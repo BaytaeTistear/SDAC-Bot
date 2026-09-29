@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.60**. MyAnimeList and AniList profiles are stored and viewed separately, with Anime/Manga subsections and five-title category limits.
+Current experimental backend: **4.4.61**. The Discord and website submission lifecycle now has safer cleanup, server-scoped moderation, race protection, and regression coverage.
 
 ## One-Line Linux Install
 

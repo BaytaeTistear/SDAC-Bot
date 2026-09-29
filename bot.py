@@ -5875,7 +5875,12 @@ def utc_now_display():
 
 
 def clean_category_name(category):
-    return category.lower().strip().replace(" ", "")
+    normalized = re.sub(
+        r"[^a-z0-9_-]+",
+        "",
+        str(category or "").casefold().replace(" ", ""),
+    )
+    return normalized[:80]
 
 
 def normalize_guess(value):
@@ -6693,7 +6698,7 @@ def cleanup_old_local_originals(connection):
     return removed
 
 
-def cleanup_background_data():
+async def cleanup_background_data():
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
     pending_hours = config["limits"].get(
@@ -6713,12 +6718,42 @@ def cleanup_background_data():
             WHERE status = 'pending'
               AND COALESCE(created_at, submitted_at, '') < ?
         """, (pending_cutoff,)).fetchall()
-        for row in pending_rows:
-            cleanup_files(split_values(row["media_paths"] or row["file_paths"]))
-            connection.execute(
-                "DELETE FROM submissions WHERE id = ?",
+    removed_pending_rows = []
+    for row in pending_rows:
+        deleted, delete_error = await delete_discord_message(
+            row["approval_channel_id"],
+            row["approval_message_id"],
+        )
+        if not deleted:
+            await send_error_notification(
+                row["guild_id"],
+                (
+                    f"Stale pending submission `{row['id']}` could not be "
+                    f"cleaned up because its approval message could not be "
+                    f"deleted: `{delete_error}`"
+                ),
+                "repost_delete_failed",
+            )
+            continue
+        with database() as connection:
+            cursor = connection.execute(
+                "DELETE FROM submissions WHERE id = ? AND status = 'pending'",
                 (row["id"],),
             )
+            if not cursor.rowcount:
+                continue
+            connection.execute(
+                "DELETE FROM media_fingerprints WHERE submission_id = ?",
+                (row["id"],),
+            )
+            connection.execute(
+                "DELETE FROM submission_reports WHERE submission_id = ?",
+                (row["id"],),
+            )
+        cleanup_files(split_values(row["media_paths"] or row["file_paths"]))
+        removed_pending_rows.append(row)
+
+    with database() as connection:
         connection.execute("""
             DELETE FROM guess_cooldowns
             WHERE timeout_until IS NOT NULL AND timeout_until < ?
@@ -6756,7 +6791,7 @@ def cleanup_background_data():
         connection.execute("DELETE FROM service_metrics WHERE created_at < ?", ((now - timedelta(days=395)).isoformat(),))
         removed_media = cleanup_orphaned_media(connection)
         removed_originals = cleanup_old_local_originals(connection)
-        if pending_rows or removed_media or removed_originals:
+        if removed_pending_rows or removed_media or removed_originals:
             add_admin_audit_log(
                 connection,
                 None,
@@ -6766,7 +6801,7 @@ def cleanup_background_data():
                 "cleanup",
                 "",
                 (
-                    f"Removed {len(pending_rows)} stale pending submission(s) "
+                    f"Removed {len(removed_pending_rows)} stale pending submission(s), "
                     f"{removed_media} orphan media file(s), and "
                     f"{removed_originals} backed-up local original(s)."
                 ),
@@ -9103,10 +9138,12 @@ async def remove_submission_record(
     if not deleted:
         return False, message
 
-    await delete_discord_message(
+    deleted, message = await delete_discord_message(
         row["approval_channel_id"],
         row["approval_message_id"],
     )
+    if not deleted:
+        return False, message
 
     with database() as connection:
         add_moderation_history(
@@ -9131,6 +9168,14 @@ async def remove_submission_record(
             "DELETE FROM submissions WHERE id = ?",
             (submission_id,),
         )
+        connection.execute(
+            "DELETE FROM media_fingerprints WHERE submission_id = ?",
+            (submission_id,),
+        )
+        connection.execute(
+            "DELETE FROM submission_reports WHERE submission_id = ?",
+            (submission_id,),
+        )
 
     cleanup_files(split_values(row["media_paths"] or row["file_paths"]))
     return True, "Submission removed from Discord and the database."
@@ -9149,34 +9194,52 @@ class VoteView(discord.ui.View):
         repost_message_id = str(interaction.message.id)
         user_id = str(interaction.user.id)
 
-        with database() as connection:
-            row = connection.execute("""
-                SELECT id, voters
-                FROM submissions
-                WHERE repost_message_id = ? AND status = 'posted'
-            """, (repost_message_id,)).fetchone()
+        vote_added = False
+        for _attempt in range(5):
+            with database() as connection:
+                row = connection.execute("""
+                    SELECT id, COALESCE(voters, '') AS voters
+                    FROM submissions
+                    WHERE repost_message_id = ? AND status = 'posted'
+                """, (repost_message_id,)).fetchone()
 
-            if not row:
-                await interaction.response.send_message(
-                    "This post is not registered in the SDAC database.",
-                    ephemeral=True,
-                )
-                return
+                if not row:
+                    await interaction.response.send_message(
+                        "This post is not registered in the SDAC database.",
+                        ephemeral=True,
+                    )
+                    return
 
-            voters = get_voters(row["voters"])
-            if user_id in voters:
-                await interaction.response.send_message(
-                    "You already voted for this post.",
-                    ephemeral=True,
-                )
-                return
+                voters = get_voters(row["voters"])
+                if user_id in voters:
+                    await interaction.response.send_message(
+                        "You already voted for this post.",
+                        ephemeral=True,
+                    )
+                    return
 
-            voters.add(user_id)
-            connection.execute("""
-                UPDATE submissions
-                SET stars = stars + 1, voters = ?
-                WHERE id = ?
-            """, (save_voters(voters), row["id"]))
+                voters.add(user_id)
+                cursor = connection.execute("""
+                    UPDATE submissions
+                    SET stars = COALESCE(stars, 0) + 1, voters = ?
+                    WHERE id = ?
+                      AND status = 'posted'
+                      AND COALESCE(voters, '') = ?
+                """, (
+                    save_voters(voters),
+                    row["id"],
+                    row["voters"],
+                ))
+                vote_added = bool(cursor.rowcount)
+            if vote_added:
+                break
+
+        if not vote_added:
+            await interaction.response.send_message(
+                "That post changed while your vote was being saved. Please try again.",
+                ephemeral=True,
+            )
+            return
 
         await interaction.response.send_message(
             "Vote added.",
@@ -9256,8 +9319,9 @@ class ApprovalView(discord.ui.View):
             )
             return
 
+        approval_claimed = False
         with database() as connection:
-            connection.execute("""
+            cursor = connection.execute("""
                 UPDATE submissions
                 SET status = 'posted',
                     repost_message_id = ?,
@@ -9270,23 +9334,36 @@ class ApprovalView(discord.ui.View):
                 utc_now_iso(),
                 row["id"],
             ))
-            add_moderation_history(
-                connection,
-                row,
-                "approve",
-                interaction.user.id,
-                interaction.user,
+            approval_claimed = bool(cursor.rowcount)
+            if approval_claimed:
+                add_moderation_history(
+                    connection,
+                    row,
+                    "approve",
+                    interaction.user.id,
+                    interaction.user,
+                )
+                add_admin_audit_log(
+                    connection,
+                    row["guild_id"],
+                    "approve_submission",
+                    interaction.user.id,
+                    interaction.user,
+                    "submission",
+                    row["id"],
+                    f"Posted to channel {target_channel.id}.",
+                )
+
+        if not approval_claimed:
+            try:
+                await repost.delete()
+            except discord.HTTPException:
+                pass
+            await interaction.followup.send(
+                "This submission was handled by another admin.",
+                ephemeral=True,
             )
-            add_admin_audit_log(
-                connection,
-                row["guild_id"],
-                "approve_submission",
-                interaction.user.id,
-                interaction.user,
-                "submission",
-                row["id"],
-                f"Posted to channel {target_channel.id}.",
-            )
+            return
 
         await interaction.message.edit(
             content=interaction.message.content + "\n\nApproved.",
@@ -9327,28 +9404,46 @@ class ApprovalView(discord.ui.View):
             )
             return
 
+        rejection_claimed = False
         with database() as connection:
-            add_moderation_history(
-                connection,
-                row,
-                "reject",
-                interaction.user.id,
-                interaction.user,
-            )
-            add_admin_audit_log(
-                connection,
-                row["guild_id"],
-                "reject_submission",
-                interaction.user.id,
-                interaction.user,
-                "submission",
-                row["id"],
-                "Rejected from approval queue.",
-            )
-            connection.execute(
-                "DELETE FROM submissions WHERE id = ?",
+            cursor = connection.execute(
+                "DELETE FROM submissions WHERE id = ? AND status = 'pending'",
                 (row["id"],),
             )
+            rejection_claimed = bool(cursor.rowcount)
+            if rejection_claimed:
+                add_moderation_history(
+                    connection,
+                    row,
+                    "reject",
+                    interaction.user.id,
+                    interaction.user,
+                )
+                add_admin_audit_log(
+                    connection,
+                    row["guild_id"],
+                    "reject_submission",
+                    interaction.user.id,
+                    interaction.user,
+                    "submission",
+                    row["id"],
+                    "Rejected from approval queue.",
+                )
+                connection.execute(
+                    "DELETE FROM media_fingerprints WHERE submission_id = ?",
+                    (row["id"],),
+                )
+                connection.execute(
+                    "DELETE FROM submission_reports WHERE submission_id = ?",
+                    (row["id"],),
+                )
+
+        if not rejection_claimed:
+            await interaction.response.send_message(
+                "This submission was handled by another admin.",
+                ephemeral=True,
+            )
+            return
 
         cleanup_files(split_values(row["media_paths"] or row["file_paths"]))
         await interaction.message.edit(
@@ -13792,10 +13887,11 @@ async def create_submission(source_message, category):
     submission_id = None
 
     try:
-        for attachment in attachments:
+        for attachment_index, attachment in enumerate(attachments):
             safe_name = Path(attachment.filename).name.replace("\\", "_")
             filename = (
-                f"{int(time.time())}_{source_message.id}_{safe_name}"
+                f"{time.time_ns()}_{source_message.id}_"
+                f"{attachment_index}_{safe_name}"
             )
             path = user_folder / filename
             await attachment.save(path)
@@ -17035,7 +17131,7 @@ async def before_monthly_leaderboard_scheduler():
 @tasks.loop(minutes=60)
 async def cleanup_scheduler():
     try:
-        cleanup_background_data()
+        await cleanup_background_data()
     except Exception as error:
         await report_background_error("cleanup_scheduler", error)
 

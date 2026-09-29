@@ -108,6 +108,7 @@ FOCUSED_TESTS = [
     "tests.test_anilist_integration",
     "tests.test_public_bot_invite",
     "tests.test_professional_features",
+    "tests.test_submission_lifecycle",
 ]
 
 
