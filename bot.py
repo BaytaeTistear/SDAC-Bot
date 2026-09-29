@@ -44,6 +44,19 @@ from community_quotes import (
 from community_extensions import process_webhook_outbox, scrub_image_metadata
 from database_backend import connect_database, using_postgres
 from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
+from mal_integration import (
+    decrypt_mal_token,
+    encrypt_mal_token,
+    mal_profile_summary,
+    mal_token_expiry,
+    mal_token_needs_refresh,
+    refresh_mal_token,
+)
+from anilist_integration import (
+    anilist_profile_summary,
+    anilist_token_expired,
+    decrypt_anilist_token,
+)
 from observability import capture_exception, init_sentry
 
 
@@ -2483,6 +2496,128 @@ def anime_profile_content_for_member(guild_id, member):
     return "\n".join(lines)[:1900]
 
 
+def anime_account_secret_key():
+    configured = os.getenv("SDAC_SECRET_KEY", "").strip()
+    if configured:
+        return configured
+    secret_file = Path(os.getenv("SDAC_SECRET_KEY_FILE", BASE_DIR / ".sdac_secret_key"))
+    try:
+        saved = secret_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        saved = ""
+    if not saved:
+        raise ValueError("The server account-encryption key is unavailable. Ask an admin to check SDAC_SECRET_KEY.")
+    return saved
+
+
+def connected_anime_account(discord_user_id, provider):
+    provider = str(provider or "").casefold()
+    if provider == "mal":
+        table = "dashboard_mal_connections"
+        columns = "connections.*"
+    elif provider == "anilist":
+        table = "dashboard_anilist_connections"
+        columns = "connections.*"
+    else:
+        raise ValueError("Choose MyAnimeList or AniList.")
+    with database() as connection:
+        return connection.execute(f"""
+            SELECT {columns}
+            FROM dashboard_admin_users AS users
+            JOIN {table} AS connections
+              ON connections.dashboard_username = users.username
+            WHERE users.discord_user_id = ?
+              AND users.disabled = 0
+            ORDER BY connections.updated_at DESC
+            LIMIT 1
+        """, (str(discord_user_id),)).fetchone()
+
+
+def sync_connected_anime_profile(guild_id, discord_user, provider):
+    provider = str(provider or "").casefold()
+    saved = connected_anime_account(discord_user.id, provider)
+    provider_name = "MyAnimeList" if provider == "mal" else "AniList"
+    if not saved:
+        raise ValueError(
+            f"No connected {provider_name} account is linked to your Discord login. "
+            f"Connect it at {DASHBOARD_BASE_URL}/account."
+        )
+    secret_key = anime_account_secret_key()
+    now = utc_now_iso()
+    if provider == "mal":
+        access_token = decrypt_mal_token(saved["access_token_encrypted"], secret_key)
+        if mal_token_needs_refresh(saved["expires_at"]):
+            refresh_token = decrypt_mal_token(saved["refresh_token_encrypted"], secret_key)
+            if not refresh_token:
+                raise ValueError("Your MyAnimeList connection cannot be refreshed. Reconnect it on the website.")
+            token_payload = refresh_mal_token(refresh_token)
+            access_token = str(token_payload.get("access_token") or "")
+            new_refresh_token = str(token_payload.get("refresh_token") or refresh_token)
+            with database() as connection:
+                connection.execute("""
+                    UPDATE dashboard_mal_connections
+                    SET access_token_encrypted = ?, refresh_token_encrypted = ?,
+                        token_type = ?, expires_at = ?, updated_at = ?
+                    WHERE dashboard_username = ?
+                """, (
+                    encrypt_mal_token(access_token, secret_key),
+                    encrypt_mal_token(new_refresh_token, secret_key),
+                    str(token_payload.get("token_type") or "Bearer")[:40],
+                    mal_token_expiry(token_payload),
+                    now,
+                    saved["dashboard_username"],
+                ))
+        summary = mal_profile_summary(access_token, {
+            "id": saved["mal_user_id"],
+            "name": saved["mal_username"],
+        })
+    elif provider == "anilist":
+        if anilist_token_expired(saved["expires_at"]):
+            raise ValueError("Your AniList connection expired. Reconnect it on the website, then try again.")
+        access_token = decrypt_anilist_token(saved["access_token_encrypted"], secret_key)
+        summary = anilist_profile_summary(access_token, {
+            "id": saved["anilist_user_id"],
+            "name": saved["anilist_username"],
+            "siteUrl": f"https://anilist.co/user/{quote(str(saved['anilist_username']), safe='')}/",
+        })
+    else:
+        raise ValueError("Choose MyAnimeList or AniList.")
+
+    existing = load_anime_profile_row(guild_id, discord_user.id)
+    mal_url = summary.get("mal_profile_url", "")
+    anilist_url = summary.get("anilist_profile_url", "")
+    if existing:
+        mal_url = mal_url or existing["mal_profile_url"] or ""
+        anilist_url = anilist_url or existing["anilist_profile_url"] or ""
+    save_anime_profile_sections(
+        guild_id=guild_id,
+        user_id=discord_user.id,
+        username=summary.get("username") or discord_user,
+        anime_favorites=summary.get("anime_favorites", ""),
+        anime_watching=summary.get("anime_watching", ""),
+        manga_favorites=summary.get("manga_favorites", ""),
+        manga_reading=summary.get("manga_reading", ""),
+        mal_profile_url=mal_url,
+        anilist_profile_url=anilist_url,
+        anime_preview_images=summary.get("anime_preview_images", []),
+        manga_preview_images=summary.get("manga_preview_images", []),
+        anime_completed=summary.get("anime_completed", ""),
+        anime_planned=summary.get("anime_planned", ""),
+        anime_on_hold=summary.get("anime_on_hold", ""),
+        manga_completed=summary.get("manga_completed", ""),
+        manga_planned=summary.get("manga_planned", ""),
+        manga_on_hold=summary.get("manga_on_hold", ""),
+    )
+    with database() as connection:
+        connection.execute(f"""
+            UPDATE dashboard_{'mal' if provider == 'mal' else 'anilist'}_connections
+            SET last_sync_at = ?, last_sync_status = 'Success',
+                last_sync_error = '', updated_at = ?
+            WHERE dashboard_username = ?
+        """, (now, now, saved["dashboard_username"]))
+    return provider_name
+
+
 async def edit_anime_profile_selection(interaction, member, owner_id, is_admin=False):
     try:
         content = await asyncio.wait_for(
@@ -2543,6 +2678,44 @@ class AnimeProfileMemberSelect(discord.ui.UserSelect):
         )
 
 
+class AnimeProfileSyncButton(discord.ui.Button):
+    def __init__(self, owner_id, provider):
+        self.owner_id = int(owner_id)
+        self.provider = str(provider).casefold()
+        label = "Sync MyAnimeList" if self.provider == "mal" else "Sync AniList"
+        super().__init__(label=label, style=discord.ButtonStyle.success, row=2)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this flow can use it.", ephemeral=True)
+            return
+        await interaction.response.defer()
+        try:
+            provider_name = await asyncio.wait_for(
+                asyncio.to_thread(
+                    sync_connected_anime_profile,
+                    interaction.guild_id,
+                    interaction.user,
+                    self.provider,
+                ),
+                timeout=90,
+            )
+            content = anime_profile_content_for_member(interaction.guild_id, interaction.user)
+            content = f"**{provider_name} sync complete.**\n{content}"
+        except asyncio.TimeoutError:
+            content = "The account sync took too long. Please try again in a moment."
+        except ValueError as error:
+            content = str(error)
+        except Exception as error:
+            capture_exception(error)
+            print(f"Anime account sync failed for {interaction.user.id}: {error}", flush=True)
+            content = "Sana-Chan could not sync that account right now. Please try again or ask an admin to run Doctor."
+        await interaction.edit_original_response(
+            content=content[:1900],
+            view=AnimeProfileView(self.owner_id, bool(getattr(self.view, "is_admin", False))),
+        )
+
+
 class AnimeProfileView(discord.ui.View):
     def __init__(self, owner_id, is_admin=False):
         super().__init__(timeout=900)
@@ -2550,9 +2723,11 @@ class AnimeProfileView(discord.ui.View):
         self.is_admin = bool(is_admin)
         self.add_item(AnimeProfileMemberSelect(owner_id))
         self.add_item(AnimeProfileSelfButton(owner_id))
+        self.add_item(AnimeProfileSyncButton(owner_id, "mal"))
+        self.add_item(AnimeProfileSyncButton(owner_id, "anilist"))
         if self.is_admin:
-            self.add_item(SDACSubmenuButton(True, "setup", "setup_doctor", "Run Doctor", row=2, style=discord.ButtonStyle.primary))
-        self.add_item(SDACBackButton(is_admin))
+            self.add_item(SDACSubmenuButton(True, "setup", "setup_doctor", "Run Doctor", row=3, style=discord.ButtonStyle.primary))
+        self.add_item(SDACBackButton(is_admin, row=4))
 
 
 async def import_mal_xml_attachment_flow(interaction, owner_id, is_admin=False):

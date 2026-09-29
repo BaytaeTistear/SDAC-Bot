@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 class BotStartupTests(unittest.TestCase):
@@ -377,6 +378,7 @@ class BotStartupTests(unittest.TestCase):
         self.assertTrue(hasattr(bot, "AnimeProfileView"))
         self.assertTrue(hasattr(bot, "AnimeProfileMemberSelect"))
         self.assertTrue(hasattr(bot, "AnimeProfileSelfButton"))
+        self.assertTrue(hasattr(bot, "AnimeProfileSyncButton"))
         self.assertTrue(hasattr(bot, "AnimeProfileImportView"))
         import_view = bot.AnimeProfileImportView(123)
         connect_buttons = [child for child in import_view.children if child.label == "Connect MyAnimeList Account"]
@@ -401,6 +403,15 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("asyncio.to_thread", lookup_helper)
         self.assertIn("asyncio.wait_for", lookup_helper)
         self.assertEqual(bot.AnimeProfileView(123).timeout, 900)
+        sync_buttons = [
+            child for child in bot.AnimeProfileView(123).children
+            if isinstance(child, bot.AnimeProfileSyncButton)
+        ]
+        self.assertEqual([button.label for button in sync_buttons], ["Sync MyAnimeList", "Sync AniList"])
+        sync_callback = inspect.getsource(bot.AnimeProfileSyncButton.callback)
+        self.assertIn("response.defer()", sync_callback)
+        self.assertIn("asyncio.to_thread", sync_callback)
+        self.assertIn("sync_connected_anime_profile", sync_callback)
         admin_profile_view = bot.AnimeProfileView(123, is_admin=True)
         profile_doctor_buttons = [
             child
@@ -451,6 +462,80 @@ class BotStartupTests(unittest.TestCase):
                 ["https://cdn.example/cover.jpg"],
             )
             self.assertEqual(bot.safe_profile_image_list("not-json"), [])
+        finally:
+            bot.DB_FILE = original_db_file
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
+
+    def test_bot_can_sync_a_connected_mal_account(self):
+        import bot
+        import mal_integration
+
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        tmp.close()
+        original_db_file = bot.DB_FILE
+        try:
+            connection = sqlite3.connect(tmp.name)
+            connection.executescript("""
+                CREATE TABLE dashboard_admin_users (
+                    username TEXT PRIMARY KEY, discord_user_id TEXT, disabled INTEGER
+                );
+                CREATE TABLE dashboard_mal_connections (
+                    dashboard_username TEXT PRIMARY KEY, mal_user_id TEXT, mal_username TEXT,
+                    access_token_encrypted TEXT, refresh_token_encrypted TEXT, token_type TEXT,
+                    expires_at TEXT, updated_at TEXT, last_sync_at TEXT,
+                    last_sync_status TEXT, last_sync_error TEXT
+                );
+                CREATE TABLE anime_profiles (
+                    guild_id TEXT NOT NULL, user_id TEXT NOT NULL, username TEXT,
+                    favorites TEXT, watching TEXT, manga_favorites TEXT, manga_reading TEXT,
+                    mal_profile_url TEXT, anilist_profile_url TEXT, anime_preview_images TEXT,
+                    manga_preview_images TEXT, anime_completed TEXT, anime_planned TEXT,
+                    anime_on_hold TEXT, manga_completed TEXT, manga_planned TEXT,
+                    manga_on_hold TEXT, updated_at TEXT, PRIMARY KEY (guild_id, user_id)
+                );
+            """)
+            secret = "test-sync-secret"
+            connection.execute(
+                "INSERT INTO dashboard_admin_users VALUES (?, ?, ?)",
+                ("viewer", "123", 0),
+            )
+            connection.execute(
+                "INSERT INTO dashboard_mal_connections VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "viewer", "42", "mal_viewer",
+                    mal_integration.encrypt_mal_token("access-token", secret),
+                    mal_integration.encrypt_mal_token("refresh-token", secret),
+                    "Bearer", "2099-01-01T00:00:00+00:00", "2026-09-28T00:00:00+00:00",
+                    "", "", "",
+                ),
+            )
+            connection.commit()
+            connection.close()
+            bot.DB_FILE = Path(tmp.name)
+            summary = {
+                "username": "mal_viewer", "mal_profile_url": "https://myanimelist.net/profile/mal_viewer",
+                "anime_favorites": "Favorite", "anime_watching": "Watching",
+                "anime_completed": "Finished", "anime_planned": "Planned", "anime_on_hold": "Paused",
+                "manga_favorites": "Manga Favorite", "manga_reading": "Reading",
+                "manga_completed": "Manga Finished", "manga_planned": "Manga Planned", "manga_on_hold": "Manga Paused",
+                "anime_preview_images": [], "manga_preview_images": [],
+            }
+            with patch.dict(os.environ, {"SDAC_SECRET_KEY": secret}, clear=False), patch.object(
+                bot, "mal_profile_summary", return_value=summary
+            ):
+                provider = bot.sync_connected_anime_profile(
+                    "guild-1", SimpleNamespace(id=123, __str__=lambda self: "Viewer"), "mal"
+                )
+            self.assertEqual(provider, "MyAnimeList")
+            connection = sqlite3.connect(tmp.name)
+            row = connection.execute(
+                "SELECT favorites, watching, anime_completed, anime_planned FROM anime_profiles"
+            ).fetchone()
+            connection.close()
+            self.assertEqual(row, ("Favorite", "Watching", "Finished", "Planned"))
         finally:
             bot.DB_FILE = original_db_file
             try:

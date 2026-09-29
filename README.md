@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.58**. Anime profiles now keep Favorites, Watching, Finished, Planned, and On Hold in distinct sections for both MyAnimeList and AniList.
+Current experimental backend: **4.4.59**. Discord anime-profile screens now include direct MyAnimeList and AniList sync buttons for connected website accounts.
 
 ## One-Line Linux Install
 

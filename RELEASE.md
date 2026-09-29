@@ -1,12 +1,12 @@
-# Sana-Chan Version 4.4.58 Experimental
+# Sana-Chan Version 4.4.59 Experimental
 
-Version 4.4.58 corrects anime and manga profile categorization across MyAnimeList, AniList, and XML imports.
+Version 4.4.59 adds account syncing directly inside Discord.
 
-- Favorites now come from explicit provider favorites instead of completed-list substitutes.
-- Watching, Finished, Planned, and On Hold are stored and displayed separately.
-- Manga receives the same distinct Reading, Finished, Planned, and On Hold sections.
-- Database schema 32 adds the new status fields automatically.
-- Existing connected accounts should use Sync once after updating to rebuild their saved profile with the corrected categories.
+- Anime profile screens now include **Sync MyAnimeList** and **Sync AniList** buttons.
+- Sync uses the account already connected and linked through `sanachan.bot.nu`.
+- MyAnimeList access tokens refresh automatically when possible.
+- Provider selection is explicit so one service is never synced accidentally.
+- The bot preserves the other provider's profile link and displays the refreshed profile immediately.
 
 ## Profile Rendering And Doctor
 
