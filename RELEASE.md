@@ -1,3 +1,14 @@
+# Sana-Chan Version 4.4.63 Experimental
+
+Version 4.4.63 includes the Game Library range-selection update and refreshes the official app dependency lock to use patched `brace-expansion` 5.0.12.
+
+- supports individual IDs, comma-separated lists, and inclusive ranges such as `301-486`
+- queues all selected IDs when Bulk Schedule question count is `0`
+- clears the high-severity dependency advisory raised during the 4.4.62 tag build
+- passes the app dependency audit and production app build
+
+---
+
 # Sana-Chan Version 4.4.62 Experimental
 
 Version 4.4.62 adds bulk Game Library item selection to guessing-game starts and schedules.

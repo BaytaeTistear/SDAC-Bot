@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.62**. Guessing games now accept individual Game Library IDs, comma-separated lists, and inclusive ranges such as `301-486` for immediate starts and scheduling.
+Current experimental backend: **4.4.63**. Guessing games accept individual Game Library IDs, comma-separated lists, and inclusive ranges such as `301-486`; the official app dependency lock is also updated for the latest security advisories.
 
 ## One-Line Linux Install
 
