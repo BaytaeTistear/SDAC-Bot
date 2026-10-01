@@ -160,6 +160,49 @@ class BotStartupTests(unittest.TestCase):
         self.assertEqual(bot.scaled_auto_hint_minutes(60, hints, close_deadline, now=now), 10)
         self.assertIsNone(bot.scheduled_hint_deadline(close_after_minutes=0, now=now))
 
+    def test_library_item_range_limits_automatic_selection(self):
+        import bot
+
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        connection.execute("""
+            CREATE TABLE guess_library_items (
+                id INTEGER PRIMARY KEY,
+                guild_id TEXT,
+                status TEXT,
+                enabled INTEGER,
+                media_path TEXT,
+                category TEXT,
+                last_used_at TEXT
+            )
+        """)
+        connection.executemany(
+            """
+            INSERT INTO guess_library_items (
+                id, guild_id, status, enabled, media_path,
+                category, last_used_at
+            )
+            VALUES (?, '111', 'active', 1, 'media.png', 'anime', ?)
+            """,
+            [
+                (300, ""),
+                (301, "2026-01-01T00:00:00+00:00"),
+                (302, ""),
+                (303, ""),
+                (487, ""),
+            ],
+        )
+
+        item = bot.select_library_item_for_game(
+            connection,
+            "111",
+            item_ids=bot.parse_library_item_selection("301-303"),
+            category="anime",
+        )
+        connection.close()
+
+        self.assertEqual(item["id"], 302)
+
 
     def test_guess_points_are_blocked_only_after_all_generated_hints(self):
         import bot
@@ -233,12 +276,28 @@ class BotStartupTests(unittest.TestCase):
         self.assertIn("Start when?", bulk_modal_source)
         self.assertIn("Repeat every (DD:HH:MM)", bulk_modal_source)
         self.assertIn("parse_scheduled_start_time", bulk_modal_source)
+        self.assertIn("Question count (0 = all selected IDs)", bulk_modal_source)
+        self.assertIn("parse_library_item_selection", bulk_modal_source)
+        self.assertIn("item_ids[index]", bulk_modal_source)
+        schedule_modal_source = inspect.getsource(bot.ScheduleGameModal)
+        self.assertIn("Library item IDs or range", schedule_modal_source)
+        self.assertIn("parse_library_item_selection", schedule_modal_source)
         self.assertTrue(hasattr(bot, "GuessTimeoutModal"))
         self.assertTrue(hasattr(bot, "CancelScheduledGamesView"))
         self.assertTrue(hasattr(bot, "ConfirmCancelScheduledGamesButton"))
         self.assertTrue(hasattr(bot, "CancelActiveGameView"))
         self.assertTrue(hasattr(bot, "ConfirmCancelActiveGameButton"))
         self.assertTrue(hasattr(bot, "start_library_game_from_interaction"))
+        self.assertEqual(bot.parse_library_item_selection("301-486"), list(range(301, 487)))
+        self.assertEqual(
+            bot.parse_library_item_selection("301,305,320-322,301"),
+            [301, 305, 320, 321, 322],
+        )
+        self.assertEqual(bot.parse_library_item_selection("0"), [])
+        with self.assertRaises(ValueError):
+            bot.parse_library_item_selection("486-301")
+        with self.assertRaises(ValueError):
+            bot.parse_library_item_selection("1-501", max_items=500)
         self.assertTrue(hasattr(bot, "schedule_library_game_record"))
         self.assertTrue(hasattr(bot, "set_wrong_guess_timeout"))
         self.assertTrue(hasattr(bot, "scaled_auto_hint_minutes"))

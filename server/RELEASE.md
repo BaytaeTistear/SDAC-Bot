@@ -1,3 +1,16 @@
+# Sana-Chan Version 4.4.62 Experimental
+
+Version 4.4.62 adds bulk Game Library item selection to guessing-game starts and schedules.
+
+- enter one ID (`301`), an inclusive range (`301-486`), or a mixed comma-separated selection (`301,305,320-350`)
+- **Start Library Game** chooses an eligible item only from the selected IDs
+- **Schedule Game** chooses and saves one eligible item from the selected IDs
+- **Bulk Schedule** assigns the selected IDs in order; a question count of `0` queues every selected ID
+- duplicate IDs are removed, selections are limited to 500 items, and invalid or unavailable items are reported
+- automatic selection with `0` remains available and still follows category, reuse, and random-order settings
+
+---
+
 # Sana-Chan Version 4.4.61 Experimental
 
 Version 4.4.61 hardens the complete Discord and website submission lifecycle.

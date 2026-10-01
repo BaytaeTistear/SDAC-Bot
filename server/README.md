@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.61**. The Discord and website submission lifecycle now has safer cleanup, server-scoped moderation, race protection, and regression coverage.
+Current experimental backend: **4.4.62**. Guessing games now accept individual Game Library IDs, comma-separated lists, and inclusive ranges such as `301-486` for immediate starts and scheduling.
 
 ## One-Line Linux Install
 

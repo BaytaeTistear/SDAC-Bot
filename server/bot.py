@@ -989,7 +989,7 @@ SDAC_SUBMENU_DETAILS = {
     "moderation_permissions": "**Permission Check**\nRun `/checkpermissions` to inspect access or `/repairpermissions` to get a repair invite.",
     "games_create": "**Create Guessing Game**\nOpen the dashboard Game Library to create a reusable game item with answer aliases, hints, media, category, pack, and tags.",
     "games_set_channel": "**Set Guessing Channel**\nChoose this action to save the default channel where Sana-Chan should start and schedule guessing games.",
-    "games_start_library": "**Start Library Game**\nChoose this action to pick a channel, optionally set a library item ID or category, and start the game directly from `/sana`.",
+    "games_start_library": "**Start Library Game**\nChoose this action to pick a channel, optionally enter one library item ID, an ID range such as `301-486`, or a comma-separated list, and start the game directly from `/sana`.",
     "games_schedule": "**Schedule Game**\nUse this action for one saved library game, or choose Bulk Schedule to queue a repeating run.",
     "games_bulk_schedule": "**Bulk Schedule**\nChoose a game channel, then enter how often Sana-Chan should ask a new saved-library question as `DD:HH:MM`, such as `00:00:30`, `00:03:00`, or `07:00:00`.",
     "games_timeout": "**Guess Timeout**\nSet how many minutes a user waits after a wrong guess before they can guess again.",
@@ -3659,11 +3659,11 @@ class ScheduleGameModal(discord.ui.Modal):
             max_length=80,
         )
         self.item_id_input = discord.ui.TextInput(
-            label="Library item ID",
-            placeholder="0 chooses by category/reuse rules",
+            label="Library item IDs or range",
+            placeholder="0, 301-486, or 301,305,320-350",
             default="0",
             required=False,
-            max_length=20,
+            max_length=200,
         )
         self.category_input = discord.ui.TextInput(
             label="Category filter",
@@ -3703,13 +3703,11 @@ class ScheduleGameModal(discord.ui.Modal):
             await interaction.response.send_message("That channel is no longer available.", ephemeral=True)
             return
         try:
-            item_id = int(str(self.item_id_input.value or "0").strip() or "0")
-        except ValueError:
-            await interaction.response.send_message("Library item ID must be 0 or a positive number.", ephemeral=True)
+            item_ids = parse_library_item_selection(self.item_id_input.value)
+        except ValueError as error:
+            await interaction.response.send_message(str(error), ephemeral=True)
             return
-        if item_id < 0:
-            await interaction.response.send_message("Library item ID must be 0 or a positive number.", ephemeral=True)
-            return
+        item_id = item_ids[0] if len(item_ids) == 1 else 0
         try:
             close_after_minutes = int(str(self.close_after_input.value or "0").strip() or "0")
         except ValueError:
@@ -3725,6 +3723,7 @@ class ScheduleGameModal(discord.ui.Modal):
                 channel,
                 starts_at,
                 item_id=item_id,
+                item_ids=item_ids,
                 category=str(self.category_input.value or "").strip(),
                 random_item=random_item,
                 close_after_minutes=close_after_minutes,
@@ -3895,18 +3894,18 @@ class BulkScheduleGameModal(discord.ui.Modal):
             max_length=9,
         )
         self.question_count_input = discord.ui.TextInput(
-            label="How many questions should be queued?",
-            placeholder="1 to 100",
-            default="10",
+            label="Question count (0 = all selected IDs)",
+            placeholder="0 uses all selected IDs; otherwise 1 to 500",
+            default="0",
             required=True,
             max_length=6,
         )
         self.item_id_input = discord.ui.TextInput(
-            label="Library item ID",
-            placeholder="0 chooses by category/reuse rules",
+            label="Library item IDs or range",
+            placeholder="0, 301-486, or 301,305,320-350",
             default="0",
             required=False,
-            max_length=20,
+            max_length=200,
         )
         self.category_input = discord.ui.TextInput(
             label="Category filter",
@@ -3939,20 +3938,25 @@ class BulkScheduleGameModal(discord.ui.Modal):
             await interaction.response.send_message(str(error), ephemeral=True)
             return
         try:
-            question_count = int(str(self.question_count_input.value or "").strip())
+            item_ids = parse_library_item_selection(self.item_id_input.value)
+        except ValueError as error:
+            await interaction.response.send_message(str(error), ephemeral=True)
+            return
+        try:
+            question_count = int(str(self.question_count_input.value or "0").strip() or "0")
         except ValueError:
             await interaction.response.send_message("Question count must be a whole number.", ephemeral=True)
             return
-        if question_count < 1 or question_count > 100:
-            await interaction.response.send_message("Question count must be between 1 and 100.", ephemeral=True)
+        if question_count == 0:
+            question_count = len(item_ids) if item_ids else 10
+        if question_count < 1 or question_count > 500:
+            await interaction.response.send_message("Question count must be between 0 and 500.", ephemeral=True)
             return
-        try:
-            item_id = int(str(self.item_id_input.value or "0").strip() or "0")
-        except ValueError:
-            await interaction.response.send_message("Library item ID must be 0 or a positive number.", ephemeral=True)
-            return
-        if item_id < 0:
-            await interaction.response.send_message("Library item ID must be 0 or a positive number.", ephemeral=True)
+        if item_ids and question_count > len(item_ids):
+            await interaction.response.send_message(
+                f"That selection contains {len(item_ids)} unique item(s). Use 0 to queue all of them, or choose a count no higher than {len(item_ids)}.",
+                ephemeral=True,
+            )
             return
         close_after_minutes = 0
         await interaction.response.defer(ephemeral=True, thinking=True)
@@ -3963,6 +3967,7 @@ class BulkScheduleGameModal(discord.ui.Modal):
         first_start_at = starts_at
         for index in range(question_count):
             starts_at = first_start_at + timedelta(minutes=interval_minutes * index)
+            item_id = item_ids[index] if item_ids else 0
             try:
                 scheduled_id, selected_item = schedule_library_game_record(
                     interaction,
@@ -3977,8 +3982,9 @@ class BulkScheduleGameModal(discord.ui.Modal):
                 local_time = starts_at.astimezone(timezone_info).strftime("%Y-%m-%d %H:%M %Z")
                 created.append(f"#{scheduled_id} `{local_time}` item `{selected_item['id']}`")
             except ValueError as error:
-                errors.append(str(error))
-                break
+                errors.append(f"Item `{item_id}`: {error}" if item_ids else str(error))
+                if not item_ids:
+                    break
         lines = [
             "**Bulk Schedule Games**",
             f"Channel: {channel.mention}",
@@ -4112,7 +4118,13 @@ class StartLibraryGameModal(discord.ui.Modal):
         self.owner_id = int(owner_id)
         self.channel_id = int(channel_id)
         self.channel_mention = channel_mention
-        self.item_id_input = discord.ui.TextInput(label="Library item ID", placeholder="0 starts the next unused matching item", default="0", required=False, max_length=20)
+        self.item_id_input = discord.ui.TextInput(
+            label="Library item IDs or range",
+            placeholder="0, 301-486, or 301,305,320-350",
+            default="0",
+            required=False,
+            max_length=200,
+        )
         self.category_input = discord.ui.TextInput(label="Category filter", placeholder="Optional, for example animeguess", required=False, max_length=80)
         self.random_input = discord.ui.TextInput(label="Random item?", placeholder="yes or no", default="no", required=False, max_length=8)
         self.add_item(self.item_id_input)
@@ -4126,20 +4138,28 @@ class StartLibraryGameModal(discord.ui.Modal):
         if not admin_only(interaction):
             await interaction.response.send_message("Only admins can start library games.", ephemeral=True)
             return
+        selection_text = str(self.item_id_input.value or "0").strip() or "0"
         try:
-            item_id = int(str(self.item_id_input.value or "0").strip() or "0")
-            if item_id < 0:
-                raise ValueError
-        except ValueError:
-            await interaction.response.send_message("Library item ID must be 0 or a positive number.", ephemeral=True)
+            item_ids = parse_library_item_selection(selection_text)
+        except ValueError as error:
+            await interaction.response.send_message(str(error), ephemeral=True)
             return
+        item_id = item_ids[0] if len(item_ids) == 1 else 0
         random_value = str(self.random_input.value or "no").strip().casefold()
         random_item = random_value in {"1", "y", "yes", "true", "random"}
         channel = interaction.guild.get_channel(self.channel_id) if interaction.guild else None
         if not isinstance(channel, discord.TextChannel):
             await interaction.response.send_message("That channel is no longer available.", ephemeral=True)
             return
-        await start_library_game_from_interaction(interaction, channel, item_id=item_id, category=str(self.category_input.value or "").strip(), random_item=random_item)
+        await start_library_game_from_interaction(
+            interaction,
+            channel,
+            item_id=item_id,
+            item_ids=item_ids,
+            item_selection=selection_text,
+            category=str(self.category_input.value or "").strip(),
+            random_item=random_item,
+        )
 
 
 
@@ -7700,16 +7720,68 @@ def parse_scheduled_start_time(raw_value, guild_config):
     )
 
 
+def parse_library_item_selection(raw_value, max_items=500):
+    value = str(raw_value or "").strip()
+    if not value or value == "0":
+        return []
+
+    item_ids = []
+    seen = set()
+    tokens = [token.strip() for token in value.replace("\n", ",").split(",")]
+    if any(not token for token in tokens):
+        raise ValueError(
+            "Use item IDs like `301`, `301-486`, or `301,305,320-350`."
+        )
+
+    for token in tokens:
+        range_match = re.fullmatch(r"(\d+)\s*-\s*(\d+)", token)
+        if range_match:
+            start_id = int(range_match.group(1))
+            end_id = int(range_match.group(2))
+            if start_id <= 0 or end_id <= 0 or end_id < start_id:
+                raise ValueError(
+                    "Library item ranges must use positive IDs from low to high, such as `301-486`."
+                )
+            values = range(start_id, end_id + 1)
+        elif token.isdigit() and int(token) > 0:
+            values = (int(token),)
+        else:
+            raise ValueError(
+                "Use item IDs like `301`, `301-486`, or `301,305,320-350`."
+            )
+
+        for item_id in values:
+            if item_id in seen:
+                continue
+            seen.add(item_id)
+            item_ids.append(item_id)
+            if len(item_ids) > int(max_items):
+                raise ValueError(
+                    f"Choose at most {int(max_items)} library items at a time."
+                )
+    return item_ids
+
+
 def select_library_item_for_game(
     connection,
     guild_id,
     item_id=0,
+    item_ids=None,
     category="",
     random_item=False,
     reuse_cooldown_days=0,
 ):
     guild_id = str(guild_id)
-    if int(item_id or 0) > 0:
+    selected_ids = []
+    for raw_item_id in item_ids or []:
+        try:
+            selected_id = int(raw_item_id)
+        except (TypeError, ValueError):
+            continue
+        if selected_id > 0 and selected_id not in selected_ids:
+            selected_ids.append(selected_id)
+
+    if not selected_ids and int(item_id or 0) > 0:
         return connection.execute("""
             SELECT *
             FROM guess_library_items
@@ -7728,6 +7800,11 @@ def select_library_item_for_game(
         "media_path != ''",
     ]
     parameters = [guild_id]
+    if selected_ids:
+        where.append(
+            "id IN (" + ",".join("?" for _ in selected_ids) + ")"
+        )
+        parameters.extend(selected_ids)
     category_filter = (category or "").strip()
     if category_filter:
         where.append("LOWER(category) = LOWER(?)")
@@ -14468,6 +14545,7 @@ def schedule_library_game_record(
     channel,
     starts_at,
     item_id=0,
+    item_ids=None,
     category="",
     random_item=True,
     close_after_minutes=0,
@@ -14486,6 +14564,7 @@ def schedule_library_game_record(
             connection,
             interaction.guild_id,
             item_id=item_id,
+            item_ids=item_ids,
             category=category,
             random_item=random_item,
             reuse_cooldown_days=int(game_settings.get("reuse_cooldown_days") or 0),
@@ -14502,7 +14581,7 @@ def schedule_library_game_record(
         """, (
             str(interaction.guild_id),
             str(channel.id),
-            int(item_id or 0),
+            int(item["id"] if item_ids else (item_id or 0)),
             (category or "").strip(),
             1 if random_item else 0,
             starts_at.isoformat(),
@@ -15000,6 +15079,8 @@ async def start_library_game_from_interaction(
     interaction,
     channel,
     item_id=0,
+    item_ids=None,
+    item_selection="",
     category="",
     random_item=False,
 ):
@@ -15020,6 +15101,7 @@ async def start_library_game_from_interaction(
         item_id = int(item_id or 0)
     except (TypeError, ValueError):
         item_id = 0
+    selected_item_ids = list(item_ids or [])
     category_filter = (category or "").strip()
     game_settings = guild_game_settings(guild_config)
     try:
@@ -15032,13 +15114,21 @@ async def start_library_game_from_interaction(
             connection,
             interaction.guild_id,
             item_id=item_id,
+            item_ids=selected_item_ids,
             category=category_filter,
             random_item=bool(random_item),
             reuse_cooldown_days=reuse_cooldown_days,
         )
 
     if not item:
-        filter_text = f" in category `{category_filter}`" if category_filter else ""
+        filter_parts = []
+        if selected_item_ids:
+            filter_parts.append(
+                f" in item selection `{item_selection or ','.join(str(value) for value in selected_item_ids)}`"
+            )
+        if category_filter:
+            filter_parts.append(f" in category `{category_filter}`")
+        filter_text = "".join(filter_parts)
         inactive_item = None
         other_server_item = None
         if item_id > 0:
