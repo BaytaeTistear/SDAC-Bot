@@ -7336,14 +7336,29 @@ def make_discord_files(row):
 async def send_submission_message(channel, content, row, view):
     files = make_discord_files(row)
     try:
-        return await channel.send(
-            content=content,
-            files=files,
-            view=view,
-        )
+        try:
+            return await channel.send(
+                content=content,
+                files=files,
+                view=view,
+            )
+        except discord.Forbidden as error:
+            channel_name = getattr(channel, "mention", None) or getattr(
+                channel, "name", "the configured destination"
+            )
+            raise SubmissionPermissionError(
+                "Discord denied posting this submission to "
+                f"{channel_name}. Check the bot's effective channel permissions "
+                "there, including View Channel, Send Messages, and Attach Files. "
+                f"Discord returned: {error}"
+            ) from error
     finally:
         for file in files:
             file.close()
+
+
+class SubmissionPermissionError(Exception):
+    """A channel permission failure while publishing a media submission."""
 
 
 def add_admin_audit_log(
