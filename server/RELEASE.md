@@ -1,3 +1,14 @@
+# Sana-Chan Version 4.4.64 Experimental
+
+Version 4.4.64 makes Discord submission permission failures identify the destination channel and the permissions needed to repost media.
+
+- reports which configured category or approval channel rejected a media post with Discord error 50013
+- lists View Channel, Send Messages, and Attach Files as the destination permissions to verify
+- keeps the original submission cleanup warning separate from a failed repost
+- makes the same fix available through `sana-update latest-experimental`
+
+---
+
 # Sana-Chan Version 4.4.63 Experimental
 
 Version 4.4.63 includes the Game Library range-selection update and refreshes the official app dependency lock to use patched `brace-expansion` 5.0.12.
