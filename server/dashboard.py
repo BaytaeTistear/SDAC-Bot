@@ -21663,6 +21663,7 @@ def admin_command_actions():
     actions = [
         ("Review Queue", "Moderator", "Pending submissions, reports, quarantine decisions, and removal reasons.", "admin_moderation", "review queue moderation reports remove", ""),
         ("Moderator Workspace", "Moderator", "Daily moderation dashboard for reports, quarantine, audit, and game library.", "admin_moderator_workspace", "moderator workspace daily", "secondary"),
+        ("Reaction Roles", "Moderator", "Create and manage emoji role panels for your server.", "reaction_roles.manage", "reaction roles emoji self assign", "secondary"),
         ("Setup Wizard", "Server Owner", "Guided first-run setup with direct fix buttons.", "admin_setup_wizard", "setup wizard first run channels categories", "secondary"),
         ("Launch Scores", "Server Owner", "Per-server readiness score and next missing steps.", "admin_launch_scores", "launch score checklist readiness", "secondary"),
         ("Discord Panels", "Server Owner", "Mobile-friendly server panel message blueprints.", "admin_discord_panels", "discord panels mobile messages buttons", "secondary"),

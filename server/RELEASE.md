@@ -1,3 +1,11 @@
+# Sana-Chan Version 4.4.66 Experimental
+
+Version 4.4.66 adds a direct Reaction Roles entry to the Moderator navigation.
+
+- makes reaction-role panel creation visible without first opening Moderator Workspace
+- retains the workspace shortcut and existing role safety checks
+
+---
 # Sana-Chan Version 4.4.65 Experimental
 
 Version 4.4.65 adds dashboard-managed reaction-role panels to Sana.
