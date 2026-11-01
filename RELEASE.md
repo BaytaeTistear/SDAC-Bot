@@ -1,3 +1,11 @@
+# Sana-Chan Version 4.4.67 Experimental
+
+Version 4.4.67 adds Reaction Roles directly to the Moderator sidebar navigation.
+
+- displays a dedicated Reaction Roles item alongside Moderator Workspace and Game Library
+- links moderators directly to reaction-role panel management
+
+---
 # Sana-Chan Version 4.4.66 Experimental
 
 Version 4.4.66 adds a direct Reaction Roles entry to the Moderator navigation.

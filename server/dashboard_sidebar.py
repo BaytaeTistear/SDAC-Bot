@@ -32,6 +32,7 @@ ADMIN_SECTIONS = [
             ("Command Center", "admin_command_center", {}),
             ("Notifications", "admin_notification_center", {}),
             ("Moderator Workspace", "admin_moderator_workspace", {}),
+            ("Reaction Roles", "reaction_roles.manage", {}),
             ("Case Management", "admin_case_management", {}),
             ("Review Queue", "admin_moderation", {}),
             ("Events / Meetups", "admin_community_submissions", {}),
