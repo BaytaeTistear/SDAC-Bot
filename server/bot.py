@@ -58,6 +58,7 @@ from anilist_integration import (
     decrypt_anilist_token,
 )
 from observability import capture_exception, init_sentry
+from reaction_roles import ensure_reaction_role_schema, handle_reaction_role_event
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -4735,6 +4736,7 @@ def ensure_column(connection, table, column, definition):
 
 def initialize_database():
     with database() as connection:
+        ensure_reaction_role_schema(connection)
         connection.execute("""
             CREATE TABLE IF NOT EXISTS submissions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -17547,11 +17549,13 @@ async def update_quote_reaction_vote(payload, remove=False):
 @bot.event
 async def on_raw_reaction_add(payload):
     await update_quote_reaction_vote(payload)
+    await handle_reaction_role_event(payload, bot, database)
 
 
 @bot.event
 async def on_raw_reaction_remove(payload):
     await update_quote_reaction_vote(payload, remove=True)
+    await handle_reaction_role_event(payload, bot, database, remove=True)
 
 
 @bot.event

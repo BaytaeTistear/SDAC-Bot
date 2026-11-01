@@ -83,6 +83,7 @@ from mal_integration import (
     new_pkce_verifier,
     refresh_mal_token,
 )
+from reaction_roles import ensure_reaction_role_schema
 from anilist_integration import (
     anilist_authorization_url,
     anilist_configured,
@@ -10472,6 +10473,7 @@ def database():
 
 def initialize_database():
     with database() as connection:
+        ensure_reaction_role_schema(connection)
         connection.execute("""
             CREATE TABLE IF NOT EXISTS submissions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21923,6 +21925,7 @@ def admin_moderator_workspace():
         {"label": "Reason Presets", "detail": "Use consistent reasons for removals and audit logs.", "url": url_for("admin_removal_reasons", key=ADMIN_KEY), "style": "secondary"},
         {"label": "Audit Log", "detail": "Review recent moderator/admin actions.", "url": url_for("audit_log", key=ADMIN_KEY, guild_id=selected or "all"), "style": "secondary"},
         {"label": "Game Library", "detail": "Moderators can manage guessing-game media and drafts.", "url": url_for("admin_game_library", key=ADMIN_KEY, guild_id=selected or "all"), "style": "secondary"},
+        {"label": "Reaction Roles", "detail": "Create and manage role selection panels for server members.", "url": url_for("reaction_roles.manage", key=ADMIN_KEY, guild_id=selected or ""), "style": "secondary"},
     ]
     return admin_tool_shell("Moderator Workspace", "A queue-first workspace for daily moderation.", MODERATOR_WORKSPACE_BODY, actions=actions, quarantine_count=quarantine_count, removals=removals, removal_reasons=MODERATION_REMOVAL_REASONS, summary=summary)
 
@@ -28587,6 +28590,23 @@ def delete_submission(submission_id):
         **redirect_values,
     ))
 
+
+from dashboard_reaction_roles import create_reaction_roles_blueprint
+
+app.register_blueprint(create_reaction_roles_blueprint({
+    "TOKEN": TOKEN,
+    "ADMIN_KEY": ADMIN_KEY,
+    "require_admin_login": require_admin_login,
+    "load_config": load_config,
+    "guild_options": guild_options,
+    "can_access": lambda guild_id: can_admin_access_guild(guild_id, minimum_role="moderator"),
+    "require_csrf_token": require_csrf_token,
+    "database": database,
+    "add_admin_audit_log": add_admin_audit_log,
+    "web_actor": web_actor,
+    "utc_now_iso": utc_now_iso,
+    "admin_tool_shell": admin_tool_shell,
+}))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

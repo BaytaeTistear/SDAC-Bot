@@ -1,3 +1,14 @@
+# Sana-Chan Version 4.4.65 Experimental
+
+Version 4.4.65 adds dashboard-managed reaction-role panels to Sana.
+
+- lets moderators create multi-select or single-choice role panels from the Moderator workspace
+- supports Unicode and custom emoji, with up to 20 role options per panel
+- grants roles when members react and removes them when reactions are removed
+- validates role hierarchy and blocks self-assignment of roles with privileged permissions
+- includes reaction-role modules in server mirrors and installation/update packages
+
+---
 # Sana-Chan Version 4.4.64 Experimental
 
 Version 4.4.64 makes Discord submission permission failures identify the destination channel and the permissions needed to repost media.
