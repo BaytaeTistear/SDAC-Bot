@@ -57,6 +57,8 @@ for file in \
     dashboard_admin_roles.py \
     dashboard_shell_assets.py \
     dashboard_sidebar.py \
+    reaction_roles.py \
+    dashboard_reaction_roles.py \
     config.py \
     database_migrations.py \
     observability.py \
@@ -115,6 +117,8 @@ fi
     "$APP_DIR/dashboard_admin_roles.py" \
     "$APP_DIR/dashboard_shell_assets.py" \
     "$APP_DIR/dashboard_sidebar.py" \
+    "$APP_DIR/reaction_roles.py" \
+    "$APP_DIR/dashboard_reaction_roles.py" \
     "$APP_DIR/config.py" \
     "$APP_DIR/database_migrations.py" \
     "$APP_DIR/observability.py"

@@ -33,6 +33,8 @@ check "Python compile" "$PYTHON" -m py_compile \
     dashboard_admin_roles.py \
     dashboard_shell_assets.py \
     dashboard_sidebar.py \
+    reaction_roles.py \
+    dashboard_reaction_roles.py \
     config.py \
     database_backend.py \
     database_migrations.py \
