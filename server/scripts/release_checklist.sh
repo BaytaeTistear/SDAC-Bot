@@ -35,6 +35,7 @@ check "Python compile" "$PYTHON" -m py_compile \
     dashboard_sidebar.py \
     reaction_roles.py \
     dashboard_reaction_roles.py \
+    dashboard_site_editor.py \
     config.py \
     database_backend.py \
     database_migrations.py \

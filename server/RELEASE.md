@@ -1,3 +1,15 @@
+# Sana-Chan Version 4.4.83 Experimental
+
+Version 4.4.83 adds a per-server website editor inspired by Square's section-based editor.
+
+- lets moderators draft, preview, reorder, and publish text and image sections on supported website pages
+- lets Admin, Owner, and Bot Owner roles add or edit HTML blocks for the selected server
+- sanitizes HTML before it is previewed or published, removing scripts, inline styles, embedded content, and unsafe links
+- lets moderators edit the reaction-role instruction text
+- records page changes in the admin audit log
+
+---
+
 # Sana-Chan Version 4.4.82 Experimental
 
 Version 4.4.82 condenses dashboard navigation into nested collapsible groups.
@@ -4497,15 +4509,4 @@ Not included:
 - `backups/`
 - `venv/` or Python cache files
 
-# Sana-Chan Version 4.4.83 Experimental
-
-Version 4.4.83 adds a per-server website editor inspired by Square's section-based editor.
-
-- lets moderators draft, preview, reorder, and publish text and image sections on supported website pages
-- lets Admin, Owner, and Bot Owner roles add or edit HTML blocks for the selected server
-- sanitizes HTML before it is previewed or published, removing scripts, inline styles, embedded content, and unsafe links
-- lets moderators edit the reaction-role instruction text
-- records page changes in the admin audit log
-
----
 
