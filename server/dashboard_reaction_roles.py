@@ -281,9 +281,13 @@ def create_reaction_roles_blueprint(deps):
           .rr-emoji-trigger img{width:32px;height:32px;object-fit:contain}
           .rr-emoji-unicode{box-sizing:border-box;width:100%;padding:8px}
           .rr-option>select{box-sizing:border-box;width:100%;padding:8px}
-          .rr-emoji-menu{position:fixed;z-index:99999;width:min(360px,calc(100vw - 24px));max-height:min(420px,calc(100vh - 24px));overflow:auto;padding:8px;border:1px solid #60718e;border-radius:8px;background:#111827;box-shadow:0 12px 32px #0009}
-          .rr-emoji-search{position:sticky;top:0;z-index:1;box-sizing:border-box;width:100%;margin:0 0 8px;padding:10px;border:1px solid #52627d;border-radius:6px;background:#172238;color:#fff}
-          .rr-emoji-category{margin:9px 4px 4px;color:#9fb0c8;font-size:.82rem;font-weight:700;text-transform:uppercase}
+          .rr-emoji-menu{position:fixed;z-index:99999;display:flex;flex-direction:column;width:min(360px,calc(100vw - 24px));height:min(420px,calc(100vh - 24px));padding:8px;border:1px solid #60718e;border-radius:8px;background:#111827;box-shadow:0 12px 32px #0009}
+          .rr-emoji-menu[hidden]{display:none!important}
+          .rr-emoji-search{position:relative;z-index:2;flex:0 0 auto;box-sizing:border-box;width:100%;margin:0 0 8px;padding:10px;border:1px solid #52627d;border-radius:6px;background:#172238;color:#fff}
+          .rr-emoji-list{flex:1 1 auto;min-height:0;overflow:auto}
+          .rr-emoji-section{margin:0 0 6px;border:1px solid #34435a;border-radius:6px}
+          .rr-emoji-section summary{position:sticky;top:0;z-index:1;padding:8px;background:#1c2b42;color:#fff;font-weight:700;cursor:pointer}
+          .rr-emoji-section-items{padding:4px}
           .rr-emoji-item{display:flex;align-items:center;gap:10px;width:100%;padding:7px;border:0;border-radius:5px;background:transparent;color:#fff;text-align:left;cursor:pointer}
           .rr-emoji-item:hover,.rr-emoji-item:focus{background:#273b59;outline:2px solid #4ac8ef}
           .rr-emoji-item img{flex:0 0 40px;width:40px;height:40px;object-fit:contain}
@@ -335,11 +339,13 @@ def create_reaction_roles_blueprint(deps):
               button.hidden = !matches;
               if (matches) visible += 1;
             }
+            for (const section of menu.querySelectorAll(".rr-emoji-section")) {
+              const matches = [...section.querySelectorAll(".rr-emoji-item")].some((button) => !button.hidden);
+              section.hidden = !matches;
+              if (value && matches) section.open = true;
+            }
             const empty = menu.querySelector(".rr-emoji-empty");
             if (empty) empty.hidden = visible !== 0;
-            for (const heading of menu.querySelectorAll(".rr-emoji-category")) {
-              heading.hidden = ![...emojiButtons].some((button) => !button.hidden && button.dataset.category === heading.dataset.category);
-            }
           };
           const openMenu = (trigger) => {
             activeTrigger = trigger;
@@ -351,16 +357,25 @@ def create_reaction_roles_blueprint(deps):
             search.placeholder = "Search Discord and server emojis";
             search.setAttribute("aria-label", "Search Discord and server emojis");
             menu.appendChild(search);
+            const list = document.createElement("div");
+            list.className = "rr-emoji-list";
+            menu.appendChild(list);
             emojiButtons = [];
-            let lastCategory = "";
+            const sections = new Map();
             for (const emoji of data) {
-              if (emoji.category !== lastCategory) {
-                lastCategory = emoji.category;
-                const heading = document.createElement("div");
-                heading.className = "rr-emoji-category";
-                heading.dataset.category = emoji.category;
-                heading.textContent = emoji.category;
-                menu.appendChild(heading);
+              const sectionName = emoji.kind === "server" ? "Server Emojis" : "Discord Default Emojis";
+              let section = sections.get(sectionName);
+              if (!section) {
+                section = document.createElement("details");
+                section.className = "rr-emoji-section";
+                section.open = true;
+                const summary = document.createElement("summary");
+                summary.textContent = sectionName;
+                const items = document.createElement("div");
+                items.className = "rr-emoji-section-items";
+                section.append(summary, items);
+                list.appendChild(section);
+                sections.set(sectionName, section);
               }
               const button = document.createElement("button");
               button.className = "rr-emoji-item";
@@ -398,14 +413,14 @@ def create_reaction_roles_blueprint(deps):
                 }
                 closeMenu();
               });
-              menu.appendChild(button);
+              section.querySelector(".rr-emoji-section-items").appendChild(button);
               emojiButtons.push(button);
             }
             const empty = document.createElement("div");
             empty.className = "rr-emoji-empty";
             empty.textContent = "No matching emojis.";
             empty.hidden = data.length > 0;
-            menu.appendChild(empty);
+            list.appendChild(empty);
             search.addEventListener("input", () => filterEmojis(search.value));
             const bounds = trigger.getBoundingClientRect();
             const width = Math.min(360, window.innerWidth - 24);

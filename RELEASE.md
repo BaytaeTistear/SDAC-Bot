@@ -1,3 +1,11 @@
+# Sana-Chan Version 4.4.73 Experimental
+
+Version 4.4.73 improves the reaction-role emoji picker layout.
+
+- keeps search visible above the independently scrolling emoji list
+- groups Discord default emojis and server emojis into collapsible sections
+
+---
 # Sana-Chan Version 4.4.72 Experimental
 
 Version 4.4.72 fixes the reaction-role emoji picker closing immediately when opened.
