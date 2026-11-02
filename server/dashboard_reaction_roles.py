@@ -456,7 +456,10 @@ def create_reaction_roles_blueprint(deps):
             if (event.key === "Escape" && !menu.hidden) closeMenu();
           });
           window.addEventListener("resize", closeMenu);
-          window.addEventListener("scroll", closeMenu, true);
+          window.addEventListener("scroll", (event) => {
+            if (event.target instanceof Node && menu.contains(event.target)) return;
+            closeMenu();
+          }, true);
         })();
         </script>
         <h2>Existing panels</h2>

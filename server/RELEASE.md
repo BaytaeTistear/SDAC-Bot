@@ -1,3 +1,10 @@
+# Sana-Chan Version 4.4.76 Experimental
+
+Version 4.4.76 keeps the reaction-role emoji picker open while scrolling its emoji list.
+
+- ignores scroll events originating inside the picker while still closing it on page scroll
+
+---
 # Sana-Chan Version 4.4.75 Experimental
 
 Version 4.4.75 fixes selecting an emoji from the reaction-role picker.
