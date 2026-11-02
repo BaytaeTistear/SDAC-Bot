@@ -28617,6 +28617,7 @@ app.register_blueprint(create_reaction_roles_blueprint({
 
 app.register_blueprint(create_site_editor_blueprint({
     "ADMIN_KEY": ADMIN_KEY,
+    "is_admin_logged_in": is_admin_logged_in,
     "require_admin_login": require_admin_login,
     "load_config": load_config,
     "guild_options": guild_options,

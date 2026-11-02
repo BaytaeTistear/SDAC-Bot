@@ -1,3 +1,14 @@
+# Sana-Chan Version 4.4.84 Experimental
+
+Version 4.4.84 adds direct page editing links for server admins.
+
+- adds a top-right “Edit This Page” button to supported public pages for server Admins and above
+- opens the editor on the page and server currently being viewed
+- lets admins change the existing page heading while preserving the page's built-in layout and behavior
+- expands the editor to cover the server directory, server profiles, public stats, guessing leaderboard, and achievements
+
+---
+
 # Sana-Chan Version 4.4.83 Experimental
 
 Version 4.4.83 adds a per-server website editor inspired by Square's section-based editor.

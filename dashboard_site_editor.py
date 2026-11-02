@@ -15,6 +15,11 @@ PAGE_OPTIONS = {
     "home": {"label": "Submissions home", "endpoint": "index"},
     "about": {"label": "About", "endpoint": "about"},
     "setup": {"label": "Setup guide", "endpoint": "setup_guide"},
+    "servers": {"label": "Server directory", "endpoint": "servers"},
+    "server_profile": {"label": "Server profile", "endpoint": "server_profile"},
+    "stats": {"label": "Public stats", "endpoint": "public_stats"},
+    "guessing": {"label": "Guessing leaderboard", "endpoint": "guessing_leaderboard"},
+    "achievements": {"label": "Achievements", "endpoint": "achievements"},
     "reaction_roles": {"label": "Reaction Roles", "endpoint": "reaction_roles.manage"},
 }
 # Only public website routes receive injected content. Reaction Roles uses the
@@ -123,6 +128,7 @@ def sanitize_html(source):
 
 def _default_page(page_key):
     return {
+        "page_heading": "",
         "helper_text": DEFAULT_REACTION_ROLE_HELP if page_key == "reaction_roles" else "",
         "sections": [],
     }
@@ -192,6 +198,9 @@ def normalize_page_content(raw, page_key, can_use_html, previous):
     if not isinstance(payload, dict):
         raise ValueError("Page content must be an object.")
     helper_text = str(payload.get("helper_text", "")).strip()
+    page_heading = str(payload.get("page_heading", "")).strip()
+    if len(page_heading) > 120:
+        raise ValueError("The page heading must be 120 characters or fewer.")
     if len(helper_text) > 300:
         raise ValueError("The helper text must be 300 characters or fewer.")
     sections = payload.get("sections", [])
@@ -227,7 +236,11 @@ def normalize_page_content(raw, page_key, can_use_html, previous):
         normalized.append(section)
     if not helper_text and page_key == "reaction_roles":
         helper_text = DEFAULT_REACTION_ROLE_HELP
-    return {"helper_text": helper_text, "sections": normalized}
+    return {
+        "page_heading": page_heading,
+        "helper_text": helper_text,
+        "sections": normalized,
+    }
 
 
 def render_page_sections(content):
@@ -294,6 +307,7 @@ def _editor_body(can_use_html):
           <form method="post" id="se-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="key" value="{{ admin_key }}"><input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="page" value="{{ page_key }}">
             <input type="hidden" name="content_json" id="se-content-json">
+            {% if page_key != 'reaction_roles' %}<label>Existing page heading<input id="se-page-heading" maxlength="120" value="{{ draft.page_heading|e }}" placeholder="Leave blank to keep the current heading"></label>{% endif %}
             {% if page_key == 'reaction_roles' %}<label>Emoji and role instructions<input id="se-helper-text" maxlength="300" value="{{ draft.helper_text|e }}"></label>{% endif %}
             <div id="se-sections"></div>
             <div class="se-actions"><button type="button" id="se-add-text">Add text and image section</button>{% if can_use_html %}<button type="button" id="se-add-html">Add HTML section</button>{% endif %}</div>
@@ -312,6 +326,7 @@ def _editor_body(can_use_html):
         const payloadInput = document.getElementById('se-content-json');
         const htmlAllowed = {{ 'true' if can_use_html else 'false' }};
         const csrfToken = {{ csrf_token|tojson }};
+        const pageHeading = document.getElementById('se-page-heading');
         const helper = document.getElementById('se-helper-text');
         const escapeText = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
         const block = (value = {type:'text'}) => {
@@ -336,8 +351,8 @@ def _editor_body(can_use_html):
           for (const [text,delta] of [['Move up',-1],['Move down',1]]) { const button=document.createElement('button'); button.type='button'; button.textContent=text; button.addEventListener('click',()=>{const sibling=delta<0?card.previousElementSibling:card.nextElementSibling;if(sibling)list.insertBefore(card,delta<0?sibling: sibling.nextElementSibling);});toolbar.appendChild(button); }
           const remove = document.createElement('button'); remove.type='button'; remove.textContent='Remove section'; remove.addEventListener('click',()=>card.remove()); toolbar.appendChild(remove); card.appendChild(toolbar); list.appendChild(card);
         };
-        const collect = () => ({helper_text:helper?helper.value:'',sections:[...list.children].map(card=>({id:card.dataset.id,type:card.dataset.type,...Object.fromEntries([...card.querySelectorAll('[data-field]')].map(field=>[field.dataset.field,field.value]))}))});
-        const draw = (data) => {list.replaceChildren();(data.sections||[]).forEach(block);if(helper)helper.value=data.helper_text||'';};
+        const collect = () => ({page_heading:pageHeading?pageHeading.value:'',helper_text:helper?helper.value:'',sections:[...list.children].map(card=>({id:card.dataset.id,type:card.dataset.type,...Object.fromEntries([...card.querySelectorAll('[data-field]')].map(field=>[field.dataset.field,field.value]))}))});
+        const draw = (data) => {list.replaceChildren();(data.sections||[]).forEach(block);if(pageHeading)pageHeading.value=data.page_heading||'';if(helper)helper.value=data.helper_text||'';};
         draw(initial);
         document.getElementById('se-add-text').addEventListener('click',()=>block({type:'text'}));
         const htmlButton=document.getElementById('se-add-html');if(htmlButton)htmlButton.addEventListener('click',()=>block({type:'html'}));
@@ -451,7 +466,10 @@ def create_site_editor_blueprint(deps):
             draft_doc, published_doc = read_documents(connection, guild_id)
         draft = draft_doc.get(page_key, _default_page(page_key))
         published = published_doc.get(page_key, _default_page(page_key))
-        preview = render_page_sections(published)
+        preview = (
+            f'<h2>{html.escape(published.get("page_heading", ""))}</h2>'
+            if published.get("page_heading") else ""
+        ) + render_page_sections(published)
         if page_key == "reaction_roles":
             preview = f'<p>{html.escape(published.get("helper_text", DEFAULT_REACTION_ROLE_HELP))}</p>' + preview
         body = _editor_body(can_use_html)
@@ -483,6 +501,8 @@ def create_site_editor_blueprint(deps):
         except ValueError as error:
             return jsonify(error=str(error)), 400
         result = render_page_sections(content)
+        if content.get("page_heading"):
+            result = f'<h2>{html.escape(content["page_heading"])}</h2>' + result
         if page_key == "reaction_roles":
             result = f'<p>{html.escape(content.get("helper_text", ""))}</p>' + result
         return jsonify(html=result)
@@ -490,26 +510,85 @@ def create_site_editor_blueprint(deps):
     @bp.after_app_request
     def inject_published_sections(response):
         page_key = PAGE_BY_ENDPOINT.get(request.endpoint or "")
-        guild_id = str(request.args.get("guild_id") or session.get("sdac_guild_id") or "")
         if (
-            page_key is None or not guild_id or guild_id == "all"
+            page_key is None
             or not response.mimetype or response.mimetype != "text/html"
             or request.endpoint in {"site_editor.manage", "site_editor.preview"}
         ):
             return response
+
+        view_args = request.view_args or {}
+        requested_guild = (
+            request.args.get("guild_id")
+            or view_args.get("guild_id")
+            or session.get("sdac_guild_id")
+            or ""
+        )
+        guild_id = str(requested_guild)
+        if guild_id == "all":
+            guild_id = ""
+
+        editor_guild_id = ""
+        if deps["is_admin_logged_in"]():
+            editor_servers = deps["guild_options"](
+                deps["load_config"](), minimum_role="admin",
+            )
+            editor_ids = {str(item["id"]) for item in editor_servers}
+            if guild_id:
+                if guild_id in editor_ids and deps["can_edit_html"](guild_id):
+                    editor_guild_id = guild_id
+            elif editor_servers:
+                editor_guild_id = str(editor_servers[0]["id"])
+
+        if not guild_id and editor_guild_id:
+            guild_id = editor_guild_id
+
         try:
-            with deps["database"]() as connection:
-                ensure_site_editor_schema(connection)
-                _, published_doc = read_documents(connection, guild_id)
-            content = published_doc.get(page_key, _default_page(page_key))
-            fragment = render_page_sections(content)
-            if not fragment:
-                return response
             body = response.get_data(as_text=True)
-            if "</main>" in body:
-                body = body.replace("</main>", fragment + "</main>", 1)
-            elif "</body>" in body:
-                body = body.replace("</body>", fragment + "</body>", 1)
+
+            if guild_id:
+                with deps["database"]() as connection:
+                    ensure_site_editor_schema(connection)
+                    _, published_doc = read_documents(connection, guild_id)
+                content = published_doc.get(page_key, _default_page(page_key))
+                page_heading = str(content.get("page_heading", "")).strip()
+                if page_heading:
+                    body = re.sub(
+                        r"(<h1\b[^>]*>).*?(</h1>)",
+                        lambda match: match.group(1) + html.escape(page_heading) + match.group(2),
+                        body,
+                        count=1,
+                        flags=re.IGNORECASE | re.DOTALL,
+                    )
+                fragment = render_page_sections(content)
+                if fragment:
+                    if "</main>" in body:
+                        body = body.replace("</main>", fragment + "</main>", 1)
+                    elif "</body>" in body:
+                        body = body.replace("</body>", fragment + "</body>", 1)
+
+            if editor_guild_id:
+                editor_url = url_for(
+                    "site_editor.manage", key=deps["ADMIN_KEY"],
+                    guild_id=editor_guild_id, page=page_key,
+                )
+                button = (
+                    '<a class="sdac-edit-this-page" href="'
+                    + html.escape(editor_url, quote=True)
+                    + '">Edit This Page</a>'
+                    '<style>.sdac-edit-this-page{position:fixed;top:16px;right:16px;z-index:99999;'
+                    'display:inline-flex;align-items:center;justify-content:center;padding:10px 16px;'
+                    'border:1px solid rgba(255,255,255,.25);border-radius:10px;background:linear-gradient(110deg,#7357ff,#14c9ee);'
+                    'box-shadow:0 6px 22px rgba(0,0,0,.3);color:#fff;font:700 14px/1.2 system-ui,sans-serif;'
+                    'text-decoration:none}.sdac-edit-this-page:hover{filter:brightness(1.08)}'
+                    '@media(max-width:600px){.sdac-edit-this-page{top:10px;right:10px;padding:8px 11px;font-size:12px}}</style>'
+                )
+                body_match = re.search(r"<body\b[^>]*>", body, re.IGNORECASE)
+                if body_match:
+                    body = body[:body_match.end()] + button + body[body_match.end():]
+                elif "</body>" in body:
+                    body = body.replace("</body>", button + "</body>", 1)
+
             response.set_data(body)
         except Exception as error:
             print(f"Website content could not be rendered for {guild_id}/{page_key}: {error}", flush=True)
