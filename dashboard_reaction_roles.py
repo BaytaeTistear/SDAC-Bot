@@ -1,6 +1,7 @@
 """Moderator dashboard for creating and managing Sana reaction-role panels."""
 
 import json
+import re
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -107,7 +108,10 @@ def create_reaction_roles_blueprint(deps):
                 return dashboard_url(guild_id, "Choose a channel, title, and valid selection mode.", True)
             mappings = []
             for index in range(1, 21):
-                emoji = request.form.get(f"emoji_{index}", "").strip()
+                emoji = (
+                    request.form.get(f"server_emoji_{index}", "").strip()
+                    or request.form.get(f"unicode_emoji_{index}", "").strip()
+                )
                 role_id = request.form.get(f"role_{index}", "").strip()
                 if not emoji and not role_id:
                     continue
@@ -118,15 +122,28 @@ def create_reaction_roles_blueprint(deps):
                     return dashboard_url(guild_id, f"Invalid emoji on option {index}.", True)
                 if any(row["emoji"] == emoji_key for row in mappings):
                     return dashboard_url(guild_id, "Each option needs a unique emoji.", True)
-                mappings.append({"emoji": emoji_key, "display": emoji, "role_id": role_id})
+                custom_emoji = re.fullmatch(r"<a?:([A-Za-z0-9_]{2,32}):(\d{15,22})>", emoji)
+                mappings.append({
+                    "emoji": emoji_key,
+                    "display": emoji,
+                    "role_id": role_id,
+                    "custom_id": custom_emoji.group(2) if custom_emoji else "",
+                })
             if not mappings:
                 return dashboard_url(guild_id, "Add at least one emoji and role option.", True)
 
             guild, error = api("GET", f"/guilds/{guild_id}?with_counts=true")
             channels, channel_error = api("GET", f"/guilds/{guild_id}/channels")
             roles, role_error = api("GET", f"/guilds/{guild_id}/roles")
+            server_emojis, emoji_error = api("GET", f"/guilds/{guild_id}/emojis")
             if error or channel_error or role_error or not isinstance(channels, list) or not isinstance(roles, list):
                 return dashboard_url(guild_id, "Could not load server roles/channels. Check Sana's server access.", True)
+            server_emoji_ids = {
+                str(item.get("id")) for item in (server_emojis or [])
+                if isinstance(item, dict) and item.get("id") and item.get("available") is not False
+            } if not emoji_error and isinstance(server_emojis, list) else set()
+            if any(row["custom_id"] and row["custom_id"] not in server_emoji_ids for row in mappings):
+                return dashboard_url(guild_id, "Choose a custom emoji from this server's emoji list, then try again.", True)
             selected_channel = next((c for c in channels if str(c.get("id")) == channel_id and c.get("type") in {0, 5}), None)
             if not selected_channel:
                 return dashboard_url(guild_id, "Choose a text or announcement channel in this server.", True)
@@ -186,8 +203,22 @@ def create_reaction_roles_blueprint(deps):
 
         channels, _ = api("GET", f"/guilds/{guild_id}/channels")
         roles, _ = api("GET", f"/guilds/{guild_id}/roles")
+        emoji_response, emoji_error = api("GET", f"/guilds/{guild_id}/emojis")
         channels = [item for item in (channels or []) if item.get("type") in {0, 5}]
         roles = [item for item in (roles or []) if not item.get("managed") and str(item.get("id")) != guild_id]
+        emojis = []
+        if isinstance(emoji_response, list):
+            for item in emoji_response:
+                if not isinstance(item, dict) or not item.get("id") or not item.get("name") or item.get("available") is False:
+                    continue
+                animated = bool(item.get("animated"))
+                emoji_id = str(item["id"])
+                emoji_name = str(item["name"])
+                emojis.append({
+                    "value": f"<{ 'a' if animated else '' }:{emoji_name}:{emoji_id}>",
+                    "label": f":{emoji_name}:" + (" (animated)" if animated else ""),
+                    "image_url": f"https://cdn.discordapp.com/emojis/{emoji_id}.{'gif' if animated else 'png'}?size=48",
+                })
         with deps["database"]() as connection:
             ensure_reaction_role_schema(connection)
             panels = connection.execute(
@@ -200,9 +231,11 @@ def create_reaction_roles_blueprint(deps):
         <style>
           .rr-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
           .rr-grid label{display:block;font-weight:600}.rr-grid input,.rr-grid select,.rr-grid textarea{box-sizing:border-box;width:100%;padding:9px;margin-top:5px}
-          .rr-options{display:grid;grid-template-columns:100px minmax(180px,1fr);gap:8px;max-width:620px}
-          .rr-options input,.rr-options select{padding:8px}.rr-panel{padding:12px;border:1px solid #555;border-radius:8px;margin:10px 0}
+          .rr-options{display:grid;gap:8px;max-width:760px}.rr-option{display:grid;grid-template-columns:minmax(250px,1fr) minmax(180px,1fr);gap:8px;align-items:center}
+          .rr-emoji-fields{display:grid;grid-template-columns:1fr 38px;gap:5px;align-items:center}.rr-emoji-fields input,.rr-emoji-fields select,.rr-option>select{box-sizing:border-box;width:100%;padding:8px}
+          .rr-emoji-preview{width:32px;height:32px;object-fit:contain}.rr-panel{padding:12px;border:1px solid #555;border-radius:8px;margin:10px 0}
           @media(max-width:700px){.rr-grid{grid-template-columns:1fr}}
+          @media(max-width:540px){.rr-option{grid-template-columns:1fr}}
         </style>
         <form method="get" action="{{ url_for('reaction_roles.manage') }}" class="rr-grid">
           <input type="hidden" name="key" value="{{ admin_key }}">
@@ -218,8 +251,10 @@ def create_reaction_roles_blueprint(deps):
             <label>Description<textarea name="description" maxlength="500" rows="2"></textarea></label>
             <label>Selection mode<select name="mode"><option value="multi">Multiple roles</option><option value="single">One choice (replaces other panel roles)</option></select></label>
           </div>
-          <h3>Emoji and role options (up to 20)</h3><div class="rr-options">
-          {% for index in range(1, 21) %}<input name="emoji_{{ index }}" placeholder="😀" aria-label="Emoji {{ index }}"><select name="role_{{ index }}"><option value="">Choose role</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select>{% endfor %}
+          <h3>Emoji and role options (up to 20)</h3>
+          {% if emoji_error %}<p>Could not load this server's custom emojis. You can still enter Unicode emoji manually.</p>{% elif not emojis %}<p>This server has no custom emojis available. You can enter Unicode emoji manually.</p>{% else %}<p>Select a custom emoji from this server, or enter a Unicode emoji.</p>{% endif %}
+          <div class="rr-options">
+          {% for index in range(1, 21) %}<div class="rr-option"><div class="rr-emoji-fields"><div><select name="server_emoji_{{ index }}" aria-label="Server emoji {{ index }}" onchange="const image=this.parentElement.nextElementSibling; const option=this.selectedOptions[0]; image.src=option.dataset.image||''; image.hidden=!option.dataset.image; image.alt=option.textContent"><option value="">Choose server emoji</option>{% for emoji in emojis %}<option value="{{ emoji.value }}" data-image="{{ emoji.image_url }}">{{ emoji.label }}</option>{% endfor %}</select><input name="unicode_emoji_{{ index }}" placeholder="or enter Unicode 😀" aria-label="Unicode emoji {{ index }}"></div><img class="rr-emoji-preview" alt="" hidden></div><select name="role_{{ index }}" aria-label="Role {{ index }}"><option value="">Choose role</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select></div>{% endfor %}
           </div><p><button type="submit">Create panel</button></p>
         </form>
         <h2>Existing panels</h2>
@@ -230,7 +265,7 @@ def create_reaction_roles_blueprint(deps):
         return deps["admin_tool_shell"](
             "Reaction Roles", "Create and manage moderator reaction-role panels.", body,
             guild_options=options, guild_id=guild_id, channels=channels, roles=roles,
-            panels=panels,
+            panels=panels, emojis=emojis, emoji_error=emoji_error,
         )
 
     return bp

@@ -1,3 +1,12 @@
+# Sana-Chan Version 4.4.68 Experimental
+
+Version 4.4.68 lets moderators choose custom server emojis for reaction-role options.
+
+- loads the selected server's custom emoji from Discord for each panel form
+- previews the selected emoji and labels animated emoji entries
+- validates that selected custom emoji belong to that server; Unicode emoji remain supported
+
+---
 # Sana-Chan Version 4.4.67 Experimental
 
 Version 4.4.67 adds Reaction Roles directly to the Moderator sidebar navigation.
