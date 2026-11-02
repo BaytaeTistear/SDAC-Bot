@@ -1,3 +1,11 @@
+# Sana-Chan Version 4.4.71 Experimental
+
+Version 4.4.71 fixes the reaction-role emoji picker covering the dashboard.
+
+- removes the full-screen click-away overlay
+- closes the picker from a document click outside the menu while leaving the page visible
+
+---
 # Sana-Chan Version 4.4.70 Experimental
 
 Version 4.4.70 closes the emoji picker on outside click and includes Discord's Unicode emoji catalog.

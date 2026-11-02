@@ -281,7 +281,6 @@ def create_reaction_roles_blueprint(deps):
           .rr-emoji-trigger img{width:32px;height:32px;object-fit:contain}
           .rr-emoji-unicode{box-sizing:border-box;width:100%;padding:8px}
           .rr-option>select{box-sizing:border-box;width:100%;padding:8px}
-          .rr-emoji-backdrop{position:fixed;inset:0;z-index:99998;width:100%;height:100%;margin:0;padding:0;border:0;background:transparent;cursor:default}
           .rr-emoji-menu{position:fixed;z-index:99999;width:min(360px,calc(100vw - 24px));max-height:min(420px,calc(100vh - 24px));overflow:auto;padding:8px;border:1px solid #60718e;border-radius:8px;background:#111827;box-shadow:0 12px 32px #0009}
           .rr-emoji-search{position:sticky;top:0;z-index:1;box-sizing:border-box;width:100%;margin:0 0 8px;padding:10px;border:1px solid #52627d;border-radius:6px;background:#172238;color:#fff}
           .rr-emoji-category{margin:9px 4px 4px;color:#9fb0c8;font-size:.82rem;font-weight:700;text-transform:uppercase}
@@ -313,7 +312,6 @@ def create_reaction_roles_blueprint(deps):
           <div class="rr-options">
           {% for index in range(1, 21) %}<div class="rr-option"><div class="rr-emoji-fields"><button class="rr-emoji-trigger" type="button" aria-expanded="false"><span class="rr-emoji-trigger-label">Choose emoji</span><img alt="" hidden></button><input type="hidden" name="server_emoji_{{ index }}"><input class="rr-emoji-unicode" name="unicode_emoji_{{ index }}" placeholder="or enter Unicode 😀" aria-label="Unicode emoji {{ index }}"></div><select name="role_{{ index }}" aria-label="Role {{ index }}"><option value="">Choose role</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select></div>{% endfor %}
           </div>
-          <button type="button" id="rr-emoji-backdrop" class="rr-emoji-backdrop" aria-label="Close emoji picker" hidden></button>
           <div id="rr-emoji-menu" class="rr-emoji-menu" role="listbox" aria-label="Discord and server emojis" hidden></div>
           <p><button type="submit">Create panel</button></p>
         </form>
@@ -322,12 +320,10 @@ def create_reaction_roles_blueprint(deps):
         (() => {
           const data = JSON.parse(document.getElementById("rr-server-emojis").textContent || "[]");
           const menu = document.getElementById("rr-emoji-menu");
-          const backdrop = document.getElementById("rr-emoji-backdrop");
           let activeTrigger = null;
           let emojiButtons = [];
           const closeMenu = () => {
             menu.hidden = true;
-            backdrop.hidden = true;
             if (activeTrigger) activeTrigger.setAttribute("aria-expanded", "false");
             activeTrigger = null;
           };
@@ -416,7 +412,6 @@ def create_reaction_roles_blueprint(deps):
             menu.style.left = `${Math.max(12, Math.min(bounds.left, window.innerWidth - width - 12))}px`;
             menu.style.top = `${Math.max(12, Math.min(bounds.bottom + 4, window.innerHeight - 360))}px`;
             menu.hidden = false;
-            backdrop.hidden = false;
             search.focus();
           };
           document.querySelectorAll(".rr-emoji-trigger").forEach((trigger) => {
@@ -434,7 +429,11 @@ def create_reaction_roles_blueprint(deps):
               preview.hidden = true;
             });
           });
-          backdrop.addEventListener("click", closeMenu);
+          document.addEventListener("click", (event) => {
+            if (menu.hidden || menu.contains(event.target)) return;
+            if (event.target instanceof Element && event.target.closest(".rr-emoji-trigger")) return;
+            closeMenu();
+          });
           document.addEventListener("keydown", (event) => {
             if (event.key === "Escape" && !menu.hidden) closeMenu();
           });
