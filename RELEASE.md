@@ -1,3 +1,10 @@
+# Sana-Chan Version 4.4.75 Experimental
+
+Version 4.4.75 fixes selecting an emoji from the reaction-role picker.
+
+- targets the Unicode input field by its class so emoji selection completes and closes the menu
+
+---
 # Sana-Chan Version 4.4.74 Experimental
 
 Version 4.4.74 makes the reaction-role emoji picker fit its visible content.

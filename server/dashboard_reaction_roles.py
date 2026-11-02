@@ -399,7 +399,7 @@ def create_reaction_roles_blueprint(deps):
               button.addEventListener("click", () => {
                 const fields = activeTrigger.closest(".rr-emoji-fields");
                 fields.querySelector('input[type="hidden"]').value = emoji.value;
-                fields.querySelector('input[type="text"]').value = "";
+                fields.querySelector(".rr-emoji-unicode").value = "";
                 activeTrigger.querySelector(".rr-emoji-trigger-label").textContent = label.textContent;
                 const preview = activeTrigger.querySelector("img");
                 if (emoji.image_url) {
@@ -437,7 +437,7 @@ def create_reaction_roles_blueprint(deps):
               if (activeTrigger === trigger && !menu.hidden) closeMenu();
               else openMenu(trigger);
             });
-            const unicodeInput = trigger.closest(".rr-emoji-fields").querySelector('input[type="text"]');
+            const unicodeInput = trigger.closest(".rr-emoji-fields").querySelector(".rr-emoji-unicode");
             unicodeInput.addEventListener("input", () => {
               trigger.closest(".rr-emoji-fields").querySelector('input[type="hidden"]').value = "";
               trigger.querySelector(".rr-emoji-trigger-label").textContent = "Choose emoji";
