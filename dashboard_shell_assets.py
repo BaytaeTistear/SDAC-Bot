@@ -266,6 +266,14 @@ body.sdac-sidebar-collapsed .sdac-sidebar { transform: translateX(-105%); }
 .sdac-sidebar details, .sdac-sidebar summary { box-sizing: border-box !important; max-width: 100% !important; }
 
 .sdac-sidebar-section-links { min-height: 0; overflow: visible; padding: 7px 6px 8px; width: 100% !important; }
+.sdac-sidebar-subsection { border: 1px solid rgba(148,163,184,.16); border-radius: 7px; margin: 3px 0; overflow: hidden; }
+.sdac-sidebar-subsection-title { align-items: center; color: var(--sdac-muted); cursor: pointer; display: flex; font-size: .78rem; font-weight: 800; justify-content: space-between; list-style: none; min-height: 1.9rem; padding: 6px 9px; user-select: none; }
+.sdac-sidebar-subsection-title::-webkit-details-marker { display: none; }
+.sdac-sidebar-subsection-title::marker { content: ""; }
+.sdac-sidebar-subsection.active > .sdac-sidebar-subsection-title { color: var(--sdac-secondary); }
+.sdac-sidebar-subsection-caret { align-items: center; border: 1px solid color-mix(in srgb, var(--sdac-muted) 30%, transparent); border-radius: 999px; display: inline-flex; flex: 0 0 auto; font-size: .75rem; height: 1rem; justify-content: center; line-height: 1; width: 1rem; }
+.sdac-sidebar-subsection[open] > .sdac-sidebar-subsection-title .sdac-sidebar-subsection-caret { transform: rotate(45deg); }
+.sdac-sidebar-subsection-links { padding: 2px 5px 6px; }
 .sdac-sidebar-link { border-radius: 7px; color: var(--sdac-text) !important; display: block !important; font-weight: 650; inline-size: 100% !important; line-height: 1.25; margin: 2px 0; max-inline-size: 100% !important; max-width: 100%; overflow-wrap: anywhere; padding: 9px 11px; text-align: left !important; text-decoration: none; white-space: normal; width: 100% !important; }
 .sdac-sidebar-link:hover, .sdac-sidebar-link.active { color: #fff !important; background: linear-gradient(100deg, rgba(124,92,255,.92), rgba(24,217,255,.82)); box-shadow: 0 0 20px rgba(24, 217, 255, .24); }
 .sdac-sidebar-invite { align-items: center; background: linear-gradient(100deg, #7c5cff, #18d9ff); box-shadow: 0 0 24px rgba(24,217,255,.22); border-radius: 8px; color: #fff !important; display: inline-flex; font-weight: 850; justify-content: center; line-height: 1.2; margin: 0 0 12px; min-height: 38px; overflow-wrap: anywhere; padding: 9px 12px; text-align: center; text-decoration: none; white-space: normal; width: 100%; }

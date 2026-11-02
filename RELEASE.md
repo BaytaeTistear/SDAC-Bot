@@ -1,3 +1,12 @@
+# Sana-Chan Version 4.4.82 Experimental
+
+Version 4.4.82 condenses dashboard navigation into nested collapsible groups.
+
+- groups User, Moderator, Server Owner, Full Site Access, public, and cross-server links by task
+- opens the group for the current page and keeps other groups collapsed
+- removes duplicate links when the same destination is already shown in a higher-priority section
+
+---
 # Sana-Chan Version 4.4.81 Experimental
 
 Version 4.4.81 adds moderator-defined labels for button and dropdown role options.

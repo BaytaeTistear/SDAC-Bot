@@ -117,6 +117,66 @@ ADMIN_SECTIONS = [
     },
 ]
 
+
+ADMIN_LINK_GROUPS = {
+    "User": [
+        ("Workspace", ["Staff Home", "Submissions", "Events", "Meetups", "Quotes"]),
+        ("My Account", ["My Submissions", "Notifications", "Support", "Appeals"]),
+        ("Community", ["Guessing", "Servers", "Stats", "Achievements"]),
+    ],
+    "Moderator": [
+        ("Moderation", ["Moderator Workspace", "Case Management", "Review Queue", "Removal Reasons", "Users"]),
+        ("Community", ["Events / Meetups", "Quote Moderation", "Polls"]),
+        ("Server Tools", ["Command Center", "Notifications", "Reaction Roles", "Audit", "Metrics"]),
+        ("Anime & Games", ["Anime Activities", "Game Library"]),
+    ],
+    "Server Owner": [
+        ("Setup & Access", ["Setup Wizard", "Setup Checklist", "Categories", "Permissions", "Settings", "Discord Panels"]),
+        ("Appearance", ["Theme", "Theme Presets", "Layout"]),
+        ("Operations", ["Launch Scores", "Server Health", "Media", "Seasons"]),
+        ("Safety & Onboarding", ["Training Mode", "Onboarding", "Privacy", "Owner Portal"]),
+    ],
+    "Full Site Access": [
+        ("Releases & Launch", ["Release Center", "Release Notes Preview", "Releases", "Release Checklist", "Go Live Control", "Go Live Checklist", "App Store Readiness", "Mobile Pass", "Install Success", "Post-Update Wizard"]),
+        ("Operations & Recovery", ["Operations Dashboard", "Recovery Validation", "Undo Center", "Maintenance Mode", "Maintenance Planner", "Maintenance", "Optimization", "Production", "Install Doctor", "Jobs"]),
+        ("Diagnostics & Quality", ["OAuth Diagnostics", "Self Tests", "Command Audit", "Empty States", "Permission Simulator", "UI Health", "UI Preview", "Report A Problem"]),
+        ("Site Management", ["Global Control", "Notifications", "Command Center", "Activity Digest", "Config History", "Server Switcher", "Preview As", "Approvals"]),
+        ("Reports & Analytics", ["Analytics", "Monthly Report", "All Submissions", "All Guessing"]),
+    ],
+}
+
+PUBLIC_LINK_GROUPS = [
+    ("Browse", ["Home", "Submissions", "Events", "Meetups", "Quotes", "Servers"]),
+    ("My Account", ["My Submissions", "Notifications", "Support", "Appeals"]),
+    ("Community & Help", ["Guessing", "Stats", "Achievements", "API Docs", "Status", "About", "Invite Bot", "Setup Guide"]),
+]
+
+CROSS_LINK_GROUPS = [
+    ("Across Servers", ["All Submissions", "All Guessing", "Servers", "Stats"]),
+]
+
+
+def group_sidebar_links(links, definitions):
+    """Group links for the compact nested sidebar while retaining flat links for callers."""
+    remaining = list(links)
+    groups = []
+    for label, link_labels in definitions:
+        group_links = [link for link in remaining if link["label"] in link_labels]
+        remaining = [link for link in remaining if link["label"] not in link_labels]
+        if group_links:
+            groups.append({
+                "label": label,
+                "active": any(link["active"] for link in group_links),
+                "links": group_links,
+            })
+    if remaining:
+        groups.append({
+            "label": "More",
+            "active": any(link["active"] for link in remaining),
+            "links": remaining,
+        })
+    return groups
+
 PUBLIC_LINKS = [
     ("Home", "index", {}),
     ("Submissions", "index", {}),
@@ -192,6 +252,7 @@ ADMIN_KEY_PUBLIC_ENDPOINTS = {
 
 def admin_sidebar_sections(has_admin_role, admin_url):
     rendered_sections = []
+    visible_urls = set()
     for section in ADMIN_SECTIONS:
         if not has_admin_role(section["required_role"]):
             continue
@@ -200,12 +261,16 @@ def admin_sidebar_sections(has_admin_role, admin_url):
         for label, endpoint, values in section["links"]:
             try:
                 active = request.endpoint == endpoint
+                link_url = admin_url(endpoint, **values)
+                if link_url in visible_urls:
+                    continue
                 section_active = section_active or active
                 rendered_links.append({
                     "label": label,
-                    "url": admin_url(endpoint, **values),
+                    "url": link_url,
                     "active": active,
                 })
+                visible_urls.add(link_url)
             except Exception:
                 continue
         if rendered_links:
@@ -213,6 +278,10 @@ def admin_sidebar_sections(has_admin_role, admin_url):
                 "label": section["label"],
                 "active": section_active,
                 "links": rendered_links,
+                "groups": group_sidebar_links(
+                    rendered_links,
+                    ADMIN_LINK_GROUPS.get(section["label"], []),
+                ),
             })
     return rendered_sections
 
@@ -248,12 +317,14 @@ def public_sidebar_sections():
         "label": "User",
         "active": section_active,
         "links": rendered_links,
+        "groups": group_sidebar_links(rendered_links, PUBLIC_LINK_GROUPS),
     }]
     if cross_links:
         sections.append({
             "label": "Cross Server",
             "active": cross_active,
             "links": cross_links,
+            "groups": group_sidebar_links(cross_links, CROSS_LINK_GROUPS),
         })
     return sections
 
@@ -352,16 +423,38 @@ def admin_sidebar_html(
     home_active = " active" if request.endpoint in {"admin_staff_home", "index"} else ""
     nav_sections = []
     for section in sidebar_sections(is_admin_logged_in, has_admin_role, admin_url):
+        def render_links(links):
+            output = []
+            for link in links:
+                if link["label"] == "Home":
+                    continue
+                active_class = " active" if link["active"] else ""
+                output.append(
+                    f'<a class="sdac-sidebar-link{active_class}" '
+                    f'href="{html.escape(link["url"], quote=True)}">'
+                    f'{html.escape(link["label"])}</a>'
+                )
+            return "".join(output)
+
         section_links = []
-        for link in section["links"]:
-            if link["label"] == "Home":
+        for group in section.get("groups", []):
+            group_links = render_links(group["links"])
+            if not group_links:
                 continue
-            active_class = " active" if link["active"] else ""
+            group_active = " active" if group.get("active") else ""
+            group_open = " open" if group.get("active") else ""
             section_links.append(
-                f'<a class="sdac-sidebar-link{active_class}" '
-                f'href="{html.escape(link["url"], quote=True)}">'
-                f'{html.escape(link["label"])}</a>'
+                f'<details class="sdac-sidebar-subsection{group_active}"{group_open}>'
+                f'<summary class="sdac-sidebar-subsection-title">'
+                f'<span>{html.escape(group["label"])}</span>'
+                '<span class="sdac-sidebar-subsection-caret" aria-hidden="true">+</span>'
+                '</summary>'
+                '<div class="sdac-sidebar-subsection-links">'
+                + group_links
+                + '</div></details>'
             )
+        if not section_links:
+            section_links.append(render_links(section["links"]))
         if section_links:
             active_class = " active" if section.get("active") else ""
             open_attr = " open" if section.get("active") else ""
