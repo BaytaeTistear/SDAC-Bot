@@ -33,6 +33,7 @@ ADMIN_SECTIONS = [
             ("Notifications", "admin_notification_center", {}),
             ("Moderator Workspace", "admin_moderator_workspace", {}),
             ("Reaction Roles", "reaction_roles.manage", {}),
+            ("Website Editor", "site_editor.manage", {}),
             ("Case Management", "admin_case_management", {}),
             ("Review Queue", "admin_moderation", {}),
             ("Events / Meetups", "admin_community_submissions", {}),
@@ -127,7 +128,7 @@ ADMIN_LINK_GROUPS = {
     "Moderator": [
         ("Moderation", ["Moderator Workspace", "Case Management", "Review Queue", "Removal Reasons", "Users"]),
         ("Community", ["Events / Meetups", "Quote Moderation", "Polls"]),
-        ("Server Tools", ["Command Center", "Notifications", "Reaction Roles", "Audit", "Metrics"]),
+        ("Server Tools", ["Command Center", "Notifications", "Reaction Roles", "Website Editor", "Audit", "Metrics"]),
         ("Anime & Games", ["Anime Activities", "Game Library"]),
     ],
     "Server Owner": [

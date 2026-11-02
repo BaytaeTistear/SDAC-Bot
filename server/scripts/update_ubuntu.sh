@@ -59,6 +59,7 @@ for file in \
     dashboard_sidebar.py \
     reaction_roles.py \
     dashboard_reaction_roles.py \
+    dashboard_site_editor.py \
     config.py \
     database_migrations.py \
     observability.py \
@@ -119,6 +120,7 @@ fi
     "$APP_DIR/dashboard_sidebar.py" \
     "$APP_DIR/reaction_roles.py" \
     "$APP_DIR/dashboard_reaction_roles.py" \
+    "$APP_DIR/dashboard_site_editor.py" \
     "$APP_DIR/config.py" \
     "$APP_DIR/database_migrations.py" \
     "$APP_DIR/observability.py"

@@ -662,6 +662,8 @@ ADMIN_ENDPOINT_GUILD_ROLE_REQUIREMENTS = {
     "admin_layout": "owner",
     "admin_owner_portal": "owner",
     "admin_server_health_cards": "moderator",
+    "site_editor.manage": "moderator",
+    "site_editor.preview": "moderator",
 }
 
 NOTIFICATION_EVENT_LABELS = {
@@ -28593,6 +28595,7 @@ def delete_submission(submission_id):
 
 
 from dashboard_reaction_roles import create_reaction_roles_blueprint
+from dashboard_site_editor import create_site_editor_blueprint, get_published_page_copy
 
 app.register_blueprint(create_reaction_roles_blueprint({
     "TOKEN": TOKEN,
@@ -28601,6 +28604,24 @@ app.register_blueprint(create_reaction_roles_blueprint({
     "load_config": load_config,
     "guild_options": guild_options,
     "can_access": lambda guild_id: can_admin_access_guild(guild_id, minimum_role="moderator"),
+    "require_csrf_token": require_csrf_token,
+    "database": database,
+    "add_admin_audit_log": add_admin_audit_log,
+    "web_actor": web_actor,
+    "utc_now_iso": utc_now_iso,
+    "admin_tool_shell": admin_tool_shell,
+    "published_page_copy": lambda guild_id, page_key, field, default="": get_published_page_copy(
+        database, guild_id, page_key, field, default,
+    ),
+}))
+
+app.register_blueprint(create_site_editor_blueprint({
+    "ADMIN_KEY": ADMIN_KEY,
+    "require_admin_login": require_admin_login,
+    "load_config": load_config,
+    "guild_options": guild_options,
+    "can_access": lambda guild_id: can_admin_access_guild(guild_id, minimum_role="moderator"),
+    "can_edit_html": lambda guild_id: can_admin_access_guild(guild_id, minimum_role="admin"),
     "require_csrf_token": require_csrf_token,
     "database": database,
     "add_admin_audit_log": add_admin_audit_log,

@@ -41,6 +41,7 @@ jobs:
             dashboard_sidebar.py \
             reaction_roles.py \
             dashboard_reaction_roles.py \
+            dashboard_site_editor.py \
             community_quotes.py \
             config.py \
             database_backend.py \

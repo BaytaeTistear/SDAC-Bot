@@ -363,6 +363,10 @@ def create_reaction_roles_blueprint(deps):
                 })
         emojis.extend(server_custom_emojis)
         server_emoji_count = len(server_custom_emojis)
+        helper_text = deps.get("published_page_copy", lambda *_args: "Choose a Discord default emoji below, or enter a Unicode emoji.")(
+            guild_id, "reaction_roles", "helper_text",
+            "Choose a Discord default emoji below, or enter a Unicode emoji.",
+        )
         edit_panel = None
         edit_options = []
         with deps["database"]() as connection:
@@ -447,7 +451,8 @@ def create_reaction_roles_blueprint(deps):
             <label>Display style<select name="display_mode"><option value="reactions" {% if edit_panel and edit_panel.display_mode == 'reactions' %}selected{% endif %}>Emoji reactions</option><option value="buttons" {% if edit_panel and edit_panel.display_mode == 'buttons' %}selected{% endif %}>Buttons</option><option value="dropdown" {% if edit_panel and edit_panel.display_mode == 'dropdown' %}selected{% endif %}>Dropdown menu</option></select></label>
           </div>
           <h3>Emoji and role options (up to 20)</h3>
-          {% if emoji_error %}<p>Could not load this server's custom emojis. Discord default emoji are available below.</p>{% elif not server_emoji_count %}<p>Choose a Discord default emoji below, or enter a Unicode emoji.</p>{% else %}<p>Choose a Discord default or server emoji. Server emoji show their image beside the name.</p>{% endif %}
+          <p>{{ helper_text|e }}</p>
+          {% if emoji_error %}<p>Could not load this server's custom emojis; Discord defaults remain available.</p>{% elif server_emoji_count %}<p>Server emojis are also available and show their image beside the name.</p>{% endif %}
           <div class="rr-options" id="rr-options">
             <div class="rr-option"><div class="rr-emoji-fields"><button class="rr-emoji-trigger" type="button" aria-expanded="false"><span class="rr-emoji-trigger-label">Choose emoji</span><img alt="" hidden></button><input type="hidden" name="server_emoji_1"><input class="rr-emoji-unicode" name="unicode_emoji_1" placeholder="or enter Unicode 😀" aria-label="Unicode emoji 1"></div><select name="role_1" aria-label="Role 1"><option value="">Choose role</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select><label class="rr-option-label-wrap" hidden>Button / dropdown label (optional)<input class="rr-option-label" name="label_1" maxlength="100" placeholder="Defaults to the role name"></label></div>
           </div>
@@ -666,6 +671,7 @@ def create_reaction_roles_blueprint(deps):
             panels=panels, emojis=emojis, emoji_error=emoji_error,
             server_emoji_count=server_emoji_count, edit_panel=edit_panel,
             edit_options=edit_options,
+            helper_text=helper_text,
         )
 
     return bp
