@@ -375,7 +375,7 @@ export PIP_DISABLE_PIP_VERSION_CHECK=1
 if [[ -f "$APP_DIR/requirements.txt" ]]; then
     "$APP_DIR/venv/bin/python" -m pip install -q -r "$APP_DIR/requirements.txt"
 else
-    "$APP_DIR/venv/bin/python" -m pip install -q "discord.py>=2.3.2" "Flask>=3.0.0" "gunicorn>=22.0.0"
+    "$APP_DIR/venv/bin/python" -m pip install -q "discord.py>=2.3.2" "Flask>=3.0.0" "gunicorn>=22.0.0" "emoji>=2.16.0"
 fi
 
 if [[ "$INSTALL_BACKUP_PREREQS" == "1" && -f "$APP_DIR/scripts/install_backup_prereqs.sh" ]]; then

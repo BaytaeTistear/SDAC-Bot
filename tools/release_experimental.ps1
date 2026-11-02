@@ -63,6 +63,7 @@ if (-not $SkipCommit) {
         git add community_extensions.py server/community_extensions.py tests/test_quote_web.py tests/test_account_notifications.py tests/test_community_extensions.py tests/test_submission_lifecycle.py scripts/quick_install.sh server/scripts/quick_install.sh dist/Sana-Chan-Linux-Installer.sh.sha256 dist/sana-install
         git add .github/workflows/staging.yml API_WEBHOOKS.md DATA_PRIVACY.md PRODUCTION_OPERATIONS.md SUPPORT_RUNBOOK.md professional_services.py static/professional.css scripts/deploy_environment.py e2e/package.json e2e/package-lock.json e2e/playwright.config.ts e2e/tests/professional.spec.ts tests/test_professional_features.py server/API_WEBHOOKS.md server/DATA_PRIVACY.md server/PRODUCTION_OPERATIONS.md server/SUPPORT_RUNBOOK.md server/professional_services.py server/static/professional.css server/scripts/deploy_environment.py
         git add reaction_roles.py dashboard_reaction_roles.py server/reaction_roles.py server/dashboard_reaction_roles.py
+        git add scripts/update_ubuntu.sh server/scripts/update_ubuntu.sh
         git commit -m $CommitMessage
     }
 }

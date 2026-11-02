@@ -1,3 +1,12 @@
+# Sana-Chan Version 4.4.70 Experimental
+
+Version 4.4.70 closes the emoji picker on outside click and includes Discord's Unicode emoji catalog.
+
+- lists searchable standard Unicode emoji together with the server's custom emoji
+- displays Unicode emoji as colorful glyphs and custom server emoji as their image files
+- closes the picker with a click outside, the close backdrop, or Escape
+
+---
 # Sana-Chan Version 4.4.69 Experimental
 
 Version 4.4.69 displays server emoji images in the reaction-role emoji picker.

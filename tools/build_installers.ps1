@@ -918,7 +918,7 @@ pause
         string venvPython = Path.Combine(appDir, "venv", "Scripts", "python.exe");
         Run(pythonCommand, "-m venv \"" + Path.Combine(appDir, "venv") + "\"", appDir, true);
         Run(venvPython, "-m pip install --upgrade pip", appDir, false);
-        Run(venvPython, "-m pip install \"discord.py>=2.3.2\" \"Flask>=3.0.0\" \"sentry-sdk>=2.0.0\"", appDir, false);
+        Run(venvPython, "-m pip install \"discord.py>=2.3.2\" \"Flask>=3.0.0\" \"sentry-sdk>=2.0.0\" \"emoji>=2.16.0\"", appDir, false);
         Run(venvPython, "-m py_compile bot.py community_quotes.py dashboard.py dashboard_account_templates.py dashboard_admin_roles.py dashboard_shell_assets.py dashboard_sidebar.py reaction_roles.py dashboard_reaction_roles.py config.py database_backend.py database_migrations.py anilist_integration.py mal_integration.py observability.py professional_services.py scripts\\migrate_database.py scripts\\export_sqlite_to_postgres.py", appDir, false);
         if (!String.IsNullOrWhiteSpace(InitialAdminUsername) && !String.IsNullOrWhiteSpace(InitialAdminPassword))
         {

@@ -107,7 +107,7 @@ fi
 if [[ -f "$APP_DIR/requirements.txt" ]]; then
     PIP_DISABLE_PIP_VERSION_CHECK=1 "$PYTHON" -m pip install -q -r "$APP_DIR/requirements.txt"
 else
-    PIP_DISABLE_PIP_VERSION_CHECK=1 "$PYTHON" -m pip install -q "discord.py>=2.3.2" "Flask>=3.0.0" "gunicorn>=22.0.0"
+    PIP_DISABLE_PIP_VERSION_CHECK=1 "$PYTHON" -m pip install -q "discord.py>=2.3.2" "Flask>=3.0.0" "gunicorn>=22.0.0" "emoji>=2.16.0"
 fi
 
 "$PYTHON" -m py_compile \

@@ -9,3 +9,4 @@ py7zr>=0.21.0
 rarfile>=4.2
 backports.zoneinfo>=0.2.1; python_version < '3.9'
 tzdata>=2024.1
+emoji>=2.16.0
