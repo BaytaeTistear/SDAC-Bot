@@ -1,3 +1,12 @@
+# Sana-Chan Version 4.4.79 Experimental
+
+Version 4.4.79 adds editing for existing reaction-role panels.
+
+- loads existing title, description, selection mode, display style, emoji, and role choices into the dashboard form
+- updates the existing Discord message and replaces its stored role mappings when saved
+- keeps dashboard deletion tied to deleting the Discord message before removing the panel record
+
+---
 # Sana-Chan Version 4.4.78 Experimental
 
 Version 4.4.78 lets moderators choose how reaction-role options appear.

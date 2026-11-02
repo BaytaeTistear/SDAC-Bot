@@ -101,7 +101,30 @@ def create_reaction_roles_blueprint(deps):
                     )
                 return dashboard_url(guild_id, "Reaction-role panel deleted.")
 
+            if action not in {"create", "edit"}:
+                return dashboard_url(guild_id, "Unknown reaction-role panel action.", True)
+            editing_panel = None
+            old_mappings = []
+            if action == "edit":
+                message_id = request.form.get("message_id", "").strip()
+                with deps["database"]() as connection:
+                    ensure_reaction_role_schema(connection)
+                    editing_panel = connection.execute(
+                        "SELECT message_id,channel_id,display_mode FROM reaction_role_panels "
+                        "WHERE message_id = ? AND guild_id = ?",
+                        (message_id, guild_id),
+                    ).fetchone()
+                    if editing_panel:
+                        old_mappings = connection.execute(
+                            "SELECT emoji,role_id FROM reaction_role_options WHERE message_id = ?",
+                            (message_id,),
+                        ).fetchall()
+                if not editing_panel:
+                    return dashboard_url(guild_id, "Panel not found; it may have been deleted already.", True)
+
             channel_id = request.form.get("channel_id", "")
+            if action == "edit" and channel_id != str(editing_panel["channel_id"]):
+                return dashboard_url(guild_id, "An existing Discord message cannot be moved to another channel.", True)
             title = request.form.get("title", "").strip()[:100]
             description = request.form.get("description", "").strip()[:500]
             mode = request.form.get("mode", "multi")
@@ -223,13 +246,33 @@ def create_reaction_roles_blueprint(deps):
                     "max_values": 1 if mode == "single" else len(select_options),
                     "options": select_options,
                 }]}]
-            message, error = api(
-                "POST", f"/channels/{channel_id}/messages",
-                {"content": content, "allowed_mentions": {"parse": []}, **({"components": components} if components else {})},
-            )
+            message_payload = {
+                "content": content,
+                "allowed_mentions": {"parse": []},
+                "components": components,
+            }
+            if action == "edit":
+                message_id = str(editing_panel["message_id"])
+                message, error = api(
+                    "PATCH", f"/channels/{editing_panel['channel_id']}/messages/{message_id}",
+                    message_payload,
+                )
+            else:
+                message, error = api(
+                    "POST", f"/channels/{channel_id}/messages", message_payload,
+                )
             if error or not isinstance(message, dict) or not message.get("id"):
-                return dashboard_url(guild_id, f"Could not create the Discord panel: {error}", True)
+                verb = "update" if action == "edit" else "create"
+                return dashboard_url(guild_id, f"Could not {verb} the Discord panel: {error}", True)
             message_id = str(message["id"])
+            if action == "edit" and editing_panel["display_mode"] == "reactions":
+                for old in old_mappings:
+                    _, removal_error = api(
+                        "DELETE",
+                        f"/channels/{channel_id}/messages/{message_id}/reactions/{quote(old['emoji'], safe='')}/@me",
+                    )
+                    if removal_error and "HTTP 404" not in removal_error:
+                        return dashboard_url(guild_id, f"Updated the message but could not refresh its old reactions: {removal_error}", True)
             if display_mode == "reactions":
                 for mapping in mappings:
                     _, error = api(
@@ -245,21 +288,29 @@ def create_reaction_roles_blueprint(deps):
                         )
             with deps["database"]() as connection:
                 ensure_reaction_role_schema(connection)
-                connection.execute(
-                    "INSERT INTO reaction_role_panels (message_id,guild_id,channel_id,title,description,mode,display_mode,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                    (message_id, guild_id, channel_id, title, description, mode, display_mode, str(actor_id), deps["utc_now_iso"]()),
-                )
+                if action == "edit":
+                    connection.execute(
+                        "UPDATE reaction_role_panels SET channel_id=?,title=?,description=?,mode=?,display_mode=? "
+                        "WHERE message_id=? AND guild_id=?",
+                        (channel_id, title, description, mode, display_mode, message_id, guild_id),
+                    )
+                    connection.execute("DELETE FROM reaction_role_options WHERE message_id = ?", (message_id,))
+                else:
+                    connection.execute(
+                        "INSERT INTO reaction_role_panels (message_id,guild_id,channel_id,title,description,mode,display_mode,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                        (message_id, guild_id, channel_id, title, description, mode, display_mode, str(actor_id), deps["utc_now_iso"]()),
+                    )
                 for mapping in mappings:
                     connection.execute(
                         "INSERT INTO reaction_role_options (message_id,emoji,role_id) VALUES (?,?,?)",
                         (message_id, mapping["emoji"], mapping["role_id"]),
                     )
                 deps["add_admin_audit_log"](
-                    connection, guild_id, "reaction_role_panel_created", actor_id,
+                    connection, guild_id, "reaction_role_panel_edited" if action == "edit" else "reaction_role_panel_created", actor_id,
                     actor_name, "reaction_role_panel", message_id,
                 f"{title}; mode={mode}; display={display_mode}; options={len(mappings)}",
                 )
-            return dashboard_url(guild_id, "Reaction-role panel created.")
+            return dashboard_url(guild_id, "Reaction-role panel updated." if action == "edit" else "Reaction-role panel created.")
 
         channels, _ = api("GET", f"/guilds/{guild_id}/channels")
         roles, _ = api("GET", f"/guilds/{guild_id}/roles")
@@ -300,8 +351,32 @@ def create_reaction_roles_blueprint(deps):
                 })
         emojis.extend(server_custom_emojis)
         server_emoji_count = len(server_custom_emojis)
+        edit_panel = None
+        edit_options = []
         with deps["database"]() as connection:
             ensure_reaction_role_schema(connection)
+            edit_message_id = request.args.get("edit_message_id", "").strip()
+            if edit_message_id:
+                edit_panel = connection.execute(
+                    "SELECT message_id,channel_id,title,description,mode,display_mode FROM reaction_role_panels "
+                    "WHERE message_id = ? AND guild_id = ?",
+                    (edit_message_id, guild_id),
+                ).fetchone()
+                if edit_panel:
+                    for option in connection.execute(
+                        "SELECT emoji,role_id FROM reaction_role_options WHERE message_id = ? ORDER BY emoji",
+                        (edit_message_id,),
+                    ).fetchall():
+                        match = next(
+                            (item for item in emojis if canonical_reaction_role_emoji(item["value"]) == option["emoji"]),
+                            None,
+                        )
+                        if match:
+                            emoji_value = match["value"]
+                        else:
+                            custom = re.fullmatch(r"([A-Za-z0-9_]{2,32}):(\d{15,22})", option["emoji"])
+                            emoji_value = f"<:{custom.group(1)}:{custom.group(2)}>" if custom else option["emoji"]
+                        edit_options.append({"emoji": emoji_value, "role_id": str(option["role_id"])})
             panels = connection.execute(
                 "SELECT p.message_id,p.channel_id,p.title,p.mode,p.display_mode,p.created_at,COUNT(o.role_id) AS option_count "
                 "FROM reaction_role_panels p LEFT JOIN reaction_role_options o USING(message_id) "
@@ -344,16 +419,17 @@ def create_reaction_roles_blueprint(deps):
           <input type="hidden" name="key" value="{{ admin_key }}">
           <label>Server<select name="guild_id" onchange="this.form.submit()">{% for item in guild_options %}<option value="{{ item.id }}" {% if item.id|string == guild_id|string %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></label>
         </form>
-        <h2>Create a reaction-role panel</h2>
+          <h2>{{ 'Edit reaction-role panel' if edit_panel else 'Create a reaction-role panel' }}</h2>
         <p>Members add or remove the listed roles by reacting. Single choice removes other roles from this panel when a new choice is selected.</p>
         <form method="post" action="{{ url_for('reaction_roles.manage') }}">
           <input type="hidden" name="key" value="{{ admin_key }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="guild_id" value="{{ guild_id }}">
+          {% if edit_panel %}<input type="hidden" name="action" value="edit"><input type="hidden" name="message_id" value="{{ edit_panel.message_id }}">{% endif %}
           <div class="rr-grid">
-            <label>Post in<select name="channel_id" required>{% for channel in channels %}<option value="{{ channel.id }}">#{{ channel.name }}</option>{% endfor %}</select></label>
-            <label>Title<input name="title" maxlength="100" required></label>
-            <label>Description<textarea name="description" maxlength="500" rows="2"></textarea></label>
-            <label>Selection mode<select name="mode"><option value="multi">Multiple roles</option><option value="single">One choice (replaces other panel roles)</option></select></label>
-            <label>Display style<select name="display_mode"><option value="reactions">Emoji reactions</option><option value="buttons">Buttons</option><option value="dropdown">Dropdown menu</option></select></label>
+            <label>Post in<select name="channel_id" required {% if edit_panel %}disabled{% endif %}>{% for channel in channels %}<option value="{{ channel.id }}" {% if edit_panel and edit_panel.channel_id|string == channel.id|string %}selected{% endif %}>#{{ channel.name }}</option>{% endfor %}</select>{% if edit_panel %}<input type="hidden" name="channel_id" value="{{ edit_panel.channel_id }}">{% endif %}</label>
+            <label>Title<input name="title" maxlength="100" required value="{{ edit_panel.title if edit_panel else '' }}"></label>
+            <label>Description<textarea name="description" maxlength="500" rows="2">{{ edit_panel.description if edit_panel else '' }}</textarea></label>
+            <label>Selection mode<select name="mode"><option value="multi" {% if edit_panel and edit_panel.mode == 'multi' %}selected{% endif %}>Multiple roles</option><option value="single" {% if edit_panel and edit_panel.mode == 'single' %}selected{% endif %}>One choice (replaces other panel roles)</option></select></label>
+            <label>Display style<select name="display_mode"><option value="reactions" {% if edit_panel and edit_panel.display_mode == 'reactions' %}selected{% endif %}>Emoji reactions</option><option value="buttons" {% if edit_panel and edit_panel.display_mode == 'buttons' %}selected{% endif %}>Buttons</option><option value="dropdown" {% if edit_panel and edit_panel.display_mode == 'dropdown' %}selected{% endif %}>Dropdown menu</option></select></label>
           </div>
           <h3>Emoji and role options (up to 20)</h3>
           {% if emoji_error %}<p>Could not load this server's custom emojis. Discord default emoji are available below.</p>{% elif not server_emoji_count %}<p>Choose a Discord default emoji below, or enter a Unicode emoji.</p>{% else %}<p>Choose a Discord default or server emoji. Server emoji show their image beside the name.</p>{% endif %}
@@ -363,9 +439,10 @@ def create_reaction_roles_blueprint(deps):
           <template id="rr-option-template"><div class="rr-option"><div class="rr-emoji-fields"><button class="rr-emoji-trigger" type="button" aria-expanded="false"><span class="rr-emoji-trigger-label">Choose emoji</span><img alt="" hidden></button><input type="hidden" name="server_emoji___INDEX__"><input class="rr-emoji-unicode" name="unicode_emoji___INDEX__" placeholder="or enter Unicode 😀" aria-label="Unicode emoji __INDEX__"></div><select name="role___INDEX__" aria-label="Role __INDEX__"><option value="">Choose role</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select></div></template>
           <div class="rr-option-controls"><button type="button" id="rr-add-option">New</button><span class="rr-option-count" id="rr-option-count">1 of 20 options</span></div>
           <div id="rr-emoji-menu" class="rr-emoji-menu" role="listbox" aria-label="Discord and server emojis" hidden></div>
-          <p><button type="submit">Create panel</button></p>
+          <p><button type="submit">{{ 'Save changes' if edit_panel else 'Create panel' }}</button>{% if edit_panel %} <a href="{{ url_for('reaction_roles.manage', key=admin_key, guild_id=guild_id) }}">Cancel edit</a>{% endif %}</p>
         </form>
         <script type="application/json" id="rr-server-emojis">{{ emojis|tojson }}</script>
+        <script type="application/json" id="rr-edit-options">{{ edit_options|tojson }}</script>
         <script>
         (() => {
           const data = JSON.parse(document.getElementById("rr-server-emojis").textContent || "[]");
@@ -375,6 +452,7 @@ def create_reaction_roles_blueprint(deps):
           const addOptionButton = document.getElementById("rr-add-option");
           const optionCount = document.getElementById("rr-option-count");
           const maxOptions = 20;
+          const editOptions = JSON.parse(document.getElementById("rr-edit-options").textContent || "[]");
           let activeTrigger = null;
           let emojiButtons = [];
           const closeMenu = () => {
@@ -499,9 +577,9 @@ def create_reaction_roles_blueprint(deps):
             });
           };
           options.querySelectorAll(".rr-emoji-trigger").forEach(bindEmojiTrigger);
-          addOptionButton.addEventListener("click", () => {
+          const addOption = () => {
             const nextIndex = options.children.length + 1;
-            if (nextIndex > maxOptions) return;
+            if (nextIndex > maxOptions) return null;
             const fragment = optionTemplate.content.cloneNode(true);
             const row = fragment.querySelector(".rr-option");
             for (const field of row.querySelectorAll("[name], [aria-label]")) {
@@ -513,7 +591,31 @@ def create_reaction_roles_blueprint(deps):
             bindEmojiTrigger(row.querySelector(".rr-emoji-trigger"));
             optionCount.textContent = `${nextIndex} of ${maxOptions} options`;
             addOptionButton.disabled = nextIndex >= maxOptions;
+            return row;
+          };
+          addOptionButton.addEventListener("click", addOption);
+          editOptions.forEach((option, index) => {
+            const row = index === 0 ? options.firstElementChild : addOption();
+            if (!row) return;
+            const customEmoji = /^<a?:[A-Za-z0-9_]{2,32}:\d{15,22}>$/.test(option.emoji);
+            const fields = row.querySelector(".rr-emoji-fields");
+            fields.querySelector('input[type="hidden"]').value = customEmoji ? option.emoji : "";
+            fields.querySelector(".rr-emoji-unicode").value = customEmoji ? "" : option.emoji;
+            const trigger = fields.querySelector(".rr-emoji-trigger");
+            const emoji = data.find((item) => item.value === option.emoji);
+            trigger.querySelector(".rr-emoji-trigger-label").textContent = emoji
+              ? (emoji.image_url ? emoji.label : `${emoji.value} ${emoji.label}`)
+              : option.emoji;
+            if (emoji && emoji.image_url) {
+              const preview = trigger.querySelector("img");
+              preview.src = emoji.image_url;
+              preview.alt = emoji.label;
+              preview.hidden = false;
+            }
+            row.querySelector('select[name^="role_"]').value = option.role_id;
           });
+          optionCount.textContent = `${options.children.length} of ${maxOptions} options`;
+          addOptionButton.disabled = options.children.length >= maxOptions;
           document.addEventListener("click", (event) => {
             if (menu.hidden || menu.contains(event.target)) return;
             if (event.target instanceof Element && event.target.closest(".rr-emoji-trigger")) return;
@@ -530,15 +632,16 @@ def create_reaction_roles_blueprint(deps):
         })();
         </script>
         <h2>Existing panels</h2>
-        {% if panels %}{% for panel in panels %}<div class="rr-panel"><strong>{{ panel.title }}</strong> · {{ panel.option_count }} choices · {{ panel.mode }} · {{ panel.display_mode }}<br><a href="https://discord.com/channels/{{ guild_id }}/{{ panel.channel_id }}/{{ panel.message_id }}" target="_blank" rel="noopener">Open panel</a>
+        {% if panels %}{% for panel in panels %}<div class="rr-panel"><strong>{{ panel.title }}</strong> · {{ panel.option_count }} choices · {{ panel.mode }} · {{ panel.display_mode }}<br><a href="https://discord.com/channels/{{ guild_id }}/{{ panel.channel_id }}/{{ panel.message_id }}" target="_blank" rel="noopener">Open panel</a> · <a href="{{ url_for('reaction_roles.manage', key=admin_key, guild_id=guild_id, edit_message_id=panel.message_id) }}">Edit</a>
           <form method="post" action="{{ url_for('reaction_roles.manage') }}" onsubmit="return confirm('Delete this reaction-role panel and its Discord message?')"><input type="hidden" name="key" value="{{ admin_key }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="message_id" value="{{ panel.message_id }}"><button type="submit">Delete panel</button></form></div>{% endfor %}{% else %}<p>No panels in this server yet.</p>{% endif %}
-        <p>Required bot permissions: Manage Roles, View Channel, Send Messages, Read Message History, and Add Reactions. Put Sana's bot role above the selectable roles.</p>
+        <p>Required bot permissions: Manage Roles, View Channel, Send Messages, and Read Message History. Emoji-reaction panels also need Add Reactions. Put Sana's bot role above the selectable roles.</p>
         """
         return deps["admin_tool_shell"](
             "Reaction Roles", "Create and manage moderator reaction-role panels.", body,
             guild_options=options, guild_id=guild_id, channels=channels, roles=roles,
             panels=panels, emojis=emojis, emoji_error=emoji_error,
-            server_emoji_count=server_emoji_count,
+            server_emoji_count=server_emoji_count, edit_panel=edit_panel,
+            edit_options=edit_options,
         )
 
     return bp
