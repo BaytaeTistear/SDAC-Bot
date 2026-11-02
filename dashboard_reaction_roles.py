@@ -274,6 +274,8 @@ def create_reaction_roles_blueprint(deps):
           .rr-grid label{display:block;font-weight:600}
           .rr-grid input,.rr-grid select,.rr-grid textarea{box-sizing:border-box;width:100%;padding:9px;margin-top:5px}
           .rr-options{display:grid;gap:8px;max-width:760px}
+          .rr-option-controls{display:flex;align-items:center;gap:10px;margin-top:10px}
+          .rr-option-count{color:#9fb0c8}
           .rr-option{display:grid;grid-template-columns:minmax(250px,1fr) minmax(180px,1fr);gap:8px;align-items:center}
           .rr-emoji-fields{display:grid;gap:6px}
           .rr-emoji-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;box-sizing:border-box;width:100%;min-height:42px;padding:6px 10px;text-align:left;cursor:pointer}
@@ -313,9 +315,11 @@ def create_reaction_roles_blueprint(deps):
           </div>
           <h3>Emoji and role options (up to 20)</h3>
           {% if emoji_error %}<p>Could not load this server's custom emojis. Discord default emoji are available below.</p>{% elif not server_emoji_count %}<p>Choose a Discord default emoji below, or enter a Unicode emoji.</p>{% else %}<p>Choose a Discord default or server emoji. Server emoji show their image beside the name.</p>{% endif %}
-          <div class="rr-options">
-          {% for index in range(1, 21) %}<div class="rr-option"><div class="rr-emoji-fields"><button class="rr-emoji-trigger" type="button" aria-expanded="false"><span class="rr-emoji-trigger-label">Choose emoji</span><img alt="" hidden></button><input type="hidden" name="server_emoji_{{ index }}"><input class="rr-emoji-unicode" name="unicode_emoji_{{ index }}" placeholder="or enter Unicode 😀" aria-label="Unicode emoji {{ index }}"></div><select name="role_{{ index }}" aria-label="Role {{ index }}"><option value="">Choose role</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select></div>{% endfor %}
+          <div class="rr-options" id="rr-options">
+            <div class="rr-option"><div class="rr-emoji-fields"><button class="rr-emoji-trigger" type="button" aria-expanded="false"><span class="rr-emoji-trigger-label">Choose emoji</span><img alt="" hidden></button><input type="hidden" name="server_emoji_1"><input class="rr-emoji-unicode" name="unicode_emoji_1" placeholder="or enter Unicode 😀" aria-label="Unicode emoji 1"></div><select name="role_1" aria-label="Role 1"><option value="">Choose role</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select></div>
           </div>
+          <template id="rr-option-template"><div class="rr-option"><div class="rr-emoji-fields"><button class="rr-emoji-trigger" type="button" aria-expanded="false"><span class="rr-emoji-trigger-label">Choose emoji</span><img alt="" hidden></button><input type="hidden" name="server_emoji___INDEX__"><input class="rr-emoji-unicode" name="unicode_emoji___INDEX__" placeholder="or enter Unicode 😀" aria-label="Unicode emoji __INDEX__"></div><select name="role___INDEX__" aria-label="Role __INDEX__"><option value="">Choose role</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select></div></template>
+          <div class="rr-option-controls"><button type="button" id="rr-add-option">New</button><span class="rr-option-count" id="rr-option-count">1 of 20 options</span></div>
           <div id="rr-emoji-menu" class="rr-emoji-menu" role="listbox" aria-label="Discord and server emojis" hidden></div>
           <p><button type="submit">Create panel</button></p>
         </form>
@@ -324,6 +328,11 @@ def create_reaction_roles_blueprint(deps):
         (() => {
           const data = JSON.parse(document.getElementById("rr-server-emojis").textContent || "[]");
           const menu = document.getElementById("rr-emoji-menu");
+          const options = document.getElementById("rr-options");
+          const optionTemplate = document.getElementById("rr-option-template");
+          const addOptionButton = document.getElementById("rr-add-option");
+          const optionCount = document.getElementById("rr-option-count");
+          const maxOptions = 20;
           let activeTrigger = null;
           let emojiButtons = [];
           const closeMenu = () => {
@@ -432,7 +441,7 @@ def create_reaction_roles_blueprint(deps):
             // would otherwise close this fixed-position picker immediately.
             search.focus({ preventScroll: true });
           };
-          document.querySelectorAll(".rr-emoji-trigger").forEach((trigger) => {
+          const bindEmojiTrigger = (trigger) => {
             trigger.addEventListener("click", () => {
               if (activeTrigger === trigger && !menu.hidden) closeMenu();
               else openMenu(trigger);
@@ -446,6 +455,22 @@ def create_reaction_roles_blueprint(deps):
               preview.alt = "";
               preview.hidden = true;
             });
+          };
+          options.querySelectorAll(".rr-emoji-trigger").forEach(bindEmojiTrigger);
+          addOptionButton.addEventListener("click", () => {
+            const nextIndex = options.children.length + 1;
+            if (nextIndex > maxOptions) return;
+            const fragment = optionTemplate.content.cloneNode(true);
+            const row = fragment.querySelector(".rr-option");
+            for (const field of row.querySelectorAll("[name], [aria-label]")) {
+              if (field.name) field.name = field.name.replace("__INDEX__", String(nextIndex));
+              const ariaLabel = field.getAttribute("aria-label");
+              if (ariaLabel) field.setAttribute("aria-label", ariaLabel.replace("__INDEX__", String(nextIndex)));
+            }
+            options.appendChild(fragment);
+            bindEmojiTrigger(row.querySelector(".rr-emoji-trigger"));
+            optionCount.textContent = `${nextIndex} of ${maxOptions} options`;
+            addOptionButton.disabled = nextIndex >= maxOptions;
           });
           document.addEventListener("click", (event) => {
             if (menu.hidden || menu.contains(event.target)) return;

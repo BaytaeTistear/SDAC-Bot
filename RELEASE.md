@@ -1,3 +1,11 @@
+# Sana-Chan Version 4.4.77 Experimental
+
+Version 4.4.77 simplifies reaction-role panel creation.
+
+- starts with one emoji and role option
+- adds further option rows with the New button, up to 20
+
+---
 # Sana-Chan Version 4.4.76 Experimental
 
 Version 4.4.76 keeps the reaction-role emoji picker open while scrolling its emoji list.
