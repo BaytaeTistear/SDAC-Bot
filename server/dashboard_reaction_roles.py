@@ -412,7 +412,9 @@ def create_reaction_roles_blueprint(deps):
             menu.style.left = `${Math.max(12, Math.min(bounds.left, window.innerWidth - width - 12))}px`;
             menu.style.top = `${Math.max(12, Math.min(bounds.bottom + 4, window.innerHeight - 360))}px`;
             menu.hidden = false;
-            search.focus();
+            // Focusing the search field must not scroll the page: a scroll event
+            // would otherwise close this fixed-position picker immediately.
+            search.focus({ preventScroll: true });
           };
           document.querySelectorAll(".rr-emoji-trigger").forEach((trigger) => {
             trigger.addEventListener("click", () => {

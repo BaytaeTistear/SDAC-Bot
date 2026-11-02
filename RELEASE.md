@@ -1,3 +1,10 @@
+# Sana-Chan Version 4.4.72 Experimental
+
+Version 4.4.72 fixes the reaction-role emoji picker closing immediately when opened.
+
+- prevents focusing the emoji search field from scrolling the page and closing the picker
+
+---
 # Sana-Chan Version 4.4.71 Experimental
 
 Version 4.4.71 fixes the reaction-role emoji picker covering the dashboard.
