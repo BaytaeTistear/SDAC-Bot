@@ -105,8 +105,9 @@ def create_reaction_roles_blueprint(deps):
             title = request.form.get("title", "").strip()[:100]
             description = request.form.get("description", "").strip()[:500]
             mode = request.form.get("mode", "multi")
-            if not channel_id.isdigit() or not title or mode not in {"multi", "single"}:
-                return dashboard_url(guild_id, "Choose a channel, title, and valid selection mode.", True)
+            display_mode = request.form.get("display_mode", "reactions")
+            if not channel_id.isdigit() or not title or mode not in {"multi", "single"} or display_mode not in {"reactions", "buttons", "dropdown"}:
+                return dashboard_url(guild_id, "Choose a channel, title, and valid role/display mode.", True)
             mappings = []
             for index in range(1, 21):
                 emoji = (
@@ -179,34 +180,74 @@ def create_reaction_roles_blueprint(deps):
             lines = [f"**{title}**"]
             if description:
                 lines.append(description)
-            lines.extend(f"{row['display']} — <@&{row['role_id']}>" for row in mappings)
+            if display_mode == "reactions":
+                lines.extend(f"{row['display']} — <@&{row['role_id']}>" for row in mappings)
             content = "\n".join(lines)
             if len(content) > 1900:
                 return dashboard_url(guild_id, "Panel text is too long. Shorten the title or description.", True)
+            components = []
+            if display_mode == "buttons":
+                for offset in range(0, len(mappings), 5):
+                    row_components = []
+                    for mapping in mappings[offset:offset + 5]:
+                        role = role_map[mapping["role_id"]]
+                        emoji_payload = None
+                        if mapping["custom_id"]:
+                            custom = re.fullmatch(r"<a?:([A-Za-z0-9_]{2,32}):(\d{15,22})>", mapping["display"])
+                            emoji_payload = {"id": custom.group(2), "name": custom.group(1)}
+                        else:
+                            emoji_payload = {"name": mapping["display"]}
+                        row_components.append({
+                            "type": 2, "style": 1, "label": role.get("name", "Role")[:80],
+                            "emoji": emoji_payload, "custom_id": f"sana_rr:{mapping['role_id']}",
+                        })
+                    components.append({"type": 1, "components": row_components})
+            elif display_mode == "dropdown":
+                select_options = []
+                for mapping in mappings:
+                    role = role_map[mapping["role_id"]]
+                    if mapping["custom_id"]:
+                        custom = re.fullmatch(r"<a?:([A-Za-z0-9_]{2,32}):(\d{15,22})>", mapping["display"])
+                        emoji_payload = {"id": custom.group(2), "name": custom.group(1)}
+                    else:
+                        emoji_payload = {"name": mapping["display"]}
+                    select_options.append({
+                        "label": role.get("name", "Role")[:100],
+                        "value": mapping["role_id"],
+                        "emoji": emoji_payload,
+                    })
+                components = [{"type": 1, "components": [{
+                    "type": 3, "custom_id": "sana_rr:dropdown",
+                    "placeholder": "Choose a role",
+                    "min_values": 1,
+                    "max_values": 1 if mode == "single" else len(select_options),
+                    "options": select_options,
+                }]}]
             message, error = api(
                 "POST", f"/channels/{channel_id}/messages",
-                {"content": content, "allowed_mentions": {"parse": []}},
+                {"content": content, "allowed_mentions": {"parse": []}, **({"components": components} if components else {})},
             )
             if error or not isinstance(message, dict) or not message.get("id"):
                 return dashboard_url(guild_id, f"Could not create the Discord panel: {error}", True)
             message_id = str(message["id"])
-            for mapping in mappings:
-                _, error = api(
-                    "PUT",
-                    f"/channels/{channel_id}/messages/{message_id}/reactions/{quote(mapping['emoji'], safe='')}/@me",
-                )
-                if error:
-                    api("DELETE", f"/channels/{channel_id}/messages/{message_id}")
-                    return dashboard_url(
-                        guild_id,
-                        f"Could not add the {mapping['display']} reaction. Check Add Reactions and Use External Emojis permissions. {error}",
-                        True,
+            if display_mode == "reactions":
+                for mapping in mappings:
+                    _, error = api(
+                        "PUT",
+                        f"/channels/{channel_id}/messages/{message_id}/reactions/{quote(mapping['emoji'], safe='')}/@me",
                     )
+                    if error:
+                        api("DELETE", f"/channels/{channel_id}/messages/{message_id}")
+                        return dashboard_url(
+                            guild_id,
+                            f"Could not add the {mapping['display']} reaction. Check Add Reactions and Use External Emojis permissions. {error}",
+                            True,
+                        )
             with deps["database"]() as connection:
                 ensure_reaction_role_schema(connection)
                 connection.execute(
-                    "INSERT INTO reaction_role_panels (message_id,guild_id,channel_id,title,description,mode,created_by,created_at) VALUES (?,?,?,?,?,?,?,?)",
-                    (message_id, guild_id, channel_id, title, description, mode, str(actor_id), deps["utc_now_iso"]()),
+                    "INSERT INTO reaction_role_panels (message_id,guild_id,channel_id,title,description,mode,display_mode,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (message_id, guild_id, channel_id, title, description, mode, display_mode, str(actor_id), deps["utc_now_iso"]()),
                 )
                 for mapping in mappings:
                     connection.execute(
@@ -216,7 +257,7 @@ def create_reaction_roles_blueprint(deps):
                 deps["add_admin_audit_log"](
                     connection, guild_id, "reaction_role_panel_created", actor_id,
                     actor_name, "reaction_role_panel", message_id,
-                    f"{title}; mode={mode}; options={len(mappings)}",
+                f"{title}; mode={mode}; display={display_mode}; options={len(mappings)}",
                 )
             return dashboard_url(guild_id, "Reaction-role panel created.")
 
@@ -262,7 +303,7 @@ def create_reaction_roles_blueprint(deps):
         with deps["database"]() as connection:
             ensure_reaction_role_schema(connection)
             panels = connection.execute(
-                "SELECT p.message_id,p.channel_id,p.title,p.mode,p.created_at,COUNT(o.role_id) AS option_count "
+                "SELECT p.message_id,p.channel_id,p.title,p.mode,p.display_mode,p.created_at,COUNT(o.role_id) AS option_count "
                 "FROM reaction_role_panels p LEFT JOIN reaction_role_options o USING(message_id) "
                 "WHERE p.guild_id = ? GROUP BY p.message_id ORDER BY p.created_at DESC",
                 (guild_id,),
@@ -312,6 +353,7 @@ def create_reaction_roles_blueprint(deps):
             <label>Title<input name="title" maxlength="100" required></label>
             <label>Description<textarea name="description" maxlength="500" rows="2"></textarea></label>
             <label>Selection mode<select name="mode"><option value="multi">Multiple roles</option><option value="single">One choice (replaces other panel roles)</option></select></label>
+            <label>Display style<select name="display_mode"><option value="reactions">Emoji reactions</option><option value="buttons">Buttons</option><option value="dropdown">Dropdown menu</option></select></label>
           </div>
           <h3>Emoji and role options (up to 20)</h3>
           {% if emoji_error %}<p>Could not load this server's custom emojis. Discord default emoji are available below.</p>{% elif not server_emoji_count %}<p>Choose a Discord default emoji below, or enter a Unicode emoji.</p>{% else %}<p>Choose a Discord default or server emoji. Server emoji show their image beside the name.</p>{% endif %}
@@ -488,7 +530,7 @@ def create_reaction_roles_blueprint(deps):
         })();
         </script>
         <h2>Existing panels</h2>
-        {% if panels %}{% for panel in panels %}<div class="rr-panel"><strong>{{ panel.title }}</strong> · {{ panel.option_count }} choices · {{ panel.mode }}<br><a href="https://discord.com/channels/{{ guild_id }}/{{ panel.channel_id }}/{{ panel.message_id }}" target="_blank" rel="noopener">Open panel</a>
+        {% if panels %}{% for panel in panels %}<div class="rr-panel"><strong>{{ panel.title }}</strong> · {{ panel.option_count }} choices · {{ panel.mode }} · {{ panel.display_mode }}<br><a href="https://discord.com/channels/{{ guild_id }}/{{ panel.channel_id }}/{{ panel.message_id }}" target="_blank" rel="noopener">Open panel</a>
           <form method="post" action="{{ url_for('reaction_roles.manage') }}" onsubmit="return confirm('Delete this reaction-role panel and its Discord message?')"><input type="hidden" name="key" value="{{ admin_key }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="message_id" value="{{ panel.message_id }}"><button type="submit">Delete panel</button></form></div>{% endfor %}{% else %}<p>No panels in this server yet.</p>{% endif %}
         <p>Required bot permissions: Manage Roles, View Channel, Send Messages, Read Message History, and Add Reactions. Put Sana's bot role above the selectable roles.</p>
         """

@@ -1,3 +1,12 @@
+# Sana-Chan Version 4.4.78 Experimental
+
+Version 4.4.78 lets moderators choose how reaction-role options appear.
+
+- retains emoji reactions as the default display
+- adds labeled role buttons and a role dropdown menu
+- applies or toggles selected roles through Discord interactions
+
+---
 # Sana-Chan Version 4.4.77 Experimental
 
 Version 4.4.77 simplifies reaction-role panel creation.

@@ -1,5 +1,9 @@
 """Sana reaction-role persistence and Discord reaction event handling."""
 
+import discord
+
+from database_backend import using_postgres
+
 
 def canonical_reaction_role_emoji(emoji):
     """Return one stable key for Unicode and custom Discord reaction emojis."""
@@ -21,11 +25,27 @@ def ensure_reaction_role_schema(connection):
             title TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
             mode TEXT NOT NULL DEFAULT 'multi',
+            display_mode TEXT NOT NULL DEFAULT 'reactions',
             enabled INTEGER NOT NULL DEFAULT 1,
             created_by TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT ''
         )
     """)
+    if using_postgres():
+        columns = connection.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'reaction_role_panels'"
+        ).fetchall()
+        existing = {row[0] for row in columns}
+    else:
+        existing = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(reaction_role_panels)").fetchall()
+        }
+    if "display_mode" not in existing:
+        connection.execute(
+            "ALTER TABLE reaction_role_panels ADD COLUMN display_mode TEXT NOT NULL DEFAULT 'reactions'"
+        )
     connection.execute("""
         CREATE TABLE IF NOT EXISTS reaction_role_options (
             message_id TEXT NOT NULL,
@@ -36,6 +56,69 @@ def ensure_reaction_role_schema(connection):
                 ON DELETE CASCADE
         )
     """)
+
+
+async def apply_component_role_selection(interaction, selected_role_ids, database):
+    """Apply or toggle roles selected through a panel's buttons or dropdown."""
+    if not interaction.guild or not isinstance(interaction.user, discord.Member):
+        await interaction.response.send_message("Use this role panel inside its server.", ephemeral=True)
+        return
+    message_id = str(interaction.message.id)
+    with database() as connection:
+        ensure_reaction_role_schema(connection)
+        panel = connection.execute(
+            "SELECT guild_id, mode FROM reaction_role_panels "
+            "WHERE message_id = ? AND enabled = 1", (message_id,),
+        ).fetchone()
+        allowed = {
+            str(row["role_id"])
+            for row in connection.execute(
+                "SELECT role_id FROM reaction_role_options WHERE message_id = ?", (message_id,),
+            ).fetchall()
+        }
+    if not panel or str(panel["guild_id"]) != str(interaction.guild.id):
+        await interaction.response.send_message("That role panel is no longer active.", ephemeral=True)
+        return
+    requested = list(dict.fromkeys(str(value) for value in selected_role_ids if str(value) in allowed))
+    if not requested:
+        await interaction.response.send_message("Choose a role from this panel.", ephemeral=True)
+        return
+    member = interaction.user
+    bot_member = interaction.guild.me
+    if not bot_member or not bot_member.guild_permissions.manage_roles:
+        await interaction.response.send_message("Sana needs Manage Roles to apply panel roles.", ephemeral=True)
+        return
+    roles = [interaction.guild.get_role(int(role_id)) for role_id in allowed]
+    roles = [role for role in roles if role and not role.managed and role < bot_member.top_role]
+    requested_roles = [interaction.guild.get_role(int(role_id)) for role_id in requested]
+    if len(requested_roles) != len(requested) or any(
+        not role or role.managed or role >= bot_member.top_role for role in requested_roles
+    ):
+        await interaction.response.send_message("One or more roles are unavailable to Sana.", ephemeral=True)
+        return
+    to_add, to_remove = [], []
+    if panel["mode"] == "single":
+        selected = requested_roles[0]
+        if selected in member.roles:
+            to_remove.append(selected)
+        else:
+            to_add.append(selected)
+        to_remove.extend(role for role in roles if role != selected and role in member.roles)
+    else:
+        for role in requested_roles:
+            (to_remove if role in member.roles else to_add).append(role)
+    try:
+        if to_remove:
+            await member.remove_roles(*to_remove, reason="Reaction-role panel selection")
+        if to_add:
+            await member.add_roles(*to_add, reason="Reaction-role panel selection")
+    except discord.Forbidden:
+        await interaction.response.send_message("Sana could not update your roles. Check role hierarchy and permissions.", ephemeral=True)
+        return
+    except discord.HTTPException:
+        await interaction.response.send_message("Discord could not update your roles. Please try again.", ephemeral=True)
+        return
+    await interaction.response.send_message("Your roles were updated.", ephemeral=True)
 
 
 async def handle_reaction_role_event(payload, bot, database, remove=False):

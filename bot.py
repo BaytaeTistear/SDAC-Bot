@@ -58,7 +58,11 @@ from anilist_integration import (
     decrypt_anilist_token,
 )
 from observability import capture_exception, init_sentry
-from reaction_roles import ensure_reaction_role_schema, handle_reaction_role_event
+from reaction_roles import (
+    apply_component_role_selection,
+    ensure_reaction_role_schema,
+    handle_reaction_role_event,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -17550,6 +17554,21 @@ async def update_quote_reaction_vote(payload, remove=False):
 async def on_raw_reaction_add(payload):
     await update_quote_reaction_vote(payload)
     await handle_reaction_role_event(payload, bot, database)
+
+
+@bot.event
+async def on_interaction(interaction):
+    """Handle dashboard-created role buttons and dropdowns without per-message views."""
+    if interaction.type != discord.InteractionType.component:
+        return
+    data = interaction.data or {}
+    custom_id = str(data.get("custom_id", ""))
+    if custom_id.startswith("sana_rr:"):
+        if custom_id == "sana_rr:dropdown":
+            role_ids = data.get("values", [])
+        else:
+            role_ids = [custom_id.partition(":")[2]]
+        await apply_component_role_selection(interaction, role_ids, database)
 
 
 @bot.event
