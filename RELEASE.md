@@ -1,3 +1,11 @@
+# Sana-Chan Version 4.4.74 Experimental
+
+Version 4.4.74 makes the reaction-role emoji picker fit its visible content.
+
+- shrinks the menu when emoji sections are collapsed
+- keeps a maximum height and scrolling list when sections are expanded
+
+---
 # Sana-Chan Version 4.4.73 Experimental
 
 Version 4.4.73 improves the reaction-role emoji picker layout.

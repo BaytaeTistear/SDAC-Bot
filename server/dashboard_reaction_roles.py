@@ -281,7 +281,7 @@ def create_reaction_roles_blueprint(deps):
           .rr-emoji-trigger img{width:32px;height:32px;object-fit:contain}
           .rr-emoji-unicode{box-sizing:border-box;width:100%;padding:8px}
           .rr-option>select{box-sizing:border-box;width:100%;padding:8px}
-          .rr-emoji-menu{position:fixed;z-index:99999;display:flex;flex-direction:column;width:min(360px,calc(100vw - 24px));height:min(420px,calc(100vh - 24px));padding:8px;border:1px solid #60718e;border-radius:8px;background:#111827;box-shadow:0 12px 32px #0009}
+          .rr-emoji-menu{position:fixed;z-index:99999;display:flex;flex-direction:column;box-sizing:border-box;width:min(360px,calc(100vw - 24px));max-height:min(420px,calc(100vh - 24px));padding:8px;border:1px solid #60718e;border-radius:8px;background:#111827;box-shadow:0 12px 32px #0009}
           .rr-emoji-menu[hidden]{display:none!important}
           .rr-emoji-search{position:relative;z-index:2;flex:0 0 auto;box-sizing:border-box;width:100%;margin:0 0 8px;padding:10px;border:1px solid #52627d;border-radius:6px;background:#172238;color:#fff}
           .rr-emoji-list{flex:1 1 auto;min-height:0;overflow:auto}
@@ -425,8 +425,9 @@ def create_reaction_roles_blueprint(deps):
             const bounds = trigger.getBoundingClientRect();
             const width = Math.min(360, window.innerWidth - 24);
             menu.style.left = `${Math.max(12, Math.min(bounds.left, window.innerWidth - width - 12))}px`;
-            menu.style.top = `${Math.max(12, Math.min(bounds.bottom + 4, window.innerHeight - 360))}px`;
             menu.hidden = false;
+            const menuHeight = menu.getBoundingClientRect().height;
+            menu.style.top = `${Math.max(12, Math.min(bounds.bottom + 4, window.innerHeight - menuHeight - 12))}px`;
             // Focusing the search field must not scroll the page: a scroll event
             // would otherwise close this fixed-position picker immediately.
             search.focus({ preventScroll: true });
