@@ -148,10 +148,14 @@ def create_reaction_roles_blueprint(deps):
                 if any(row["emoji"] == emoji_key for row in mappings):
                     return dashboard_url(guild_id, "Each option needs a unique emoji.", True)
                 custom_emoji = re.fullmatch(r"<a?:([A-Za-z0-9_]{2,32}):(\d{15,22})>", emoji)
+                option_label = request.form.get(f"label_{index}", "").strip()
+                if len(option_label) > 100:
+                    return dashboard_url(guild_id, f"Option labels must be 100 characters or fewer (option {index}).", True)
                 mappings.append({
                     "emoji": emoji_key,
                     "display": emoji,
                     "role_id": role_id,
+                    "label": option_label,
                     "custom_id": custom_emoji.group(2) if custom_emoji else "",
                 })
             if not mappings:
@@ -201,10 +205,18 @@ def create_reaction_roles_blueprint(deps):
                     )
 
             lines = [f"**{title}**"]
-            if description:
-                lines.append(description)
             if display_mode == "reactions":
+                if description:
+                    lines.append(description)
                 lines.extend(f"{row['display']} — <@&{row['role_id']}>" for row in mappings)
+            else:
+                lines = [description] if description else []
+                for mapping in mappings:
+                    role_name = role_map[mapping["role_id"]].get("name", "Role")
+                    mapping["display_label"] = mapping["label"] or role_name
+                    label_limit = 80 if display_mode == "buttons" else 100
+                    if len(mapping["display_label"]) > label_limit:
+                        return dashboard_url(guild_id, f"Option labels must be {label_limit} characters or fewer for {display_mode} panels.", True)
             content = "\n".join(lines)
             if len(content) > 1900:
                 return dashboard_url(guild_id, "Panel text is too long. Shorten the title or description.", True)
@@ -221,7 +233,7 @@ def create_reaction_roles_blueprint(deps):
                         else:
                             emoji_payload = {"name": mapping["display"]}
                         row_components.append({
-                            "type": 2, "style": 1, "label": role.get("name", "Role")[:80],
+                            "type": 2, "style": 1, "label": mapping["display_label"],
                             "emoji": emoji_payload, "custom_id": f"sana_rr:{mapping['role_id']}",
                         })
                     components.append({"type": 1, "components": row_components})
@@ -235,7 +247,7 @@ def create_reaction_roles_blueprint(deps):
                     else:
                         emoji_payload = {"name": mapping["display"]}
                     select_options.append({
-                        "label": role.get("name", "Role")[:100],
+                        "label": mapping["display_label"],
                         "value": mapping["role_id"],
                         "emoji": emoji_payload,
                     })
@@ -302,8 +314,8 @@ def create_reaction_roles_blueprint(deps):
                     )
                 for mapping in mappings:
                     connection.execute(
-                        "INSERT INTO reaction_role_options (message_id,emoji,role_id) VALUES (?,?,?)",
-                        (message_id, mapping["emoji"], mapping["role_id"]),
+                        "INSERT INTO reaction_role_options (message_id,emoji,role_id,label) VALUES (?,?,?,?)",
+                        (message_id, mapping["emoji"], mapping["role_id"], mapping["label"]),
                     )
                 deps["add_admin_audit_log"](
                     connection, guild_id, "reaction_role_panel_edited" if action == "edit" else "reaction_role_panel_created", actor_id,
@@ -364,7 +376,7 @@ def create_reaction_roles_blueprint(deps):
                 ).fetchone()
                 if edit_panel:
                     for option in connection.execute(
-                        "SELECT emoji,role_id FROM reaction_role_options WHERE message_id = ? ORDER BY emoji",
+                        "SELECT emoji,role_id,label FROM reaction_role_options WHERE message_id = ? ORDER BY emoji",
                         (edit_message_id,),
                     ).fetchall():
                         match = next(
@@ -376,7 +388,7 @@ def create_reaction_roles_blueprint(deps):
                         else:
                             custom = re.fullmatch(r"([A-Za-z0-9_]{2,32}):(\d{15,22})", option["emoji"])
                             emoji_value = f"<:{custom.group(1)}:{custom.group(2)}>" if custom else option["emoji"]
-                        edit_options.append({"emoji": emoji_value, "role_id": str(option["role_id"])})
+                        edit_options.append({"emoji": emoji_value, "role_id": str(option["role_id"]), "label": option["label"] or ""})
             panels = connection.execute(
                 "SELECT p.message_id,p.channel_id,p.title,p.mode,p.display_mode,p.created_at,COUNT(o.role_id) AS option_count "
                 "FROM reaction_role_panels p LEFT JOIN reaction_role_options o USING(message_id) "
@@ -393,6 +405,8 @@ def create_reaction_roles_blueprint(deps):
           .rr-option-controls{display:flex;align-items:center;gap:10px;margin-top:10px}
           .rr-option-count{color:#9fb0c8}
           .rr-option{display:grid;grid-template-columns:minmax(250px,1fr) minmax(180px,1fr);gap:8px;align-items:center}
+          .rr-option-label-wrap{grid-column:1/-1}
+          .rr-option-label-wrap[hidden]{display:none!important}
           .rr-emoji-fields{display:grid;gap:6px}
           .rr-emoji-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;box-sizing:border-box;width:100%;min-height:42px;padding:6px 10px;text-align:left;cursor:pointer}
           .rr-emoji-trigger:disabled{cursor:not-allowed;opacity:.65}
@@ -435,9 +449,9 @@ def create_reaction_roles_blueprint(deps):
           <h3>Emoji and role options (up to 20)</h3>
           {% if emoji_error %}<p>Could not load this server's custom emojis. Discord default emoji are available below.</p>{% elif not server_emoji_count %}<p>Choose a Discord default emoji below, or enter a Unicode emoji.</p>{% else %}<p>Choose a Discord default or server emoji. Server emoji show their image beside the name.</p>{% endif %}
           <div class="rr-options" id="rr-options">
-            <div class="rr-option"><div class="rr-emoji-fields"><button class="rr-emoji-trigger" type="button" aria-expanded="false"><span class="rr-emoji-trigger-label">Choose emoji</span><img alt="" hidden></button><input type="hidden" name="server_emoji_1"><input class="rr-emoji-unicode" name="unicode_emoji_1" placeholder="or enter Unicode 😀" aria-label="Unicode emoji 1"></div><select name="role_1" aria-label="Role 1"><option value="">Choose role</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select></div>
+            <div class="rr-option"><div class="rr-emoji-fields"><button class="rr-emoji-trigger" type="button" aria-expanded="false"><span class="rr-emoji-trigger-label">Choose emoji</span><img alt="" hidden></button><input type="hidden" name="server_emoji_1"><input class="rr-emoji-unicode" name="unicode_emoji_1" placeholder="or enter Unicode 😀" aria-label="Unicode emoji 1"></div><select name="role_1" aria-label="Role 1"><option value="">Choose role</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select><label class="rr-option-label-wrap" hidden>Button / dropdown label (optional)<input class="rr-option-label" name="label_1" maxlength="100" placeholder="Defaults to the role name"></label></div>
           </div>
-          <template id="rr-option-template"><div class="rr-option"><div class="rr-emoji-fields"><button class="rr-emoji-trigger" type="button" aria-expanded="false"><span class="rr-emoji-trigger-label">Choose emoji</span><img alt="" hidden></button><input type="hidden" name="server_emoji___INDEX__"><input class="rr-emoji-unicode" name="unicode_emoji___INDEX__" placeholder="or enter Unicode 😀" aria-label="Unicode emoji __INDEX__"></div><select name="role___INDEX__" aria-label="Role __INDEX__"><option value="">Choose role</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select></div></template>
+          <template id="rr-option-template"><div class="rr-option"><div class="rr-emoji-fields"><button class="rr-emoji-trigger" type="button" aria-expanded="false"><span class="rr-emoji-trigger-label">Choose emoji</span><img alt="" hidden></button><input type="hidden" name="server_emoji___INDEX__"><input class="rr-emoji-unicode" name="unicode_emoji___INDEX__" placeholder="or enter Unicode 😀" aria-label="Unicode emoji __INDEX__"></div><select name="role___INDEX__" aria-label="Role __INDEX__"><option value="">Choose role</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select><label class="rr-option-label-wrap" hidden>Button / dropdown label (optional)<input class="rr-option-label" name="label___INDEX__" maxlength="100" placeholder="Defaults to the role name"></label></div></template>
           <div class="rr-option-controls"><button type="button" id="rr-add-option">New</button><span class="rr-option-count" id="rr-option-count">1 of 20 options</span></div>
           <div id="rr-emoji-menu" class="rr-emoji-menu" role="listbox" aria-label="Discord and server emojis" hidden></div>
           <p><button type="submit">{{ 'Save changes' if edit_panel else 'Create panel' }}</button>{% if edit_panel %} <a href="{{ url_for('reaction_roles.manage', key=admin_key, guild_id=guild_id) }}">Cancel edit</a>{% endif %}</p>
@@ -454,6 +468,11 @@ def create_reaction_roles_blueprint(deps):
           const optionCount = document.getElementById("rr-option-count");
           const maxOptions = 20;
           const editOptions = JSON.parse(document.getElementById("rr-edit-options").textContent || "[]");
+          const displayStyle = document.querySelector('select[name="display_mode"]');
+          const updateLabelVisibility = () => {
+            const show = displayStyle.value === "buttons" || displayStyle.value === "dropdown";
+            options.querySelectorAll(".rr-option-label-wrap").forEach((field) => { field.hidden = !show; });
+          };
           let activeTrigger = null;
           let emojiButtons = [];
           const closeMenu = () => {
@@ -590,11 +609,13 @@ def create_reaction_roles_blueprint(deps):
             }
             options.appendChild(fragment);
             bindEmojiTrigger(row.querySelector(".rr-emoji-trigger"));
+            row.querySelector(".rr-option-label-wrap").hidden = displayStyle.value !== "buttons" && displayStyle.value !== "dropdown";
             optionCount.textContent = `${nextIndex} of ${maxOptions} options`;
             addOptionButton.disabled = nextIndex >= maxOptions;
             return row;
           };
           addOptionButton.addEventListener("click", addOption);
+          displayStyle.addEventListener("change", updateLabelVisibility);
           editOptions.forEach((option, index) => {
             const row = index === 0 ? options.firstElementChild : addOption();
             if (!row) return;
@@ -614,7 +635,9 @@ def create_reaction_roles_blueprint(deps):
               preview.hidden = false;
             }
             row.querySelector('select[name^="role_"]').value = option.role_id;
+            row.querySelector(".rr-option-label").value = option.label || "";
           });
+          updateLabelVisibility();
           optionCount.textContent = `${options.children.length} of ${maxOptions} options`;
           addOptionButton.disabled = options.children.length >= maxOptions;
           document.addEventListener("click", (event) => {

@@ -1,3 +1,12 @@
+# Sana-Chan Version 4.4.81 Experimental
+
+Version 4.4.81 adds moderator-defined labels for button and dropdown role options.
+
+- provides an optional display label on each option, defaulting to the role name
+- keeps the panel title internal for button and dropdown styles
+- shows the description and configured labels to members
+
+---
 # Sana-Chan Version 4.4.80 Experimental
 
 Version 4.4.80 fixes search filtering in the reaction-role emoji picker.

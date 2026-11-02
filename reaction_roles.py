@@ -51,11 +51,27 @@ def ensure_reaction_role_schema(connection):
             message_id TEXT NOT NULL,
             emoji TEXT NOT NULL,
             role_id TEXT NOT NULL,
+            label TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (message_id, emoji),
             FOREIGN KEY (message_id) REFERENCES reaction_role_panels(message_id)
                 ON DELETE CASCADE
         )
     """)
+    if using_postgres():
+        columns = connection.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'reaction_role_options'"
+        ).fetchall()
+        existing = {row[0] for row in columns}
+    else:
+        existing = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(reaction_role_options)").fetchall()
+        }
+    if "label" not in existing:
+        connection.execute(
+            "ALTER TABLE reaction_role_options ADD COLUMN label TEXT NOT NULL DEFAULT ''"
+        )
 
 
 async def apply_component_role_selection(interaction, selected_role_ids, database):
