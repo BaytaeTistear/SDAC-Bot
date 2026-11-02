@@ -1,3 +1,12 @@
+# Sana-Chan Version 4.4.69 Experimental
+
+Version 4.4.69 displays server emoji images in the reaction-role emoji picker.
+
+- replaces the browser text-only emoji menu with an image-backed searchable picker
+- shows each emoji image beside its name and previews the chosen emoji
+- retains Unicode emoji entry and selection validation
+
+---
 # Sana-Chan Version 4.4.68 Experimental
 
 Version 4.4.68 lets moderators choose custom server emojis for reaction-role options.

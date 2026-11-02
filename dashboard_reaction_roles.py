@@ -144,7 +144,11 @@ def create_reaction_roles_blueprint(deps):
             } if not emoji_error and isinstance(server_emojis, list) else set()
             if any(row["custom_id"] and row["custom_id"] not in server_emoji_ids for row in mappings):
                 return dashboard_url(guild_id, "Choose a custom emoji from this server's emoji list, then try again.", True)
-            selected_channel = next((c for c in channels if str(c.get("id")) == channel_id and c.get("type") in {0, 5}), None)
+            selected_channel = next(
+                (channel for channel in channels
+                 if str(channel.get("id")) == channel_id and channel.get("type") in {0, 5}),
+                None,
+            )
             if not selected_channel:
                 return dashboard_url(guild_id, "Choose a text or announcement channel in this server.", True)
             role_map = {str(role["id"]): role for role in roles}
@@ -153,7 +157,10 @@ def create_reaction_roles_blueprint(deps):
             if isinstance(bot_user, dict) and bot_user.get("id"):
                 bot_member, _ = api("GET", f"/guilds/{guild_id}/members/{bot_user['id']}")
             bot_role_ids = set(bot_member.get("roles", [])) if isinstance(bot_member, dict) else set()
-            bot_top = max((int(role.get("position", 0)) for role in roles if str(role["id"]) in bot_role_ids), default=-1)
+            bot_top = max(
+                (int(role.get("position", 0)) for role in roles if str(role["id"]) in bot_role_ids),
+                default=-1,
+            )
             dangerous = sum(1 << bit for bit in (1, 2, 3, 4, 5, 13, 27, 28, 29))
             for mapping in mappings:
                 role = role_map.get(mapping["role_id"])
@@ -162,7 +169,11 @@ def create_reaction_roles_blueprint(deps):
                 if int(role.get("position", 0)) >= bot_top:
                     return dashboard_url(guild_id, "Move Sana's bot role above every role used in this panel.", True)
                 if int(role.get("permissions", "0")) & dangerous:
-                    return dashboard_url(guild_id, f"The role {role.get('name', '')} has privileged permissions and cannot be self-assigned.", True)
+                    return dashboard_url(
+                        guild_id,
+                        f"The role {role.get('name', '')} has privileged permissions and cannot be self-assigned.",
+                        True,
+                    )
 
             lines = [f"**{title}**"]
             if description:
@@ -171,7 +182,10 @@ def create_reaction_roles_blueprint(deps):
             content = "\n".join(lines)
             if len(content) > 1900:
                 return dashboard_url(guild_id, "Panel text is too long. Shorten the title or description.", True)
-            message, error = api("POST", f"/channels/{channel_id}/messages", {"content": content, "allowed_mentions": {"parse": []}})
+            message, error = api(
+                "POST", f"/channels/{channel_id}/messages",
+                {"content": content, "allowed_mentions": {"parse": []}},
+            )
             if error or not isinstance(message, dict) or not message.get("id"):
                 return dashboard_url(guild_id, f"Could not create the Discord panel: {error}", True)
             message_id = str(message["id"])
@@ -182,7 +196,11 @@ def create_reaction_roles_blueprint(deps):
                 )
                 if error:
                     api("DELETE", f"/channels/{channel_id}/messages/{message_id}")
-                    return dashboard_url(guild_id, f"Could not add the {mapping['display']} reaction. Check Add Reactions and Use External Emojis permissions. {error}", True)
+                    return dashboard_url(
+                        guild_id,
+                        f"Could not add the {mapping['display']} reaction. Check Add Reactions and Use External Emojis permissions. {error}",
+                        True,
+                    )
             with deps["database"]() as connection:
                 ensure_reaction_role_schema(connection)
                 connection.execute(
@@ -209,7 +227,10 @@ def create_reaction_roles_blueprint(deps):
         emojis = []
         if isinstance(emoji_response, list):
             for item in emoji_response:
-                if not isinstance(item, dict) or not item.get("id") or not item.get("name") or item.get("available") is False:
+                if (
+                    not isinstance(item, dict) or not item.get("id") or not item.get("name")
+                    or item.get("available") is False
+                ):
                     continue
                 animated = bool(item.get("animated"))
                 emoji_id = str(item["id"])
@@ -227,13 +248,27 @@ def create_reaction_roles_blueprint(deps):
                 "WHERE p.guild_id = ? GROUP BY p.message_id ORDER BY p.created_at DESC",
                 (guild_id,),
             ).fetchall()
+
         body = """
         <style>
           .rr-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-          .rr-grid label{display:block;font-weight:600}.rr-grid input,.rr-grid select,.rr-grid textarea{box-sizing:border-box;width:100%;padding:9px;margin-top:5px}
-          .rr-options{display:grid;gap:8px;max-width:760px}.rr-option{display:grid;grid-template-columns:minmax(250px,1fr) minmax(180px,1fr);gap:8px;align-items:center}
-          .rr-emoji-fields{display:grid;grid-template-columns:1fr 38px;gap:5px;align-items:center}.rr-emoji-fields input,.rr-emoji-fields select,.rr-option>select{box-sizing:border-box;width:100%;padding:8px}
-          .rr-emoji-preview{width:32px;height:32px;object-fit:contain}.rr-panel{padding:12px;border:1px solid #555;border-radius:8px;margin:10px 0}
+          .rr-grid label{display:block;font-weight:600}
+          .rr-grid input,.rr-grid select,.rr-grid textarea{box-sizing:border-box;width:100%;padding:9px;margin-top:5px}
+          .rr-options{display:grid;gap:8px;max-width:760px}
+          .rr-option{display:grid;grid-template-columns:minmax(250px,1fr) minmax(180px,1fr);gap:8px;align-items:center}
+          .rr-emoji-fields{display:grid;gap:6px}
+          .rr-emoji-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;box-sizing:border-box;width:100%;min-height:42px;padding:6px 10px;text-align:left;cursor:pointer}
+          .rr-emoji-trigger:disabled{cursor:not-allowed;opacity:.65}
+          .rr-emoji-trigger img{width:32px;height:32px;object-fit:contain}
+          .rr-emoji-unicode{box-sizing:border-box;width:100%;padding:8px}
+          .rr-option>select{box-sizing:border-box;width:100%;padding:8px}
+          .rr-emoji-menu{position:fixed;z-index:99999;width:min(360px,calc(100vw - 24px));max-height:min(420px,calc(100vh - 24px));overflow:auto;padding:8px;border:1px solid #60718e;border-radius:8px;background:#111827;box-shadow:0 12px 32px #0009}
+          .rr-emoji-search{position:sticky;top:0;z-index:1;box-sizing:border-box;width:100%;margin:0 0 8px;padding:10px;border:1px solid #52627d;border-radius:6px;background:#172238;color:#fff}
+          .rr-emoji-item{display:flex;align-items:center;gap:10px;width:100%;padding:7px;border:0;border-radius:5px;background:transparent;color:#fff;text-align:left;cursor:pointer}
+          .rr-emoji-item:hover,.rr-emoji-item:focus{background:#273b59;outline:2px solid #4ac8ef}
+          .rr-emoji-item img{flex:0 0 40px;width:40px;height:40px;object-fit:contain}
+          .rr-emoji-empty{padding:10px;color:#c4d0df}
+          .rr-panel{padding:12px;border:1px solid #555;border-radius:8px;margin:10px 0}
           @media(max-width:700px){.rr-grid{grid-template-columns:1fr}}
           @media(max-width:540px){.rr-option{grid-template-columns:1fr}}
         </style>
@@ -252,11 +287,112 @@ def create_reaction_roles_blueprint(deps):
             <label>Selection mode<select name="mode"><option value="multi">Multiple roles</option><option value="single">One choice (replaces other panel roles)</option></select></label>
           </div>
           <h3>Emoji and role options (up to 20)</h3>
-          {% if emoji_error %}<p>Could not load this server's custom emojis. You can still enter Unicode emoji manually.</p>{% elif not emojis %}<p>This server has no custom emojis available. You can enter Unicode emoji manually.</p>{% else %}<p>Select a custom emoji from this server, or enter a Unicode emoji.</p>{% endif %}
+          {% if emoji_error %}<p>Could not load this server's custom emojis. You can still enter Unicode emoji manually.</p>{% elif not emojis %}<p>This server has no custom emojis available. You can enter Unicode emoji manually.</p>{% else %}<p>Choose a server emoji to see its image, or enter a Unicode emoji.</p>{% endif %}
           <div class="rr-options">
-          {% for index in range(1, 21) %}<div class="rr-option"><div class="rr-emoji-fields"><div><select name="server_emoji_{{ index }}" aria-label="Server emoji {{ index }}" onchange="const image=this.parentElement.nextElementSibling; const option=this.selectedOptions[0]; image.src=option.dataset.image||''; image.hidden=!option.dataset.image; image.alt=option.textContent"><option value="">Choose server emoji</option>{% for emoji in emojis %}<option value="{{ emoji.value }}" data-image="{{ emoji.image_url }}">{{ emoji.label }}</option>{% endfor %}</select><input name="unicode_emoji_{{ index }}" placeholder="or enter Unicode 😀" aria-label="Unicode emoji {{ index }}"></div><img class="rr-emoji-preview" alt="" hidden></div><select name="role_{{ index }}" aria-label="Role {{ index }}"><option value="">Choose role</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select></div>{% endfor %}
-          </div><p><button type="submit">Create panel</button></p>
+          {% for index in range(1, 21) %}<div class="rr-option"><div class="rr-emoji-fields"><button class="rr-emoji-trigger" type="button" aria-expanded="false" {% if not emojis %}disabled{% endif %}><span class="rr-emoji-trigger-label">Choose server emoji</span><img alt="" hidden></button><input type="hidden" name="server_emoji_{{ index }}"><input class="rr-emoji-unicode" name="unicode_emoji_{{ index }}" placeholder="or enter Unicode 😀" aria-label="Unicode emoji {{ index }}"></div><select name="role_{{ index }}" aria-label="Role {{ index }}"><option value="">Choose role</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select></div>{% endfor %}
+          </div>
+          <div id="rr-emoji-menu" class="rr-emoji-menu" role="listbox" aria-label="Server emojis" hidden></div>
+          <p><button type="submit">Create panel</button></p>
         </form>
+        <script type="application/json" id="rr-server-emojis">{{ emojis|tojson }}</script>
+        <script>
+        (() => {
+          const data = JSON.parse(document.getElementById("rr-server-emojis").textContent || "[]");
+          const menu = document.getElementById("rr-emoji-menu");
+          let activeTrigger = null;
+          let emojiButtons = [];
+          const closeMenu = () => {
+            menu.hidden = true;
+            if (activeTrigger) activeTrigger.setAttribute("aria-expanded", "false");
+            activeTrigger = null;
+          };
+          const filterEmojis = (query) => {
+            const value = query.trim().toLocaleLowerCase();
+            let visible = 0;
+            for (const button of emojiButtons) {
+              const matches = !value || button.dataset.search.includes(value);
+              button.hidden = !matches;
+              if (matches) visible += 1;
+            }
+            const empty = menu.querySelector(".rr-emoji-empty");
+            if (empty) empty.hidden = visible !== 0;
+          };
+          const openMenu = (trigger) => {
+            activeTrigger = trigger;
+            trigger.setAttribute("aria-expanded", "true");
+            menu.replaceChildren();
+            const search = document.createElement("input");
+            search.className = "rr-emoji-search";
+            search.type = "search";
+            search.placeholder = "Search server emojis";
+            search.setAttribute("aria-label", "Search server emojis");
+            menu.appendChild(search);
+            emojiButtons = [];
+            for (const emoji of data) {
+              const button = document.createElement("button");
+              button.className = "rr-emoji-item";
+              button.type = "button";
+              button.setAttribute("role", "option");
+              button.dataset.search = emoji.label.toLocaleLowerCase();
+              const image = document.createElement("img");
+              image.src = emoji.image_url;
+              image.alt = emoji.label;
+              image.loading = "lazy";
+              const label = document.createElement("span");
+              label.textContent = emoji.label;
+              button.append(image, label);
+              button.addEventListener("click", () => {
+                const fields = activeTrigger.closest(".rr-emoji-fields");
+                fields.querySelector('input[type="hidden"]').value = emoji.value;
+                fields.querySelector('input[type="text"]').value = "";
+                activeTrigger.querySelector(".rr-emoji-trigger-label").textContent = emoji.label;
+                const preview = activeTrigger.querySelector("img");
+                preview.src = emoji.image_url;
+                preview.alt = emoji.label;
+                preview.hidden = false;
+                closeMenu();
+              });
+              menu.appendChild(button);
+              emojiButtons.push(button);
+            }
+            const empty = document.createElement("div");
+            empty.className = "rr-emoji-empty";
+            empty.textContent = "No matching emojis.";
+            empty.hidden = data.length > 0;
+            menu.appendChild(empty);
+            search.addEventListener("input", () => filterEmojis(search.value));
+            const bounds = trigger.getBoundingClientRect();
+            const width = Math.min(360, window.innerWidth - 24);
+            menu.style.left = `${Math.max(12, Math.min(bounds.left, window.innerWidth - width - 12))}px`;
+            menu.style.top = `${Math.max(12, Math.min(bounds.bottom + 4, window.innerHeight - 360))}px`;
+            menu.hidden = false;
+            search.focus();
+          };
+          document.querySelectorAll(".rr-emoji-trigger").forEach((trigger) => {
+            trigger.addEventListener("click", () => {
+              if (activeTrigger === trigger && !menu.hidden) closeMenu();
+              else openMenu(trigger);
+            });
+            const unicodeInput = trigger.closest(".rr-emoji-fields").querySelector('input[type="text"]');
+            unicodeInput.addEventListener("input", () => {
+              trigger.closest(".rr-emoji-fields").querySelector('input[type="hidden"]').value = "";
+              trigger.querySelector(".rr-emoji-trigger-label").textContent = "Choose server emoji";
+              const preview = trigger.querySelector("img");
+              preview.removeAttribute("src");
+              preview.alt = "";
+              preview.hidden = true;
+            });
+          });
+          document.addEventListener("pointerdown", (event) => {
+            if (!menu.hidden && !menu.contains(event.target) && !event.target.closest(".rr-emoji-trigger")) closeMenu();
+          });
+          document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && !menu.hidden) closeMenu();
+          });
+          window.addEventListener("resize", closeMenu);
+          window.addEventListener("scroll", closeMenu, true);
+        })();
+        </script>
         <h2>Existing panels</h2>
         {% if panels %}{% for panel in panels %}<div class="rr-panel"><strong>{{ panel.title }}</strong> · {{ panel.option_count }} choices · {{ panel.mode }}<br><a href="https://discord.com/channels/{{ guild_id }}/{{ panel.channel_id }}/{{ panel.message_id }}" target="_blank" rel="noopener">Open panel</a>
           <form method="post" action="{{ url_for('reaction_roles.manage') }}" onsubmit="return confirm('Delete this reaction-role panel and its Discord message?')"><input type="hidden" name="key" value="{{ admin_key }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="message_id" value="{{ panel.message_id }}"><button type="submit">Delete panel</button></form></div>{% endfor %}{% else %}<p>No panels in this server yet.</p>{% endif %}
