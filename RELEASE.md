@@ -1,3 +1,10 @@
+# Sana-Chan Version 4.4.80 Experimental
+
+Version 4.4.80 fixes search filtering in the reaction-role emoji picker.
+
+- hides emoji buttons that do not match the search query
+
+---
 # Sana-Chan Version 4.4.79 Experimental
 
 Version 4.4.79 adds editing for existing reaction-role panels.

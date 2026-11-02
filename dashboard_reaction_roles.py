@@ -407,6 +407,7 @@ def create_reaction_roles_blueprint(deps):
           .rr-emoji-section summary{position:sticky;top:0;z-index:1;padding:8px;background:#1c2b42;color:#fff;font-weight:700;cursor:pointer}
           .rr-emoji-section-items{padding:4px}
           .rr-emoji-item{display:flex;align-items:center;gap:10px;width:100%;padding:7px;border:0;border-radius:5px;background:transparent;color:#fff;text-align:left;cursor:pointer}
+          .rr-emoji-item[hidden]{display:none!important}
           .rr-emoji-item:hover,.rr-emoji-item:focus{background:#273b59;outline:2px solid #4ac8ef}
           .rr-emoji-item img{flex:0 0 40px;width:40px;height:40px;object-fit:contain}
           .rr-emoji-glyph{display:grid;flex:0 0 40px;width:40px;height:40px;place-items:center;font-size:30px;line-height:1}
