@@ -357,6 +357,10 @@ jobs:
           fi
           NOTES_TITLE="$(grep -m1 '^# ' "$NOTES_FILE" | sed 's/^# //')"
           NOTES_VERSION="$(printf '%s\n' "$NOTES_TITLE" | grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1 || true)"
+          RELEASE_PRERELEASE=()
+          if [[ "$TAG" == "latest-experimental" || "$NOTES_TITLE" == *Experimental* ]]; then
+            RELEASE_PRERELEASE+=(--prerelease)
+          fi
           if [[ "$TAG" == "latest-experimental" && -n "$NOTES_VERSION" ]]; then
             TITLE="Latest Experimental ($NOTES_VERSION)"
           elif [[ "$TAG" == "latest-official" && -n "$NOTES_VERSION" ]]; then
@@ -366,7 +370,7 @@ jobs:
           fi
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title "$TITLE" --notes-file "$NOTES_FILE"
+            gh release edit "$TAG" --title "$TITLE" --notes-file "$NOTES_FILE" "${RELEASE_PRERELEASE[@]}"
             for stale_asset in \
               SDAC-Bot-Linux-Installer.sh \
               SDAC-Bot-Ubuntu-Update.sh \
@@ -377,5 +381,5 @@ jobs:
             done
             gh release upload "$TAG" artifacts/* --clobber
           else
-            gh release create "$TAG" artifacts/* --title "$TITLE" --notes-file "$NOTES_FILE"
+            gh release create "$TAG" artifacts/* --title "$TITLE" --notes-file "$NOTES_FILE" "${RELEASE_PRERELEASE[@]}"
           fi
