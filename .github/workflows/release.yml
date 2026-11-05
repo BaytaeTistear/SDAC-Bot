@@ -66,7 +66,7 @@ jobs:
           from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
 
           names = {command.name for command in bot.tree.get_commands()}
-          required = {"sana", "submit", "guess", "hint"}
+          required = {"sana", "submit", "guess", "hint", "createevent", "createmeetup"}
           missing = sorted(required - names)
           if missing:
               raise SystemExit(f"Missing simplified slash command(s): {missing}")

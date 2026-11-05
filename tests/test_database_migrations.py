@@ -8,10 +8,41 @@ from database_migrations import (
     migration_31_anilist_account_connections,
     migration_32_distinct_anime_profile_statuses,
     migration_33_separate_anime_provider_snapshots,
+    migration_34_community_announcement_repeats,
 )
 
 
 class DatabaseMigrationTests(unittest.TestCase):
+    def test_community_reminder_migration_adds_attempts_to_existing_queue(self):
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        connection.execute("CREATE TABLE community_posts (id INTEGER PRIMARY KEY)")
+        connection.execute("""
+            CREATE TABLE community_announcement_repeats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id INTEGER NOT NULL,
+                guild_id TEXT NOT NULL DEFAULT '',
+                channel_id TEXT NOT NULL DEFAULT '',
+                scheduled_at TEXT NOT NULL,
+                content TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued',
+                sent_message_id TEXT NOT NULL DEFAULT '',
+                last_error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(post_id, channel_id, scheduled_at)
+            )
+        """)
+
+        migration_34_community_announcement_repeats(connection)
+
+        columns = {row["name"]: row for row in connection.execute("PRAGMA table_info(community_announcement_repeats)")}
+        self.assertIn("attempts", columns)
+        self.assertEqual(columns["attempts"]["dflt_value"], "0")
+        self.assertIsNotNone(connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='community_post_announcement_preferences'"
+        ).fetchone())
+
     def test_anime_providers_have_independent_snapshots(self):
         connection = sqlite3.connect(":memory:")
         connection.row_factory = sqlite3.Row

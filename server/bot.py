@@ -41,7 +41,13 @@ from community_quotes import (
     quote_display_text,
     quote_fingerprint,
 )
-from community_extensions import process_webhook_outbox, scrub_image_metadata
+from community_extensions import (
+    process_webhook_outbox,
+    record_safety_findings,
+    safety_status,
+    screen_content,
+    scrub_image_metadata,
+)
 from database_backend import connect_database, using_postgres
 from database_migrations import DATABASE_SCHEMA_VERSION, apply_database_migrations
 from mal_integration import (
@@ -82,7 +88,7 @@ SCHEMA_VERSION = DATABASE_SCHEMA_VERSION
 OWNER_OVERRIDE_USERNAME = "baytae"
 ENABLE_ANIME_COMMANDS = os.getenv("SANA_ENABLE_ANIME_COMMANDS", os.getenv("SDAC_ENABLE_ANIME_COMMANDS", "1")).strip().casefold() not in {"0", "false", "no", "off"}
 SIMPLIFIED_SLASH_COMMANDS = os.getenv("SANA_SIMPLIFIED_COMMANDS", os.getenv("SDAC_SIMPLIFIED_COMMANDS", "1")).strip().casefold() not in {"0", "false", "no", "off"}
-CORE_SLASH_COMMANDS = {"sana", "submit", "mysubmissions", "guess", "hint"}
+CORE_SLASH_COMMANDS = {"sana", "submit", "mysubmissions", "guess", "hint", "createevent", "createmeetup"}
 PROJECT_GITHUB_URL = f"https://github.com/{ORIGINAL_REPO}"
 PROJECT_WIKI_URL = f"{PROJECT_GITHUB_URL}/wiki"
 DASHBOARD_BASE_URL = (
@@ -4966,6 +4972,57 @@ def initialize_database():
                 PRIMARY KEY (poll_id, user_id)
             )
         """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS community_posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                location TEXT NOT NULL DEFAULT '',
+                starts_at TEXT NOT NULL DEFAULT '',
+                ends_at TEXT NOT NULL DEFAULT '',
+                host_name TEXT NOT NULL DEFAULT '',
+                contact_url TEXT NOT NULL DEFAULT '',
+                guild_id TEXT NOT NULL DEFAULT '',
+                submitter_name TEXT NOT NULL DEFAULT '',
+                submitter_contact TEXT NOT NULL DEFAULT '',
+                submitter_user_id TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                reviewed_at TEXT NOT NULL DEFAULT '',
+                reviewed_by TEXT NOT NULL DEFAULT '',
+                review_notes TEXT NOT NULL DEFAULT '',
+                category TEXT NOT NULL DEFAULT '',
+                tags TEXT NOT NULL DEFAULT '',
+                is_featured INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS community_post_announcement_preferences (
+                post_id INTEGER PRIMARY KEY,
+                repeat_times_json TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS community_announcement_repeats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id INTEGER NOT NULL,
+                guild_id TEXT NOT NULL DEFAULT '',
+                channel_id TEXT NOT NULL DEFAULT '',
+                scheduled_at TEXT NOT NULL,
+                content TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                sent_message_id TEXT NOT NULL DEFAULT '',
+                last_error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(post_id, channel_id, scheduled_at)
+            )
+        """)
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_community_announcement_repeats_due ON community_announcement_repeats(status, scheduled_at)")
         connection.execute("""
             CREATE TABLE IF NOT EXISTS community_post_announcements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -12762,6 +12819,229 @@ async def setguesstimeout(
     )
 
 
+def parse_community_command_datetime(raw_value, label, require_timezone=False):
+    value = str(raw_value or "").strip()
+    if not value:
+        return ""
+    normalized = value[:-1] + "+00:00" if value.upper().endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as error:
+        raise ValueError(f"{label} must use ISO date/time, for example `2026-11-15T18:00-08:00`.") from error
+    if parsed.tzinfo is None:
+        if require_timezone:
+            raise ValueError(f"{label} needs a time zone, such as `-08:00` or `Z`.")
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def parse_community_command_repeat_times(raw_value):
+    values = [line.strip() for line in str(raw_value or "").splitlines() if line.strip()]
+    if len(values) > 5:
+        raise ValueError("Choose no more than five reminder times.")
+    parsed = []
+    for value in values:
+        result = parse_community_command_datetime(value, "Reminder time", require_timezone=True)
+        if datetime.fromisoformat(result) <= datetime.now(timezone.utc):
+            raise ValueError("Every reminder time must be in the future.")
+        if result in parsed:
+            raise ValueError("Each reminder needs a different time.")
+        parsed.append(result)
+    return sorted(parsed)
+
+
+def create_community_post_from_command(interaction, post_type, values):
+    title = str(values.get("title") or "").strip()[:140]
+    description = str(values.get("description") or "").strip()[:3000]
+    if not title or not description:
+        raise ValueError("A title and description are required.")
+    start_at = parse_community_command_datetime(values.get("starts_at"), "Start time", require_timezone=True)
+    end_at = parse_community_command_datetime(values.get("ends_at"), "End time", require_timezone=True)
+    repeat_times = parse_community_command_repeat_times(values.get("repeat_times"))
+    if start_at and end_at and datetime.fromisoformat(end_at) <= datetime.fromisoformat(start_at):
+        raise ValueError("The end time must be after the start time.")
+    if start_at and any(datetime.fromisoformat(value) >= datetime.fromisoformat(start_at) for value in repeat_times):
+        raise ValueError("Choose reminder times before the event starts.")
+    contact_url = str(values.get("contact_url") or "").strip()[:300]
+    if contact_url and not re.match(r"^https?://", contact_url, re.IGNORECASE):
+        raise ValueError("The information link must start with `https://` or `http://`.")
+    location = str(values.get("location") or "").strip()[:180]
+    host_name = str(values.get("host_name") or "").strip()[:140]
+    now = utc_now_iso()
+    findings = screen_content(title, description, location, contact_url)
+    status = safety_status(findings)
+    category = "Events" if post_type == "event" else "Meetups"
+    with database() as connection:
+        recent = connection.execute(
+            "SELECT COUNT(*) FROM community_posts WHERE guild_id = ? AND submitter_user_id = ? AND created_at >= ?",
+            (str(interaction.guild_id), str(interaction.user.id), (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()),
+        ).fetchone()[0]
+        if int(recent or 0) >= 3:
+            raise ValueError("You have reached the limit of three event or meetup submissions per hour for this server.")
+        cursor = connection.execute(
+            """
+            INSERT INTO community_posts (
+                post_type, category, status, title, description, location,
+                starts_at, ends_at, host_name, contact_url, guild_id,
+                submitter_name, submitter_contact, submitter_user_id,
+                tags, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, '', ?, ?)
+            """,
+            (
+                post_type, category, status, title, description, location,
+                start_at, end_at, host_name, contact_url, str(interaction.guild_id),
+                str(interaction.user), str(interaction.user.id), now, now,
+            ),
+        )
+        post_id = int(cursor.lastrowid)
+        connection.execute(
+            "INSERT INTO community_post_announcement_preferences (post_id,repeat_times_json,created_at) VALUES (?,?,?)",
+            (post_id, json.dumps(repeat_times), now),
+        )
+        record_safety_findings(connection, "post", post_id, interaction.guild_id, findings)
+        add_admin_audit_log(
+            connection, interaction.guild_id, "community_post_submitted",
+            interaction.user.id, interaction.user, "community_post", post_id,
+            f"Submitted {post_type} through /create{post_type}.",
+        )
+    return post_id, status, len(repeat_times)
+
+
+class CommunityCreateStartButton(discord.ui.Button):
+    def __init__(self, owner_id, post_type):
+        label = "Start Event Guide" if post_type == "event" else "Start Meetup Guide"
+        super().__init__(label=label, style=discord.ButtonStyle.primary)
+        self.owner_id = int(owner_id)
+        self.post_type = post_type
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Only the person who opened this guide can use it.", ephemeral=True)
+            return
+        await interaction.response.send_modal(CommunityCreateDetailsModal(self.owner_id, self.post_type))
+
+
+class CommunityCreateStartView(discord.ui.View):
+    def __init__(self, owner_id, post_type):
+        super().__init__(timeout=300)
+        self.add_item(CommunityCreateStartButton(owner_id, post_type))
+
+
+class CommunityCreateDetailsModal(discord.ui.Modal):
+    def __init__(self, owner_id, post_type):
+        label = "Event" if post_type == "event" else "Meetup"
+        super().__init__(title=f"Step 1 of 2 · {label} basics")
+        self.owner_id = int(owner_id)
+        self.post_type = post_type
+        self.title_input = discord.ui.TextInput(label="Title", placeholder="What is happening?", max_length=140)
+        self.starts_input = discord.ui.TextInput(label="Starts (ISO time with zone, optional)", placeholder="2026-11-15T18:00-08:00", required=False, max_length=40)
+        self.ends_input = discord.ui.TextInput(label="Ends (ISO time with zone, optional)", placeholder="2026-11-15T21:00-08:00", required=False, max_length=40)
+        self.location_input = discord.ui.TextInput(label="Location (optional)", placeholder="Venue, city, or online", required=False, max_length=180)
+        self.host_input = discord.ui.TextInput(label="Host or organizer (optional)", required=False, max_length=140)
+        for item in (self.title_input, self.starts_input, self.ends_input, self.location_input, self.host_input):
+            self.add_item(item)
+
+    async def on_submit(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("This guide belongs to another user.", ephemeral=True)
+            return
+        values = {
+            "title": self.title_input.value,
+            "starts_at": self.starts_input.value,
+            "ends_at": self.ends_input.value,
+            "location": self.location_input.value,
+            "host_name": self.host_input.value,
+        }
+        await interaction.response.send_modal(CommunityCreateDetailsStepTwoModal(self.owner_id, self.post_type, values))
+
+
+class CommunityCreateDetailsStepTwoModal(discord.ui.Modal):
+    def __init__(self, owner_id, post_type, values):
+        super().__init__(title="Step 2 of 2 · Details and reminders")
+        self.owner_id = int(owner_id)
+        self.post_type = post_type
+        self.values = values
+        self.description_input = discord.ui.TextInput(label="Description", style=discord.TextStyle.paragraph, placeholder="Explain what attendees should know.", max_length=3000)
+        self.link_input = discord.ui.TextInput(label="Information link (optional)", placeholder="https://example.com", required=False, max_length=300)
+        self.reminders_input = discord.ui.TextInput(
+            label="Reminder times (optional, max 5)", style=discord.TextStyle.paragraph,
+            placeholder="One ISO time per line, with zone: 2026-11-14T18:00-08:00",
+            required=False, max_length=1000,
+        )
+        for item in (self.description_input, self.link_input, self.reminders_input):
+            self.add_item(item)
+
+    async def on_submit(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("This guide belongs to another user.", ephemeral=True)
+            return
+        values = dict(self.values)
+        values.update({
+            "description": self.description_input.value,
+            "contact_url": self.link_input.value,
+            "repeat_times": self.reminders_input.value,
+        })
+        try:
+            post_id, status, repeat_count = create_community_post_from_command(interaction, self.post_type, values)
+        except ValueError as error:
+            await interaction.response.send_message(str(error), ephemeral=True)
+            return
+        await interaction.response.send_message(
+            f"Your {self.post_type} was submitted as `#{post_id}` for moderator review. "
+            f"{repeat_count} reminder time(s) saved. "
+            + ("The content safety filter flagged it for extra review." if status == "quarantined" else "You'll be notified after review."),
+            ephemeral=True,
+        )
+        event_key = "community_event_submitted" if self.post_type == "event" else "community_meetup_submitted"
+        channel_id = configured_notification_channel_id(interaction.guild_id, event_key)
+        if channel_id:
+            channel = bot.get_channel(int(channel_id))
+            if channel is None:
+                try:
+                    channel = await bot.fetch_channel(int(channel_id))
+                except discord.HTTPException:
+                    channel = None
+            if channel is not None:
+                try:
+                    await channel.send(
+                        f"**{NOTIFICATION_EVENT_LABELS.get(event_key, 'Community submission')}**\n"
+                        f"A new {self.post_type} submission `#{post_id}` from {interaction.user.mention} needs review."
+                    )
+                except discord.HTTPException:
+                    pass
+
+
+async def send_community_create_guide(interaction, post_type):
+    if interaction.guild_id is None:
+        await interaction.response.send_message("Use this command inside a server.", ephemeral=True)
+        return
+    if str(interaction.guild_id) not in (config.get("guilds") or {}):
+        await interaction.response.send_message("This server is not configured for Sana community events yet.", ephemeral=True)
+        return
+    label = "event" if post_type == "event" else "meetup"
+    await interaction.response.send_message(
+        f"**Create a {label} · 3 steps**\n"
+        "1. Start the guide and enter the title, time, location, and host.\n"
+        "2. Add a description, optional information link, and up to five reminder times.\n"
+        "3. Submit it for moderator review. Times must include a zone, such as `-08:00` or `Z`.\n"
+        "Approved listings are announced automatically; saved reminders are posted at the times you choose.",
+        view=CommunityCreateStartView(interaction.user.id, post_type),
+        ephemeral=True,
+    )
+
+
+@tree.command(name="createevent", description="Submit a community event with a guided form")
+@app_commands.guild_only()
+async def createevent(interaction):
+    await send_community_create_guide(interaction, "event")
+
+
+@tree.command(name="createmeetup", description="Submit a community meetup with a guided form")
+@app_commands.guild_only()
+async def createmeetup(interaction):
+    await send_community_create_guide(interaction, "meetup")
+
+
 @tree.command(name="createpoll", description="Create an SDAC poll")
 @app_commands.guild_only()
 @app_commands.describe(
@@ -16897,6 +17177,70 @@ async def webhook_delivery_scheduler():
         await report_background_error("webhook_delivery_scheduler", error)
 
 
+@tasks.loop(minutes=1)
+async def community_announcement_repeat_scheduler():
+    try:
+        now = datetime.now(timezone.utc)
+        if not acquire_scheduler_lease(
+            f"community_announcement_repeats:{now.strftime('%Y-%m-%dT%H:%M')}",
+            duration_seconds=2 * 60,
+        ):
+            return
+        with database() as connection:
+            due = connection.execute(
+                """
+                SELECT r.id,r.guild_id,r.channel_id,r.content,r.attempts,p.status AS post_status
+                FROM community_announcement_repeats r
+                LEFT JOIN community_posts p ON p.id = r.post_id
+                WHERE r.status = 'queued' AND r.scheduled_at <= ?
+                ORDER BY r.scheduled_at,r.id LIMIT 25
+                """,
+                (now.isoformat(),),
+            ).fetchall()
+            claimed = []
+            for row in due:
+                if row["post_status"] != "approved":
+                    connection.execute(
+                        "UPDATE community_announcement_repeats SET status='cancelled',updated_at=? WHERE id=? AND status='queued'",
+                        (utc_now_iso(), row["id"]),
+                    )
+                    continue
+                result = connection.execute(
+                    "UPDATE community_announcement_repeats SET status='sending',updated_at=? WHERE id=? AND status='queued'",
+                    (utc_now_iso(), row["id"]),
+                )
+                if result.rowcount:
+                    claimed.append(row)
+        for row in claimed:
+            try:
+                channel = bot.get_channel(int(row["channel_id"]))
+                if channel is None:
+                    channel = await bot.fetch_channel(int(row["channel_id"]))
+                message = await channel.send(
+                    str(row["content"] or "")[:1900],
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                with database() as connection:
+                    connection.execute(
+                        "UPDATE community_announcement_repeats SET status='sent',sent_message_id=?,last_error='',updated_at=? WHERE id=?",
+                        (str(message.id), utc_now_iso(), row["id"]),
+                    )
+            except Exception as error:
+                attempts = int(row["attempts"] or 0)
+                retry_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+                retry_status = "queued" if attempts < 2 else "failed"
+                with database() as connection:
+                    connection.execute(
+                        "UPDATE community_announcement_repeats SET status=?,attempts=attempts+1,scheduled_at=?,last_error=?,updated_at=? WHERE id=?",
+                        (retry_status, retry_at, str(error)[:1000], utc_now_iso(), row["id"]),
+                    )
+                await report_background_error(
+                    f"community_announcement_repeat:{row['id']}", error
+                )
+    except Exception as error:
+        await report_background_error("community_announcement_repeat_scheduler", error)
+
+
 @daily_quote_scheduler.before_loop
 async def before_daily_quote_scheduler():
     await bot.wait_until_ready()
@@ -17481,6 +17825,8 @@ async def on_ready():
         guess_hint_scheduler.start()
     if not scheduled_games_scheduler.is_running():
         scheduled_games_scheduler.start()
+    if not community_announcement_repeat_scheduler.is_running():
+        community_announcement_repeat_scheduler.start()
     if not monthly_leaderboard_scheduler.is_running():
         monthly_leaderboard_scheduler.start()
     if not cleanup_scheduler.is_running():

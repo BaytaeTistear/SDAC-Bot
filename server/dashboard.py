@@ -12969,6 +12969,14 @@ def send_community_notification(event_key, message, post_id, guild_id=None, thro
         post_row = connection.execute("SELECT * FROM community_posts WHERE id = ?", (int(post_id),)).fetchone()
         if not post_row:
             return 0
+        preferences = connection.execute(
+            "SELECT repeat_times_json FROM community_post_announcement_preferences WHERE post_id = ?",
+            (int(post_id),),
+        ).fetchone()
+        try:
+            repeat_times = json.loads(preferences["repeat_times_json"] or "[]") if preferences else []
+        except (TypeError, json.JSONDecodeError):
+            repeat_times = []
         sent = 0
         for route in route_rows:
             request_payload = community_rsvp_poll_payload(content, post_row)
@@ -12985,6 +12993,35 @@ def send_community_notification(event_key, message, post_id, guild_id=None, thro
             )
             if payload and record_community_announcement(connection, post_id, route["guild_id"], route["channel_id"], payload):
                 sent += 1
+                reminder_content = f"**Reminder**\n{content}"[:1800]
+                for scheduled_at in repeat_times[:5]:
+                    try:
+                        parsed_time = datetime.fromisoformat(str(scheduled_at))
+                    except (TypeError, ValueError):
+                        continue
+                    if parsed_time.tzinfo is None:
+                        parsed_time = parsed_time.replace(tzinfo=timezone.utc)
+                    parsed_time = parsed_time.astimezone(timezone.utc)
+                    if parsed_time <= datetime.now(timezone.utc):
+                        continue
+                    connection.execute(
+                        """
+                        INSERT INTO community_announcement_repeats (
+                            post_id,guild_id,channel_id,scheduled_at,content,status,created_at,updated_at
+                        ) VALUES (?,?,?,?,?,'queued',?,?)
+                        ON CONFLICT(post_id,channel_id,scheduled_at) DO UPDATE SET
+                            content = excluded.content,
+                            status = 'queued',
+                            attempts = 0,
+                            last_error = '',
+                            updated_at = excluded.updated_at
+                        WHERE community_announcement_repeats.status = 'cancelled'
+                        """,
+                        (
+                            int(post_id), str(route["guild_id"]), str(route["channel_id"]),
+                            parsed_time.isoformat(), reminder_content, utc_now_iso(), utc_now_iso(),
+                        ),
+                    )
     return sent
 
 
@@ -26175,7 +26212,13 @@ COMMUNITY_LISTING_HTML = """
         select option { background: #081122; color: var(--text); }
         textarea { min-height: 7rem; resize: vertical; }
         button { border: 0; border-radius: 0.55rem; padding: 0.8rem 1rem; color: white; font: inherit; font-weight: 800; cursor: pointer; background: linear-gradient(100deg, var(--accent2), var(--accent)); }
-        .form-grid { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); max-width: 48rem; }
+        .form-grid { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 54rem; }
+        .wizard-step { border: 1px solid var(--border); border-radius: 0.7rem; padding: 1rem; grid-column: 1 / -1; }
+        .wizard-step[hidden] { display: none; }
+        .wizard-step h3 { margin: 0 0 .35rem; }
+        .wizard-progress { color: var(--muted); margin: .25rem 0 1rem; }
+        .wizard-actions { display: flex; gap: .65rem; flex-wrap: wrap; grid-column: 1 / -1; }
+        .repeat-grid { display: grid; gap: .7rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); margin-top: .7rem; }
         .wide { grid-column: 1 / -1; }
         .notice { border: 1px solid var(--border); border-radius: 0.55rem; padding: 0.8rem; margin: 0 0 1rem; text-align: center; }
         .notice.error { border-color: var(--danger); }
@@ -26187,6 +26230,7 @@ COMMUNITY_LISTING_HTML = """
             .hero { padding: 1rem; }
             .panel { margin: 0.65rem 0; padding: 0.8rem; }
             .grid { gap: 0.75rem; }
+            .form-grid { grid-template-columns: minmax(0, 1fr); }
             .card { padding: 0.85rem; }
             .card .meta { border-left: 2px solid var(--border); display: block; line-height: 1.45; margin: 0.65rem 0; padding-left: 0.7rem; }
         }
@@ -26273,22 +26317,30 @@ COMMUNITY_LISTING_HTML = """
     <section class="panel">
         {% if can_submit %}
             <h2>Submit {{ labels.singular }}</h2>
-            <p class="muted">{{ labels.submit_help }} Submissions and approved listings are shown only for the selected server.</p>
+            <p class="muted">{{ labels.submit_help }} Follow the three steps below. A moderator reviews the listing before it is announced.</p>
             <form id="submit" method="post" class="form-grid">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <label>Title<input name="title" maxlength="140" required placeholder="Convention, game night, watch party, tournament..."></label>
-                <label>{{ labels.host_label }}<input name="host_name" maxlength="140" placeholder="Community, organizer, or host"></label>
-                <label>Location<input name="location" maxlength="180" placeholder="City, venue, Discord, or online"></label>
-                <label>Server<select name="guild_id" required>{% for guild in guild_options %}<option value="{{ guild.id }}" {% if guild.id == selected_guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}</select></label>
-                <label>Tag<select name="tag" data-placeholder="true"><option value="">Pick a tag</option>{% for tag in tags %}<option value="{{ tag }}">{{ tag }}</option>{% endfor %}</select></label>
-                <label>Starts<input type="datetime-local" name="starts_at" data-placeholder="true"></label>
-                <label>Ends<input type="datetime-local" name="ends_at" data-placeholder="true"></label>
-                <label>Info link<input name="contact_url" maxlength="300" placeholder="https://..."></label>
-                <label>Your name<input name="submitter_name" maxlength="120" placeholder="Shown to admins only unless approved notes include it"></label>
-                <label class="wide">Contact for admins<input name="submitter_contact" maxlength="180" placeholder="Discord handle, email, or best way to reach you"></label>
-                <label class="wide">Description<textarea name="description" maxlength="3000" required placeholder="What is it, who is it for, and what should people know?"></textarea></label>
+                <fieldset class="wizard-step" data-wizard-step="1"><h3>Step 1 Â· Event basics</h3><p class="wizard-progress">Tell people what the event is and where it will happen.</p>
+                    <label>Title<input name="title" maxlength="140" required placeholder="Convention, game night, watch party, tournament..."></label>
+                    <label>{{ labels.host_label }}<input name="host_name" maxlength="140" placeholder="Community, organizer, or host"></label>
+                    <label>Location<input name="location" maxlength="180" placeholder="City, venue, Discord, or online"></label>
+                    <label>Server<select name="guild_id" required>{% for guild in guild_options %}<option value="{{ guild.id }}" {% if guild.id == selected_guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}</select></label>
+                    <label>Tag<select name="tag" data-placeholder="true"><option value="">Pick a tag</option>{% for tag in tags %}<option value="{{ tag }}">{{ tag }}</option>{% endfor %}</select></label>
+                </fieldset>
+                <fieldset class="wizard-step" data-wizard-step="2" hidden><h3>Step 2 Â· Timing</h3><p class="wizard-progress">Set the event time, then optionally choose up to five reminder announcements. Times use your device's local time.</p>
+                    <label>Starts<input type="datetime-local" name="starts_at_local" data-utc-target="starts_at" data-placeholder="true"><input type="hidden" name="starts_at"></label>
+                    <label>Ends<input type="datetime-local" name="ends_at_local" data-utc-target="ends_at" data-placeholder="true"><input type="hidden" name="ends_at"></label>
+                    <strong>Optional reminders Â· choose up to five dates and times</strong>
+                    <div class="repeat-grid">{% for index in range(1, 6) %}<label>Reminder {{ index }}<input type="datetime-local" name="repeat_time_local_{{ index }}" data-repeat-local="{{ index }}" data-placeholder="true"><input type="hidden" name="repeat_time_{{ index }}"></label>{% endfor %}</div>
+                </fieldset>
+                <fieldset class="wizard-step" data-wizard-step="3" hidden><h3>Step 3 Â· Details and review</h3><p class="wizard-progress">Add the useful details for attendees, review your choices, then send it to moderators.</p>
+                    <label>Info link<input name="contact_url" maxlength="300" placeholder="https://..."></label>
+                    <label>Your name<input name="submitter_name" maxlength="120" placeholder="Shown to reviewers"></label>
+                    <label>Contact for admins<input name="submitter_contact" maxlength="180" placeholder="Discord handle, email, or best way to reach you"></label>
+                    <label>Description<textarea name="description" maxlength="3000" required placeholder="What is it, who is it for, and what should people know?"></textarea></label>
+                </fieldset>
                 {% if turnstile_site_key %}<div class="cf-turnstile wide" data-sitekey="{{ turnstile_site_key }}"></div>{% endif %}
-                <button class="wide" type="submit">Send For Admin Approval</button>
+                <div class="wizard-actions"><button type="button" data-wizard-back hidden>Back</button><button type="button" data-wizard-next>Continue</button><button type="submit" data-wizard-submit hidden>Send For Admin Approval</button><span class="wizard-progress" data-wizard-count>Step 1 of 3</span></div>
             </form>
         {% else %}
             <h2>Submit {{ labels.singular }}</h2>
@@ -26307,6 +26359,46 @@ document.querySelectorAll("select, input[type='datetime-local']").forEach((field
     field.addEventListener("change", syncPlaceholderState);
     field.addEventListener("input", syncPlaceholderState);
 });
+const submitWizard = document.querySelector("#submit");
+if (submitWizard) {
+    const steps = [...submitWizard.querySelectorAll("[data-wizard-step]")];
+    const back = submitWizard.querySelector("[data-wizard-back]");
+    const next = submitWizard.querySelector("[data-wizard-next]");
+    const send = submitWizard.querySelector("[data-wizard-submit]");
+    const count = submitWizard.querySelector("[data-wizard-count]");
+    let current = 0;
+    const showStep = () => {
+        steps.forEach((step, index) => { step.hidden = index !== current; });
+        back.hidden = current === 0;
+        next.hidden = current === steps.length - 1;
+        send.hidden = current !== steps.length - 1;
+        count.textContent = `Step ${current + 1} of ${steps.length}`;
+        steps[current].scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    const validateStep = () => {
+        const fields = [...steps[current].querySelectorAll("input,select,textarea")];
+        const invalid = fields.find((field) => !field.checkValidity());
+        if (invalid) { invalid.reportValidity(); return false; }
+        return true;
+    };
+    next.addEventListener("click", () => { if (validateStep() && current < steps.length - 1) { current += 1; showStep(); } });
+    back.addEventListener("click", () => { if (current > 0) { current -= 1; showStep(); } });
+    submitWizard.addEventListener("submit", (event) => {
+        submitWizard.querySelectorAll("[data-utc-target]").forEach((field) => {
+            const target = submitWizard.querySelector(`[name="${field.dataset.utcTarget}"]`);
+            target.value = field.value ? new Date(field.value).toISOString() : "";
+        });
+        submitWizard.querySelectorAll("[data-repeat-local]").forEach((field) => {
+            const target = submitWizard.querySelector(`[name="repeat_time_${field.dataset.repeatLocal}"]`);
+            target.value = field.value ? new Date(field.value).toISOString() : "";
+        });
+        for (let index = 0; index < steps.length; index += 1) {
+            current = index;
+            if (!validateStep()) { event.preventDefault(); showStep(); return; }
+        }
+    });
+    showStep();
+}
 </script>
 </body>
 </html>
@@ -26349,6 +26441,7 @@ COMMUNITY_APPROVAL_BODY = """
                         <span class="muted">{{ post.description }}</span><br>
                         {% for finding in post.safety_findings %}<span class="pill">Safety: {{ finding }}</span>{% endfor %}
                         {% if post.starts_at_label %}<span class="pill">{{ post.starts_at_label }}</span>{% endif %}
+                        {% if post.repeat_times_label %}<br><span class="muted">Requested reminder times (UTC): {{ post.repeat_times_label }}</span>{% endif %}
                         {% if post.location %}<span class="pill">{{ post.location }}</span>{% endif %}
                         {% if post.guild_name %}<span class="pill">{{ post.guild_name }}</span>{% endif %}
                         {% if post.contact_url %}<br><a href="{{ post.contact_url }}" rel="noopener noreferrer">Info link</a>{% endif %}
@@ -26448,6 +26541,31 @@ def ensure_community_posts_table():
                 PRIMARY KEY (post_id, user_id)
             )
         """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS community_post_announcement_preferences (
+                post_id INTEGER PRIMARY KEY,
+                repeat_times_json TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS community_announcement_repeats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id INTEGER NOT NULL,
+                guild_id TEXT NOT NULL DEFAULT '',
+                channel_id TEXT NOT NULL DEFAULT '',
+                scheduled_at TEXT NOT NULL,
+                content TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                sent_message_id TEXT NOT NULL DEFAULT '',
+                last_error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(post_id, channel_id, scheduled_at)
+            )
+        """)
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_community_announcement_repeats_due ON community_announcement_repeats(status, scheduled_at)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_post_announcements_message ON community_post_announcements(message_id)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_post_announcements_post ON community_post_announcements(post_id, guild_id)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_community_post_rsvps_post_status ON community_post_rsvps(post_id, status, updated_at)")
@@ -26473,7 +26591,7 @@ def community_datetime_label(value):
     normalized = str(value).strip()
     try:
         parsed = datetime.fromisoformat(normalized)
-        return parsed.strftime("%Y-%m-%d %H:%M")
+        return parsed.strftime("%Y-%m-%d %H:%M %Z") if parsed.tzinfo else parsed.strftime("%Y-%m-%d %H:%M")
     except (TypeError, ValueError):
         return normalized
 
@@ -26703,6 +26821,29 @@ def community_post_rows(post_type=None, status="approved", limit=100, tag="", wh
     return output
 
 
+def community_repeat_times_from_form():
+    now = datetime.now(timezone.utc)
+    scheduled = []
+    for index in range(1, 6):
+        raw_value = community_clean_text(request.form.get(f"repeat_time_{index}"), 40)
+        if not raw_value:
+            continue
+        try:
+            normalized = raw_value[:-1] + "+00:00" if raw_value.upper().endswith("Z") else raw_value
+            local_time = datetime.fromisoformat(normalized)
+        except ValueError as error:
+            raise ValueError(f"Reminder {index} has an invalid date or time. Refresh the page and try again.") from error
+        if local_time.tzinfo is None:
+            raise ValueError("Your browser could not convert a reminder time to UTC. Refresh the page and try again.")
+        scheduled_time = local_time.astimezone(timezone.utc)
+        if scheduled_time <= now:
+            raise ValueError(f"Reminder {index} must be in the future.")
+        scheduled.append(scheduled_time.replace(microsecond=0).isoformat())
+    if len(set(scheduled)) != len(scheduled):
+        raise ValueError("Choose a different time for each reminder.")
+    return sorted(scheduled)
+
+
 def save_community_post(post_type):
     labels = COMMUNITY_POST_LABELS[post_type]
     title = community_clean_text(request.form.get("title"), 140)
@@ -26719,6 +26860,26 @@ def save_community_post(post_type):
         tag = ""
     now = utc_now_iso()
     location = community_clean_text(request.form.get("location"), 180)
+    repeat_times = community_repeat_times_from_form()
+    starts_at = community_clean_text(request.form.get("starts_at"), 40)
+    ends_at = community_clean_text(request.form.get("ends_at"), 40)
+    if starts_at.upper().endswith("Z"):
+        starts_at = starts_at[:-1] + "+00:00"
+    if ends_at.upper().endswith("Z"):
+        ends_at = ends_at[:-1] + "+00:00"
+    try:
+        starts_at_dt = datetime.fromisoformat(starts_at) if starts_at else None
+        ends_at_dt = datetime.fromisoformat(ends_at) if ends_at else None
+    except ValueError as error:
+        raise ValueError("Event start or end time is invalid. Refresh the page and try again.") from error
+    if starts_at_dt and starts_at_dt.tzinfo is None:
+        raise ValueError("Your browser could not convert the event start time. Refresh the page and try again.")
+    if ends_at_dt and ends_at_dt.tzinfo is None:
+        raise ValueError("Your browser could not convert the event end time. Refresh the page and try again.")
+    if starts_at_dt and ends_at_dt and ends_at_dt <= starts_at_dt:
+        raise ValueError("The end time must be after the start time.")
+    if starts_at_dt and any(datetime.fromisoformat(value) >= starts_at_dt for value in repeat_times):
+        raise ValueError("Choose reminder times before the event starts.")
     contact_url = community_clean_url(request.form.get("contact_url"))
     findings = screen_content(title, description, location, contact_url)
     initial_status = safety_status(findings)
@@ -26738,8 +26899,8 @@ def save_community_post(post_type):
                 title,
                 description,
                 location,
-                community_clean_text(request.form.get("starts_at"), 40),
-                community_clean_text(request.form.get("ends_at"), 40),
+                starts_at,
+                ends_at,
                 community_clean_text(request.form.get("host_name"), 140),
                 contact_url,
                 guild_id,
@@ -26752,6 +26913,10 @@ def save_community_post(post_type):
             ),
         )
         post_id = int(cursor.lastrowid)
+        connection.execute(
+            "INSERT INTO community_post_announcement_preferences (post_id, repeat_times_json, created_at) VALUES (?, ?, ?)",
+            (post_id, json.dumps(repeat_times), now),
+        )
         record_safety_findings(connection, "post", post_id, guild_id, findings)
         return post_id
 
@@ -27486,6 +27651,8 @@ def admin_community_submissions():
             if action == "resend_email":
                 message = "Community submission email and DM resent."
             elif action == "delete":
+                connection.execute("DELETE FROM community_announcement_repeats WHERE post_id = ?", (post_id,))
+                connection.execute("DELETE FROM community_post_announcement_preferences WHERE post_id = ?", (post_id,))
                 connection.execute("DELETE FROM community_posts WHERE id = ?", (post_id,))
                 message = "Community submission deleted."
             else:
@@ -27499,6 +27666,11 @@ def admin_community_submissions():
                     """,
                     (new_status, now, actor, review_notes, is_featured, now, post_id),
                 )
+                if new_status != "approved":
+                    connection.execute(
+                        "UPDATE community_announcement_repeats SET status='cancelled',updated_at=? WHERE post_id=? AND status IN ('queued','sending')",
+                        (now, post_id),
+                    )
                 message = f"Community submission {new_status}."
                 if new_status == "approved":
                     notification_event_key = community_notification_event_key(row["post_type"])
@@ -27553,11 +27725,32 @@ def admin_community_submissions():
                     url_for("community_events" if row["post_type"] == "event" else "community_meetups", guild_id=row["guild_id"]),
                 )
         return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice=message, status=selected_status, post_type=selected_type))
+    posts = community_post_rows(selected_type, selected_status)
+    with closing(connect_db()) as connection:
+        for post in posts:
+            preference = connection.execute(
+                "SELECT repeat_times_json FROM community_post_announcement_preferences WHERE post_id = ?",
+                (int(post["id"]),),
+            ).fetchone()
+            try:
+                reminder_values = json.loads(preference["repeat_times_json"] or "[]") if preference else []
+            except (TypeError, json.JSONDecodeError):
+                reminder_values = []
+            labels = []
+            for reminder in reminder_values[:5]:
+                try:
+                    parsed = datetime.fromisoformat(str(reminder))
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=timezone.utc)
+                    labels.append(parsed.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+                except (TypeError, ValueError):
+                    continue
+            post["repeat_times_label"] = ", ".join(labels)
     return admin_tool_shell(
         "Events And Meetups",
         "Review community event and meetup submissions before they become public.",
         COMMUNITY_APPROVAL_BODY,
-        posts=community_post_rows(selected_type, selected_status),
+        posts=posts,
         selected_status=selected_status,
         selected_type=selected_type,
         status_options=["pending", "quarantined", "approved", "rejected", "withdrawn", "all"],

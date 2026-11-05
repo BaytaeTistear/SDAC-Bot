@@ -4,7 +4,7 @@ import sqlite3
 
 
 
-DATABASE_SCHEMA_VERSION = 33
+DATABASE_SCHEMA_VERSION = 34
 GOOGLE_PLAY_REVIEW_PASSWORD_HASH = "scrypt:32768:8:1$tpr2C1Lx7O3szQ0T$0f9b5ee8f0d5caaecaf4d69667ea93aff95365decc7108fd955590df4ef07c17680a64610805821aef23fcb86171de70c4bc0f577501ca920bb6b5bb80a4426b"
 
 
@@ -1133,6 +1133,38 @@ def migration_33_separate_anime_provider_snapshots(connection):
     ensure_column(connection, "anime_profiles", "anilist_profile_json", "TEXT")
 
 
+def migration_34_community_announcement_repeats(connection):
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS community_post_announcement_preferences (
+            post_id INTEGER PRIMARY KEY,
+            repeat_times_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL
+        )
+    """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS community_announcement_repeats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id INTEGER NOT NULL,
+            guild_id TEXT NOT NULL DEFAULT '',
+            channel_id TEXT NOT NULL DEFAULT '',
+            scheduled_at TEXT NOT NULL,
+            content TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'queued',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            sent_message_id TEXT NOT NULL DEFAULT '',
+            last_error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(post_id, channel_id, scheduled_at)
+        )
+    """)
+    ensure_column(connection, "community_announcement_repeats", "attempts", "INTEGER NOT NULL DEFAULT 0")
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_community_announcement_repeats_due
+        ON community_announcement_repeats (status, scheduled_at)
+    """)
+
+
 MIGRATIONS = (
     (3, migration_3_media_metadata_and_rate_limits),
     (4, migration_4_restore_test_runs),
@@ -1165,6 +1197,7 @@ MIGRATIONS = (
     (31, migration_31_anilist_account_connections),
     (32, migration_32_distinct_anime_profile_statuses),
     (33, migration_33_separate_anime_provider_snapshots),
+    (34, migration_34_community_announcement_repeats),
 )
 
 

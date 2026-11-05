@@ -1,3 +1,15 @@
+# Sana-Chan Version 4.4.85 Experimental
+
+Version 4.4.85 adds guided community event and meetup submissions with scheduled reminders.
+
+- adds `/createevent` and `/createmeetup` step-by-step Discord forms
+- lets web and Discord submitters choose up to five reminder times for moderator-approved listings
+- posts reminders at the selected times and cancels them when a listing is rejected or deleted
+- adds a forward database migration for persistent reminder queues and retries
+- verifies reminder schema upgrades and the new slash commands during release checks
+
+---
+
 # Sana-Chan Version 4.4.84 Experimental
 
 Version 4.4.84 adds direct page editing links for server admins.

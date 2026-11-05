@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.63**. Guessing games accept individual Game Library IDs, comma-separated lists, and inclusive ranges such as `301-486`; the official app dependency lock is also updated for the latest security advisories.
+Current experimental backend: **4.4.85**. Community events and meetups support moderator-reviewed submissions with up to five scheduled reminders.
 
 ## One-Line Linux Install
 
@@ -542,6 +542,10 @@ Admins should start with `/sana`. The panel opens button-based menus for setup, 
 Website quote submissions are available at `/quotes`, and moderators review them at `/admin/quotes`. Discord-linked submitters receive private DM updates when a quote is submitted, approved, or rejected. Website submitters can also provide an optional email address; configure the `SANA_SMTP_*` environment variables to enable private email updates.
 
 Email notifications require a verified account email and explicit opt-in from the account page. Users can independently disable email or Discord DM updates. The signed-in `/my-submissions` portal combines private status and reviewer notes for media, quotes, events, and meetups. Administrators can retry eligible failed deliveries up to three times from the Notification Center.
+
+### Events And Meetups
+
+Users can submit guided event and meetup forms with `/createevent` and `/createmeetup`, or use the Events and Meetups pages on the dashboard. Submissions go to moderator review. A submitter can choose up to five reminder times; web times use the browser's local time, while Discord commands accept ISO times with an explicit zone such as `2026-11-15T18:00-08:00`. Sana posts reminders only after approval, at the selected times, and cancels queued reminders if the listing is rejected or deleted.
 
 ### Dashboard Pages
 

@@ -45,6 +45,8 @@ class PreReleaseSmokeTests(unittest.TestCase):
     def test_bot_and_dashboard_imported(self):
         self.assertEqual(self.bot.OWNER_OVERRIDE_USERNAME, "baytae")
         self.assertTrue(hasattr(self.dashboard, "app"))
+        commands = {command.name for command in self.bot.tree.get_commands()}
+        self.assertTrue({"createevent", "createmeetup"}.issubset(commands))
 
     def test_database_migration_version_is_current(self):
         with self.dashboard.database() as connection:
