@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.86**. Discord's Sync Commands control now publishes global commands as well as server aliases.
+Current experimental backend: **4.4.87**. Moderators can optionally create an event or meetup RSVP reaction-role post when approving it.
 
 ## One-Line Linux Install
 

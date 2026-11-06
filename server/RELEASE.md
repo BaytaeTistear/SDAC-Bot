@@ -1,3 +1,13 @@
+# Sana-Chan Version 4.4.87 Experimental
+
+Version 4.4.87 lets moderators optionally create an event or meetup RSVP reaction-role post when approving a submission.
+
+- adds a role picker to event and meetup moderation approval
+- posts a 🎟️ reaction-role message in the configured Discord announcement channel
+- removes linked role panels if the event or meetup is rejected or deleted
+
+---
+
 # Sana-Chan Version 4.4.86 Experimental
 
 Version 4.4.86 fixes the Discord command sync controls so they publish global commands, including `/createevent` and `/createmeetup`, as well as the server-specific command alias.

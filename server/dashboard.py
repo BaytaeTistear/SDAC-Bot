@@ -25,7 +25,7 @@ import zipfile
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import urlencode, quote_plus
+from urllib.parse import urlencode, quote, quote_plus
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -83,7 +83,7 @@ from mal_integration import (
     new_pkce_verifier,
     refresh_mal_token,
 )
-from reaction_roles import ensure_reaction_role_schema
+from reaction_roles import canonical_reaction_role_emoji, ensure_reaction_role_schema
 from anilist_integration import (
     anilist_authorization_url,
     anilist_configured,
@@ -12312,6 +12312,136 @@ def configured_notification_rows(event_key, guild_id=None):
             return connection.execute(query, parameters).fetchall()
     except sqlite3.Error:
         return []
+
+
+def community_discord_api(method, path, payload=None):
+    if not TOKEN:
+        return None, "Sana's bot token is not configured for the dashboard."
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    api_request = Request(
+        f"https://discord.com/api/v10{path}",
+        data=data,
+        method=method,
+        headers={
+            "Authorization": f"Bot {TOKEN}",
+            "Content-Type": "application/json",
+            "User-Agent": "Sana-Dashboard/4.0",
+        },
+    )
+    try:
+        with urlopen(api_request, timeout=15) as response:
+            raw = response.read().decode("utf-8")
+            return (json.loads(raw) if raw else {}), ""
+    except HTTPError as error:
+        try:
+            detail = error.read().decode("utf-8")[:300]
+        except Exception:
+            detail = ""
+        return None, f"Discord returned HTTP {error.code}. {detail}".strip()
+    except (URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
+        return None, f"Could not reach Discord: {error}"
+
+
+def community_rsvp_assignable_roles(guild_id):
+    guild_id = str(guild_id or "")
+    if not guild_id.isdigit():
+        return []
+    roles, error = community_discord_api("GET", f"/guilds/{guild_id}/roles")
+    bot_user, user_error = community_discord_api("GET", "/users/@me")
+    if error or user_error or not isinstance(roles, list) or not isinstance(bot_user, dict) or not bot_user.get("id"):
+        return []
+    bot_member, member_error = community_discord_api(
+        "GET", f"/guilds/{guild_id}/members/{bot_user['id']}"
+    )
+    if member_error or not isinstance(bot_member, dict):
+        return []
+    bot_role_ids = {str(value) for value in (bot_member.get("roles") or [])}
+    bot_top = max(
+        (int(role.get("position", 0)) for role in roles if str(role.get("id")) in bot_role_ids),
+        default=-1,
+    )
+    dangerous = sum(1 << bit for bit in (0, 1, 2, 3, 4, 5, 13, 27, 28, 29))
+    eligible = []
+    for role in roles:
+        role_id = str(role.get("id") or "")
+        if not role_id.isdigit() or role_id == guild_id or role.get("managed"):
+            continue
+        if int(role.get("position", 0)) >= bot_top:
+            continue
+        if int(role.get("permissions", "0")) & dangerous:
+            continue
+        eligible.append({"id": role_id, "name": str(role.get("name") or "Role")})
+    return sorted(eligible, key=lambda item: item["name"].casefold())
+
+
+def publish_community_rsvp_role_panels(post_row, role_id, actor_id):
+    guild_id = str(post_row["guild_id"] or "")
+    role_id = str(role_id or "")
+    role_options = {item["id"]: item for item in community_rsvp_assignable_roles(guild_id)}
+    role = role_options.get(role_id)
+    if not role:
+        return 0, "The selected RSVP role is no longer available or is above Sana's role."
+    event_key = community_notification_event_key(post_row["post_type"])
+    routes = configured_notification_rows(event_key, guild_id)
+    if not routes:
+        return 0, "No Discord announcement channel is configured for this event or meetup."
+
+    created = 0
+    errors = []
+    title = community_clean_text(post_row["title"], 140) or "Community event"
+    description = f"React with 🎟️ to get the {role['name']} role for {title}."
+    with database() as connection:
+        ensure_reaction_role_schema(connection)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS community_post_reaction_role_panels (
+                post_id INTEGER NOT NULL,
+                message_id TEXT PRIMARY KEY,
+                guild_id TEXT NOT NULL DEFAULT '',
+                channel_id TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT ''
+            )
+        """)
+
+    for route in routes:
+        channel_id = str(route["channel_id"] or "")
+        message, error = community_discord_api(
+            "POST",
+            f"/channels/{channel_id}/messages",
+            {
+                "content": f"**{title} — RSVP role**\n{description}",
+                "allowed_mentions": {"parse": []},
+            },
+        )
+        if error or not isinstance(message, dict) or not message.get("id"):
+            errors.append(error or f"Could not post the role panel in channel {channel_id}.")
+            continue
+        message_id = str(message["id"])
+        emoji = "🎟️"
+        _, reaction_error = community_discord_api(
+            "PUT",
+            f"/channels/{channel_id}/messages/{message_id}/reactions/{quote(emoji, safe='')}/@me",
+        )
+        if reaction_error:
+            delete_discord_message(channel_id, message_id)
+            errors.append(f"Could not add the RSVP reaction in channel {channel_id}: {reaction_error}")
+            continue
+        now = utc_now_iso()
+        with database() as connection:
+            ensure_reaction_role_schema(connection)
+            connection.execute(
+                "INSERT INTO reaction_role_panels (message_id,guild_id,channel_id,title,description,mode,display_mode,enabled,created_by,created_at) VALUES (?,?,?,?,?,'single','reactions',1,?,?)",
+                (message_id, guild_id, channel_id, f"{title} RSVP"[:100], description[:1000], str(actor_id), now),
+            )
+            connection.execute(
+                "INSERT INTO reaction_role_options (message_id,emoji,role_id,label) VALUES (?,?,?,?)",
+                (message_id, canonical_reaction_role_emoji(emoji), role_id, "Going"),
+            )
+            connection.execute(
+                "INSERT INTO community_post_reaction_role_panels (post_id,message_id,guild_id,channel_id,created_at) VALUES (?,?,?,?,?)",
+                (int(post_row["id"]), message_id, guild_id, channel_id, now),
+            )
+        created += 1
+    return created, " ".join(errors)
 
 
 def post_discord_channel_payload(channel_id, payload):
@@ -26455,6 +26585,16 @@ COMMUNITY_APPROVAL_BODY = """
                             <select name="review_preset"><option value="">Reason preset</option>{% for reason in reason_presets %}<option value="{{ reason }}">{{ reason }}</option>{% endfor %}</select>
                             <input name="review_notes" placeholder="Review notes" value="{{ post.review_notes or '' }}">
                             <label><input type="checkbox" name="is_featured" value="1" {% if post.is_featured %}checked{% endif %}> Featured</label>
+                            {% if post.status in ['pending', 'quarantined'] %}
+                            <label>Optional RSVP reaction role
+                                <select name="reaction_role_id">
+                                    <option value="">No reaction-role post</option>
+                                    {% for role in post.reaction_role_options %}<option value="{{ role.id }}">🎟️ {{ role.name }}</option>{% endfor %}
+                                </select>
+                            </label>
+                            {% if not post.reaction_role_options %}<span class="muted">No assignable roles are available. Check Sana's role order and Discord access.</span>{% endif %}
+                            <span class="muted">When selected, Sana posts an RSVP reaction-role message in the configured announcement channel after approval.</span>
+                            {% endif %}
                             <button name="action" value="approve" type="submit">Approve</button>
                             <button name="action" value="reject" type="submit">Reject</button>
                             <button name="action" value="resend_email" type="submit">Resend Email</button>
@@ -26526,6 +26666,15 @@ def ensure_community_posts_table():
                 going_answer_id TEXT NOT NULL DEFAULT '',
                 not_going_answer_id TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS community_post_reaction_role_panels (
+                post_id INTEGER NOT NULL,
+                message_id TEXT PRIMARY KEY,
+                guild_id TEXT NOT NULL DEFAULT '',
+                channel_id TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT ''
             )
         """)
         connection.execute("""
@@ -27641,6 +27790,20 @@ def admin_community_submissions():
         is_featured = 1 if request.form.get("is_featured") == "1" else 0
         if action not in {"approve", "reject", "delete", "resend_email"}:
             return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Unknown action.", error=1, status=selected_status, post_type=selected_type))
+        reaction_role_id = community_clean_text(request.form.get("reaction_role_id"), 32)
+        if action == "approve" and reaction_role_id:
+            with closing(connect_db()) as lookup_connection:
+                lookup_post = lookup_connection.execute(
+                    "SELECT * FROM community_posts WHERE id = ?", (post_id,)
+                ).fetchone()
+            if not lookup_post:
+                return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Community submission not found.", error=1, status=selected_status, post_type=selected_type))
+            if not configured_notification_rows(community_notification_event_key(lookup_post["post_type"]), lookup_post["guild_id"]):
+                return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Configure a Discord announcement channel in /sana -> Events before adding an RSVP reaction role.", error=1, status=selected_status, post_type=selected_type))
+            eligible_roles = community_rsvp_assignable_roles(lookup_post["guild_id"])
+            if not any(role["id"] == reaction_role_id for role in eligible_roles):
+                return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="That RSVP role is unavailable or cannot be assigned by Sana. Refresh the page and choose another role.", error=1, status=selected_status, post_type=selected_type))
+        role_panel_rows_to_remove = []
         notification_event_key = ""
         notification_message = ""
         notification_guild_id = ""
@@ -27651,6 +27814,11 @@ def admin_community_submissions():
             if action == "resend_email":
                 message = "Community submission email and DM resent."
             elif action == "delete":
+                role_panel_rows_to_remove = connection.execute(
+                    "SELECT message_id,channel_id FROM community_post_reaction_role_panels WHERE post_id = ?",
+                    (post_id,),
+                ).fetchall()
+                connection.execute("DELETE FROM community_post_reaction_role_panels WHERE post_id = ?", (post_id,))
                 connection.execute("DELETE FROM community_announcement_repeats WHERE post_id = ?", (post_id,))
                 connection.execute("DELETE FROM community_post_announcement_preferences WHERE post_id = ?", (post_id,))
                 connection.execute("DELETE FROM community_posts WHERE id = ?", (post_id,))
@@ -27667,6 +27835,11 @@ def admin_community_submissions():
                     (new_status, now, actor, review_notes, is_featured, now, post_id),
                 )
                 if new_status != "approved":
+                    role_panel_rows_to_remove = connection.execute(
+                        "SELECT message_id,channel_id FROM community_post_reaction_role_panels WHERE post_id = ?",
+                        (post_id,),
+                    ).fetchall()
+                    connection.execute("DELETE FROM community_post_reaction_role_panels WHERE post_id = ?", (post_id,))
                     connection.execute(
                         "UPDATE community_announcement_repeats SET status='cancelled',updated_at=? WHERE post_id=? AND status IN ('queued','sending')",
                         (now, post_id),
@@ -27695,6 +27868,15 @@ def admin_community_submissions():
                 message += " " + email_failed[0]
             if dm_failed:
                 message += " " + dm_failed[0]
+        if role_panel_rows_to_remove:
+            for panel_row in role_panel_rows_to_remove:
+                deleted_panel, delete_error = delete_discord_message(panel_row["channel_id"], panel_row["message_id"])
+                if not deleted_panel:
+                    message += f" Could not remove linked RSVP role message: {delete_error}"
+                with database() as cleanup_connection:
+                    ensure_reaction_role_schema(cleanup_connection)
+                    cleanup_connection.execute("DELETE FROM reaction_role_options WHERE message_id = ?", (str(panel_row["message_id"]),))
+                    cleanup_connection.execute("DELETE FROM reaction_role_panels WHERE message_id = ?", (str(panel_row["message_id"]),))
         if notification_event_key and notification_message:
             sent = send_community_notification(
                 notification_event_key,
@@ -27714,6 +27896,12 @@ def admin_community_submissions():
                     "status": "approved",
                 },
             )
+        if action == "approve" and reaction_role_id:
+            role_panel_count, role_panel_error = publish_community_rsvp_role_panels(row, reaction_role_id, actor_id)
+            if role_panel_count:
+                message += f" Posted {role_panel_count} RSVP reaction-role panel(s)."
+            if role_panel_error:
+                message += f" RSVP reaction-role notice: {role_panel_error}"
         if action in {"approve", "reject"}:
             with database() as inbox_connection:
                 create_inbox_notification(
@@ -27726,6 +27914,16 @@ def admin_community_submissions():
                 )
         return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice=message, status=selected_status, post_type=selected_type))
     posts = community_post_rows(selected_type, selected_status)
+    role_options_by_guild = {}
+    if selected_status in {"pending", "quarantined", "all"}:
+        for post in posts:
+            guild_id = str(post.get("guild_id") or "")
+            if post.get("status") in {"pending", "quarantined"} and guild_id and guild_id not in role_options_by_guild:
+                role_options_by_guild[guild_id] = community_rsvp_assignable_roles(guild_id)
+            post["reaction_role_options"] = role_options_by_guild.get(guild_id, [])
+    else:
+        for post in posts:
+            post["reaction_role_options"] = []
     with closing(connect_db()) as connection:
         for post in posts:
             preference = connection.execute(
