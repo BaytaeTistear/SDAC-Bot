@@ -1,3 +1,12 @@
+# Sana-Chan Version 4.4.86 Experimental
+
+Version 4.4.86 fixes the Discord command sync controls so they publish global commands, including `/createevent` and `/createmeetup`, as well as the server-specific command alias.
+
+- makes Sync Commands publish the global command list and the server-specific alias
+- reports the number of global and server commands published
+
+---
+
 # Sana-Chan Version 4.4.85 Experimental
 
 Version 4.4.85 adds guided community event and meetup submissions with scheduled reminders.

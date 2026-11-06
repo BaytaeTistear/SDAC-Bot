@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.85**. Community events and meetups support moderator-reviewed submissions with up to five scheduled reminders.
+Current experimental backend: **4.4.86**. Discord's Sync Commands control now publishes global commands as well as server aliases.
 
 ## One-Line Linux Install
 

@@ -2117,15 +2117,18 @@ class SDACSubmenuSelect(discord.ui.Select):
                 return
             await interaction.response.defer(ephemeral=True)
             guild_config = get_guild_config(interaction.guild_id, create=False)
-            synced = await sync_guild_slash_commands(interaction.guild)
+            synced_global, synced = await sync_public_and_guild_slash_commands(interaction.guild)
             audit_interaction(
                 interaction,
                 "sync_commands_from_hub",
                 "guild",
                 interaction.guild_id,
-                f"Synced {len(synced)} guild command(s) from /sana.",
+                f"Published {len(synced_global)} global and synced {len(synced)} guild command(s) from /sana.",
             )
-            lines = ["**Sana-Chan Command Sync**", "Discord command sync requested."]
+            lines = [
+                "**Sana-Chan Command Sync**",
+                f"Published {len(synced_global)} global command(s) and synced {len(synced)} server command(s).",
+            ]
             lines.extend(command_sync_status_lines(interaction.guild, guild_config))
             lines.append("Discord may take a minute to refresh the command picker.")
             await interaction.edit_original_response(
@@ -3294,15 +3297,18 @@ class SDACSubmenuButton(discord.ui.Button):
                 return
             await interaction.response.defer(ephemeral=True)
             guild_config = get_guild_config(interaction.guild_id, create=False)
-            synced = await sync_guild_slash_commands(interaction.guild)
+            synced_global, synced = await sync_public_and_guild_slash_commands(interaction.guild)
             audit_interaction(
                 interaction,
                 "sync_commands_from_hub",
                 "guild",
                 interaction.guild_id,
-                f"Synced {len(synced)} guild command(s) from /sana.",
+                f"Published {len(synced_global)} global and synced {len(synced)} guild command(s) from /sana.",
             )
-            lines = ["**Sana-Chan Command Sync**", "Discord command sync requested."]
+            lines = [
+                "**Sana-Chan Command Sync**",
+                f"Published {len(synced_global)} global command(s) and synced {len(synced)} server command(s).",
+            ]
             lines.extend(command_sync_status_lines(interaction.guild, guild_config))
             lines.append("Discord may take a minute to refresh the command picker.")
             await interaction.edit_original_response(
@@ -11173,15 +11179,18 @@ class SetupWizardView(discord.ui.View):
     async def send_command_sync(self, interaction):
         await interaction.response.defer(ephemeral=True)
         guild_config = get_guild_config(interaction.guild_id, create=False)
-        synced = await sync_guild_slash_commands(interaction.guild)
+        synced_global, synced = await sync_public_and_guild_slash_commands(interaction.guild)
         audit_interaction(
             interaction,
             "setup_sync_commands",
             "guild",
             interaction.guild_id,
-            f"Synced {len(synced)} guild command(s) from setup wizard.",
+            f"Published {len(synced_global)} global and synced {len(synced)} guild command(s) from setup wizard.",
         )
-        lines = ["**Sana-Chan Command Sync**", "Discord command sync requested."]
+        lines = [
+            "**Sana-Chan Command Sync**",
+            f"Published {len(synced_global)} global command(s) and synced {len(synced)} server command(s).",
+        ]
         lines.extend(command_sync_status_lines(interaction.guild, guild_config))
         lines.append("Discord may take a minute to refresh the command picker.")
         await interaction.edit_original_response(
@@ -17765,6 +17774,17 @@ async def sync_guild_slash_commands(guild):
         flush=True,
     )
     return synced_guild
+
+
+async def sync_public_and_guild_slash_commands(guild):
+    synced_global = await tree.sync()
+    synced_guild = await sync_guild_slash_commands(guild)
+    global_command_names = ", ".join(sorted(command.name for command in synced_global))
+    print(
+        f"Published {len(synced_global)} global slash commands: {global_command_names}",
+        flush=True,
+    )
+    return synced_global, synced_guild
 
 
 async def sync_slash_commands():
