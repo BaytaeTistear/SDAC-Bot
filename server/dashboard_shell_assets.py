@@ -744,3 +744,204 @@ body.sdac-theme .section:hover,
 }
 </style>
 """
+
+
+"""Quiet, consistent visual layer for the Sana-Chan dashboard.
+
+Visual direction informed by Unslop by Damir Sokolovsky, CC BY 4.0:
+https://github.com/heydamir/unslop
+"""
+
+DASHBOARD_REDESIGN_STYLE = r"""
+<style id="sdac-dashboard-redesign">
+:root {
+  --ui-bg: var(--sdac-ui-bg, #030713);
+  --ui-surface: var(--sdac-ui-surface, #080f20);
+  --ui-raised: #11182b;
+  --ui-border: rgba(126, 151, 255, .24);
+  --ui-text: #f8fbff;
+  --ui-muted: #a6b0ca;
+  --ui-primary: var(--sdac-ui-primary, #8b5cf6);
+  --ui-accent: var(--sdac-ui-accent, #18d9ff);
+  --ui-accent-soft: color-mix(in srgb, var(--ui-accent) 14%, var(--ui-surface));
+  --ui-radius: 12px;
+  --ui-control-radius: 8px;
+  color-scheme: dark;
+}
+html { background: var(--ui-bg) !important; }
+body.sdac-theme {
+  background-color: var(--ui-bg) !important;
+  background-image: radial-gradient(circle at 9% 8%, rgba(139,92,246,.15), transparent 24rem), radial-gradient(circle at 76% 10%, rgba(24,217,255,.09), transparent 28rem), linear-gradient(135deg, #030713 0%, #081126 48%, #050b18 100%) !important;
+  color: var(--ui-text) !important;
+  font-family: Inter, "Segoe UI", system-ui, sans-serif !important;
+  font-size: 15px;
+  line-height: 1.55;
+  letter-spacing: 0;
+}
+body.sdac-theme::before, body.sdac-theme::after { display: none !important; }
+body.sdac-theme main { padding-top: 24px; padding-bottom: 48px; }
+body.sdac-has-sidebar main { max-width: min(100%, 1560px) !important; width: min(100%, 1560px) !important; }
+body.sdac-theme main > h1 + .mode { margin: -4px 0 20px !important; color: var(--ui-muted) !important; text-align: left !important; font-size: 14px; }
+body.sdac-theme h1, body.sdac-theme h2, body.sdac-theme h3,
+body.sdac-theme h4, body.sdac-theme h5 {
+  color: var(--ui-text) !important;
+  font-family: inherit !important;
+  font-weight: 600 !important;
+  letter-spacing: -.02em !important;
+  line-height: 1.25;
+  text-shadow: none !important;
+  background: none !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+body.sdac-theme h1 { font-size: clamp(1.7rem, 2.4vw, 2.2rem) !important; }
+body.sdac-theme main > h1:first-child { background: none !important; color: var(--ui-text) !important; -webkit-text-fill-color: var(--ui-text) !important; text-shadow: none !important; }
+body.sdac-theme h2 { font-size: 1.35rem !important; }
+body.sdac-theme h3 { font-size: 1.08rem !important; }
+body.sdac-theme h2::before, body.sdac-theme h3::before { content: none !important; display: none !important; }
+body.sdac-theme p { line-height: 1.6; }
+body.sdac-theme small, body.sdac-theme .muted, body.sdac-theme .hint,
+body.sdac-theme label small { color: var(--ui-muted) !important; }
+body.sdac-theme a { color: var(--ui-accent) !important; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+body.sdac-theme a:hover { color: color-mix(in srgb, var(--ui-accent) 76%, white) !important; }
+body.sdac-theme :focus-visible { outline: 2px solid var(--ui-accent) !important; outline-offset: 2px; }
+
+/* Panels and content regions */
+body.sdac-theme .panel, body.sdac-theme .post, body.sdac-theme .audit-row,
+body.sdac-theme .section, body.sdac-theme .notice, body.sdac-theme table,
+body.sdac-theme .card, body.sdac-theme .modal-content,
+body.sdac-theme .sdac-dashboard-card, body.sdac-theme .sdac-dashboard-panel {
+  background: var(--ui-surface) !important;
+  border: 1px solid var(--ui-border) !important;
+  border-radius: var(--ui-radius) !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,.16) !important;
+  backdrop-filter: none !important;
+}
+body.sdac-theme .panel, body.sdac-theme .section, body.sdac-theme .notice,
+body.sdac-theme .sdac-dashboard-panel { padding: clamp(16px, 2vw, 24px) !important; }
+body.sdac-theme .post { overflow: hidden; }
+body.sdac-theme hr { border: 0; border-top: 1px solid var(--ui-border); }
+
+/* Quiet navigation with a small cyan active marker */
+body.sdac-theme .sdac-sidebar {
+  background: #050a17 !important;
+  border: 1px solid rgba(126,151,255,.24) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 12px 30px rgba(0,0,0,.22) !important;
+  backdrop-filter: none !important;
+}
+body.sdac-theme .sdac-sidebar-brand { font-size: 17px !important; font-weight: 600 !important; letter-spacing: -.02em !important; }
+body.sdac-theme .sdac-sidebar-user { color: var(--ui-muted) !important; font-weight: 400 !important; }
+body.sdac-theme .sdac-sidebar-section { border: 0 !important; background: transparent !important; margin: 4px 0 !important; }
+body.sdac-theme .sdac-sidebar-subsection { border: 0 !important; border-radius: 0 !important; margin: 2px 0 !important; overflow: visible !important; }
+body.sdac-theme .sdac-sidebar-section-title,
+body.sdac-theme .sdac-sidebar-subsection-title {
+  min-height: 36px !important; padding: 6px 10px !important;
+  color: #bfcbcc !important; background: transparent !important;
+  border: 0 !important; border-radius: 7px !important;
+  font-size: 13px !important; font-weight: 500 !important;
+  letter-spacing: 0 !important; text-transform: none !important;
+  box-shadow: none !important;
+}
+body.sdac-theme .sdac-sidebar-section-title:hover,
+body.sdac-theme .sdac-sidebar-subsection-title:hover { background: #202b2e !important; color: var(--ui-text) !important; }
+body.sdac-theme .sdac-sidebar-section.active > .sdac-sidebar-section-title {
+  color: var(--ui-text) !important; background: linear-gradient(100deg, color-mix(in srgb, var(--ui-primary) 25%, var(--ui-surface)), color-mix(in srgb, var(--ui-accent) 16%, var(--ui-surface))) !important;
+  box-shadow: inset 2px 0 var(--ui-accent) !important;
+}
+body.sdac-theme .sdac-sidebar-link {
+  min-height: 34px !important; margin: 2px 0 !important; padding: 6px 10px 6px 18px !important;
+  color: #bdc8c9 !important; background: transparent !important;
+  border: 0 !important; border-radius: 7px !important;
+  font-size: 13px !important; font-weight: 400 !important;
+  letter-spacing: 0 !important; text-transform: none !important;
+  box-shadow: none !important; text-shadow: none !important;
+}
+body.sdac-theme .sdac-sidebar-link:hover { color: var(--ui-text) !important; background: #202b2e !important; transform: none !important; }
+body.sdac-theme .sdac-sidebar-link.active {
+  color: var(--ui-text) !important; background: linear-gradient(100deg, color-mix(in srgb, var(--ui-primary) 25%, var(--ui-surface)), color-mix(in srgb, var(--ui-accent) 16%, var(--ui-surface))) !important;
+  box-shadow: inset 2px 0 var(--ui-accent) !important;
+}
+body.sdac-theme .sdac-sidebar-section-caret,
+body.sdac-theme .sdac-sidebar-subsection-caret { color: var(--ui-muted) !important; text-shadow: none !important; }
+body.sdac-theme .sdac-sidebar-section-caret,
+body.sdac-theme .sdac-sidebar-subsection-caret { width: 16px !important; height: 16px !important; border: 0 !important; border-radius: 0 !important; font-size: 0 !important; transform: none !important; }
+body.sdac-theme .sdac-sidebar-section-caret::before,
+body.sdac-theme .sdac-sidebar-subsection-caret::before { content: "+"; font-size: 15px; line-height: 1; }
+body.sdac-theme .sdac-sidebar-section[open] > .sdac-sidebar-section-title .sdac-sidebar-section-caret::before,
+body.sdac-theme .sdac-sidebar-subsection[open] > .sdac-sidebar-subsection-title .sdac-sidebar-subsection-caret::before { content: "−"; }
+body.sdac-theme .sdac-sidebar-section-title span:first-child::before,
+body.sdac-theme .sdac-sidebar-link::before,
+body.sdac-theme .sdac-sidebar-invite::before { content: none !important; display: none !important; }
+body.sdac-theme .sdac-sidebar-health,
+body.sdac-theme .sdac-sidebar-invite { border-radius: 7px !important; box-shadow: none !important; }
+body.sdac-theme .sdac-sidebar-invite { color: #fff !important; background: linear-gradient(100deg, var(--ui-primary), var(--ui-accent)) !important; border: 1px solid transparent !important; }
+body.sdac-theme .sdac-sidebar-controls button,
+body.sdac-theme .sdac-sidebar-controls a { min-height: 36px !important; border-radius: 8px !important; }
+body.sdac-theme .sdac-server-switcher { background: #182225 !important; border: 1px solid var(--ui-border) !important; border-radius: 9px !important; box-shadow: none !important; }
+
+/* Inputs, selects and actions */
+body.sdac-theme input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+body.sdac-theme select, body.sdac-theme textarea {
+  min-height: 40px; padding: 9px 11px !important;
+  color: var(--ui-text) !important; background: #080f20 !important;
+  border: 1px solid rgba(126,151,255,.26) !important; border-radius: var(--ui-control-radius) !important;
+  box-shadow: none !important; font: inherit !important;
+}
+body.sdac-theme textarea { min-height: 96px; }
+body.sdac-theme input::placeholder, body.sdac-theme textarea::placeholder { color: #a6b0ca !important; opacity: 1; }
+body.sdac-theme button, body.sdac-theme input[type="submit"],
+body.sdac-theme input[type="button"], body.sdac-theme .button,
+body.sdac-theme a.button {
+  min-height: 38px; padding: 8px 14px !important;
+  color: #fff !important; background: linear-gradient(100deg, var(--ui-primary), var(--ui-accent)) !important;
+  border: 1px solid transparent !important; border-radius: 8px !important;
+  box-shadow: none !important; font: inherit !important; font-weight: 600 !important;
+  text-shadow: none !important; letter-spacing: 0 !important;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease !important;
+}
+body.sdac-theme button:hover, body.sdac-theme input[type="submit"]:hover,
+body.sdac-theme input[type="button"]:hover, body.sdac-theme .button:hover {
+  background: linear-gradient(100deg, color-mix(in srgb, var(--ui-primary) 84%, white), color-mix(in srgb, var(--ui-accent) 84%, white)) !important;
+  transform: none !important; box-shadow: none !important;
+}
+body.sdac-theme button.secondary, body.sdac-theme .button.secondary,
+body.sdac-theme button[aria-label="Close"], body.sdac-theme .sdac-sidebar-toggle,
+body.sdac-theme .sdac-sidebar-home {
+  color: var(--ui-text) !important; background: #253236 !important; border-color: #3e4c4f !important;
+}
+body.sdac-theme button.danger, body.sdac-theme .danger, body.sdac-theme button.delete { background: #8f4545 !important; color: white !important; }
+body.sdac-theme label { color: #d3dddd; font-weight: 500; }
+body.sdac-theme :is(input,select,textarea,button,a) { accent-color: var(--ui-accent); }
+
+/* Tables, submission media and status */
+body.sdac-theme table { border-collapse: separate !important; border-spacing: 0 !important; overflow: hidden; }
+body.sdac-theme th { color: #c8d2d2 !important; background: #202b2e !important; font-weight: 600 !important; text-align: left; }
+body.sdac-theme td, body.sdac-theme th { border-color: var(--ui-border) !important; padding: 10px 12px !important; }
+body.sdac-theme tr:hover td { background: rgba(255,255,255,.025) !important; }
+body.sdac-theme img { max-width: 100%; }
+body.sdac-theme .post img, body.sdac-theme .submission img,
+body.sdac-theme .media-preview img { border-radius: 8px !important; box-shadow: none !important; }
+body.sdac-theme .badge, body.sdac-theme .pill, body.sdac-theme .status-badge {
+  display: inline-flex; align-items: center; min-height: 24px; padding: 2px 8px !important;
+  color: #d5e0e0 !important; background: #273336 !important;
+  border: 1px solid #3c4b4e !important; border-radius: 6px !important;
+  box-shadow: none !important; font-size: 12px !important; font-weight: 500 !important;
+  letter-spacing: 0 !important; text-transform: none !important;
+}
+body.sdac-theme .sdac-dashboard-card strong { font-size: 1.75rem !important; font-weight: 600 !important; font-variant-numeric: tabular-nums; }
+body.sdac-theme .sdac-dashboard-card span { font-size: .86rem !important; font-weight: 400 !important; text-transform: none !important; letter-spacing: 0 !important; }
+body.sdac-theme .admin-nav, body.sdac-theme main > nav { background: var(--ui-surface) !important; border: 1px solid var(--ui-border) !important; border-radius: 10px !important; box-shadow: none !important; }
+body.sdac-theme .admin-nav a, body.sdac-theme main > nav a { border-radius: 6px !important; }
+body.sdac-theme .admin-nav a:hover, body.sdac-theme main > nav a:hover { background: #273336 !important; }
+
+@media (max-width: 900px) {
+  body.sdac-theme main { padding-top: 72px !important; padding-left: 16px !important; padding-right: 16px !important; }
+  body.sdac-theme h1 { font-size: 1.7rem !important; }
+  body.sdac-theme .panel, body.sdac-theme .section, body.sdac-theme .notice { padding: 16px !important; }
+  body.sdac-theme table { display: block; max-width: 100%; overflow-x: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.sdac-theme *, body.sdac-theme *::before, body.sdac-theme *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+</style>
+"""

@@ -111,7 +111,7 @@ from dashboard_admin_roles import (
     normalize_role,
     role_at_least,
 )
-from dashboard_shell_assets import PWA_HEAD_HTML, PWA_INSTALL_HTML, SIDEBAR_STYLE
+from dashboard_shell_assets import PWA_HEAD_HTML, PWA_INSTALL_HTML, SIDEBAR_STYLE, DASHBOARD_REDESIGN_STYLE
 from dashboard_sidebar import (
     admin_sidebar_html as build_admin_sidebar_html,
     admin_sidebar_links as build_admin_sidebar_links,
@@ -589,14 +589,14 @@ LOCKOUT_SCOPE_LABELS = {
 
 OWNER_BAN_CODE_TTL_SECONDS = 600
 DEFAULT_DASHBOARD_THEME = {
-    "primary": "#4f46e5",
-    "secondary": "#06b6d4",
-    "accent": "#f59e0b",
-    "background": "#0f172a",
-    "surface": "#111827",
-    "sidebar": "#0b1220",
-    "text": "#f8fafc",
-    "muted": "#94a3b8",
+    "primary": "#8b5cf6",
+    "secondary": "#18d9ff",
+    "accent": "#b45cff",
+    "background": "#030713",
+    "surface": "#080f20",
+    "sidebar": "#050a17",
+    "text": "#f8fbff",
+    "muted": "#a6b0ca",
     "background_image": "",
 }
 DEFAULT_DASHBOARD_LAYOUT = {
@@ -6062,6 +6062,15 @@ MODERATOR_WORKSPACE_BODY = """
         <div class="metric"><strong>{{ summary.open_reports }}</strong><span>Reports</span></div>
         <div class="metric"><strong>{{ quarantine_count }}</strong><span>Quarantine</span></div>
         <div class="metric"><strong>{{ removals }}</strong><span>Recent Removals</span></div>
+    </div>
+</section>
+<section class="panel">
+    <h2>Review Queues</h2>
+    <p class="muted">Pending work across the site's member content. Counts follow the selected server.</p>
+    <div class="action-list">
+        {% for queue in review_queues %}
+            <div class="action"><div><h3>{{ queue.label }} <span class="muted">({{ queue.count }})</span></h3><p class="muted">{{ queue.detail }}</p></div><a class="button {{ queue.style }}" href="{{ queue.url }}">Review</a></div>
+        {% endfor %}
     </div>
 </section>
 <section class="panel">
@@ -15651,6 +15660,10 @@ def dashboard_theme_css(config_data=None):
         f"--sdac-sidebar-bg: {theme['sidebar']};"
         f"--sdac-text: {theme['text']};"
         f"--sdac-muted: {theme['muted']};"
+        f"--sdac-ui-primary: {theme['primary']};"
+        f"--sdac-ui-accent: {theme['secondary']};"
+        f"--sdac-ui-bg: {theme['background']};"
+        f"--sdac-ui-surface: {theme['surface']};"
         "--sdac-border: rgba(148, 163, 184, 0.24);"
         "--bg: var(--sdac-bg);"
         "--panel: var(--sdac-surface);"
@@ -15978,6 +15991,8 @@ def inject_admin_sidebar(response):
             page_html,
             count=1,
         )
+    if "sdac-dashboard-redesign" not in page_html:
+        page_html = page_html.replace("</head>", DASHBOARD_REDESIGN_STYLE + "\n</head>", 1)
     if "sdac-pwa-script" not in page_html:
         page_html = page_html.replace("</body>", PWA_INSTALL_HTML + "\n</body>", 1)
     response.set_data(page_html)
@@ -22085,10 +22100,24 @@ def admin_moderator_workspace():
     config_data = load_config()
     visible = current_admin_allowed_guild_ids(config_data, "moderator") or set((config_data.get("guilds") or {}).keys())
     selected = request.args.get("guild_id", "").strip()
+    if selected not in {"", "all"} and selected not in {str(guild_id) for guild_id in visible}:
+        selected = ""
+    if selected == "all":
+        selected = ""
+    ensure_community_posts_table()
+    ensure_community_quotes_table()
     with closing(connect_db()) as connection:
         summary = admin_dashboard_summary(connection, selected, visible, request.args.get("metric_range", "all"))
         quarantine_count = count_scoped_rows(connection, "media_quarantine", selected, visible, " AND status = ?", ["quarantined"])
         removals = connection.execute("SELECT COUNT(*) FROM moderation_history WHERE action IN ('remove','quarantine','status')").fetchone()[0]
+        post_count = count_scoped_rows(connection, "community_posts", selected, visible, " AND status IN (?, ?)", ["pending", "quarantined"])
+        quote_count = count_scoped_rows(connection, "community_quotes", selected, visible, " AND status IN (?, ?)", ["pending", "quarantined"])
+    scope_args = {"key": ADMIN_KEY, "guild_id": selected or "all"}
+    review_queues = [
+        {"label": "Media & reports", "count": summary.pending + summary.open_reports, "detail": "Review uploaded media and member reports.", "url": url_for("admin_moderation", **scope_args), "style": ""},
+        {"label": "Events & meetups", "count": post_count, "detail": "Review community event and meetup submissions.", "url": url_for("admin_community_submissions", **scope_args), "style": "secondary"},
+        {"label": "Quotes", "count": quote_count, "detail": "Review community quotes and attribution.", "url": url_for("admin_quote_submissions", **scope_args), "style": "secondary"},
+    ]
     actions = [
         {"label": "Next Review Item", "detail": "Open pending submissions and reports.", "url": url_for("admin_moderation", key=ADMIN_KEY, guild_id=selected or "all"), "style": ""},
         {"label": "Quarantine", "detail": "Inspect quarantined files and cleanup decisions.", "url": url_for("admin_media_cleanup", key=ADMIN_KEY, guild_id=selected or "all"), "style": "secondary"},
@@ -22097,7 +22126,7 @@ def admin_moderator_workspace():
         {"label": "Game Library", "detail": "Moderators can manage guessing-game media and drafts.", "url": url_for("admin_game_library", key=ADMIN_KEY, guild_id=selected or "all"), "style": "secondary"},
         {"label": "Reaction Roles", "detail": "Create and manage role selection panels for server members.", "url": url_for("reaction_roles.manage", key=ADMIN_KEY, guild_id=selected or ""), "style": "secondary"},
     ]
-    return admin_tool_shell("Moderator Workspace", "A queue-first workspace for daily moderation.", MODERATOR_WORKSPACE_BODY, actions=actions, quarantine_count=quarantine_count, removals=removals, removal_reasons=MODERATION_REMOVAL_REASONS, summary=summary)
+    return admin_tool_shell("Moderator Workspace", "A queue-first workspace for daily moderation.", MODERATOR_WORKSPACE_BODY, actions=actions, review_queues=review_queues, quarantine_count=quarantine_count, removals=removals, removal_reasons=MODERATION_REMOVAL_REASONS, summary=summary)
 
 
 @app.route("/admin/report-problem")
@@ -26430,6 +26459,7 @@ COMMUNITY_LISTING_HTML = """
                     <p>{{ post.description }}</p>
                     {% if post.host_name %}<p class="muted">Hosted/promoted by {{ post.host_name }}</p>{% endif %}
                     <div class="actions">
+                        {% if post.starts_at %}<a href="{{ url_for('community_calendar_ics', post_type=labels.singular|lower, post_id=post.id) }}">Add to calendar</a>{% endif %}
                         {% if post.rsvp_url %}<a href="{{ post.rsvp_url }}" target="_blank" rel="noopener noreferrer">RSVP in Discord</a>{% endif %}
                         {% if post.contact_url %}<a href="{{ post.contact_url }}" rel="noopener noreferrer">More information</a>{% endif %}
                         <a href="mailto:?subject=Report Sana-Chan {{ labels.singular }}&body=Please review {{ labels.singular }} #{{ post.id }}: {{ post.title }}">Report this {{ labels.singular | lower }}</a>
@@ -26450,20 +26480,20 @@ COMMUNITY_LISTING_HTML = """
             <p class="muted">{{ labels.submit_help }} Follow the three steps below. A moderator reviews the listing before it is announced.</p>
             <form id="submit" method="post" class="form-grid">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <fieldset class="wizard-step" data-wizard-step="1"><h3>Step 1 Â· Event basics</h3><p class="wizard-progress">Tell people what the event is and where it will happen.</p>
+                <fieldset class="wizard-step" data-wizard-step="1"><h3>Step 1 · Event basics</h3><p class="wizard-progress">Tell people what the event is and where it will happen.</p>
                     <label>Title<input name="title" maxlength="140" required placeholder="Convention, game night, watch party, tournament..."></label>
                     <label>{{ labels.host_label }}<input name="host_name" maxlength="140" placeholder="Community, organizer, or host"></label>
                     <label>Location<input name="location" maxlength="180" placeholder="City, venue, Discord, or online"></label>
                     <label>Server<select name="guild_id" required>{% for guild in guild_options %}<option value="{{ guild.id }}" {% if guild.id == selected_guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}</select></label>
                     <label>Tag<select name="tag" data-placeholder="true"><option value="">Pick a tag</option>{% for tag in tags %}<option value="{{ tag }}">{{ tag }}</option>{% endfor %}</select></label>
                 </fieldset>
-                <fieldset class="wizard-step" data-wizard-step="2" hidden><h3>Step 2 Â· Timing</h3><p class="wizard-progress">Set the event time, then optionally choose up to five reminder announcements. Times use your device's local time.</p>
+                <fieldset class="wizard-step" data-wizard-step="2" hidden><h3>Step 2 · Timing</h3><p class="wizard-progress">Set the event time, then optionally choose up to five reminder announcements. Times use your device's local time.</p>
                     <label>Starts<input type="datetime-local" name="starts_at_local" data-utc-target="starts_at" data-placeholder="true"><input type="hidden" name="starts_at"></label>
                     <label>Ends<input type="datetime-local" name="ends_at_local" data-utc-target="ends_at" data-placeholder="true"><input type="hidden" name="ends_at"></label>
-                    <strong>Optional reminders Â· choose up to five dates and times</strong>
+                    <strong>Optional reminders · choose up to five dates and times</strong>
                     <div class="repeat-grid">{% for index in range(1, 6) %}<label>Reminder {{ index }}<input type="datetime-local" name="repeat_time_local_{{ index }}" data-repeat-local="{{ index }}" data-placeholder="true"><input type="hidden" name="repeat_time_{{ index }}"></label>{% endfor %}</div>
                 </fieldset>
-                <fieldset class="wizard-step" data-wizard-step="3" hidden><h3>Step 3 Â· Details and review</h3><p class="wizard-progress">Add the useful details for attendees, review your choices, then send it to moderators.</p>
+                <fieldset class="wizard-step" data-wizard-step="3" hidden><h3>Step 3 · Details and review</h3><p class="wizard-progress">Add the useful details for attendees, review your choices, then send it to moderators.</p>
                     <label>Info link<input name="contact_url" maxlength="300" placeholder="https://..."></label>
                     <label>Your name<input name="submitter_name" maxlength="120" placeholder="Shown to reviewers"></label>
                     <label>Contact for admins<input name="submitter_contact" maxlength="180" placeholder="Discord handle, email, or best way to reach you"></label>
@@ -27760,6 +27790,59 @@ def community_events():
 @app.route("/meetups", methods=["GET", "POST"])
 def community_meetups():
     return community_page("meetup")
+
+
+@app.route("/calendar/<post_type>/<int:post_id>.ics")
+def community_calendar_ics(post_type, post_id):
+    if post_type not in {"event", "meetup"}:
+        abort(404)
+    ensure_community_posts_table()
+    with closing(connect_db()) as connection:
+        row = connection.execute(
+            "SELECT * FROM community_posts WHERE id = ? AND post_type = ? AND status = 'approved'",
+            (post_id, post_type),
+        ).fetchone()
+    public_guild_ids = {str(option["id"]) for option in guild_options(load_config(), public_only=True)}
+    if not row or str(row["guild_id"] or "") not in public_guild_ids:
+        abort(404)
+    try:
+        starts = datetime.fromisoformat(str(row["starts_at"]).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        abort(404)
+    if starts.tzinfo is None:
+        starts = starts.replace(tzinfo=timezone.utc)
+    starts = starts.astimezone(timezone.utc)
+    try:
+        ends = datetime.fromisoformat(str(row["ends_at"]).replace("Z", "+00:00")) if row["ends_at"] else starts + timedelta(hours=1)
+    except (TypeError, ValueError):
+        ends = starts + timedelta(hours=1)
+    if ends.tzinfo is None:
+        ends = ends.replace(tzinfo=timezone.utc)
+    ends = ends.astimezone(timezone.utc)
+    if ends <= starts:
+        ends = starts + timedelta(hours=1)
+
+    def ics_escape(value):
+        text_value = str(value or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,")
+        return text_value.replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "")
+
+    description = str(row["description"] or "")
+    if row["location"]:
+        description += f"\nWhere: {row['location']}"
+    event = "\r\n".join([
+        "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Sana-Chan//Community Calendar//EN",
+        "CALSCALE:GREGORIAN", "BEGIN:VEVENT",
+        f"UID:sdac-{post_type}-{post_id}-{row['guild_id']}@sanachan.bot.nu",
+        f"DTSTAMP:{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}",
+        f"DTSTART:{starts.strftime('%Y%m%dT%H%M%SZ')}",
+        f"DTEND:{ends.strftime('%Y%m%dT%H%M%SZ')}",
+        f"SUMMARY:{ics_escape(row['title'])}",
+        f"DESCRIPTION:{ics_escape(description)}",
+        f"LOCATION:{ics_escape(row['location'])}",
+        f"URL:{url_for('community_events' if post_type == 'event' else 'community_meetups', guild_id=row['guild_id'], _external=True)}",
+        "END:VEVENT", "END:VCALENDAR", "",
+    ])
+    return Response(event, mimetype="text/calendar", headers={"Content-Disposition": f"attachment; filename=sana-{post_type}-{post_id}.ics"})
 
 
 @app.route("/admin/community-submissions", methods=["GET", "POST"])

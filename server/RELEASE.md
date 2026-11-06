@@ -1,4 +1,11 @@
-# Sana-Chan Version 4.4.87 Experimental
+# Sana-Chan Version 4.4.88 Experimental
+
+Version 4.4.88 improves moderator workflows, dashboard navigation, website page recovery, and community event sharing.
+
+- adds queue counts and direct review links for media, reports, events, meetups, and quotes
+- adds dashboard page search and improved sidebar accessibility state
+- saves up to 20 published website page versions per page and supports audited restore
+- adds downloadable calendar files for scheduled community events and meetups
 
 Version 4.4.87 lets moderators optionally create an event or meetup RSVP reaction-role post when approving a submission.
 

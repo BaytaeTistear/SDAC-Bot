@@ -188,6 +188,20 @@ def ensure_site_editor_schema(connection):
             updated_at TEXT NOT NULL DEFAULT ''
         )
     """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS dashboard_site_page_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT NOT NULL,
+            page_key TEXT NOT NULL,
+            content_json TEXT NOT NULL,
+            updated_by TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dashboard_site_page_history
+        ON dashboard_site_page_history (guild_id, page_key, id DESC)
+    """)
 
 
 def normalize_page_content(raw, page_key, can_use_html, previous):
@@ -292,6 +306,7 @@ def _editor_body(can_use_html):
         .se-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
         .se-preview{min-height:160px;border:1px dashed #60718e;border-radius:10px;padding:14px;overflow:auto;background:#0c1423}
         .se-status{color:#aab9ce;font-size:.9rem}
+        .se-history-row{align-items:center;display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap}
         .se-toolbar{display:flex;gap:6px;flex-wrap:wrap}
         @media(max-width:760px){.se-layout{grid-template-columns:1fr}}
       </style>
@@ -317,6 +332,16 @@ def _editor_body(can_use_html):
         </section>
         <section><h2>Preview</h2><div class="se-preview" id="se-preview-area">{{ published_preview|safe }}</div></section>
       </div>
+      <section class="se-history">
+        <h2>Published versions</h2>
+        <p class="se-status">Restore a previous published version if a change needs to be undone. Restoring saves the current version in history first.</p>
+        {% for version in history %}
+          <form method="post" action="{{ url_for('site_editor.restore') }}" class="se-section se-history-row" onsubmit="return confirm('Restore this published version? The current version will remain available in history.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="key" value="{{ admin_key }}"><input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="page" value="{{ page_key }}"><input type="hidden" name="version_id" value="{{ version.id }}">
+            <span>Saved {{ version.created_at }} by {{ version.updated_by or 'admin' }}</span><button type="submit">Restore</button>
+          </form>
+        {% else %}<p class="se-status">No earlier published versions yet. A snapshot is saved each time a page is published.</p>{% endfor %}
+      </section>
       <script type="application/json" id="se-initial">{{ draft|tojson }}</script>
       <script>
       (() => {
@@ -447,6 +472,17 @@ def create_site_editor_blueprint(deps):
                     except ValueError as error:
                         return redirect(url_for("site_editor.manage", key=deps["ADMIN_KEY"], guild_id=guild_id, page=page_key, notice=str(error), error=1))
                     if action == "publish":
+                        old_published = published_doc.get(page_key, _default_page(page_key))
+                        if old_published != normalized:
+                            ensure_site_editor_schema(connection)
+                            connection.execute(
+                                "INSERT INTO dashboard_site_page_history (guild_id,page_key,content_json,updated_by,created_at) VALUES (?,?,?,?,?)",
+                                (str(guild_id), page_key, json.dumps(old_published, ensure_ascii=False), str(actor_name), deps["utc_now_iso"]()),
+                            )
+                            connection.execute(
+                                "DELETE FROM dashboard_site_page_history WHERE guild_id = ? AND page_key = ? AND id NOT IN (SELECT id FROM dashboard_site_page_history WHERE guild_id = ? AND page_key = ? ORDER BY id DESC LIMIT 20)",
+                                (str(guild_id), page_key, str(guild_id), page_key),
+                            )
                         draft_doc[page_key] = normalized
                         published_doc[page_key] = normalized
                         notice = "Website page published."
@@ -464,6 +500,11 @@ def create_site_editor_blueprint(deps):
 
         with deps["database"]() as connection:
             draft_doc, published_doc = read_documents(connection, guild_id)
+            ensure_site_editor_schema(connection)
+            history = connection.execute(
+                "SELECT id,updated_by,created_at FROM dashboard_site_page_history WHERE guild_id = ? AND page_key = ? ORDER BY id DESC LIMIT 20",
+                (str(guild_id), page_key),
+            ).fetchall()
         draft = draft_doc.get(page_key, _default_page(page_key))
         published = published_doc.get(page_key, _default_page(page_key))
         preview = (
@@ -478,7 +519,55 @@ def create_site_editor_blueprint(deps):
             body, guild_options=options, guild_id=guild_id, page_key=page_key,
             page_options={key: value["label"] for key, value in PAGE_OPTIONS.items()},
             draft=draft, published_preview=preview, can_use_html=can_use_html,
+            history=history,
         )
+
+    @bp.route("/admin/website-editor/restore", methods=["POST"])
+    def restore():
+        deps["require_csrf_token"]()
+        guild_id = str(request.form.get("guild_id", ""))
+        response = require_editor(guild_id)
+        if response:
+            return response
+        page_key = str(request.form.get("page", ""))
+        version_id = str(request.form.get("version_id", ""))
+        if page_key not in PAGE_OPTIONS or not version_id.isdigit():
+            abort(400, "Choose a valid page version.")
+        actor_id, actor_name = deps["web_actor"]()
+        with deps["database"]() as connection:
+            ensure_site_editor_schema(connection)
+            row = connection.execute(
+                "SELECT content_json FROM dashboard_site_page_history WHERE id = ? AND guild_id = ? AND page_key = ?",
+                (int(version_id), guild_id, page_key),
+            ).fetchone()
+            if not row:
+                abort(404)
+            try:
+                restored = json.loads(row["content_json"])
+            except (TypeError, json.JSONDecodeError):
+                abort(400, "That saved version is unreadable.")
+            if not isinstance(restored, dict):
+                abort(400, "That saved version is invalid.")
+            if any(isinstance(item, dict) and item.get("type") == "html" for item in restored.get("sections", [])) and not deps["can_edit_html"](guild_id):
+                abort(403)
+            draft_doc, published_doc = read_documents(connection, guild_id)
+            current = published_doc.get(page_key, _default_page(page_key))
+            connection.execute(
+                "INSERT INTO dashboard_site_page_history (guild_id,page_key,content_json,updated_by,created_at) VALUES (?,?,?,?,?)",
+                (guild_id, page_key, json.dumps(current, ensure_ascii=False), str(actor_name), deps["utc_now_iso"]()),
+            )
+            connection.execute(
+                "DELETE FROM dashboard_site_page_history WHERE guild_id = ? AND page_key = ? AND id NOT IN (SELECT id FROM dashboard_site_page_history WHERE guild_id = ? AND page_key = ? ORDER BY id DESC LIMIT 20)",
+                (guild_id, page_key, guild_id, page_key),
+            )
+            published_doc[page_key] = restored
+            draft_doc[page_key] = restored
+            write_documents(connection, guild_id, draft_doc, published_doc, actor_id)
+            deps["add_admin_audit_log"](
+                connection, guild_id, "website_page_version_restored", actor_id, actor_name,
+                "website_page", page_key, f"restored_version={version_id}",
+            )
+        return redirect(url_for("site_editor.manage", key=deps["ADMIN_KEY"], guild_id=guild_id, page=page_key, notice="Published version restored."))
 
     @bp.route("/admin/website-editor/preview", methods=["POST"])
     def preview():

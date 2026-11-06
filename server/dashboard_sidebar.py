@@ -469,7 +469,7 @@ def admin_sidebar_html(
                 + "".join(section_links)
                 + "</div></details>"
             )
-    navigation = '<nav class="sdac-sidebar-nav">' + "".join(nav_sections) + "</nav>"
+    navigation = '<nav class="sdac-sidebar-nav" id="sdac-sidebar-nav" aria-label="Site navigation">' + "".join(nav_sections) + "</nav>"
 
     switcher = ""
     access_warning = ""
@@ -527,6 +527,11 @@ def admin_sidebar_html(
         {badge_html}
         {switcher}
         {access_warning}
+        <div class="sdac-sidebar-search-wrap">
+            <label for="sdac-sidebar-search">Find a page</label>
+            <input id="sdac-sidebar-search" type="search" placeholder="Search dashboard pages" autocomplete="off" aria-controls="sdac-sidebar-nav">
+            <span id="sdac-sidebar-search-status" class="sdac-sidebar-search-status" aria-live="polite"></span>
+        </div>
         {navigation}
         <div class="sdac-sidebar-footer">
             <a class="sdac-sidebar-invite" href="{html.escape(url_for("bot_invite"), quote=True)}">Invite Bot</a>
@@ -540,16 +545,51 @@ def admin_sidebar_html(
             {('<a class="sdac-sidebar-link" href="' + html.escape(url_for("account_logout"), quote=True) + '">Logout</a>') if is_account_logged_in() and not is_admin_logged_in() else ''}
         </div>
     </div>
+<style>
+.sdac-sidebar-search-wrap {{ margin: 10px 8px 12px; }}
+.sdac-sidebar-search-wrap label {{ display: block; font-size: .75rem; font-weight: 700; margin-bottom: 5px; }}
+.sdac-sidebar-search-wrap input {{ box-sizing: border-box; width: 100%; min-height: 38px; border: 1px solid var(--sdac-border, #34415c); border-radius: 8px; padding: 8px 10px; background: var(--sdac-surface, #111827); color: var(--sdac-text, #f8fafc); }}
+.sdac-sidebar-search-status {{ display: block; font-size: .72rem; min-height: 1em; margin-top: 3px; color: var(--sdac-muted, #94a3b8); }}
+</style>
 </aside><script>
 (function () {{
     try {{ localStorage.removeItem("sdacSidebarCollapsed"); }} catch (error) {{}}
+    var search = document.getElementById("sdac-sidebar-search");
+    var nav = document.getElementById("sdac-sidebar-nav");
+    var status = document.getElementById("sdac-sidebar-search-status");
+    if (search && nav) {{
+        search.addEventListener("input", function () {{
+            var query = search.value.trim().toLocaleLowerCase();
+            var visibleCount = 0;
+            nav.querySelectorAll(".sdac-sidebar-link").forEach(function (link) {{
+                var visible = !query || link.textContent.toLocaleLowerCase().includes(query);
+                link.hidden = !visible;
+                if (visible) visibleCount += 1;
+            }});
+            nav.querySelectorAll(".sdac-sidebar-subsection").forEach(function (group) {{
+                var hasVisible = !!group.querySelector(".sdac-sidebar-link:not([hidden])");
+                group.hidden = !hasVisible;
+                if (query && hasVisible) group.open = true;
+            }});
+            nav.querySelectorAll(".sdac-sidebar-main-section").forEach(function (section) {{
+                var hasVisible = !!section.querySelector(".sdac-sidebar-link:not([hidden])");
+                section.hidden = !hasVisible;
+                if (query && hasVisible) section.open = true;
+            }});
+            if (status) status.textContent = query ? (visibleCount + (visibleCount === 1 ? " page found" : " pages found")) : "";
+        }});
+    }}
     window.sdacToggleSidebar = function () {{
         var isMobile = window.matchMedia("(max-width: 900px)").matches;
         if (isMobile) {{
             document.body.classList.toggle("sdac-sidebar-open");
-            return;
+        }} else {{
+            document.body.classList.toggle("sdac-sidebar-collapsed");
         }}
-        document.body.classList.toggle("sdac-sidebar-collapsed");
+        var button = document.querySelector(".sdac-sidebar-toggle");
+        if (button) button.setAttribute("aria-expanded", String(isMobile
+            ? document.body.classList.contains("sdac-sidebar-open")
+            : !document.body.classList.contains("sdac-sidebar-collapsed")));
     }};
 }}());
 </script>
