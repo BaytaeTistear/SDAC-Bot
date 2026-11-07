@@ -22114,7 +22114,7 @@ def admin_moderator_workspace():
         quote_count = count_scoped_rows(connection, "community_quotes", selected, visible, " AND status IN (?, ?)", ["pending", "quarantined"])
     scope_args = {"key": ADMIN_KEY, "guild_id": selected or "all"}
     review_queues = [
-        {"label": "Media & reports", "count": summary.pending + summary.open_reports, "detail": "Review uploaded media and member reports.", "url": url_for("admin_moderation", **scope_args), "style": ""},
+        {"label": "Media & reports", "count": summary["pending"] + summary["open_reports"], "detail": "Review uploaded media and member reports.", "url": url_for("admin_moderation", **scope_args), "style": ""},
         {"label": "Events & meetups", "count": post_count, "detail": "Review community event and meetup submissions.", "url": url_for("admin_community_submissions", **scope_args), "style": "secondary"},
         {"label": "Quotes", "count": quote_count, "detail": "Review community quotes and attribution.", "url": url_for("admin_quote_submissions", **scope_args), "style": "secondary"},
     ]

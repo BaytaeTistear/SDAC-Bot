@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.88**. Includes review queue counts, dashboard page search, page version restore, and event calendar downloads.
+Current experimental backend: **4.4.89**. Fixes the Moderator Workspace internal server error.
 
 ## One-Line Linux Install
 

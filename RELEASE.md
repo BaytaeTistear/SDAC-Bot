@@ -1,3 +1,10 @@
+# Sana-Chan Version 4.4.89 Experimental
+
+Version 4.4.89 fixes an internal server error on the Moderator Workspace caused by reading dashboard summary values as object properties instead of dictionary keys.
+
+- restores the Moderator Workspace review queue overview
+- keeps the correction synchronized between the main and server dashboard copies
+
 # Sana-Chan Version 4.4.88 Experimental
 
 Version 4.4.88 improves moderator workflows, dashboard navigation, website page recovery, and community event sharing.
