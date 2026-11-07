@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.91**. Fixes event RSVP role creation and adds server-local `/createevent` and `/createmeetup` commands during sync.
+Current experimental backend: **4.4.92**. Keeps event and meetup creation server scoped so Discord shows each command once.
 
 ## One-Line Linux Install
 

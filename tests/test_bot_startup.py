@@ -55,6 +55,42 @@ class BotStartupTests(unittest.TestCase):
             for command in list(bot.tree.get_commands(guild=discord_guild)):
                 bot.tree.remove_command(command.name, guild=discord_guild)
 
+    def test_event_and_meetup_commands_are_not_published_globally(self):
+        import bot
+
+        guild_id = 987654321012345679
+        guild = SimpleNamespace(id=guild_id, name="Command Sync Test")
+        discord_guild = bot.discord.Object(id=guild_id)
+        original_commands = {
+            name: bot.tree.get_command(name)
+            for name in bot.GUILD_FAST_SLASH_COMMANDS
+        }
+
+        async def capture_sync(*, guild=None):
+            return bot.tree.get_commands(guild=guild)
+
+        try:
+            with patch.object(bot, "get_guild_config", return_value={}), patch.object(
+                bot.tree, "sync", new=AsyncMock(side_effect=capture_sync)
+            ):
+                synced_global, synced_guild = asyncio.run(
+                    bot.sync_public_and_guild_slash_commands(guild)
+                )
+            self.assertFalse(
+                {command.name for command in synced_global}
+                & set(bot.GUILD_FAST_SLASH_COMMANDS)
+            )
+            self.assertTrue(
+                set(bot.GUILD_FAST_SLASH_COMMANDS)
+                <= {command.name for command in synced_guild}
+            )
+        finally:
+            for command in list(bot.tree.get_commands(guild=discord_guild)):
+                bot.tree.remove_command(command.name, guild=discord_guild)
+            for command in original_commands.values():
+                if command is not None and bot.tree.get_command(command.name) is None:
+                    bot.tree.add_command(command)
+
     def test_command_alias_validation_supports_server_launchers(self):
         import bot
 

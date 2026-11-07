@@ -1,3 +1,11 @@
+# Sana-Chan Version 4.4.92 Experimental
+
+Version 4.4.92 removes duplicate event and meetup commands from Discord's command picker by keeping those fast synced commands server scoped.
+
+- keeps `/createevent` and `/createmeetup` available as server commands
+- removes their duplicate global registrations during slash command sync
+- retains the event and meetup RSVP role approval workflow from 4.4.91
+
 # Sana-Chan Version 4.4.91 Experimental
 
 Version 4.4.91 fixes event and meetup RSVP role availability and publishes their slash commands as server-local commands during sync for immediate visibility.

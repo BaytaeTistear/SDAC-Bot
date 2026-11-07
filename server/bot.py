@@ -90,6 +90,7 @@ ENABLE_ANIME_COMMANDS = os.getenv("SANA_ENABLE_ANIME_COMMANDS", os.getenv("SDAC_
 SIMPLIFIED_SLASH_COMMANDS = os.getenv("SANA_SIMPLIFIED_COMMANDS", os.getenv("SDAC_SIMPLIFIED_COMMANDS", "1")).strip().casefold() not in {"0", "false", "no", "off"}
 CORE_SLASH_COMMANDS = {"sana", "submit", "mysubmissions", "guess", "hint", "createevent", "createmeetup"}
 GUILD_FAST_SLASH_COMMANDS = ("createevent", "createmeetup")
+GUILD_FAST_COMMAND_OBJECTS = {}
 PROJECT_GITHUB_URL = f"https://github.com/{ORIGINAL_REPO}"
 PROJECT_WIKI_URL = f"{PROJECT_GITHUB_URL}/wiki"
 DASHBOARD_BASE_URL = (
@@ -17772,8 +17773,9 @@ async def sync_guild_slash_commands(guild):
     if alias:
         tree.add_command(build_sdac_alias_command(alias), guild=discord_guild, override=True)
     for command_name in GUILD_FAST_SLASH_COMMANDS:
-        command = tree.get_command(command_name)
+        command = GUILD_FAST_COMMAND_OBJECTS.get(command_name) or tree.get_command(command_name)
         if command is not None:
+            GUILD_FAST_COMMAND_OBJECTS[command_name] = command
             tree.add_command(command, guild=discord_guild, override=True)
     synced_guild = await tree.sync(guild=discord_guild)
     guild_command_names = ", ".join(sorted(command.name for command in synced_guild))
@@ -17786,8 +17788,10 @@ async def sync_guild_slash_commands(guild):
 
 
 async def sync_public_and_guild_slash_commands(guild):
-    synced_global = await tree.sync()
     synced_guild = await sync_guild_slash_commands(guild)
+    for command_name in GUILD_FAST_SLASH_COMMANDS:
+        tree.remove_command(command_name)
+    synced_global = await tree.sync()
     global_command_names = ", ".join(sorted(command.name for command in synced_global))
     print(
         f"Published {len(synced_global)} global slash commands: {global_command_names}",
@@ -17805,6 +17809,10 @@ async def sync_slash_commands():
     local_names = ", ".join(sorted(command.name for command in tree.get_commands()))
     print(f"Local slash commands registered: {local_names}", flush=True)
 
+    for guild in bot.guilds:
+        await sync_guild_slash_commands(guild)
+    for command_name in GUILD_FAST_SLASH_COMMANDS:
+        tree.remove_command(command_name)
     synced_global = await tree.sync()
     command_names = ", ".join(sorted(command.name for command in synced_global))
     print(
@@ -17812,8 +17820,6 @@ async def sync_slash_commands():
         flush=True,
     )
 
-    for guild in bot.guilds:
-        await sync_guild_slash_commands(guild)
     slash_commands_synced = True
     write_bot_status("slash_sync")
 
