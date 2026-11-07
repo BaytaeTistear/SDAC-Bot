@@ -1,3 +1,11 @@
+# Sana-Chan Version 4.4.93 Experimental
+
+Version 4.4.93 fixes `/createevent` and `/createmeetup` modal submissions by handing off to the second step through a button, as required by Discord's interaction flow.
+
+- saves event basics and presents an owner-only Continue button
+- opens the details modal from the button interaction instead of the modal submission response
+- keeps the event and meetup command flow available on Discord
+
 # Sana-Chan Version 4.4.92 Experimental
 
 Version 4.4.92 removes duplicate event and meetup commands from Discord's command picker by keeping those fast synced commands server scoped.

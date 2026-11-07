@@ -91,6 +91,31 @@ class BotStartupTests(unittest.TestCase):
                 if command is not None and bot.tree.get_command(command.name) is None:
                     bot.tree.add_command(command)
 
+    def test_event_creation_modal_hands_off_to_continue_button(self):
+        import bot
+
+        modal = SimpleNamespace(
+            owner_id=123,
+            post_type="event",
+            title_input=SimpleNamespace(value="Club night"),
+            starts_input=SimpleNamespace(value="2026-11-15T18:00-08:00"),
+            ends_input=SimpleNamespace(value=""),
+            location_input=SimpleNamespace(value="Online"),
+            host_input=SimpleNamespace(value="SDAC"),
+        )
+        send_message = AsyncMock()
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(id=123),
+            response=SimpleNamespace(send_message=send_message),
+        )
+
+        asyncio.run(bot.CommunityCreateDetailsModal.on_submit(modal, interaction))
+
+        send_message.assert_awaited_once()
+        view = send_message.await_args.kwargs["view"]
+        self.assertIsInstance(view, bot.CommunityCreateDetailsContinueView)
+        self.assertEqual(view.children[0].values["title"], "Club night")
+
     def test_command_alias_validation_supports_server_launchers(self):
         import bot
 

@@ -12967,7 +12967,37 @@ class CommunityCreateDetailsModal(discord.ui.Modal):
             "location": self.location_input.value,
             "host_name": self.host_input.value,
         }
-        await interaction.response.send_modal(CommunityCreateDetailsStepTwoModal(self.owner_id, self.post_type, values))
+        await interaction.response.send_message(
+            "Step 1 saved. Continue to add the event description, link, and optional reminders.",
+            view=CommunityCreateDetailsContinueView(self.owner_id, self.post_type, values),
+            ephemeral=True,
+        )
+
+
+class CommunityCreateDetailsContinueButton(discord.ui.Button):
+    def __init__(self, owner_id, post_type, values):
+        label = "Continue to Event Details" if post_type == "event" else "Continue to Meetup Details"
+        super().__init__(label=label, style=discord.ButtonStyle.primary)
+        self.owner_id = int(owner_id)
+        self.post_type = post_type
+        self.values = dict(values)
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message(
+                "Only the person who opened this guide can continue it.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_modal(
+            CommunityCreateDetailsStepTwoModal(self.owner_id, self.post_type, self.values)
+        )
+
+
+class CommunityCreateDetailsContinueView(discord.ui.View):
+    def __init__(self, owner_id, post_type, values):
+        super().__init__(timeout=300)
+        self.add_item(CommunityCreateDetailsContinueButton(owner_id, post_type, values))
 
 
 class CommunityCreateDetailsStepTwoModal(discord.ui.Modal):

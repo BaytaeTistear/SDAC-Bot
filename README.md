@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.92**. Keeps event and meetup creation server scoped so Discord shows each command once.
+Current experimental backend: **4.4.93**. Fixes the Discord event and meetup guided form so submissions can continue to step two.
 
 ## One-Line Linux Install
 
