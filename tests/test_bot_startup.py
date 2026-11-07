@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 
 class BotStartupTests(unittest.TestCase):
@@ -33,6 +33,27 @@ class BotStartupTests(unittest.TestCase):
         self.assertNotIn("animeprofileimport", bot.LOW_COST_COMMAND_COOLDOWNS)
         self.assertIn("animeactivities", bot.PRUNED_SLASH_COMMANDS)
         self.assertIn("admincommands", bot.PRUNED_SLASH_COMMANDS)
+
+    def test_event_and_meetup_commands_are_added_to_server_sync(self):
+        import bot
+
+        guild_id = 987654321012345678
+        guild = SimpleNamespace(id=guild_id, name="Command Sync Test")
+        discord_guild = bot.discord.Object(id=guild_id)
+
+        async def capture_guild_commands(*, guild=None):
+            return bot.tree.get_commands(guild=guild)
+
+        try:
+            with patch.object(bot, "get_guild_config", return_value={}), patch.object(
+                bot.tree, "sync", new=AsyncMock(side_effect=capture_guild_commands)
+            ):
+                synced = asyncio.run(bot.sync_guild_slash_commands(guild))
+            names = {command.name for command in synced}
+            self.assertTrue({"createevent", "createmeetup"}.issubset(names))
+        finally:
+            for command in list(bot.tree.get_commands(guild=discord_guild)):
+                bot.tree.remove_command(command.name, guild=discord_guild)
 
     def test_command_alias_validation_supports_server_launchers(self):
         import bot

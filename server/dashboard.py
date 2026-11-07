@@ -26615,18 +26615,23 @@ COMMUNITY_APPROVAL_BODY = """
                             <select name="review_preset"><option value="">Reason preset</option>{% for reason in reason_presets %}<option value="{{ reason }}">{{ reason }}</option>{% endfor %}</select>
                             <input name="review_notes" placeholder="Review notes" value="{{ post.review_notes or '' }}">
                             <label><input type="checkbox" name="is_featured" value="1" {% if post.is_featured %}checked{% endif %}> Featured</label>
-                            {% if post.status in ['pending', 'quarantined'] %}
+                            {% if post.status in ['pending', 'quarantined', 'approved'] %}
                             <label>Optional RSVP reaction role
                                 <select name="reaction_role_id">
                                     <option value="">No reaction-role post</option>
                                     {% for role in post.reaction_role_options %}<option value="{{ role.id }}">🎟️ {{ role.name }}</option>{% endfor %}
                                 </select>
                             </label>
-                            {% if not post.reaction_role_options %}<span class="muted">No assignable roles are available. Check Sana's role order and Discord access.</span>{% endif %}
-                            <span class="muted">When selected, Sana posts an RSVP reaction-role message in the configured announcement channel after approval.</span>
+                            {% if not post.reaction_role_options %}<span class="muted">No assignable roles found. Sana needs Manage Roles, and its highest role must be above the role you want to assign.</span>{% endif %}
+                            {% if post.status == 'approved' %}<span class="muted">Choose a role and create its RSVP post for this approved listing.</span>{% else %}<span class="muted">Choose a role to create its RSVP post when this listing is approved.</span>{% endif %}
+                            <span class="muted">The post uses the configured Events/Meetups announcement channel from /sana → Events.</span>
                             {% endif %}
+                            {% if post.status in ['pending', 'quarantined'] %}
                             <button name="action" value="approve" type="submit">Approve</button>
                             <button name="action" value="reject" type="submit">Reject</button>
+                            {% elif post.status == 'approved' %}
+                            <button name="action" value="post_rsvp_role" type="submit">Create RSVP Role Post</button>
+                            {% endif %}
                             <button name="action" value="resend_email" type="submit">Resend Email</button>
                             <button name="action" value="delete" type="submit" onclick="return confirm('Delete this community submission?')">Delete</button>
                         </form>
@@ -27871,16 +27876,20 @@ def admin_community_submissions():
         if review_preset and review_preset in COMMUNITY_REPORT_REASON_PRESETS:
             review_notes = (review_preset + (f": {review_notes}" if review_notes else ""))[:500]
         is_featured = 1 if request.form.get("is_featured") == "1" else 0
-        if action not in {"approve", "reject", "delete", "resend_email"}:
+        if action not in {"approve", "reject", "post_rsvp_role", "delete", "resend_email"}:
             return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Unknown action.", error=1, status=selected_status, post_type=selected_type))
         reaction_role_id = community_clean_text(request.form.get("reaction_role_id"), 32)
-        if action == "approve" and reaction_role_id:
+        if action == "post_rsvp_role" or (action == "approve" and reaction_role_id):
+            if action == "post_rsvp_role" and not reaction_role_id:
+                return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Choose an RSVP role first.", error=1, status=selected_status, post_type=selected_type))
             with closing(connect_db()) as lookup_connection:
                 lookup_post = lookup_connection.execute(
                     "SELECT * FROM community_posts WHERE id = ?", (post_id,)
                 ).fetchone()
             if not lookup_post:
                 return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Community submission not found.", error=1, status=selected_status, post_type=selected_type))
+            if action == "post_rsvp_role" and lookup_post["status"] != "approved":
+                return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Approve the listing before creating its RSVP role post.", error=1, status=selected_status, post_type=selected_type))
             if not configured_notification_rows(community_notification_event_key(lookup_post["post_type"]), lookup_post["guild_id"]):
                 return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Configure a Discord announcement channel in /sana -> Events before adding an RSVP reaction role.", error=1, status=selected_status, post_type=selected_type))
             eligible_roles = community_rsvp_assignable_roles(lookup_post["guild_id"])
@@ -27896,6 +27905,10 @@ def admin_community_submissions():
                 return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Community submission not found.", error=1, status=selected_status, post_type=selected_type))
             if action == "resend_email":
                 message = "Community submission email and DM resent."
+            elif action == "post_rsvp_role":
+                if row["status"] != "approved":
+                    return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice="Approve the listing before creating its RSVP role post.", error=1, status=selected_status, post_type=selected_type))
+                message = "Creating the RSVP role post."
             elif action == "delete":
                 role_panel_rows_to_remove = connection.execute(
                     "SELECT message_id,channel_id FROM community_post_reaction_role_panels WHERE post_id = ?",
@@ -27979,7 +27992,7 @@ def admin_community_submissions():
                     "status": "approved",
                 },
             )
-        if action == "approve" and reaction_role_id:
+        if action in {"approve", "post_rsvp_role"} and reaction_role_id:
             role_panel_count, role_panel_error = publish_community_rsvp_role_panels(row, reaction_role_id, actor_id)
             if role_panel_count:
                 message += f" Posted {role_panel_count} RSVP reaction-role panel(s)."
@@ -27998,15 +28011,11 @@ def admin_community_submissions():
         return redirect(url_for("admin_community_submissions", key=ADMIN_KEY, notice=message, status=selected_status, post_type=selected_type))
     posts = community_post_rows(selected_type, selected_status)
     role_options_by_guild = {}
-    if selected_status in {"pending", "quarantined", "all"}:
-        for post in posts:
-            guild_id = str(post.get("guild_id") or "")
-            if post.get("status") in {"pending", "quarantined"} and guild_id and guild_id not in role_options_by_guild:
-                role_options_by_guild[guild_id] = community_rsvp_assignable_roles(guild_id)
-            post["reaction_role_options"] = role_options_by_guild.get(guild_id, [])
-    else:
-        for post in posts:
-            post["reaction_role_options"] = []
+    for post in posts:
+        guild_id = str(post.get("guild_id") or "")
+        if post.get("status") in {"pending", "quarantined", "approved"} and guild_id and guild_id not in role_options_by_guild:
+            role_options_by_guild[guild_id] = community_rsvp_assignable_roles(guild_id)
+        post["reaction_role_options"] = role_options_by_guild.get(guild_id, [])
     with closing(connect_db()) as connection:
         for post in posts:
             preference = connection.execute(

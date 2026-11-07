@@ -14,6 +14,15 @@ Recommended bot permissions for the current SDAC features:
 - Manage Messages
 - Use Slash Commands / Application Commands
 
+For moderator-created self-assignable reaction roles, also grant:
+
+- Manage Roles
+
+Move Sana's bot role above every role that members can self-assign. Discord does
+not let a bot assign roles above its highest role. The moderator website hides
+roles Sana cannot safely assign, and the event/meetup approval controls explain
+this when no eligible roles are available.
+
 Current permissions integer:
 
 ```text

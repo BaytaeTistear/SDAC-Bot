@@ -1,3 +1,14 @@
+# Sana-Chan Version 4.4.91 Experimental
+
+Version 4.4.91 fixes event and meetup RSVP role availability and publishes their slash commands as server-local commands during sync for immediate visibility.
+
+- keeps RSVP role controls available for pending and approved event/meetup submissions
+- lets moderators create an RSVP role post for an already approved listing
+- publishes `/createevent` and `/createmeetup` as guild commands as well as globals
+- documents the Manage Roles permission and role hierarchy required for self-assignable roles
+
+# Sana-Chan Version 4.4.90 Experimental
+
 # Sana-Chan Version 4.4.89 Experimental
 
 Version 4.4.89 fixes an internal server error on the Moderator Workspace caused by reading dashboard summary values as object properties instead of dictionary keys.

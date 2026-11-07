@@ -89,6 +89,7 @@ OWNER_OVERRIDE_USERNAME = "baytae"
 ENABLE_ANIME_COMMANDS = os.getenv("SANA_ENABLE_ANIME_COMMANDS", os.getenv("SDAC_ENABLE_ANIME_COMMANDS", "1")).strip().casefold() not in {"0", "false", "no", "off"}
 SIMPLIFIED_SLASH_COMMANDS = os.getenv("SANA_SIMPLIFIED_COMMANDS", os.getenv("SDAC_SIMPLIFIED_COMMANDS", "1")).strip().casefold() not in {"0", "false", "no", "off"}
 CORE_SLASH_COMMANDS = {"sana", "submit", "mysubmissions", "guess", "hint", "createevent", "createmeetup"}
+GUILD_FAST_SLASH_COMMANDS = ("createevent", "createmeetup")
 PROJECT_GITHUB_URL = f"https://github.com/{ORIGINAL_REPO}"
 PROJECT_WIKI_URL = f"{PROJECT_GITHUB_URL}/wiki"
 DASHBOARD_BASE_URL = (
@@ -9806,20 +9807,24 @@ def command_sync_status_lines(guild, guild_config):
     if guild is not None:
         discord_guild = discord.Object(id=guild.id)
         guild_commands = sorted(command.name for command in tree.get_commands(guild=discord_guild))
-    duplicate_names = sorted(set(global_names) & set(guild_commands))
-    expected_guild = [alias] if alias else []
-    unexpected_guild = sorted(name for name in guild_commands if name not in expected_guild)
+    guild_command_set = set(guild_commands)
+    intentional_guild_commands = (set(GUILD_FAST_SLASH_COMMANDS) & set(global_names)) if guild is not None else set()
+    expected_guild = ({alias} if alias else set()) | intentional_guild_commands
+    unexpected_guild = sorted(guild_command_set - expected_guild)
+    unexpected_duplicates = sorted((set(global_names) & guild_command_set) - intentional_guild_commands)
     lines = [
         f"Global commands active: `{', '.join('/' + name for name in global_names) or 'none'}`",
         f"Server alias: `{alias_display}`",
         f"Guild-specific commands: `{', '.join('/' + name for name in guild_commands) or 'none'}`",
     ]
-    if duplicate_names:
+    if unexpected_duplicates:
         lines.append("Duplicate guild command copies: `found - sync commands to clear them`")
     elif unexpected_guild:
         lines.append("Duplicate guild command copies: `clear pending - unexpected guild commands remain`")
     else:
         lines.append("Duplicate guild command copies: `cleared`")
+        if intentional_guild_commands:
+            lines.append("Server-fast event commands: `" + ", ".join("/" + name for name in sorted(intentional_guild_commands)) + "`")
     lines.append("Slash command sync state: `synced`" if slash_commands_synced else "Slash command sync state: `not synced in this process`")
     return lines
 
@@ -17766,6 +17771,10 @@ async def sync_guild_slash_commands(guild):
         tree.remove_command(command.name, guild=discord_guild)
     if alias:
         tree.add_command(build_sdac_alias_command(alias), guild=discord_guild, override=True)
+    for command_name in GUILD_FAST_SLASH_COMMANDS:
+        command = tree.get_command(command_name)
+        if command is not None:
+            tree.add_command(command, guild=discord_guild, override=True)
     synced_guild = await tree.sync(guild=discord_guild)
     guild_command_names = ", ".join(sorted(command.name for command in synced_guild))
     print(

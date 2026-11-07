@@ -82,6 +82,8 @@ assert "community_meetup_submitted" in dashboard.NOTIFICATION_EVENT_LABELS
 assert "community_quote_submitted" in dashboard.NOTIFICATION_EVENT_LABELS
 assert "community_event_approved" in dashboard.NOTIFICATION_EVENT_LABELS
 assert "community_meetup_approved" in dashboard.NOTIFICATION_EVENT_LABELS
+assert 'name="reaction_role_id"' in dashboard.COMMUNITY_APPROVAL_BODY
+assert 'value="post_rsvp_role"' in dashboard.COMMUNITY_APPROVAL_BODY
 message = dashboard.community_discord_notification_message(
     {
         "post_type": "event",
