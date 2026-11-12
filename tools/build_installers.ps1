@@ -61,6 +61,8 @@ function Copy-PayloadFiles {
         "scripts\standardize_env_file.sh",
         "scripts\backup_offsite.sh",
         "scripts\backup_guild_offsite.sh",
+        "scripts\create_recovery_bundle.sh",
+        "scripts\restore_recovery_bundle.sh",
         "scripts\install_backup_prereqs.sh",
         "scripts\reset_admin_login.py",
         "scripts\restore_guild_media_rclone.sh",
@@ -267,6 +269,7 @@ set -Eeuo pipefail
 #   SANA_SKIP_SERVICES=1            # extract and compile only
 #   SANA_SKIP_PACKAGES=1            # skip automatic OS package installation
 #   SANA_INSTALL_JOURNAL_LIMITS=1   # install journald retention limits
+#   SANA_RECOVERY_BUNDLE=/path/file.tar.gz.enc  # import a recovery bundle
 
 APP_DIR="`${SANA_APP_DIR:-`${SDAC_APP_DIR:-/home/ubuntu/discord-screenshot-bot}}"
 APP_USER="`${SANA_APP_USER:-`${SDAC_APP_USER:-`$(id -un)}}"
@@ -276,6 +279,7 @@ DASHBOARD_BIND="`${SANA_DASHBOARD_BIND:-`${SDAC_DASHBOARD_BIND:-127.0.0.1:5000}}
 SKIP_SERVICES="`${SANA_SKIP_SERVICES:-`${SDAC_SKIP_SERVICES:-0}}"
 INSTALL_JOURNAL_LIMITS="`${SANA_INSTALL_JOURNAL_LIMITS:-`${SDAC_INSTALL_JOURNAL_LIMITS:-0}}"
 SKIP_PACKAGES="`${SANA_SKIP_PACKAGES:-`${SDAC_SKIP_PACKAGES:-`${SDAC_SKIP_APT:-0}}}"
+RECOVERY_BUNDLE="`${SANA_RECOVERY_BUNDLE:-}"
 PAYLOAD_SHA256="$payloadSha"
 PAYLOAD_SIZE_BYTES="$payloadSize"
 SANA_INSTALLER_VERSION="$installerVersion"
@@ -321,7 +325,7 @@ install_system_prereqs() {
         say "Installing Debian/Ubuntu runtime packages"
         sudo apt-get update
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            ca-certificates curl git sqlite3 python3 python3-dev python3-pip python3-venv \
+            ca-certificates curl git openssl sqlite3 python3 python3-dev python3-pip python3-venv \
             build-essential pkg-config libffi-dev libssl-dev libjpeg-dev zlib1g-dev libwebp-dev \
             libpq-dev libpq5 libarchive-tools p7zip-full unar unzip xz-utils zstd ffmpeg nginx \
             certbot python3-certbot-nginx lsof jq rsync
@@ -331,7 +335,7 @@ install_system_prereqs() {
     if command -v dnf >/dev/null 2>&1; then
         say "Installing Fedora/RHEL/Oracle runtime packages with dnf"
         sudo dnf install -y \
-            ca-certificates curl git sqlite python3 python3-devel python3-pip gcc gcc-c++ make \
+            ca-certificates curl git openssl sqlite python3 python3-devel python3-pip gcc gcc-c++ make \
             pkgconf-pkg-config libffi-devel openssl-devel libjpeg-turbo-devel zlib-devel libwebp-devel \
             libpq-devel libarchive p7zip p7zip-plugins unar unzip xz zstd ffmpeg nginx certbot \
             python3-certbot-nginx lsof jq rsync
@@ -341,7 +345,7 @@ install_system_prereqs() {
     if command -v yum >/dev/null 2>&1; then
         say "Installing RHEL/Oracle runtime packages with yum"
         sudo yum install -y \
-            ca-certificates curl git sqlite python3 python3-devel python3-pip gcc gcc-c++ make \
+            ca-certificates curl git openssl sqlite python3 python3-devel python3-pip gcc gcc-c++ make \
             pkgconfig libffi-devel openssl-devel libjpeg-turbo-devel zlib-devel libwebp-devel \
             libpq-devel libarchive p7zip p7zip-plugins unar unzip xz zstd ffmpeg nginx certbot \
             python3-certbot-nginx lsof jq rsync
@@ -351,7 +355,7 @@ install_system_prereqs() {
     if command -v apk >/dev/null 2>&1; then
         say "Installing Alpine runtime packages"
         sudo apk add --no-cache \
-            ca-certificates curl git sqlite python3 py3-pip py3-virtualenv python3-dev build-base \
+            ca-certificates curl git openssl sqlite python3 py3-pip py3-virtualenv python3-dev build-base \
             pkgconf libffi-dev openssl-dev jpeg-dev zlib-dev libwebp-dev postgresql-dev libarchive-tools \
             p7zip unrar unzip xz zstd ffmpeg nginx certbot certbot-nginx lsof jq rsync
         return
@@ -467,6 +471,12 @@ fi
 tar -xzf "`$PAYLOAD_FILE" -C "`$APP_DIR"
 chmod +x "`$APP_DIR"/scripts/*.sh
 mkdir -p "`$APP_DIR/media" "`$APP_DIR/backups"
+
+if [[ -n "`$RECOVERY_BUNDLE" ]]; then
+    say "Restoring Sana-Chan data from recovery bundle"
+    SANA_APP_DIR="`$APP_DIR" SANA_ENV_FILE="`$ENV_FILE" \
+        bash "`$APP_DIR/scripts/restore_recovery_bundle.sh" "`$RECOVERY_BUNDLE"
+fi
 
 if [[ "`$SKIP_SERVICES" == "1" ]]; then
     say "Compiling Python files without installing services"

@@ -21,7 +21,7 @@ install_system_prereqs() {
         echo "Installing Debian/Ubuntu runtime packages"
         sudo apt-get update
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            ca-certificates curl git sqlite3 python3 python3-dev python3-pip python3-venv \
+            ca-certificates curl git openssl sqlite3 python3 python3-dev python3-pip python3-venv \
             build-essential pkg-config libffi-dev libssl-dev libjpeg-dev zlib1g-dev libwebp-dev \
             libpq-dev libpq5 libarchive-tools p7zip-full unar unzip xz-utils zstd ffmpeg nginx \
             certbot python3-certbot-nginx lsof jq rsync
@@ -31,7 +31,7 @@ install_system_prereqs() {
     if command -v dnf >/dev/null 2>&1; then
         echo "Installing Fedora/RHEL/Oracle runtime packages with dnf"
         sudo dnf install -y \
-            ca-certificates curl git sqlite python3 python3-devel python3-pip gcc gcc-c++ make \
+            ca-certificates curl git openssl sqlite python3 python3-devel python3-pip gcc gcc-c++ make \
             pkgconf-pkg-config libffi-devel openssl-devel libjpeg-turbo-devel zlib-devel libwebp-devel \
             libpq-devel libarchive p7zip p7zip-plugins unar unzip xz zstd ffmpeg nginx certbot \
             python3-certbot-nginx lsof jq rsync
@@ -41,7 +41,7 @@ install_system_prereqs() {
     if command -v yum >/dev/null 2>&1; then
         echo "Installing RHEL/Oracle runtime packages with yum"
         sudo yum install -y \
-            ca-certificates curl git sqlite python3 python3-devel python3-pip gcc gcc-c++ make \
+            ca-certificates curl git openssl sqlite python3 python3-devel python3-pip gcc gcc-c++ make \
             pkgconfig libffi-devel openssl-devel libjpeg-turbo-devel zlib-devel libwebp-devel \
             libpq-devel libarchive p7zip p7zip-plugins unar unzip xz zstd ffmpeg nginx certbot \
             python3-certbot-nginx lsof jq rsync
@@ -51,7 +51,7 @@ install_system_prereqs() {
     if command -v apk >/dev/null 2>&1; then
         echo "Installing Alpine runtime packages"
         sudo apk add --no-cache \
-            ca-certificates curl git sqlite python3 py3-pip py3-virtualenv python3-dev build-base \
+            ca-certificates curl git openssl sqlite python3 py3-pip py3-virtualenv python3-dev build-base \
             pkgconf libffi-dev openssl-dev jpeg-dev zlib-dev libwebp-dev postgresql-dev libarchive-tools \
             p7zip unrar unzip xz zstd ffmpeg nginx certbot certbot-nginx lsof jq rsync
         return

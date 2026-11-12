@@ -24,7 +24,27 @@ To install a specific release while using the same one-line bootstrap:
 SANA_RELEASE_TAG=version-4.4.63 bash -c "$(curl --proto '=https' --tlsv1.2 -fsSL https://github.com/BaytaeTistear/SDAC-Bot/releases/download/latest-experimental/sana-install)"
 ```
 
-For a server move, copy `config.json`, `sdac.db`, and `media/` into the intended application directory before running the command. Copy `/etc/sana-bot/sana.env` separately with restrictive permissions if you want to retain the same secrets; otherwise the installer safely prompts for replacements. Existing data in the target directory is preserved and the database is backed up before upgrade migrations.
+## Move to a New Server with One Recovery File
+
+Create an encrypted recovery bundle on the old Ubuntu server. It includes `config.json`, a consistent SQLite database snapshot, uploaded `media/`, and `/etc/sana-bot/sana.env` (including the Discord token and encryption key). The export asks you to set a passphrase; keep that passphrase separately from the bundle.
+
+```bash
+sudo bash /home/ubuntu/discord-screenshot-bot/scripts/create_recovery_bundle.sh
+```
+
+The encrypted `.tar.gz.enc` file is saved in the invoking account's home directory with mode `600`. Copy it to the new server, for example:
+
+```bash
+scp ~/sana-recovery-YYYYMMDD-HHMMSS.tar.gz.enc ubuntu@NEW_SERVER:~/
+```
+
+On the new server, run the normal one-line installer with the bundle path. The installer downloads current Sana-Chan code, asks for the bundle passphrase, checks the configuration and database, restores the data and secrets, then finishes setup and starts the services:
+
+```bash
+SANA_RECOVERY_BUNDLE="$HOME/sana-recovery-YYYYMMDD-HHMMSS.tar.gz.enc" bash -c "$(curl --proto '=https' --tlsv1.2 -fsSL https://github.com/BaytaeTistear/SDAC-Bot/releases/download/latest-experimental/sana-install)"
+```
+
+Use an empty/new application directory and environment path; the restore step intentionally refuses to overwrite existing data. Update DNS and reissue/configure TLS for the new server as needed. Keep the same `SANA_SECRET_KEY` from the bundle so encrypted account tokens remain readable. The archive is a sensitive credential backup: store it privately and delete transfer copies after recovery. This export currently supports SQLite; PostgreSQL deployments must use `pg_dump` and restore PostgreSQL separately.
 
 ### Enable MyAnimeList Account Connection
 

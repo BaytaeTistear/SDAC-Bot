@@ -1,6 +1,6 @@
 # Sana-Chan Bot
 
-Current experimental backend: **4.4.93**. Fixes the Discord event and meetup guided form so submissions can continue to step two.
+Current experimental backend: **4.4.94**. Adds encrypted migration bundles and one-step server restore.
 
 ## One-Line Linux Install
 
@@ -11,6 +11,22 @@ bash -c "$(curl --proto '=https' --tlsv1.2 -fsSL https://github.com/BaytaeTistea
 ```
 
 The bootstrap downloads the full installer, verifies its SHA-256 checksum, installs into the current account's home directory (or the Ubuntu account when present), and prompts for the Discord token and initial full-access website account. Existing configuration, database, media, backups, and environment files are preserved when reinstalling into the same path.
+
+### Move the Bot to Another Server
+
+On the old Ubuntu server, create one passphrase-protected recovery file containing configuration, a consistent SQLite snapshot, uploaded media, and environment secrets:
+
+```bash
+sudo bash /home/ubuntu/discord-screenshot-bot/scripts/create_recovery_bundle.sh
+```
+
+Copy the resulting `.tar.gz.enc` file to the new host, then install and restore in one step:
+
+```bash
+SANA_RECOVERY_BUNDLE="$HOME/sana-recovery-YYYYMMDD-HHMMSS.tar.gz.enc" bash -c "$(curl --proto '=https' --tlsv1.2 -fsSL https://github.com/BaytaeTistear/SDAC-Bot/releases/download/latest-experimental/sana-install)"
+```
+
+The installer prompts for the bundle passphrase, restores the data and secrets, and starts Sana-Chan. Use a clean target path. See [HOSTING.md](HOSTING.md#move-to-a-new-server-with-one-recovery-file) for transfer and DNS/TLS details. PostgreSQL deployments need `pg_dump` instead of this SQLite bundle.
 
 Sana-Chan Bot is a Discord media submission and guessing-game system with a web dashboard. Discord users submit images, audio, or video through `/submit`. Admins configure categories, review pending submissions, run guessing games, and view submissions, votes, leaderboards, maintenance status, and moderation history from the dashboard.
 

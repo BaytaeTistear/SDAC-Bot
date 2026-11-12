@@ -64,6 +64,7 @@ MIRRORED_FILES = [
     "scripts/archive_old_history.py",
     "scripts/backup_guild_offsite.sh",
     "scripts/backup_offsite.sh",
+    "scripts/create_recovery_bundle.sh",
     "scripts/check_production.sh",
     "scripts/dashboard_layout_check.py",
     "scripts/deploy_environment.py",
@@ -75,6 +76,7 @@ MIRRORED_FILES = [
     "scripts/migrate_database.py",
     "scripts/pre_release_smoke.py",
     "scripts/release_checklist.sh",
+    "scripts/restore_recovery_bundle.sh",
     "scripts/reset_admin_login.py",
     "scripts/rollback_ubuntu.sh",
     "scripts/sdac_doctor.py",
@@ -115,6 +117,7 @@ FOCUSED_TESTS = [
     "tests.test_anilist_integration",
     "tests.test_public_bot_invite",
     "tests.test_professional_features",
+    "tests.test_recovery_bundle",
     "tests.test_submission_lifecycle",
 ]
 

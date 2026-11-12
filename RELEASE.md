@@ -1,3 +1,12 @@
+# Sana-Chan Version 4.4.94 Experimental
+
+Version 4.4.94 adds a passphrase-protected server migration bundle and lets the one-line Linux installer restore it on a clean server.
+
+- bundles `config.json`, a consistent SQLite snapshot, uploaded media, and the environment secrets
+- checks the archive, configuration, required secrets, and database before restoring
+- installs current Sana-Chan code and services as part of the same recovery install
+- documents transfer, passphrase storage, domain/TLS follow-up, and PostgreSQL limits
+
 # Sana-Chan Version 4.4.93 Experimental
 
 Version 4.4.93 fixes `/createevent` and `/createmeetup` modal submissions by handing off to the second step through a button, as required by Discord's interaction flow.
