@@ -17,6 +17,8 @@ class RecoveryBundleTests(unittest.TestCase):
             "source.backup(target)",
             "-aes-256-cbc",
             "-pbkdf2",
+            "--dereference",
+            'ln -s "$APP_DIR" "$STAGE_DIR/app"',
             "chmod 600",
         ):
             self.assertIn(required, script)
@@ -33,6 +35,7 @@ class RecoveryBundleTests(unittest.TestCase):
             "integrity_check",
             "DISCORD_TOKEN",
             "SANA_SECRET_KEY",
+            '"app/bot.py"',
             "will not overwrite it",
             "install -m 600",
         ):

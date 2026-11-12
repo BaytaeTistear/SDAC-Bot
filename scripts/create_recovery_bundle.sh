@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 APP_DIR="${SANA_APP_DIR:-${SDAC_APP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
+APP_DIR="$(cd "$APP_DIR" && pwd)"
 CONFIG_FILE="${SANA_CONFIG_FILE:-${SDAC_CONFIG_FILE:-$APP_DIR/config.json}}"
 DB_FILE="${SANA_DB_FILE:-${SDAC_DB_FILE:-$APP_DIR/sdac.db}}"
 MEDIA_DIR="${SANA_MEDIA_DIR:-${SDAC_MEDIA_DIR:-$APP_DIR/media}}"
@@ -23,6 +24,7 @@ done
 [[ -f "$CONFIG_FILE" ]] || fail "Configuration file not found: $CONFIG_FILE"
 [[ -f "$DB_FILE" ]] || fail "SQLite database not found: $DB_FILE"
 [[ -d "$MEDIA_DIR" ]] || fail "Media directory not found: $MEDIA_DIR"
+MEDIA_DIR="$(cd "$MEDIA_DIR" && pwd)"
 [[ -r "$ENV_FILE" ]] || fail "Cannot read $ENV_FILE. Run with sudo or set SANA_ENV_FILE to the bot's environment file."
 
 if [[ "${SDAC_DATABASE_URL:-}" =~ ^postgres(ql)?:// ]] || python3 - "$ENV_FILE" <<'PY'
@@ -56,6 +58,14 @@ fi
 if [[ -n "$(find "$MEDIA_DIR" ! -type d ! -type f -print -quit)" ]]; then
     fail "Media contains a symbolic link or special file. Resolve it before creating a portable recovery bundle."
 fi
+if [[ -n "$(find "$APP_DIR" \
+    \( -path "$APP_DIR/venv" -o -path "$APP_DIR/.git" -o -path "$APP_DIR/media" \
+       -o -path "$APP_DIR/backups" -o -path "$APP_DIR/deploy-backups" \
+       -o -path "$APP_DIR/node_modules" -o -path "$APP_DIR/dist" \
+       -o -path "$APP_DIR/.codex" -o -path "$APP_DIR/__pycache__" \) -prune \
+    -o ! -type d ! -type f -print -quit)" ]]; then
+    fail "Application source contains a symbolic link or special file outside excluded data folders. Resolve it before exporting."
+fi
 
 mkdir -p "$(dirname "$OUTPUT_FILE")"
 OUTPUT_FILE="$(cd "$(dirname "$OUTPUT_FILE")" && pwd)/$(basename "$OUTPUT_FILE")"
@@ -71,6 +81,8 @@ trap cleanup EXIT
 STAGE_DIR="$WORK_DIR/bundle"
 mkdir -p "$STAGE_DIR/secrets"
 chmod 700 "$STAGE_DIR/secrets"
+ln -s "$APP_DIR" "$STAGE_DIR/app"
+ln -s "$MEDIA_DIR" "$STAGE_DIR/media"
 cp "$CONFIG_FILE" "$STAGE_DIR/config.json"
 cp "$ENV_FILE" "$STAGE_DIR/secrets/sana.env"
 chmod 600 "$STAGE_DIR/secrets/sana.env"
@@ -143,8 +155,13 @@ PASSPHRASE_FILE="$WORK_DIR/passphrase"
 printf '%s\n' "$PASSPHRASE" > "$PASSPHRASE_FILE"
 chmod 600 "$PASSPHRASE_FILE"
 
-tar -czf - -C "$STAGE_DIR" config.json sdac.db metadata.json secrets \
-    -C "$MEDIA_DIR" --transform='s,^\./,media/,' . |
+tar -czf - --dereference -C "$STAGE_DIR" \
+    --exclude='app/venv' --exclude='app/.git' --exclude='app/media' \
+    --exclude='app/backups' --exclude='app/deploy-backups' --exclude='app/node_modules' \
+    --exclude='app/dist' --exclude='app/.codex' --exclude='app/config.json' \
+    --exclude='app/sdac.db*' --exclude='app/.sdac_secret_key' --exclude='app/.env' \
+    --exclude='app/bot_status.json' --exclude='__pycache__' --exclude='*.pyc' --exclude='*.log' \
+    config.json sdac.db metadata.json secrets app media |
     openssl enc -aes-256-cbc -salt -pbkdf2 -iter 250000 -md sha256 \
         -pass "file:$PASSPHRASE_FILE" -out "$OUTPUT_FILE"
 chmod 600 "$OUTPUT_FILE"
@@ -160,5 +177,5 @@ unset PASSPHRASE PASSPHRASE_CONFIRM
 rm -f "$PASSPHRASE_FILE"
 
 echo "Recovery bundle created: $OUTPUT_FILE"
-echo "The bundle contains configuration, a consistent SQLite snapshot, media, and the environment secrets."
+echo "The bundle contains an application code snapshot, configuration, a consistent SQLite snapshot, media, and environment secrets."
 echo "Keep the passphrase separately. The bundle is needed to recover the Discord token and encryption key."

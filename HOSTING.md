@@ -26,7 +26,7 @@ SANA_RELEASE_TAG=version-4.4.63 bash -c "$(curl --proto '=https' --tlsv1.2 -fsSL
 
 ## Move to a New Server with One Recovery File
 
-Create an encrypted recovery bundle on the old Ubuntu server. It includes `config.json`, a consistent SQLite database snapshot, uploaded `media/`, and `/etc/sana-bot/sana.env` (including the Discord token and encryption key). The export asks you to set a passphrase; keep that passphrase separately from the bundle.
+Create an encrypted recovery bundle on the old Ubuntu server. It includes the deployed application code snapshot, `config.json`, a consistent SQLite database snapshot, uploaded `media/`, and `/etc/sana-bot/sana.env` (including the Discord token and encryption key). The export asks you to set a passphrase; keep that passphrase separately from the bundle.
 
 ```bash
 sudo bash /home/ubuntu/discord-screenshot-bot/scripts/create_recovery_bundle.sh
@@ -38,7 +38,7 @@ The encrypted `.tar.gz.enc` file is saved in the invoking account's home directo
 scp ~/sana-recovery-YYYYMMDD-HHMMSS.tar.gz.enc ubuntu@NEW_SERVER:~/
 ```
 
-On the new server, run the normal one-line installer with the bundle path. The installer downloads current Sana-Chan code, asks for the bundle passphrase, checks the configuration and database, restores the data and secrets, then finishes setup and starts the services:
+On the new server, run the normal one-line installer with the bundle path. The installer prepares the runtime, asks for the bundle passphrase, checks the configuration, source files, and database, restores the captured code and data, then finishes setup and starts the services:
 
 ```bash
 SANA_RECOVERY_BUNDLE="$HOME/sana-recovery-YYYYMMDD-HHMMSS.tar.gz.enc" bash -c "$(curl --proto '=https' --tlsv1.2 -fsSL https://github.com/BaytaeTistear/SDAC-Bot/releases/download/latest-experimental/sana-install)"

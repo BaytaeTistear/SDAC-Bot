@@ -56,7 +56,7 @@ from pathlib import Path, PurePosixPath
 archive_path = Path(sys.argv[1])
 destination = Path(sys.argv[2])
 required = {"config.json", "sdac.db", "metadata.json", "secrets/sana.env"}
-allowed_extra = {".", "./", "secrets", "secrets/sdac_secret_key"}
+allowed_extra = {".", "./", "app", "app/.", "secrets", "secrets/sdac_secret_key"}
 seen = set()
 with tarfile.open(archive_path, "r:gz") as archive:
     for member in archive.getmembers():
@@ -65,7 +65,8 @@ with tarfile.open(archive_path, "r:gz") as archive:
             raise SystemExit(f"Unsafe archive path: {member.name}")
         if member.issym() or member.islnk() or not (member.isfile() or member.isdir()):
             raise SystemExit(f"Unsupported archive entry: {member.name}")
-        if member.name not in required and member.name not in allowed_extra and member.name != "media" and not member.name.startswith("media/"):
+        if (member.name not in required and member.name not in allowed_extra
+                and member.name != "media" and not member.name.startswith(("media/", "app/"))):
             raise SystemExit(f"Unexpected archive entry: {member.name}")
         seen.add(member.name)
     if not required.issubset(seen):
@@ -76,6 +77,8 @@ with tarfile.open(archive_path, "r:gz") as archive:
     config = json.load(archive.extractfile("config.json"))
     if not isinstance(config, dict):
         raise SystemExit("Configuration must be a JSON object.")
+    if not {"app/bot.py", "app/dashboard.py", "app/scripts/install_ubuntu.sh"}.issubset(seen):
+        raise SystemExit("The recovery bundle is missing its application code snapshot.")
     env_data = archive.extractfile("secrets/sana.env").read()
     if b"DISCORD_TOKEN=" not in env_data and b"SANA_DISCORD_TOKEN=" not in env_data and b"SDAC_DISCORD_TOKEN=" not in env_data:
         raise SystemExit("The recovery bundle does not include a Discord token.")
@@ -94,6 +97,7 @@ finally:
 PY
 
 STAGE_DIR="$WORK_DIR/restore"
+cp -a "$STAGE_DIR/app/." "$APP_DIR/"
 install -m 600 "$STAGE_DIR/config.json" "$APP_DIR/config.json"
 install -m 600 "$STAGE_DIR/sdac.db" "$APP_DIR/sdac.db"
 mkdir -p "$APP_DIR/media"
